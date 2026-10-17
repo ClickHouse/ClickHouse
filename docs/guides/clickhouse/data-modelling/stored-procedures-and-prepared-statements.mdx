@@ -560,9 +560,9 @@ print(f"Status: {status}, Loyalty Points: {points}")
 <Tip>
 **When to use each approach:**
 
-- **OLTP workloads** (orders, payments, user accounts) → Use MySQL/PostgreSQL with stored procedures
+- **OLTP workloads** (orders, payments, user accounts) → Use MySQL or PostgreSQL for application transactions and stored procedures. [ClickHouse Managed Postgres](/products/managed-postgres/overview) is available in ClickHouse Cloud.
 - **Analytics workloads** (reporting, aggregations, time-series) → Use ClickHouse with application orchestration
-- **Hybrid architecture** → Use both! Stream transactional data from OLTP to ClickHouse for analytics
+- **Hybrid architecture** → Keep application transactions in Postgres and replicate committed changes to ClickHouse for analytics. See [how Postgres and ClickHouse work together](/products/managed-postgres/overview#transactions-and-analytics) and the [integration quickstart](/products/managed-postgres/quickstart#part-2).
 </Tip>
 
 #### Using workflow orchestration tools {#using-workflow-orchestration-tools}

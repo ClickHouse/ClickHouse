@@ -7,6 +7,8 @@
 -- over the test runner's client-level randomization. force_optimize_projection_name keeps each
 -- arm on the aggregate-projection merge path, and the exact surviving-row counts below hold only
 -- while both hold, so an arm that stops covering the null place fails instead of passing.
+-- The counts also assume one server: parallel replicas each freeze their own hash table and the
+-- final merge does not apply the limit, so these arms also pin enable_parallel_replicas = 0.
 -- Row-based granules keep a projection's mark count independent of how wide its aggregate states
 -- serialize: adaptive granularity charges an aggregate-state column at its serialized width, so at
 -- a small index_granularity_bytes p reads more marks than the base table and is dropped. Pinning
@@ -39,25 +41,25 @@ SETTINGS optimize_use_projections = 1, max_threads = 1;
 SELECT 'overflow any OrNull';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
+    max_rows_to_group_by = 10, group_by_overflow_mode = 'any', enable_parallel_replicas = 0,
     preferred_optimize_projection_name = 'p', force_optimize_projection_name = 'p';
 
 SELECT 'overflow any OrDefault';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrDefault(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
+    max_rows_to_group_by = 10, group_by_overflow_mode = 'any', enable_parallel_replicas = 0,
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any OrNull(Tuple)';
 SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumTupleOrNull(tuple(v)) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
+    max_rows_to_group_by = 10, group_by_overflow_mode = 'any', enable_parallel_replicas = 0,
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any Tuple(OrNull)';
 SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumOrNullTuple(tuple(v)) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
+    max_rows_to_group_by = 10, group_by_overflow_mode = 'any', enable_parallel_replicas = 0,
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any two keys';
@@ -67,7 +69,7 @@ SELECT count() > 0 FROM (EXPLAIN SELECT k, k2, sumOrNull(v) FROM t_orfill GROUP 
 WHERE explain ILIKE '%Keys: k, k2%';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, k2, sumOrNull(v) AS s FROM t_orfill GROUP BY k, k2)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
+    max_rows_to_group_by = 10, group_by_overflow_mode = 'any', enable_parallel_replicas = 0,
     force_optimize_projection_name = 'p2';
 
 SELECT 'overflow throw';

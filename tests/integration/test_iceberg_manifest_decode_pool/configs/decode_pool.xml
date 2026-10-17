@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_iceberg_manifest_decode_thread_pool_size>1</max_iceberg_manifest_decode_thread_pool_size>
+</clickhouse>

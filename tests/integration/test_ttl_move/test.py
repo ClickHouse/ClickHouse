@@ -1189,9 +1189,12 @@ def test_moves_with_full_disk(started_cluster, engine, request):
         # This test checks that if the target disk is full, the data will be placed onto the available disk,
         # and later moved to the correct destination once possible.
         # TEMP table to fill up the disk
+        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
+        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
+        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
@@ -1264,9 +1267,12 @@ def test_merges_with_full_disk(started_cluster, engine, request):
         # NOTE: MERGE operation is sensitive to not-having enough free space at 'jbod1' - its data sizes are imbalanced (or 'jbod1' is more full than expected), this test might flap by hanging in OPTIMIZE
 
         # TEMP table to fill up the disk
+        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
+        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
+        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'

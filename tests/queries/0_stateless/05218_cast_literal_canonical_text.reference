@@ -1,0 +1,20 @@
+-1	-0.5
+[0.1,0.2]
+[1,-2]
+-1	[1,-2]
+SELECT\n    CAST(\'-1\', \'Int128\'),\n    CAST(\'[0.1, 0.2]\', \'Array(Decimal256(76))\'),\n    CAST(\'-1\', \'Int128\')\nFROM system.one
+SELECT\n    CAST(\'[1,2]\', \'Array(Int128)\'),\n    CAST(\'[1, 2]\', \'Array(Int128)\'),\n    CAST(\'[1,2]\', \'Array(UInt8)\'),\n    CAST(\'[1, 2]\', \'Array(UInt8)\'),\n    CAST(\'[[1,2],[3]]\', \'Array(Array(UInt8))\')\nFROM system.one
+0	[0,0]	0	0
+SELECT\n    CAST(\'0\', \'UInt128\'),\n    CAST(\'0\', \'UInt128\'),\n    CAST(\'-0.0\', \'Decimal32(2)\')\nFROM system.one
+0.1	0.1
+255	1000	5	-255
+255	1000	-255
+1	[1,2]	1
+8	1000
+SELECT\n    CAST(\'0.1\', \'Decimal256(76)\'),\n    CAST(\'255\', \'Decimal32(2)\'),\n    CAST(\'5\', \'UInt128\'),\n    CAST(\'255\', \'UInt128\'),\n    CAST(\'1\', \'Int128\'),\n    CAST(\'8.\', \'Decimal32(2)\')\nFROM system.one
+0.1	0.10000000000000000000001
+10000000000000000000	255	inf	1
+SELECT\n    CAST(10000000000000000000., \'UInt256\'),\n    CAST(255, \'UInt8\'),\n    CAST(inf, \'Decimal32(2)\'),\n    CAST(true, \'Int128\')\nFROM system.one
+SELECT CAST(\'-1\', \'Int128\'), CAST(\'[0.1, 0.2]\', \'Array(Decimal256(76))\'), CAST(\'255\', \'Decimal32(2)\'), CAST(\'5\', \'UInt128\'), CAST(\'0.1\', \'Decimal256(76)\'), CAST(\'1\', \'Int128\'), CAST(\'0\', \'UInt128\'), CAST(\'-0.\', \'Decimal32(2)\'), CAST(\'255\', \'UInt128\'), CAST(\'0.1\', \'Decimal32(2)\'), CAST(\'0\', \'UInt128\'), CAST(inf, \'Decimal32(2)\'), CAST(255, \'UInt8\'), CAST([1, NULL], \'Array(UInt8)\')	1
+-0	-0	-0	-0	0	0	0
+SELECT CAST(\'-0.0\', \'Float64\'), CAST(\'[-0.0, 0]\', \'Array(Decimal32(2))\'), CAST(\'-0.\', \'Decimal32(2)\'), CAST(\'0\', \'UInt8\')	1

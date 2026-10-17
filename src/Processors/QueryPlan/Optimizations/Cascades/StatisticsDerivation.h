@@ -33,6 +33,7 @@ class ExpressionStep;
 class AggregatingStep;
 class SortingStep;
 class LimitStep;
+class DistinctStep;
 
 /// Derives statistics for groups in the Cascades optimizer.
 /// Statistics are logical properties that describe the data (row counts, NDVs)
@@ -57,6 +58,7 @@ private:
     ExpressionStatistics deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);
 
     /// Estimate bytes per row of a read: table-level hint if present, otherwise the sum of the
     /// per-column widths already filled into `statistics`.

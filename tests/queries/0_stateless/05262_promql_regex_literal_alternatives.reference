@@ -1,0 +1,24 @@
+-- literal alternatives match whole values
+[1,6]
+[1,6]
+[1,6]
+[1,6]
+[1]
+-- negative matcher returns the complement
+[2,3,4,5]
+[2,3,4,5]
+[2,3,4,5,6]
+-- the number of alternatives is not limited
+[1,6]
+[2,3,4,5]
+-- an empty alternative also matches a missing label
+[1,4,5]
+[2,3,6]
+-- a regex that is not a literal list keeps working
+[1,3]
+[2,6]
+-- metric name alternatives equal the union of two equality selectors and use the primary key
+1	[1,2,3,4,5,6,7]
+7
+7
+3

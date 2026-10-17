@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -34,6 +35,7 @@
 #include <Planner/Utils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -65,6 +67,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -72,6 +75,20 @@ namespace FailPoints
 {
     extern const char use_delayed_remote_source[];
     extern const char parallel_replicas_wait_for_unused_replicas[];
+}
+
+namespace
+{
+/// Formats the fragment for the step description. `actions` and `indexes` are off on purpose: they make
+/// `describeActions` and `describeIndexes` ask every MergeTree read for its analysis result, so building
+/// a description string would run index analysis, which is expensive and can throw (for example when the
+/// analysis exceeds `max_rows_to_read`) even though nothing is being read yet.
+String dumpQueryPlanShape(const QueryPlan & query_plan)
+{
+    WriteBufferFromOwnString buffer;
+    query_plan.explainPlan(buffer, ExplainPlanOptions{.header = true, .description = true, .actions = false, .indexes = false});
+    return buffer.str();
+}
 }
 
 ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
@@ -107,7 +124,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlan(*query_plan), fmt::join(replicas, ", "));
+    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlanShape(*query_plan), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
@@ -195,11 +212,27 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     size_t parallel_marshalling_threads)
 {
     /// A fragment ending in a partial AggregatingStep emits intermediate aggregate state that a
-    /// MergingAggregated merges, so its chunks must carry AggregatedChunkInfo.
+    /// MergingAggregated merges, so its chunks must carry AggregatedChunkInfo. A `BlocksMarshalling`
+    /// step only changes how the blocks are put on the wire, so look through it: what it wraps is
+    /// still what decides the chunk info.
     bool add_agg_info = false;
     if (const auto * root = query_plan->getRootNode())
+    {
+        if (typeid_cast<const BlocksMarshallingStep *>(root->step.get()))
+        {
+            /// Throws rather than skipping the step: getting this wrong drops `AggregatedChunkInfo`
+            /// from every chunk of an aggregating fragment, which is silently wrong results.
+            if (root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "BlocksMarshalling is a unary step, but the fragment root has {} children",
+                    root->children.size());
+            root = root->children.front();
+        }
+
         if (const auto * agg = typeid_cast<const AggregatingStep *>(root->step.get()))
             add_agg_info = !agg->getFinal();
+    }
 
     bool add_totals = false;
     bool add_extremes = false;

@@ -14,9 +14,9 @@ La liste des tables et leur structure sont récupérées à la demande depuis le
 
 Cela est utile pour fédérer plusieurs clusters ClickHouse ou pour connecter un cluster ClickHouse plus important à `clickhouse-local` ou à un cluster plus petit.
 
-<div id="creating-a-database">
-  ## Création d’une base de données
-</div>
+Pour accéder par son nom, plutôt que par des adresses explicites, à un cluster défini dans la configuration du serveur, utilisez le moteur de base de données [`Cluster`](/fr/reference/engines/database-engines/cluster).
+
+## Création d’une base de données {#creating-a-database}
 
 <Tabs>
   <Tab title="Remote" id="remote">
@@ -56,20 +56,16 @@ CREATE DATABASE remote_db
 ENGINE = Remote(my_named_collection, database = 'default');
 ```
 
-<div id="notes">
-  ## Remarques
-</div>
+## Remarques {#notes}
 
 * Le moteur constitue une vue en lecture directe du serveur distant : les instructions DDL `CREATE TABLE`, `DROP TABLE`, `ALTER` et similaires appliquées à la base de données `Remote` ne sont pas prises en charge. Gérez directement le schéma sur le serveur distant.
 * Les droits d&#39;accès sont appliqués sur le serveur distant pour l&#39;utilisateur distant configuré et, localement, par les privilèges habituels sur la base de données et ses tables.
 * Une table d&#39;un segment local que l&#39;utilisateur n&#39;est pas autorisé à voir est signalée comme absente plutôt que comme interdite. Une base de données `Remote` ne peut donc pas être utilisée pour sonder les noms des tables d&#39;une base de données locale sur laquelle l&#39;utilisateur ne dispose d&#39;aucun privilège. Cela s&#39;applique à l&#39;énumération (`SHOW TABLES`, `EXISTS TABLE`) comme à la résolution (`DESCRIBE TABLE`, `SHOW CREATE TABLE`, `SELECT`), et une telle table n&#39;est pas non plus accessible via les répliques distantes de son segment : le basculement décrit ci-dessus ne se produit que lorsque la réplique locale ne possède réellement pas la table.
 * L&#39;énumération des tables d&#39;une base de données présente sur la réplique locale d&#39;un segment inclut également les tables présentes uniquement sur les répliques distantes de ce segment, afin que `SHOW TABLES` et `system.tables` concordent avec `EXISTS TABLE`, `DESCRIBE TABLE` et `SELECT`, qui basculent vers ces répliques. Lorsqu&#39;aucune réplique distante ne répond, la liste de la réplique locale est renvoyée telle quelle, car elle constitue déjà la réponse d&#39;une réplique disponible.
 * Si le serveur distant est indisponible, l&#39;énumération de ses tables (`SHOW TABLES`, `system.tables`) renvoie l&#39;erreur de connexion plutôt qu&#39;une liste vide, tout comme `EXISTS TABLE` et `SELECT` sur la même base de données. Notez qu&#39;un `SELECT` sur `system.tables` couvrant toutes les bases de données échoue également lorsqu&#39;une telle base de données est inaccessible.
-* Une base de données `Remote` peut pointer vers une autre base de données `Remote` sur le même serveur. L&#39;énumération et la description des tables d&#39;une telle chaîne ne nécessitent aucun privilège sur la base de données intermédiaire : elle ne contient ni données ni métadonnées propres, et chaque saut vérifie déjà les droits de l&#39;appelant sur les objets qu&#39;il relaie à son tour. En revanche, la lecture et l&#39;écriture des données nécessitent `SELECT` / `INSERT` à chaque saut de la chaîne, car la requête est réellement exécutée sur la table de la base de données intermédiaire, exactement comme pour une table `Distributed` reposant sur une autre table `Distributed`. La règle de visibilité décrite ci-dessus s&#39;applique à toute la chaîne : une table que la base de données intermédiaire masque à l&#39;appelant n&#39;est pas non plus accessible via les répliques distantes de la base de données externe. Si la base de données intermédiaire de la réplique locale ne peut pas atteindre sa propre cible, la réplique locale du segment externe ne peut pas répondre du tout — exactement comme si la réplique elle-même était hors service — et la base de données externe bascule vers les répliques distantes du segment.
+* Une base de données `Remote` peut pointer vers une autre base de données `Remote` sur le même serveur. L&#39;énumération et la description des tables d&#39;une telle chaîne ne nécessitent aucun privilège sur la base de données intermédiaire : elle ne contient ni données ni métadonnées propres, et chaque saut vérifie déjà les droits de l&#39;appelant sur les objets qu&#39;il relaie à son tour. En revanche, la lecture et l&#39;écriture des données nécessitent `SELECT` / `INSERT` à chaque saut de la chaîne, car la requête est réellement exécutée sur la table de la base de données intermédiaire, exactement comme pour une table `Distributed` reposant sur une autre table `Distributed`. La règle de visibilité décrite ci-dessus s&#39;applique à toute la chaîne : une table que la base de données intermédiaire masque à l&#39;appelant n&#39;est pas non plus accessible via les répliques distantes de la base de données externe. Si la base de données intermédiaire de la réplique locale ne peut pas atteindre sa propre cible, la réplique locale du segment externe ne peut pas répondre du tout — exactement comme si la réplique elle-même était hors service — et la base de données externe bascule vers les répliques distantes du segment. Une chaîne sur le même serveur qui renvoie à elle-même (y compris une base de données qui pointe vers elle-même) est rejetée avec l&#39;erreur `INFINITE_LOOP` lors de la création de la base de données qui ferme la boucle ; un cycle qui apparaît néanmoins ultérieurement (par exemple, si le rechargement d&#39;une configuration rend local un segment d&#39;une base de données [`Cluster`](/fr/reference/engines/database-engines/cluster)) n&#39;affecte pas les autres bases de données : les énumérations portant sur l&#39;ensemble du serveur, comme `system.tables`, ignorent la chaîne cyclique, qui ne répertorie aucune table, tandis que la résolution d&#39;une table dans cette chaîne renvoie `INFINITE_LOOP`.
 
-<div id="example">
-  ## Exemple
-</div>
+## Exemple {#example}
 
 Créez une base de données `Remote` qui pointe vers la base de données `system` d’un serveur distant, puis lisez son contenu :
 

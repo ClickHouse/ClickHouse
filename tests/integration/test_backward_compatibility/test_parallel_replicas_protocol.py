@@ -12,7 +12,6 @@ nodes = [
         image="clickhouse/clickhouse-server",
         tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         stay_alive=True,
-        use_old_analyzer=False,
         with_installed_binary=True,
     )
     for num in range(2)
@@ -25,7 +24,6 @@ nodes = [
         # of relying on cross-version insert deduplication.
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
-        use_old_analyzer=False,
     )
 ]
 
@@ -47,7 +45,6 @@ split_topology_nodes = [
         image="clickhouse/clickhouse-server",
         tag="26.5",
         stay_alive=True,
-        use_old_analyzer=False,
         with_installed_binary=True,
     )
     for num in range(2)
@@ -58,7 +55,6 @@ split_topology_nodes = [
         "split_node2",
         main_configs=["configs/clusters_split_topology.xml"],
         with_zookeeper=True,
-        use_old_analyzer=False,
     )
 ]
 

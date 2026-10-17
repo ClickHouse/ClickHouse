@@ -14,7 +14,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 

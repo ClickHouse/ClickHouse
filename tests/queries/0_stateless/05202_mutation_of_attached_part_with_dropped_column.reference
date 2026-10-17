@@ -1,0 +1,11 @@
+the part type	Compact
+the part still has the dropped column	1
+reads are fine	100
+rows after the delete	99
+the rewrite dropped the column	0
+unfinished mutations	0
+1
+after a second mutation	4946
+the wide part type	Wide
+rows after the delete	99
+the rewrite dropped the column	0

@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+
+/// Instantiated in equals.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(Less)
@@ -79,5 +81,8 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeArrayLexicographic(
         column_type_name1,
         input_rows_count);
 }
+
+/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
+template class FunctionComparison<LessOp, NameLess>;
 
 }

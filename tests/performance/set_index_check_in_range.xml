@@ -1,0 +1,11 @@
+<test>
+    <create_query>
+        CREATE TABLE test_set_index_check_in_range (a UInt32, b UInt32)
+        ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 128
+    </create_query>
+    <fill_query>INSERT INTO test_set_index_check_in_range SELECT number DIV 8, number % 8 FROM numbers(30000000) SETTINGS max_insert_threads = 4</fill_query>
+
+    <query>SELECT count() FROM test_set_index_check_in_range WHERE (a, b) IN (SELECT number * 3739 % 3750000, number % 8 FROM numbers(10000)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_set_index_check_in_range</drop_query>
+</test>

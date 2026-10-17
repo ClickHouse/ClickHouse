@@ -20,7 +20,7 @@ SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND nam
 
 SELECT '-- inserted samples are written to the recent samples table as well';
 
-INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
+INSERT INTO ts_recent (metric_name, tags, samples) VALUES
     ('test_metric', map('env', 'prod'), [(now64(3) - INTERVAL 3 MINUTE, 42.), (now64(3) - INTERVAL 2 MINUTE, 43.)]),
     ('test_metric', map('env', 'dev'), [(now64(3) - INTERVAL 2 MINUTE, 100.)]);
 
@@ -57,7 +57,7 @@ ATTACH TABLE ts_recent;
 SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent, 'test_metric', now())));
 
-INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
+INSERT INTO ts_recent (metric_name, tags, samples) VALUES
     ('test_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 44.)]);
 
 SELECT
@@ -99,7 +99,7 @@ ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
 
 CREATE TABLE ts_recent_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_ext;
 
-INSERT INTO ts_recent_ext (metric_name, tags, time_series) VALUES
+INSERT INTO ts_recent_ext (metric_name, tags, samples) VALUES
     ('ext_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
 
 SELECT count() FROM recent_ext;

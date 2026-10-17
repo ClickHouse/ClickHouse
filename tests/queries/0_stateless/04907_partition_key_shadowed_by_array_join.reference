@@ -1,7 +1,3 @@
--- old analyzer, window partitioned by the exploded column: must not engage even when forced
-1
--- old analyzer, DISTINCT on the exploded column: must not engage even when forced
-1
 -- the analyzer: the exploded column gets a synthetic name and never matches; results stay equal
 1
 1
@@ -19,7 +15,4 @@ Skip scatter by partition: 1
 Read each partition through separate port: 1
 1
 Read each partition through separate port: 1
-1
--- mixed keys, old analyzer: results stay equal
-1
 1

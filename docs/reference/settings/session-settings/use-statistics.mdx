@@ -30,6 +30,23 @@ Allows using statistics to optimize queries
 
 Use statistics cache in a query to avoid the overhead of loading statistics of every parts
 
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}]}]}/>
+
+Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
+
+When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
+is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
+for the data parts that have them materialized, and only the remaining parts are read.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
 ## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -16,9 +16,9 @@
 -- order-9 rotation) would produce different signs and break this equality. The comparison is between two codes produced by
 -- the same binary, so it is robust to per-platform floating-point differences (no absolute byte values are pinned).
 --
--- The codec is gated behind `allow_experimental_codecs`.
+-- The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_1152;
 DROP TABLE IF EXISTS quantize_2048;

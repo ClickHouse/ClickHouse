@@ -123,7 +123,16 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     auto & query = updated_query_ptr->as<ASTCreateQuotaQuery &>();
 
     auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
+
+    /// `CREATE QUOTA OR REPLACE` throws away an existing quota of the same name - including which roles
+    /// it applies to - so it is a drop followed by a create and requires the privileges of both. `DROP
+    /// QUOTA` is required whether or not the quota currently exists, mirroring `REPLACE TABLE`, so that
+    /// the check does not reveal which quotas exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_QUOTA;
+
+    getContext()->checkAccess(required_access);
 
     if (!query.cluster.empty())
     {
@@ -133,7 +142,11 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
+    {
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+        if (access_control.doesForbidSQLAccessEntitiesTargetingUsersConfig())
+            roles_from_query->throwIfTargetingUsersFromUsersConfig(access_control);
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

@@ -16,6 +16,11 @@ struct BitCountImpl
 {
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
     static constexpr bool allow_string_or_fixed_string = true;
+    static constexpr auto signature =
+        "(UInt256 | Int256) -> UInt16"
+        " OR (NativeNumber | UInt128 | Int128) -> UInt8"
+        " OR (FixedString) -> UInt16"
+        " OR (String) -> UInt64";
 
     static ResultType apply(A a)
     {
@@ -88,10 +93,10 @@ REGISTER_FUNCTION(BitCount)
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the number of bits set to one in `x`. [`UInt8`](/reference/data-types/int-uint).
 
-:::note
+<Note>
 The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
 For example: `bitCount(toUInt8(-1)) = 8`.
-:::
+</Note>
 )"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT bin(333), bitCount(333);",
         R"(

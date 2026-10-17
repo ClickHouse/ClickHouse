@@ -11,6 +11,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
     extern const Event AdaptiveAggregationBucketsRetired;
+    extern const Event AdaptiveAggregationStagedChunkSplits;
 }
 
 namespace DB
@@ -21,6 +22,18 @@ StagedChunk::AggregatePayload::AggregatePayload(AggregatePayload &&) noexcept = 
 StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(AggregatePayload &&) noexcept
     = default;
 StagedChunk::AggregatePayload::~AggregatePayload() = default;
+
+size_t StagedChunk::allocatedBytes() const
+{
+    size_t bytes = keys.routing_hashes.allocated_bytes() + keys.key_bytes.allocated_bytes() + keys.key_offsets.allocated_bytes();
+    if (const auto * counts = std::get_if<CountPayload>(&payload))
+        bytes += counts->multiplicities.allocated_bytes();
+    else
+        for (const auto & column : std::get<AggregatePayload>(payload).argument_columns)
+            if (column)
+                bytes += column->allocatedBytes();
+    return bytes;
+}
 
 void Aggregator::prepareStagedChunk(StagedChunk & block) const
 {
@@ -55,6 +68,7 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
     early_drain_variants->key_sizes = key_sizes;
     early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
 
+    shared.drain_type = early_drain_variants->type;
     shared.early_drain_variants = std::move(early_drain_variants);
     shared.initialized.store(true, std::memory_order_release);
 }
@@ -64,6 +78,31 @@ void Aggregator::publishStagedChunk(
 {
     chassert(block->wellFormed());
 
+    /// The drains claim chunks whole, so a chunk is never let into the backlogs larger than
+    /// the part its claim is bounded by (see `splitStagedChunkAtPartBound`).
+    auto pieces = splitStagedChunkAtPartBound(shared, *block);
+    if (pieces.empty())
+    {
+        enqueueStagedChunk(shared, std::move(block));
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedChunkSplits);
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: split a staged chunk of {} records into {} pieces at the part bound",
+        block->keys.size(),
+        pieces.size());
+    block.reset();
+    for (auto & piece : pieces)
+    {
+        chassert(piece->wellFormed());
+        enqueueStagedChunk(shared, std::move(piece));
+    }
+}
+
+void Aggregator::enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
+{
     /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
     /// see it.
     if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
@@ -81,6 +120,7 @@ void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & c
 void AdaptiveAggregationSession::StagedBacklog::registerChunk(const StagedChunkPtr & chunk)
 {
     std::shared_lock registry_lock(registry_mutex);
+    enqueued_bytes.fetch_add(chunk->allocatedBytes(), std::memory_order_relaxed);
     for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
         if (!chunk->keys.recordsForBucket(b))
@@ -118,6 +158,10 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
             if (seen.insert(chunk.get()).second)
                 chunks.push_back(std::move(chunk));
     }
+    size_t claimed_bytes = 0;
+    for (const auto & chunk : chunks)
+        claimed_bytes += chunk->allocatedBytes();
+    enqueued_bytes.fetch_sub(claimed_bytes, std::memory_order_relaxed);
     return chunks;
 }
 
@@ -326,7 +370,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - keys.size());
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
         num_minis,

@@ -1,0 +1,8 @@
+distributed	1
+INNER small probe	500
+LEFT small probe	500
+RIGHT small probe	100000
+INNER small probe remote	500
+LEFT small probe remote	500
+RIGHT small probe remote	100000
+INNER large probe	500

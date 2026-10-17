@@ -172,11 +172,20 @@ class BedrockOpenAIProvider(AIProvider):
         tool_calls = 0
         total_rounds = _MAX_TOOL_ROUNDS + 1
 
+        # Diagnostics from the most recent converse() so an empty write-up can be
+        # explained in the log (e.g. the model ended with only reasoningContent
+        # and no text block, or stopped for max_tokens) rather than being opaque.
+        last = {"stop_reason": "", "blocks": [], "text_len": 0}
+
         def _record(resp):
             u = resp.get("usage") or {}
             totals["input"] += u.get("inputTokens", 0) or 0
             totals["output"] += u.get("outputTokens", 0) or 0
-            return ((resp.get("output") or {}).get("message") or {}).get("content") or []
+            content = ((resp.get("output") or {}).get("message") or {}).get("content") or []
+            last["stop_reason"] = resp.get("stopReason", "") or last["stop_reason"]
+            last["blocks"] = sorted({k for b in content for k in b})
+            last["text_len"] = len(next((b["text"] for b in content if "text" in b), ""))
+            return content
 
         t0 = time.time()
 
@@ -273,10 +282,19 @@ class BedrockOpenAIProvider(AIProvider):
                 tool_calls=tool_calls, tool_rounds=tool_rounds,
                 max_tool_rounds=total_rounds, exhausted=exhausted,
             )
+            # Explain WHY nothing came back: did it burn the round cap or quit
+            # early, and what did the final turn actually contain? A terminating
+            # turn with blocks=['reasoningContent'] and text_len=0 means the model
+            # reasoned but emitted no answer; stop_reason='max_tokens' means it was
+            # cut off mid-write-up.
             print(
                 f"[AI {self.name}] complete: model={model} tool_calls={tool_calls} "
                 f"tool_rounds={tool_rounds}/{total_rounds} "
-                "structured=aborted (no review text produced)"
+                f"structured=aborted (no review text produced): "
+                f"{'hit round cap' if exhausted else 'model ended early'}, "
+                f"final stop_reason={last['stop_reason']!r} "
+                f"final blocks={last['blocks']} final text_len={last['text_len']} "
+                f"interim_chunks={len(interim)}"
             )
             return Turn(
                 reasoning="",

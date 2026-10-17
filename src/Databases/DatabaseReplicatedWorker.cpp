@@ -19,6 +19,8 @@
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
+#include <algorithm>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -54,6 +56,43 @@ namespace FailPoints
     extern const char database_replicated_stop_entry_execution[];
 }
 
+namespace
+{
+UInt32 getLogsToKeepAndRepairKeeper(const LoggerPtr & log,
+    const ZooKeeperPtr & zookeeper,
+    const String & zookeeper_path)
+{
+    static_assert(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP <= std::numeric_limits<UInt32>::max());
+    const auto path = zookeeper_path + "/logs_to_keep";
+    while (true)
+    {
+        Coordination::Stat logs_to_keep_stat;
+        const UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(path, &logs_to_keep_stat));
+        if (keeper_logs_to_keep <= DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
+        {
+            return static_cast<UInt32>(keeper_logs_to_keep);
+        }
+
+        const auto err = zookeeper->trySet(path, std::to_string(DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP), logs_to_keep_stat.version);
+        if (err == Coordination::Error::ZOK)
+        {
+            LOG_WARNING(
+                log,
+                "The `logs_to_keep` node of the Replicated database in Keeper ({}) held {}, which exceeds the maximum of {}, "
+                "so the maximum is used instead and the node was updated to hold the maximum",
+                path,
+                keeper_logs_to_keep,
+                DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
+            return DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP;
+        }
+
+        if (err != Coordination::Error::ZBADVERSION)
+        {
+            throw zkutil::KeeperException::fromPath(err, path);
+        }
+    }
+}
+}
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(
@@ -202,7 +241,8 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// substitute metadata from the recreated database during recovery.
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
-    logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+
+    logs_to_keep = getLogsToKeepAndRepairKeeper(log, zookeeper, database->zookeeper_path);
 
     UInt64 digest = 0;
     String digest_str;
@@ -227,7 +267,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
               our_log_ptr, max_log_ptr, local_digest, digest);
 
     bool is_new_replica = our_log_ptr == 0;
-    bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
+    bool lost_according_to_log_ptr = isBeyondRetention(our_log_ptr, max_log_ptr, logs_to_keep);
     bool lost_according_to_digest = database->db_settings[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
@@ -293,9 +333,9 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->setCluster(database->getClusterImpl());
+        database->updateCluster(false /* all_groups */, true /* force_overwrite */);
         if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+            database->updateCluster(true /* all_groups */, true /* force_overwrite */);
         need_update_cached_cluster = false;
     }
 }
@@ -444,7 +484,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, QueryFlags flags)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -471,6 +511,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     chassert(!task->entry.query.empty());
     chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
+    if (flags.run_as_submitting_user && query_context->getUserID())
+        task->submitting_user_context = query_context;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
@@ -506,7 +548,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper, internal_query);
+    processTask(*task, zookeeper, flags.internal);
 
     if (!task->was_executed)
     {
@@ -539,7 +581,7 @@ static bool getRMVCoordinationInfo(
         return false;
     auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
-    if (!refresh || refresh->append)
+    if (!refresh || refresh->isAppend())
         return false;
     const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
     if (!mv)
@@ -795,11 +837,22 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
     UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
-    return entry_number + logs_to_keep < max_log_ptr;
+    return isBeyondRetention(entry_number, max_log_ptr, logs_to_keep);
+}
+
+bool DatabaseReplicatedDDLWorker::isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep)
+{
+    /// Overflow safe check that `entry_number` entry is far enough from the current head of the log.
+    return (entry_number < max_log_ptr) && (max_log_ptr - entry_number) > logs_to_keep;
 }
 
 bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) const
 {
+    /// Metadata written before the fresh-definition validation existed can carry a Nil view UUID;
+    /// Nil never identifies a table, so treat the parent as missing (mirrors getRMVCoordinationInfo)
+    /// and let the refresh fail cleanly instead of tripping the tryGetByUUID assertion.
+    if (uuid == UUIDHelpers::Nil)
+        return false;
     auto [db, table] = DatabaseCatalog::instance().tryGetByUUID(uuid);
     return db.get() == database && table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
 }

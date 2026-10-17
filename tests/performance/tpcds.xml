@@ -1,6 +1,6 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpcds -->
 <!-- Scale factor: 1 -->
-<test>
+<test run_all_queries="1">
 
 <settings file="../benchmarks/tpc-ds/settings.json"/>
 

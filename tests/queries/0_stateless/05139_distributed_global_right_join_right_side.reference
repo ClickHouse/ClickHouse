@@ -1,0 +1,112 @@
+right_is_local_table_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+right_is_local_table_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+right_is_one_shard_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+right_is_one_shard_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+right_is_subquery_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
+right_is_subquery_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
+right_is_table_function_initiator
+k1	v1	n
+1	a	1
+1	a	1
+2	b	2
+2	b	2
+4	d	4
+4	d	4
+\N	\N	0
+\N	\N	3
+right_is_table_function_global
+k1	v1	n
+1	a	1
+1	a	1
+2	b	2
+2	b	2
+4	d	4
+4	d	4
+\N	\N	0
+\N	\N	3
+any_initiator
+k2	v2
+1	A
+2	B
+3	C
+any_global
+k2	v2
+1	A
+2	B
+3	C
+semi_initiator
+k2	v2
+1	A
+2	B
+semi_global
+k2	v2
+1	A
+2	B
+anti_initiator
+k2	v2
+3	C
+anti_global
+k2	v2
+3	C
+left_is_one_shard_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
+left_is_one_shard_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
