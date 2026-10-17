@@ -95,6 +95,23 @@ static void checkThriftEnum(const E & e, const std::map<int, const char *> & val
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
 }
 
+/// These enums are closed, so an out-of-range value can only be corruption. Must run before the
+/// metadata is copied or moved: the generated copy and move constructors load every enum field.
+static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
+{
+    for (const parq::SchemaElement & element : file_metadata.schema)
+    {
+        auto check = [&](const auto & value, const std::map<int, const char *> & valid_values, std::string_view what)
+        {
+            if (!isValidThriftEnum(value, valid_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} {} of Parquet column {}", what, thriftEnumToInt(value), element.name);
+        };
+        check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
+        check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
+        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+    }
+}
+
 static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
 {
     if (compressed_size > INT32_MAX || uncompressed_size > INT32_MAX)
@@ -277,6 +294,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
 
     parq::FileMetaData file_metadata = {};
     deserializeThriftStruct(file_metadata, buf.data() + buf_offset, metadata_size);
+    checkSchemaElementEnums(file_metadata);
 
     /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
     /// page at offset 0 in the file. Work around it.
