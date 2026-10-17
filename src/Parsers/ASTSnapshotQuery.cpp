@@ -1,4 +1,5 @@
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
 
 #include <Common/quoteString.h>
@@ -98,6 +99,6 @@ void ASTSnapshotQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
     formatElement(element, ostr, fs);
 
     ostr << " TO ";
-    snapshot_destination->format(ostr, fs);
+    formatBackupOrSnapshotLocator(*snapshot_destination, ostr, fs);
 }
 }

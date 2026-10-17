@@ -36,7 +36,7 @@ struct SecretArgumentsSpec
     /// Shapes the fields cannot express (the signature depends on the arity or on the value of another argument).
     /// Runs after the fields, in the translation unit of the engine's argument parser.
     std::function<void(FunctionSecretArgumentsFinder &)> custom = {};
-    /// `custom` reads interleaved named and positional arguments itself (`bigquery`), so the generic rules are
+    /// `custom` reads interleaved named and positional arguments itself (`bigquery`, the `S3` forms), so the generic rules are
     /// not applied: a positional after a named argument and the value of a key that is not a literal are hidden.
     bool custom_reads_named_arguments = false;
 

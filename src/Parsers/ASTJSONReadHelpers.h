@@ -163,6 +163,10 @@ public:
     /// `function_name` is either `CODEC` or `STATISTICS`. Returns nullptr when the key is absent.
     ASTPtr readSpecialFunctionChild(const char * key, const char * function_name) const;
 
+    /// Read a backup or snapshot locator: an `ASTFunction` given the `BACKUP_NAME` kind the parser sets, which
+    /// secret masking dispatches on, whatever kind the client sent. Returns nullptr when the key is absent.
+    ASTPtr readBackupLocatorChild(const char * key) const;
+
     /// Read a child AST node filling a parser-produced *expression* slot, and reject an `ASTFunction`
     /// without an `arguments` list anywhere under its `children`: a consumer of an unanalyzed expression
     /// dereferences that list unconditionally, while `ASTFunction::readJSON` cannot require the member,

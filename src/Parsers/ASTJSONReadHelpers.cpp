@@ -79,6 +79,14 @@ ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char *
     return child;
 }
 
+ASTPtr JSONObjectReader::readBackupLocatorChild(const char * key) const
+{
+    ASTPtr child = readChildOfType<ASTFunction>(key);
+    if (child)
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
+    return child;
+}
+
 namespace
 {
 
