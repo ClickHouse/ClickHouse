@@ -28,6 +28,7 @@
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
+#include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -98,6 +99,12 @@ namespace
     bool isSystemFunctionsTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
+    }
+
+    /// Whether a specified name corresponds to the table backuping named collections.
+    bool isSystemNamedCollectionsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
     }
 
     /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
@@ -181,8 +188,23 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::CREATING_DATABASES);
     createAndCheckDatabases();
 
+    /// Restore named collections before any table is created: table engines resolve named
+    /// collections inside CREATE. This runs inside the existing CREATING_DATABASES stage rather
+    /// than in a stage of its own, because stage names are synchronised across hosts through the
+    /// coordination, and a new stage would require every host to be on a version that knows it.
+    restoreNamedCollections();
+
     /// Create tables using the create queries read from the backup.
     setStage(Stage::CREATING_TABLES);
+
+    /// With a replicated named-collections storage only one host has written the restored
+    /// collections (see restoreNamedCollections above); the other hosts observe the write through
+    /// an asynchronous Keeper watch. The stage barrier above guarantees the writer has finished,
+    /// so make the collections visible on this host synchronously before a table CREATE resolves
+    /// one of them.
+    if (named_collections_restored)
+        reloadNamedCollectionsAfterRestore();
+
     removeUnresolvedDependencies();
     createAndCheckTables();
 
@@ -349,6 +371,16 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemNamedCollectionsTableName(table_name))
+                {
+                    /// CREATE_NAMED_COLLECTION privilege is required to restore the "system.named_collections" table.
+                    if (table_info.has_data && restore_settings.shouldRestoreNamedCollections())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_NAMED_COLLECTION);
+                        if (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_NAMED_COLLECTION);
+                    }
                 }
                 else if (isSystemWorkloadsTableName(table_name))
                 {
@@ -704,6 +736,31 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
+void RestorerFromBackup::restoreNamedCollections()
+{
+    if (!restore_settings.shouldRestoreNamedCollections())
+        return;
+
+    String data_path_in_backup;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & [table_name, table_info] : table_infos)
+        {
+            if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
+            {
+                data_path_in_backup = table_info.data_path_in_backup;
+                break;
+            }
+        }
+    }
+
+    if (data_path_in_backup.empty())
+        return;
+
+    named_collections_restored = true;
+    DB::restoreNamedCollections(*this, data_path_in_backup);
+}
+
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
 {
     constexpr auto setting_name = "storage_policy";
@@ -1033,6 +1090,12 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     {
         if (!restore_settings.shouldRestoreFunctions())
             return;
+    }
+    else if (isSystemNamedCollectionsTableName(table_name))
+    {
+        /// Named collections were already restored before the tables were created, during the
+        /// CREATING_DATABASES stage (see restoreNamedCollections), don't restore them twice.
+        return;
     }
     else if (!restore_settings.shouldRestoreTableData())
     {

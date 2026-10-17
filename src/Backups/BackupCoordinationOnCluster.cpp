@@ -631,6 +631,9 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
             case UserDefinedSQLObjectType::Function:
                 path += "functions";
                 break;
+            case UserDefinedSQLObjectType::NamedCollection:
+                path += "named_collections";
+                break;
         }
 
         zk->createIfNotExists(path, "");
@@ -672,6 +675,16 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
                 for (const String & host_id : zk->getChildren(functions_path))
                 {
                     String dir = zk->get(functions_path + "/" + host_id);
+                    directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
+                }
+            }
+
+            if (String named_collections_path = objects_path + "/named_collections"; zk->exists(named_collections_path))
+            {
+                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::NamedCollection;
+                for (const String & host_id : zk->getChildren(named_collections_path))
+                {
+                    String dir = zk->get(named_collections_path + "/" + host_id);
                     directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
                 }
             }

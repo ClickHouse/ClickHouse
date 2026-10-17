@@ -79,12 +79,20 @@ private:
     Mode mode = Mode::RESTORE;
     Strings all_hosts;
 
+    /// Whether restoreNamedCollections found named collections to restore in the backup.
+    bool named_collections_restored = false;
+
     void findDatabasesAndTablesInBackup();
 
     void logNumberOfDatabasesAndTablesToRestore() const;
 
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
+
+    /// Restores named collections from the backup (if the backup has the "system.named_collections"
+    /// table) before any table is created, because table engines resolve named collections inside
+    /// CREATE. Runs inside the CREATING_DATABASES stage.
+    void restoreNamedCollections();
 
     void createAndCheckDatabases();
     void createAndCheckDatabase(const String & database_name);
