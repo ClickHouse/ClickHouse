@@ -66,6 +66,21 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
     }
 }
 
+ASTPtr ASTSelectIntersectExceptQuery::getTrailingSettings(const ASTPtr & last_operand)
+{
+    ASTPtr operand = last_operand;
+    while (const auto * intersect_except = operand ? operand->as<ASTSelectIntersectExceptQuery>() : nullptr)
+    {
+        if (intersect_except->children.empty())
+            return nullptr;
+        operand = intersect_except->children.back();
+    }
+
+    if (const auto * select = operand ? operand->as<ASTSelectQuery>() : nullptr)
+        return select->settings();
+    return nullptr;
+}
+
 ASTs ASTSelectIntersectExceptQuery::getListOfSelects() const
 {
     /**
