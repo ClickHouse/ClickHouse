@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray_fwd.h>
 
@@ -24,6 +26,11 @@ struct ConstantFilterDescription
     ConstantFilterDescription() = default;
     explicit ConstantFilterDescription(const IColumn & column);
 };
+
+/// If the filter is a `LowCardinality(UInt8)` or `LowCardinality(Nullable(UInt8))` column and all its rows
+/// are either true or false, returns that value without materializing the full column.
+/// Returns `std::nullopt` for any other column, for an empty column, and when the rows are mixed.
+std::optional<bool> tryGetConstantTruthOfLowCardinalityFilter(const IColumn & column);
 
 struct IFilterDescription
 {

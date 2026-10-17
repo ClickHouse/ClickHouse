@@ -348,6 +348,15 @@ void FilterTransform::doTransform(Chunk & chunk)
     ColumnPtr filter_column = columns[filter_column_position];
     ConstantFilterDescription constant_filter_description(*filter_column);
 
+    /// A `LowCardinality` filter, e.g. `x IN (...)` or `x = 'a'` over a `LowCardinality` column,
+    /// is not a `ColumnConst` even when every row has the same value. Detect that case
+    /// without converting the filter to a full column.
+    if (!constant_filter_description.always_true && !constant_filter_description.always_false && !on_totals && !isVirtualRow(chunk))
+    {
+        if (auto constant_truth = tryGetConstantTruthOfLowCardinalityFilter(*filter_column))
+            (*constant_truth ? constant_filter_description.always_true : constant_filter_description.always_false) = true;
+    }
+
     if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
