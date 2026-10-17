@@ -1,0 +1,36 @@
+-- UDF with alias
+scope.app	scope.endpoint
+web-api	/pay
+-- same expression without UDF
+scope.app	scope.endpoint
+web-api	/pay
+-- nested UDF with alias
+scope.app	scope.endpoint
+web-api	/pay
+-- WITH lambda with alias
+scope.app	scope.endpoint
+web-api	/pay
+-- result columns are addressable by the aliased names
+scope.app	scope.endpoint
+web-api	/pay
+-- alias on a column, UDF over a table
+scope.app	scope.endpoint
+cli	/login
+web-api	/pay
+-- untuple nested inside the body keeps its own naming
+t
+('web-api','/pay')
+-- alias inside the UDF body is used when the call has none
+innerscope.app	innerscope.endpoint
+web-api	/pay
+-- alias of the call takes priority over the alias inside the body
+scope.app	scope.endpoint
+web-api	/pay
+-- the outermost alias wins across nested UDFs
+midscope.app	midscope.endpoint
+web-api	/pay
+scope.app	scope.endpoint
+web-api	/pay
+-- matcher body ignores the alias
+a	b
+1	2
