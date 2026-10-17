@@ -23,6 +23,7 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -30,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -58,10 +60,17 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool partial_result_on_first_cancel;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
 }
 
 namespace
@@ -612,7 +621,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
 
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
-    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
+    /// Replace distinctJSONPaths(json) to arraySort(groupUniqArrayArray(json.__special_subcolumn_name_for_distinct_paths_calculation))
     NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
 
     if (sourceHasColumn(ctx.column_source, column.name)
@@ -620,16 +629,12 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
         return;
 
     auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
-    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
-    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
-    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
-
-    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
-    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
-    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
+    auto function_group_uniq_array_node = std::make_shared<FunctionNode>("groupUniqArrayArray");
+    function_group_uniq_array_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveAggregateFunctionNodeByName(*function_group_uniq_array_node, "groupUniqArrayArray");
 
     auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
-    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_uniq_array_node));
     resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
 
     node = std::move(function_array_sort_node);
@@ -1230,10 +1235,56 @@ std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chaine
     },
 };
 
-bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
+/// The special subcolumn holds all paths of a read in its first row, so the rewrite is valid only
+/// when every row of one table reaches one aggregation unfiltered.
+bool canOptimizeDistinctJSONPaths(
+    const std::vector<QueryTreeNodePtr> & query_nodes,
+    const FunctionNode & function_node,
+    const QueryTreeNodePtr & column_source,
+    const ContextPtr & context)
 {
-    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
-    return function_name != "distinctJSONPaths";
+    if (query_nodes.empty() || !function_node.isAggregateFunction())
+        return false;
+
+    const auto & query_node = query_nodes.back();
+    const auto & query = query_node->as<const QueryNode &>();
+    if (query.hasWhere() || query.hasPrewhere() || query.hasGroupBy() || query.getJoinTreeNode().get() != column_source.get())
+        return false;
+
+    if (const auto * table_node = column_source->as<TableNode>(); table_node && table_node->hasTableExpressionModifiers())
+        return false;
+    if (const auto * table_function_node = column_source->as<TableFunctionNode>();
+        table_function_node && table_function_node->hasTableExpressionModifiers())
+        return false;
+
+    auto storage = getStorageForColumnSource(column_source);
+    if (!storage || !isLocalPhysicalTable(*storage) || getEffectiveRowPolicyFilter(*storage, context))
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::additional_table_filters].value.empty())
+        return false;
+
+    if (context->canUseParallelReplicasCustomKey() || settings[Setting::parallel_replicas_count] > 1)
+        return false;
+
+    /// The read limits of the enclosing queries apply to this read too.
+    for (const auto & node : query_nodes)
+    {
+        const auto & level_settings = node->as<const QueryNode &>().getContext()->getSettingsRef();
+        if (level_settings[Setting::read_overflow_mode] == OverflowMode::BREAK
+            || level_settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK
+            || level_settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK
+            || level_settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
+            || level_settings[Setting::partial_result_on_first_cancel])
+            return false;
+    }
+
+    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node))
+        if (hasArrayJoinFunctionNode(aggregate_function_node))
+            return false;
+
+    return true;
 }
 
 /// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
@@ -1464,7 +1515,7 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
-            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
+            query_nodes.push_back(node);
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
@@ -1486,6 +1537,7 @@ public:
 
         if (node->as<QueryNode>())
         {
+            query_nodes.pop_back();
             in_where_prewhere_stack.pop_back();
             correlated_columns.leave();
         }
@@ -1584,13 +1636,13 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
+    std::vector<QueryTreeNodePtr> query_nodes;
 
     CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
     SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
-    bool has_where_prewhere_or_group_by = false;
 
     /// Intermediate function nodes of already-matched chained patterns.
     /// Prevents double-counting in multi-level chains like
@@ -1644,7 +1696,8 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
-        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+        if (function_node.getFunctionName() == "distinctJSONPaths"
+            && !canOptimizeDistinctJSONPaths(query_nodes, function_node, column_source, getContext()))
             return;
 
         /// The column belongs to an outer query, and the subquery reading it lists it among its
@@ -1676,9 +1729,6 @@ private:
 
         const auto & column = first_argument_column_node.getColumn();
         auto qualified_name = makeColumnInSource(column_source, column.name);
-
-        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
-            return;
 
         /// The same reasoning as for a direct match: a chained rewrite of a correlated column, such as
         /// `json.a[1].b` into a subcolumn of `json.a`, would leave the subquery's list of correlated
