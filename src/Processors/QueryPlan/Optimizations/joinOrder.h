@@ -40,6 +40,9 @@ struct DPJoinEntry
     /// NDV-based selectivity of the join predicates, see `SelectivityEstimate::reported_value`; reported by `EXPLAIN` as `estimated (NDV)`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
+    /// Sound upper bound on the row count, set where no point estimate could be derived.
+    /// Unset means "no bound known"; a set value is always >= the true row count.
+    std::optional<UInt64> estimated_rows_upper = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// For join nodes
@@ -50,7 +53,10 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id,
+                std::optional<UInt64> rows,
+                std::unordered_map<String, ColumnStats> column_stats_ = {},
+                std::optional<UInt64> rows_upper = {});
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,

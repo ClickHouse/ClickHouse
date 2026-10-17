@@ -65,6 +65,8 @@ struct RelationEstimateInfo
     std::optional<UInt64> estimated_rows = {};
     RowEstimateSource source = RowEstimateSource::NoSource;
     bool imprecise_estimate = false;
+    /// `estimated_rows` is known to be <= the true row count. False unless proven.
+    bool estimated_rows_is_lower_bound = false;
     /// A relation composed of sub-joins is rendered as the chain only, without its own estimate.
     bool composite = false;
 
