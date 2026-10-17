@@ -175,7 +175,8 @@ void AppendFileFingerprint(std::string const& path, std::string& result) {
 // Identifies the current contents of the trust store an SSL context loads: the
 // explicit CA bundle (file or directory) when one is configured, otherwise the
 // OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`, where
-// the latter may be a `:`-separated list of directories). Each path contributes
+// the latter may be a `:`-separated list of directories) together with the
+// fallback locations `Poco::Net::Context` probes when those yield nothing. Each path contributes
 // its device, inode, size and modification time, so replacing a bundle in place,
 // or atomically through a rename, yields a different value. A directory
 // contributes every entry in it as well: OpenSSL loads the certificates of a
@@ -200,6 +201,13 @@ std::string ComputeTrustStoreFingerprint(std::string const& ca_location) {
           begin, end == std::string::npos ? std::string::npos : end - begin));
       if (end == std::string::npos) break;
       begin = end + 1;
+    }
+    // When the default locations are missing or contain no certificates, the
+    // context probes well-known locations and loads the first usable one, so
+    // those are fingerprinted too. A probed store that appears, disappears or
+    // changes then refreshes the context, including when another one is selected.
+    for (auto const& probe : Poco::Net::Context::defaultCAProbeLocations()) {
+      paths.push_back(probe);
     }
   }
   std::string result;
