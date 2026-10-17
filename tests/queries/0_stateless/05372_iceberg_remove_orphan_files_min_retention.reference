@@ -1,0 +1,10 @@
+explicit older_than 1 hour ago: refused
+positional older_than 1 hour ago, dry_run: refused
+default older_than from a 1 hour setting: refused
+default older_than from a 1 hour setting, compatibility 26.9: accepted
+min retention 2 hours: refused
+min retention 30 minutes: accepted
+min retention disabled: accepted
+older_than in 2000: accepted
+default older_than: accepted
+1
