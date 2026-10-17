@@ -107,6 +107,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// `include` could still resolve to a GCS backend.
     bool has_concrete_non_gcs_type = false;
     bool has_explicit_non_gcs_object_storage_type = false;
+    /// `ObjectStorageFactory::create` selects the backend by `object_storage_type` whenever it is present and
+    /// falls back to `type` only without it, for every disk type that uses the shared object storage creator.
+    bool has_object_storage_type = false;
     /// Native GCS credential fields the AST supplied as literal values (vouched for by the SQL definition
     /// itself); their values are reported through `info` for the post-`include` re-check.
     bool has_gcs_service_account_key = false;
@@ -214,6 +217,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             }
             else /// object_storage_type
             {
+                has_object_storage_type = true;
                 if (!indirect && !is_s3_value)
                     has_explicit_non_s3_object_storage_type = true;
                 if (!indirect && value_str == "gcs")
@@ -297,9 +301,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// treated conservatively as potentially GCS, the same way `maybe_s3_disk` below treats indirect types and
     /// `include`. The `service_account_key_file` value is likewise rejected whether it is a literal path or an
     /// indirect one, since an indirect value still resolves to a server-side path the backend opens.
-    const bool is_gcs_disk = is_gcs_disk_via_type || (type_is_object_storage && is_gcs_disk_via_object_storage_type);
-    const bool type_explicitly_non_gcs
-        = has_concrete_non_gcs_type || (type_is_object_storage && has_explicit_non_gcs_object_storage_type);
+    /// The backend is classified with the precedence of `ObjectStorageFactory::create`: a literal
+    /// `object_storage_type = gcs` selects native GCS under any `type` (`local_blob_storage`, `s3`, ...), and
+    /// `type` decides only when `object_storage_type` is absent. A literal `type = gcs` is still counted as GCS
+    /// next to a non-GCS `object_storage_type`, which only makes the checks below stricter.
+    const bool is_gcs_disk = is_gcs_disk_via_type || is_gcs_disk_via_object_storage_type;
+    const bool type_explicitly_non_gcs = has_object_storage_type
+        ? has_explicit_non_gcs_object_storage_type && !is_gcs_disk_via_type
+        : has_concrete_non_gcs_type;
     const bool maybe_gcs_disk = is_gcs_disk || type_is_indirect || (has_include && !type_explicitly_non_gcs);
     if (maybe_gcs_disk && has_service_account_key_file && !for_system_database)
         throw Exception(
@@ -721,17 +730,21 @@ void validateResolvedGCSDiskCredentials(
                 "The native GCS object storage backend is experimental. Set `use_native_gcs = 1` to use "
                 "`object_storage_type = gcs` in a dynamic disk");
 
-        if (!info.has_include || info.for_system_database)
+        if (info.for_system_database)
             continue;
 
         /// `service_account_key_file` makes the server open a local file path; the pre-resolution check rejects
-        /// it even as a literal, so a resolved value is rejected regardless of its provenance.
+        /// it even as a literal, so a resolved value is rejected regardless of its provenance. This runs for a
+        /// definition without an `include` too, as a second line of defence behind the AST classification.
         if (!config.getString(key("service_account_key_file"), "").empty())
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
-                "A dynamic GCS disk created from user SQL may not use `service_account_key_file` (here resolved "
-                "via `include`), which would make the server read an arbitrary local file path. Configure "
-                "`service_account_key_file` on a server-managed disk in the server configuration instead.");
+                "A dynamic GCS disk created from user SQL may not use `service_account_key_file`, which would make "
+                "the server read an arbitrary local file path. Configure `service_account_key_file` on a "
+                "server-managed disk in the server configuration instead.");
+
+        if (!info.has_include)
+            continue;
 
         /// The other credential fields are allowed only when the SQL definition itself supplied them as literal
         /// values on the disk root; a value resolved from the `include` -- including any credential field on an

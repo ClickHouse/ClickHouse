@@ -31,6 +31,20 @@ $CLICKHOUSE_CLIENT -m -q "
         service_account_key_file = '/etc/passwd'); -- { serverError ACCESS_DENIED }
 "
 
+# `ObjectStorageFactory` selects the backend by `object_storage_type` whenever it is present, under any disk
+# type that uses the shared object storage creator, so these aliases with `object_storage_type = gcs` are
+# native GCS disks as well and must be rejected the same way.
+$CLICKHOUSE_CLIENT --use_native_gcs=1 -m -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_lbs', type = local_blob_storage, object_storage_type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_lbs/',
+        service_account_key_file = '/etc/passwd'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_s3t', type = s3, object_storage_type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_s3t/',
+        service_account_key_file = '/etc/passwd'); -- { serverError ACCESS_DENIED }
+"
+
 # The rejection must not be bypassable with an indirect value. `service_account_key_file = from_env ...` /
 # `from_zk ...` still resolves to a server-side path the backend opens, so with `dynamic_disk_allow_from_env`
 # / `dynamic_disk_allow_from_zk` enabled the field must still be refused (the check fires on the AST, before
