@@ -1,0 +1,20 @@
+<clickhouse>
+    <users>
+        <default remove="remove">
+        </default>
+        <admin>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </admin>
+        <!-- Local `janedoe` exists in `users.xml`, and a remote `janedoe` exists in
+             the LDAP fixture. The test asserts EXECUTE AS picks the local one. The
+             local user is granted `local_only_role` defined at runtime, which is the
+             property the precedence-preservation test verifies. -->
+        <janedoe>
+            <password>local_password</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+        </janedoe>
+    </users>
+</clickhouse>
