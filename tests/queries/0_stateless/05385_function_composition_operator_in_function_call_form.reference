@@ -1,0 +1,4 @@
+CREATE TABLE t\n(\n    `x` UInt64 CODEC(ZSTD(a | b))\n)\nENGINE = Memory
+CREATE TABLE t\n(\n    `x` Array(UInt64) DEFAULT arrayMap(plus(_, 1) | multiply(_, 2), [1])\n)\nENGINE = Memory
+CREATE TABLE t (`x` UInt64 STATISTICS(tdigest(a | b))) ENGINE = Memory
+ALTER TABLE t (MODIFY COLUMN `x` UInt64 CODEC(ZSTD((a | b) | c, a | (b | c))))
