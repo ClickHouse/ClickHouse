@@ -26,6 +26,7 @@
 #include <IO/copyData.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
@@ -79,6 +80,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -739,6 +741,55 @@ namespace
             forEachInTypeTree(*column.type, callback);
         }
     }
+
+    /// Every stream is stored in its own file named as in `StorageLog::addDataFiles`. The array sizes
+    /// shared by a Nested group are a single stream after `Nested::collect`.
+    std::optional<String> findStreamFileNameCollision(const ColumnsDescription & columns)
+    {
+        auto physical_columns = columns.getAllPhysical();
+        auto columns_to_check = Nested::collect(physical_columns);
+
+        /// `Nested::collect` drops a non-flattened Nested whose name prefix is a flattened Nested group,
+        /// but its streams are still stored.
+        auto collected_names = columns_to_check.getNameSet();
+        for (const auto & column : physical_columns)
+            if (isNested(column.type) && !collected_names.contains(column.name))
+                columns_to_check.push_back(column);
+
+        std::unordered_map<String, NameAndTypePair> file_name_to_column;
+
+        for (const auto & column : columns_to_check)
+        {
+            std::vector<String> column_file_names;
+            std::unordered_set<String> column_file_names_set;
+            std::optional<String> collision;
+
+            auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                String file_name = ISerialization::getFileNameForStream(column, substream_path, {});
+                if (column_file_names_set.insert(file_name).second)
+                    column_file_names.push_back(file_name);
+                else if (!collision)
+                    collision = file_name;
+            };
+            column.type->getDefaultSerialization()->enumerateStreams(callback);
+
+            if (collision)
+                return fmt::format(
+                    "Column '{} {}' has two streams with collision in file name {}", column.name, column.type->getName(), *collision);
+
+            for (const auto & file_name : column_file_names)
+            {
+                auto [it, inserted] = file_name_to_column.emplace(file_name, column);
+                if (!inserted)
+                    return fmt::format(
+                        "Columns '{} {}' and '{} {}' have streams with collision in file name {}",
+                        column.name, column.type->getName(), it->second.name, it->second.type->getName(), file_name);
+            }
+        }
+
+        return {};
+    }
 }
 
 
@@ -765,6 +816,15 @@ StorageLog::StorageLog(
     , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
     checkSupportedDataTypes(columns_, getName());
+
+    if (auto collision = findStreamFileNameCollision(columns_))
+    {
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *collision);
+        LOG_ERROR(getLogger("StorageLog"), "Table {} definition is incorrect. {}. It may lead to corruption of data or crashes. "
+            "You need to resolve it manually", table_id_.getNameForLogs(), *collision);
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
