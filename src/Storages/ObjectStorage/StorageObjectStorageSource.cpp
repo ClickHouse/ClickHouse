@@ -1858,6 +1858,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
+    /// A read through a cache does not report the S3 version it read, and the queue acts on that version.
+    if (object_info.require_read_pinned_to_generation && object_storage->getType() == ObjectStorageType::S3)
+    {
+        use_distributed_cache = false;
+        use_filesystem_cache = false;
+        use_page_cache = false;
+    }
+
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch

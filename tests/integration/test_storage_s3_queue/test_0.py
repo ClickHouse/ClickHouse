@@ -71,6 +71,7 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
                 "configs/disable_insertion.xml",
+                "configs/filesystem_cache.xml",
             ],
             stay_alive=True,
         )
@@ -1680,6 +1681,69 @@ def test_delete_takes_the_version_a_random_access_read_saw(started_cluster):
     wait_until(lambda: source_versions() == {reuploaded})
     assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
     assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 200000
+
+
+def test_delete_takes_the_version_a_cached_read_saw(started_cluster):
+    """A read through the filesystem cache does not report the S3 version. The delete must still
+    remove only the version that was read, so a same-byte re-upload after the read stays the object."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"delete_cached_read_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    data = b"1,2,3\n"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    client.put_object(Bucket=bucket, Key=source_key, Body=data)
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="delete",
+        bucket=bucket,
+        additional_settings={"commit_on_select": 1},
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        select = pool.submit(
+            node.query,
+            f"SELECT * FROM {table_name} "
+            "SETTINGS filesystem_cache_name = 's3queue_cache', enable_filesystem_cache = 1",
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The rows are read through the cache; the same bytes are uploaded again before the delete.
+        reuploaded = client.put_object(Bucket=bucket, Key=source_key, Body=data)[
+            "VersionId"
+        ]
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    assert select.result(timeout=60) == "1\t2\t3\n"
+    pool.shutdown()
+
+    # Only the version that was read is deleted; no delete marker hides the newer one.
+    wait_until(lambda: source_versions() == {reuploaded})
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
 
 
 @pytest.mark.parametrize("after_processing", ["move", "delete"])

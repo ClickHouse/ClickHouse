@@ -236,11 +236,12 @@ void ObjectStorageQueuePostProcessor::process(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
                 /// Two generations of one key can share an `ETag`, so on a versioned bucket only the version
-                /// (reported by `HEAD`, never by a listing) names the ingested generation.
-                if (type == ObjectStorageType::S3 && deleteVersionedS3Objects(objects, successful_objects))
-                    return;
+                /// (reported by the read, never by a listing) names the ingested generation.
+                const StoredObjects unversioned
+                    = type == ObjectStorageType::S3 ? deleteVersionedS3Objects(objects, successful_objects) : objects;
                 /// Deletes every object it can before reporting one that changed.
-                object_storage->removeObjectsIfExist(objects, &successful_objects);
+                if (!unversioned.empty())
+                    object_storage->removeObjectsIfExist(unversioned, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
@@ -648,32 +649,30 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     changed_generation.rethrowIfAny();
 }
 
-bool ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
+StoredObjects ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
     const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AWS_S3
     auto * s3_storage = dynamic_cast<S3ObjectStorage *>(object_storage.get());
     if (!s3_storage)
-        return false;
+        return objects;
 
     /// Delete the exact ingested version of each object directly without re-resolving the key.
-    /// If any object has no version_id, fall back to non-versioned batch delete.
+    StoredObjects unversioned;
     for (const auto & object : objects)
     {
         if (object.version_id.empty())
-            return false;
-    }
-
-    for (const auto & object : objects)
-    {
+        {
+            unversioned.push_back(object);
+            continue;
+        }
         s3_storage->removeObjectVersionIfExists(object, object.version_id);
         successful_objects.push_back(object);
     }
-    return true;
+    return unversioned;
 #else
-    (void)objects;
     (void)successful_objects;
-    return false;
+    return objects;
 #endif
 }
 

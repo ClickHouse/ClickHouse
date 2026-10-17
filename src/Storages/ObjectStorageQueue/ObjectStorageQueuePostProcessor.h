@@ -98,11 +98,10 @@ private:
     /// Move processed objects to another prefix. Each of the three rethrows the first
     /// `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ` once the whole batch is handled (see `process`).
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
-    /// Move processed S3 objects, possibly to another S3 storage
-    /// Deletes by the `HEAD` version after checking it is the ingested generation; false (unversioned bucket) leaves it to the `ETag`
-    /// delete.
-    bool deleteVersionedS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    /// Deletes each object that has a read version by that version and returns the others, left to the `ETag` delete.
+    StoredObjects deleteVersionedS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
 
+    /// Move processed S3 objects, possibly to another S3 storage
     void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
     void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;
