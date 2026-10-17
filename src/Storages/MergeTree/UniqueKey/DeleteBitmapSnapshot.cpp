@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -42,13 +42,13 @@ MarkRanges selectLiveMarkRanges(const MarkRanges & ranges, const MergeTreeIndexG
 
 }
 
-ReadSnapshot::ReadSnapshot(
+DeleteBitmapSnapshot::DeleteBitmapSnapshot(
     const DeleteBitmapStore & store_, CSN csn_, TransactionID tid_, std::shared_ptr<const MergeTreeTransactionHolder> pin_)
     : store(store_), csn(csn_), tid(tid_), pin(std::move(pin_))
 {
 }
 
-ConstDeleteBitmapPtr ReadSnapshot::bitmapAt(const MergeTreePartInfo & part) const
+ConstDeleteBitmapPtr DeleteBitmapSnapshot::bitmapAt(const MergeTreePartInfo & part) const
 {
     {
         std::lock_guard lock(memo_mutex);
@@ -63,12 +63,12 @@ ConstDeleteBitmapPtr ReadSnapshot::bitmapAt(const MergeTreePartInfo & part) cons
     return memo.try_emplace(part, std::move(bitmap)).first->second;
 }
 
-size_t ReadSnapshot::liveRows(const IMergeTreeDataPart & part) const
+size_t DeleteBitmapSnapshot::liveRows(const IMergeTreeDataPart & part) const
 {
     return part.rows_count - bitmapAt(part.info)->cardinality();
 }
 
-void ReadSnapshot::dropFullyDeadGranules(RangesInDataParts & parts) const
+void DeleteBitmapSnapshot::dropFullyDeadGranules(RangesInDataParts & parts) const
 {
     size_t granules_skipped = 0;
     for (auto & part : parts)
@@ -89,7 +89,7 @@ void ReadSnapshot::dropFullyDeadGranules(RangesInDataParts & parts) const
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapGranulesSkipped, granules_skipped);
 }
 
-const ReadSnapshot * tryGetUniqueKeyReadSnapshot(const StorageSnapshot & storage_snapshot)
+const DeleteBitmapSnapshot * tryGetDeleteBitmapSnapshot(const StorageSnapshot & storage_snapshot)
 {
     const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot.data.get());
     if (!snapshot_data)

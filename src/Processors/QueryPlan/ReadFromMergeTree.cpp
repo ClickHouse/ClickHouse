@@ -2826,7 +2826,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         /*check_row_limits=*/true);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
-    if (const auto * uk_read_snapshot = tryGetUniqueKeyReadSnapshot(*storage_snapshot))
+    if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
         uk_read_snapshot->dropFullyDeadGranules(analyzed_result_ptr->parts_with_ranges);
 
     return analyzed_result_ptr;
@@ -4804,7 +4804,7 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     /// The lazy step re-reads by offset only rows this step already filtered, so it needs no bitmap.
     StorageSnapshotPtr lazy_storage_snapshot = storage_snapshot;
-    if (tryGetUniqueKeyReadSnapshot(*storage_snapshot))
+    if (tryGetDeleteBitmapSnapshot(*storage_snapshot))
     {
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
         auto lazy_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();

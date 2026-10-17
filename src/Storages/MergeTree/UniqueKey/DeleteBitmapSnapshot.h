@@ -19,10 +19,10 @@ struct StorageSnapshot;
 /// What a read needs to resolve any part's delete bitmap: the reading transaction's snapshot
 /// csn, the table's bitmap store, and the pin that keeps the GC off the versions that snapshot
 /// can still resolve.
-class ReadSnapshot
+class DeleteBitmapSnapshot
 {
 public:
-    ReadSnapshot(
+    DeleteBitmapSnapshot(
         const DeleteBitmapStore & store_,
         CSN csn_,
         TransactionID tid_ = Tx::EmptyTID,
@@ -56,10 +56,10 @@ private:
     mutable std::unordered_map<MergeTreePartInfo, ConstDeleteBitmapPtr> memo TSA_GUARDED_BY(memo_mutex);
 };
 
-using ReadSnapshotPtr = std::shared_ptr<const ReadSnapshot>;
+using DeleteBitmapSnapshotPtr = std::shared_ptr<const DeleteBitmapSnapshot>;
 
-/// The read snapshot a MergeTree storage snapshot carries; null for a table without a unique key
+/// The delete-bitmap snapshot a MergeTree storage snapshot carries; null for a table without a unique key
 /// and for a snapshot built without data.
-const ReadSnapshot * tryGetUniqueKeyReadSnapshot(const StorageSnapshot & storage_snapshot);
+const DeleteBitmapSnapshot * tryGetDeleteBitmapSnapshot(const StorageSnapshot & storage_snapshot);
 
 }

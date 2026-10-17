@@ -2418,7 +2418,7 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts, const ReadSnapshot * uk_read_snapshot) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot) const
 {
     chassert(!hasUniqueKey() || uk_read_snapshot);
 
@@ -5165,16 +5165,16 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 
 /// ----- UNIQUE KEY -----
 
-ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(CSN snapshot_csn) const
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(CSN snapshot_csn) const
 {
-    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
 }
 
-ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(const ContextPtr & local_context) const
 {
     /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
     if (auto txn = local_context->getCurrentTransaction())
-        return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
+        return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
 
     /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
     /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a
@@ -5186,7 +5186,7 @@ ReadSnapshotPtr MergeTreeData::makeUniqueKeyReadSnapshot(const ContextPtr & loca
     LOG_TRACE(log, "UNIQUE KEY READ: pinned csn {} on tid {} for the duration of the read",
         snapshot_csn, txn->tid);
 
-    return std::make_shared<const ReadSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
 }
 
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
@@ -14954,7 +14954,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
     /// No later than the part list, so every kill visible at the csn has its writer's part in the list.
     if (metadata_snapshot->hasUniqueKey())
-        snapshot_data->uk_read_snapshot = makeUniqueKeyReadSnapshot(query_context);
+        snapshot_data->uk_read_snapshot = makeDeleteBitmapSnapshot(query_context);
 
     RangesInDataPartsPtr query_ranges;
     DataPartsVectorPtr query_parts;
