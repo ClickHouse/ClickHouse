@@ -17,12 +17,12 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "
     INSERT INTO t SELECT number, number % 10 FROM numbers(5000);
 " </dev/null
 
-PART_PATH=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "SELECT path FROM system.parts WHERE table = 't'" </dev/null)
+PART_PATH=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't'" </dev/null)
 echo "checksums format version: 1" > "${PART_PATH}/checksums.txt"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "
     SELECT count() FROM t;
-    SELECT name, rows, secondary_indices_compressed_bytes FROM system.parts WHERE table = 't';
+    SELECT name, rows, secondary_indices_compressed_bytes FROM system.parts WHERE database = currentDatabase() AND table = 't';
 " </dev/null
 
 rm -rf "${WORKING_DIR}"
