@@ -53,7 +53,7 @@ private:
 
     /// So index analysis and the read pool agree even if a version's csn resolves between their lookups.
     mutable std::mutex memo_mutex;
-    mutable std::unordered_map<MergeTreePartInfo, ConstDeleteBitmapPtr> memo;
+    mutable std::unordered_map<MergeTreePartInfo, ConstDeleteBitmapPtr> memo TSA_GUARDED_BY(memo_mutex);
 };
 
 using ReadSnapshotPtr = std::shared_ptr<const ReadSnapshot>;
