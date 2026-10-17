@@ -4183,6 +4183,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
             }
 
+            const bool column_shadows_alias = is_top_level_projection && node_alias.empty() && resolved_identifier_node
+                && resolve_identifier_expression_result.isResolvedFromJoinTree()
+                && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
+
             node = std::move(resolved_identifier_node);
 
             if (node->getNodeType() == QueryTreeNodeType::LIST)
@@ -4200,6 +4204,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(unresolved_identifier.getFullName());
+
+            if (column_shadows_alias)
+            {
+                auto * query_scope = scope.getNearestQueryScope();
+                (query_scope ? query_scope : &scope)->projection_names_shadowing_aliases.insert(result_projection_names.front());
+            }
 
             break;
         }
@@ -7906,16 +7916,30 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// and the column name of an expression is built using the aliases of its subexpressions,
     /// so different constant projection expressions can end up with the same column name.
     /// Columns with identical names must have identical structure in a Block, so such columns
-    /// are renamed by appending a numeric suffix. The renaming applies only to a query that has
+    /// are renamed by appending a numeric suffix. The renaming applies to a query that has
     /// repeated aliases of nested expressions, and only to collisions between unequal constants,
-    /// so no previously working query changes its column names, and a collision that was an error
-    /// before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws AMBIGUOUS_COLUMN_NAME.
+    /// so a collision that was an error before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws
+    /// AMBIGUOUS_COLUMN_NAME. It also applies to any unequal collision with a column resolved instead of
+    /// a same-named alias, e.g. `x` in `SELECT x + 1 AS x, x FROM t` with `prefer_column_name_to_alias = 1`.
     /// Other collisions (e.g. same-named columns of joined tables) keep the historical behavior.
-    if (has_unused_duplicated_aliases)
+    if (has_unused_duplicated_aliases || !scope.projection_names_shadowing_aliases.empty())
     {
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();
         if (projection_nodes.size() == projection_columns.size())
         {
+            /// `isEqual` compares column sources structurally, so `a.k` and `b.k` of a self-join would be equal.
+            auto is_same_expression = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, bool compare_column_source_identity)
+            {
+                const auto * lhs_column = lhs->as<ColumnNode>();
+                const auto * rhs_column = rhs->as<ColumnNode>();
+                if (compare_column_source_identity && lhs_column && rhs_column)
+                    return lhs_column->getColumnName() == rhs_column->getColumnName()
+                        && lhs_column->getColumnType()->equals(*rhs_column->getColumnType())
+                        && lhs_column->getColumnSourceOrNull() == rhs_column->getColumnSourceOrNull();
+
+                return lhs->isEqual(*rhs, IQueryTreeNode::CompareOptions{.compare_aliases = false});
+            };
+
             std::unordered_map<std::string, size_t> name_to_first_position;
             std::unordered_set<std::string> projection_column_names;
             for (const auto & projection_column : projection_columns)
@@ -7925,6 +7949,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             {
                 auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
                 if (inserted)
+                    continue;
+
+                const bool column_shadows_alias = scope.projection_names_shadowing_aliases.contains(projection_columns[i].name);
+                if (!has_unused_duplicated_aliases && !column_shadows_alias)
                     continue;
 
                 const auto & first_column = projection_columns[it->second];
@@ -7937,7 +7965,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     need_rename = !projection_columns[i].type->equals(*first_column.type)
                         || first_constant->getValue() != current_constant->getValue();
                 }
-                else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
+                else if (column_shadows_alias
+                    || projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
                     || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
                 {
                     /// Unequal non-constant expressions can also collide on the column name when the name
@@ -7945,9 +7974,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     /// They can become constants of different values during planning (e.g. when the source
                     /// columns are constant), and columns with identical names must have identical structure
                     /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
-                    /// tables) keep the historical behavior and are not renamed.
-                    need_rename = !projection_nodes[it->second]->isEqual(
-                        *projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
+                    /// tables) keep the historical behavior and are not renamed, unless a column shadows an alias.
+                    need_rename = !is_same_expression(projection_nodes[it->second], projection_nodes[i], column_shadows_alias);
                 }
 
                 if (!need_rename)
