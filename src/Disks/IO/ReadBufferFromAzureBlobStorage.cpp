@@ -174,6 +174,10 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     if (!initialized)
         initialize(/* attempt */ 0);
 
+    /// An initialized reader without a stream has already buffered the whole response.
+    if (!data_stream)
+        return false;
+
     if (use_external_buffer)
     {
         data_ptr = internal_buffer.begin();
@@ -275,14 +279,20 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         }
     }
 
+    offset += bytes_read;
+
+    /// The stream owns the HTTP session; release it at the end of the data, not of a response that ended before the bound.
+    const bool end_of_data = read_until_position
+        ? static_cast<size_t>(offset) == *read_until_position
+        : static_cast<size_t>(offset) == total_size;
+    if (end_of_data)
+        data_stream.reset();
 
     if (bytes_read == 0)
         return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
     BufferBase::set(data_ptr, bytes_read, 0);
-
-    offset += bytes_read;
 
     return true;
 }
