@@ -1,0 +1,73 @@
+Test 1: next() sequential scan across 3 large blocks via linearOr
+500
+0	499
+Test 2: next() in 2-way leapfrog across large blocks
+400
+0	399
+Test 3: seek() across large block boundary in leapfrog
+5
+0
+200
+400
+600
+800
+Test 4: Mixed next+seek alternation across large block boundaries
+80
+0	790
+Test 5: Exactly 1 packed block per large block (129 docs per LB)
+258
+127
+128
+129
+130
+Test 6: 3 large blocks with 2-way leapfrog spanning all
+400
+0	1197
+Test 7: 4-way intersection across multiple large blocks
+400
+0	1995
+Test 8: Sparse token seek across many large blocks of dense token
+6
+0
+500
+1000
+1500
+2000
+2500
+Test 9: next() exhausts all large blocks (cursor becomes invalid)
+300
+44850
+Test 10: hasAnyTokens (OR) across multiple large blocks
+400
+200
+200
+Test 11: Brute-force AND (linearAnd) across multiple large blocks
+300
+Test 12: Exactly at large block boundary - tail_size=0
+129
+258
+Test 13: Large block advance after merge with multiple parts
+1500
+500
+0	1497
+Test 14: 5-way leapfrog across multiple large blocks
+600
+0	599
+Test 15: Seek to exact large block boundary doc_id
+129
+Test 16: Seek to last doc of a large block
+128
+Test 17: Interleaved sparse tokens across different large blocks
+134
+0	1995
+Test 18: Very small posting list (embedded) mixed with large multi-LB posting list
+3
+100
+500
+900
+Test 19: next() across many large blocks - stress test
+5000
+12497500
+Test 20: 2-way intersection - one cursor finishes early across LBs
+150
+0	149

@@ -1,0 +1,18 @@
+Take value from the first part
+-- direct read disabled
+foo
+\N
+foo
+-- direct read enabled
+foo
+\N
+foo
+Take value from the second part
+-- direct read disabled
+bar
+\N
+bar
+-- direct read enabled
+bar
+\N
+bar

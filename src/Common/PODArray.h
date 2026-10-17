@@ -409,6 +409,25 @@ public:
     const T & front() const { return t_start()[0]; }
     const T & back() const  { return t_end()[-1]; }
 
+    /// Returns (*this)[i - 1], with the boundary (*this)[-1] := T{}.
+    ///
+    /// This is the natural "previous cumulative offset" accessor for offset arrays
+    /// (e.g. `ColumnArray::Offsets`) where the implicit predecessor of index 0 is 0.
+    ///
+    /// Branchless when `pad_left_ >= sizeof(T)`: reads `t_start()[ssize_t(i) - 1]`
+    /// unconditionally; for `i == 0` this reads from the zero-initialized left
+    /// padding that `PaddedPODArray` allocates for exactly this purpose. Falls back
+    /// to an explicit zero-check for raw `PODArray` (`pad_left_ == 0`).
+    ///
+    /// Caller must ensure `i <= size()`.
+    T prevOrZero(size_t i) const noexcept
+    {
+        if constexpr (pad_left_ >= sizeof(T))
+            return t_start()[static_cast<ssize_t>(i) - 1];
+        else
+            return i == 0 ? T{} : t_start()[i - 1];
+    }
+
     iterator begin()              { return t_start(); }
     iterator end()                { return t_end(); }
     const_iterator begin() const  { return t_start(); }

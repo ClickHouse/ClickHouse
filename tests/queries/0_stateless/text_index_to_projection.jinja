@@ -1,0 +1,60 @@
+{#- Rewrite an upstream skip-text-index test (02346_text_index_*.sql) into its
+    projection-text-index twin, so the two suites cannot drift apart silently.
+
+    Jinja has no regex, so this works on `' TYPE text'` as an anchor and does
+    token surgery around it. Handled rewrites:
+
+      INDEX <name> <expr> TYPE text(...)           -> PROJECTION <name> INDEX <expr> TYPE text(...)
+      INDEX <name>(<expr>) TYPE text(...)          -> PROJECTION <name> INDEX <expr> TYPE text(...)
+      ... TYPE text(...) GRANULARITY <n>           -> ... TYPE text(...)          (projections take no GRANULARITY)
+      ALTER TABLE ... {DROP,MATERIALIZE,CLEAR} INDEX -> ... PROJECTION
+
+    Anything else passes through byte-for-byte, including mid-line declarations
+    such as `CREATE TABLE t (c0 String, INDEX i0 c0 TYPE text(...)) ENGINE = ...`.
+
+    If upstream renames the anchor, `derive` emits skip-index syntax that a
+    projection test cannot run -> loud failure, never a silent pass.
+-#}
+{%- macro derive(body) -%}
+{%- for line in body.split('\n') -%}
+{%- if ' TYPE text' in line and 'INDEX ' in line.split(' TYPE text')[0] -%}
+{%- set pre = line.split(' TYPE text')[0] -%}
+{%- set post = line[pre|length:] -%}
+{%- set head = pre.rsplit('INDEX ', 1)[0] -%}
+{#- `ALTER TABLE ... ADD INDEX  idx(...)` in upstream has a double space, so strip. -#}
+{%- set decl = pre.rsplit('INDEX ', 1)[1].strip() -%}
+{%- if ' ' in decl -%}
+{%- set name = decl.split(' ', 1)[0] -%}
+{%- set expr = decl.split(' ', 1)[1] -%}
+{%- else -%}
+{%- set name = decl.split('(', 1)[0] -%}
+{%- set expr = decl.split('(', 1)[1][:-1] -%}
+{%- endif -%}
+{{ head }}PROJECTION {{ name }} INDEX {{ expr }}{{ drop_granularity(post) }}
+{%- elif line.startswith('ALTER TABLE ') and ' INDEX ' in line -%}
+{{ line | replace(' DROP INDEX ', ' DROP PROJECTION ') | replace(' MATERIALIZE INDEX ', ' MATERIALIZE PROJECTION ') | replace(' CLEAR INDEX ', ' CLEAR PROJECTION ') }}
+{%- else -%}
+{{ line }}
+{%- endif -%}
+{{ '\n' if not loop.last }}
+{%- endfor -%}
+{%- endmacro -%}
+
+{#- Strip a trailing `GRANULARITY <digits>` clause, keeping whatever follows it
+    (`)`, `,`, `;` ...). Digits are consumed one at a time because Jinja has no
+    regex and no lstrip-by-charset that stops at the first non-digit. -#}
+{%- macro drop_granularity(text) -%}
+{%- if ' GRANULARITY ' in text -%}
+{%- set before = text.split(' GRANULARITY ', 1)[0] -%}
+{%- set after = text.split(' GRANULARITY ', 1)[1] -%}
+{%- set cut = namespace(at=0) -%}
+{%- for c in after -%}
+{%- if loop.index0 == cut.at and c in '0123456789' -%}
+{%- set cut.at = cut.at + 1 -%}
+{%- endif -%}
+{%- endfor -%}
+{{- before }}{{ after[cut.at:] }}
+{%- else -%}
+{{- text }}
+{%- endif -%}
+{%- endmacro -%}
