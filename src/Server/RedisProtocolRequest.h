@@ -130,9 +130,11 @@ public:
 
         arguments.clear();
         arguments.reserve(command_len);
-        /// Every element is charged its payload plus a fixed overhead, because an element is held
-        /// several times over (as the buffered argument, as a `Field` and inside the containers of
-        /// the lookup), and for short arguments that overhead is what dominates the memory usage.
+        /// Every element is charged its payload plus a fixed overhead, because for short arguments the
+        /// overhead of the containers is what dominates the memory usage. The payload of a key is held
+        /// at most twice: as the buffered argument and in the key column of the lookup, which is built
+        /// directly from the buffered arguments (plus a transient conversion to the type of the key
+        /// column of the table, if it is not `String`).
         size_t total_size = 0;
         for (Int64 i = 0; i < command_len; ++i)
         {
@@ -249,14 +251,13 @@ public:
     {
         if (request.getCommandLen() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'get' command");
-        key = request.getArgument(1);
     }
 
-    const String & getKey() const { return key; }
+    /// The key is not copied out of the request, as for `MGetRequest`.
+    const String & getKey() const { return request.getArgument(1); }
 
 private:
     RedisRequest & request;
-    String key;
 };
 
 class MGetRequest : public IRequest
@@ -289,18 +290,15 @@ public:
     {
         if (request.getCommandLen() != 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'hget' command");
-        key = request.getArgument(1);
-        field = request.getArgument(2);
     }
 
-    const String & getKey() const { return key; }
+    /// The key and the field are not copied out of the request, as for `MGetRequest`.
+    const String & getKey() const { return request.getArgument(1); }
 
-    const String & getField() const { return field; }
+    const String & getField() const { return request.getArgument(2); }
 
 private:
     RedisRequest & request;
-    String key;
-    String field;
 };
 
 class HMGetRequest : public IRequest

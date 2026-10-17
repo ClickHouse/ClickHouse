@@ -18,7 +18,7 @@
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <Core/Field.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
@@ -599,8 +599,9 @@ public:
     }
 
     /** Get a block with the values of the requested columns for the given keys.
-      * `keys` contains one entry per requested row, and every entry contains one value per key column
-      * (see getKeyColumnNamesForGetRequests). The returned block has the requested columns and one row
+      * `keys` contains one column per key column (see getKeyColumnNamesForGetRequests), in the same
+      * order, and every column contains one row per requested key. The columns are converted to the types
+      * of the key columns of the table. The returned block has the requested columns and one row
       * per requested key, in the same order. All the keys and columns of a single call observe the same
       * state of the table.
       * The returned columns are Nullable, and a NULL value means the key was not found
@@ -608,7 +609,7 @@ public:
       * Key-value point lookup used by the Redis wire protocol.
       * Supported only if supportsGetRequests returns true.
       */
-    virtual Block getBlockByKeys(const std::vector<std::vector<Field>> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
+    virtual Block getBlockByKeys(const ColumnsWithTypeAndName & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
 
     /// Names of the key columns for getBlockByKeys lookups.
     /// Supported only if supportsGetRequests returns true.

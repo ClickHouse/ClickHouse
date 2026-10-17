@@ -7,11 +7,13 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
@@ -46,6 +48,26 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_CONFIG_PARAMETER;
+}
+
+namespace
+{
+
+/// Builds the key column of a lookup directly from the arguments buffered in the request, so that the
+/// payload of the keys is copied only once (and not into intermediate `Field`s).
+template <typename GetKey>
+ColumnsWithTypeAndName makeKeyColumns(const String & key_column_name, size_t num_keys, GetKey && get_key)
+{
+    auto column = ColumnString::create();
+    column->reserve(num_keys);
+    for (size_t i = 0; i < num_keys; ++i)
+    {
+        const String & key = get_key(i);
+        column->insertData(key.data(), key.size());
+    }
+    return {{std::move(column), std::make_shared<DataTypeString>(), key_column_name}};
+}
+
 }
 
 RedisHandler::RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_)
@@ -117,7 +139,7 @@ void RedisHandler::authenticate(const String & user_name, const String & passwor
     try
     {
         session->authenticate(user_name, password, socket().peerAddress());
-        query_context = session->makeSessionContext();
+        session->makeSessionContext();
         authenticated = true;
     }
     catch (...)
@@ -128,22 +150,28 @@ void RedisHandler::authenticate(const String & user_name, const String & passwor
     }
 }
 
-void RedisHandler::ensureAuthenticated()
+void RedisHandler::prepareQueryContext()
 {
-    if (authenticated)
-        return;
+    if (!authenticated)
+    {
+        try
+        {
+            authenticate("default", "");
+        }
+        catch (...)
+        {
+            throw Exception(
+                ErrorCodes::AUTHENTICATION_FAILED,
+                "NOAUTH Authentication required (the AUTH command expects a password of a ClickHouse user, "
+                "or a user name and a password)");
+        }
+    }
 
-    try
-    {
-        authenticate("default", "");
-    }
-    catch (...)
-    {
-        throw Exception(
-            ErrorCodes::AUTHENTICATION_FAILED,
-            "NOAUTH Authentication required (the AUTH command expects a password of a ClickHouse user, "
-            "or a user name and a password)");
-    }
+    /// A fresh query context for every command, as for the other stateful protocols: creating it
+    /// re-checks that the credentials of the user are still valid (`VALID UNTIL`), so an already
+    /// authenticated connection stops working once they expire.
+    query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId("");
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
@@ -217,7 +245,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::SelectRequest select_request(req);
             select_request.parse();
 
-            ensureAuthenticated();
+            prepareQueryContext();
 
             auto selected_db = select_request.getDB();
             auto mapping = RedisProtocol::parseDBDescription(server.config(), selected_db);
@@ -235,7 +263,10 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             /// as Nil: with no keys, `getBlockByKeys` only validates the return types, and throws
             /// for a value column whose type cannot be wrapped in `Nullable`.
             if (mapping->db_type == RedisProtocol::DBType::STRING)
-                resolved.table->getBlockByKeys({}, {mapping->value_column}, query_context);
+                resolved.table->getBlockByKeys(
+                    makeKeyColumns(mapping->key_column, 0, [](size_t) -> const String & { UNREACHABLE(); }),
+                    {mapping->value_column},
+                    query_context);
 
             db = selected_db;
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
@@ -248,7 +279,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::GetRequest get_request(req);
             get_request.parse();
 
-            ensureAuthenticated();
+            prepareQueryContext();
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -256,7 +287,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
             auto [table, table_lock] = resolveTable(db, mapping);
-            std::vector<std::vector<Field>> keys{{get_request.getKey()}};
+            auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return get_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
 
             RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
@@ -269,7 +300,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::MGetRequest mget_request(req);
             mget_request.parse();
 
-            ensureAuthenticated();
+            prepareQueryContext();
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -280,17 +311,16 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 
             /// All the keys are looked up in one call, so that a single command cannot mix values
             /// from different states of the table.
-            std::vector<std::vector<Field>> keys;
-            keys.reserve(mget_request.getKeysCount());
-            for (size_t i = 0; i < mget_request.getKeysCount(); ++i)
-                keys.push_back({mget_request.getKey(i)});
+            const size_t num_keys = mget_request.getKeysCount();
+            auto keys = makeKeyColumns(mapping.key_column, num_keys, [&](size_t i) -> const String & { return mget_request.getKey(i); });
 
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
+            keys.clear();
             const auto & value_column = result_block.getByPosition(0);
 
             std::vector<std::optional<String>> result;
-            result.reserve(keys.size());
-            for (size_t row = 0; row < keys.size(); ++row)
+            result.reserve(num_keys);
+            for (size_t row = 0; row < num_keys; ++row)
                 result.push_back(serializeValue(value_column, row));
 
             RedisProtocol::ArrayResponse resp(result);
@@ -303,7 +333,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HGetRequest hget_request(req);
             hget_request.parse();
 
-            ensureAuthenticated();
+            prepareQueryContext();
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -312,7 +342,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 
             auto [table, table_lock] = resolveTable(db, mapping);
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, hget_request.getField()});
-            std::vector<std::vector<Field>> keys{{hget_request.getKey()}};
+            auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return hget_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, {hget_request.getField()}, query_context);
 
             RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
@@ -325,7 +355,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HMGetRequest hmget_request(req);
             hmget_request.parse();
 
-            ensureAuthenticated();
+            prepareQueryContext();
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -348,7 +378,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             for (size_t i = 0; i < hmget_request.getFieldsCount(); ++i)
                 fields.push_back(hmget_request.getField(i));
 
-            std::vector<std::vector<Field>> keys{{hmget_request.getKey()}};
+            auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return hmget_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, fields, query_context);
 
             std::vector<std::optional<String>> result;

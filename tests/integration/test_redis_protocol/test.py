@@ -1,5 +1,6 @@
 import logging
 import socket
+import time
 
 import pytest
 from redis import Redis, exceptions
@@ -478,3 +479,27 @@ def test_error_does_not_desynchronize_connection(started_cluster):
         assert sock.recv(4096) == b"$5\r\nhello\r\n"
     finally:
         sock.close()
+
+
+def test_connection_stops_working_after_credentials_expire(started_cluster):
+    # `VALID UNTIL` must be enforced for every command, not only by `AUTH`: an already
+    # authenticated connection must stop working once the credentials expire.
+    node.query("DROP USER IF EXISTS expiring_user")
+    expiry = node.query("SELECT toString(now() + INTERVAL 3 SECOND)").strip()
+    node.query(f"CREATE USER expiring_user IDENTIFIED WITH plaintext_password BY 'secret' VALID UNTIL '{expiry}'")
+    node.query("GRANT SELECT ON default.name_surname_map TO expiring_user")
+
+    client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="expiring_user", password="secret")
+    try:
+        assert client.select(1)
+        assert client.get("Alice") == b"Smith"
+
+        # The check is `now > valid_until` with second precision.
+        while int(node.query(f"SELECT now() > toDateTime('{expiry}') + 1").strip()) != 1:
+            time.sleep(0.5)
+
+        with pytest.raises(exceptions.ResponseError, match="expired"):
+            client.get("Alice")
+    finally:
+        client.close()
+        node.query("DROP USER IF EXISTS expiring_user")

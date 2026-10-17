@@ -1141,13 +1141,18 @@ private:
     }
 };
 
-Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, const Names & column_names, ContextPtr context)
+Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Names & column_names, ContextPtr context)
 {
     /// For a composite key, check that all necessary data has been provided.
+    if (keys.size() != key_names.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Mismatched number of key columns ({}) and join key columns ({})", keys.size(), key_names.size());
+
+    const size_t num_keys = keys.empty() ? 0 : keys.front().column->size();
     for (const auto & key : keys)
-        if (key.size() != key_names.size())
+        if (key.column->size() != num_keys)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys ({}) and join key columns ({})", key.size(), key_names.size());
+                ErrorCodes::BAD_ARGUMENTS, "Key columns have different numbers of rows ({} and {})", num_keys, key.column->size());
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto cur_sample_block = metadata_snapshot->getSampleBlock();
@@ -1197,27 +1202,31 @@ Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, 
     for (const auto & return_type : return_types)
     {
         result_columns.push_back(return_type->createColumn());
-        result_columns.back()->reserve(keys.size());
+        result_columns.back()->reserve(num_keys);
     }
 
     /// A single read lock for the whole request: every key and every column of one request has to
     /// observe the same state of the table, and `joinGet` would take and release the lock on each call.
-    if (!keys.empty())
+    if (num_keys != 0)
     {
+        /// Converting a column to the type it already has does not copy it.
+        Columns key_columns;
+        key_columns.reserve(keys.size());
+        for (size_t i = 0; i < keys.size(); ++i)
+            key_columns.push_back(castColumn(keys[i], key_types[i]));
+
         TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
 
         /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
-        for (size_t begin = 0; begin < keys.size(); begin += DEFAULT_BLOCK_SIZE)
+        for (size_t begin = 0; begin < num_keys; begin += DEFAULT_BLOCK_SIZE)
         {
-            const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, keys.size());
+            const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, num_keys);
 
             Block key_block;
             for (size_t i = 0; i < key_names.size(); ++i)
             {
-                MutableColumnPtr column = key_types[i]->createColumn();
-                column->reserve(end - begin);
-                for (size_t row = begin; row < end; ++row)
-                    column->insert(keys[row][i]);
+                /// Cut a batch out of the key column only if there is more than one batch.
+                ColumnPtr column = (begin == 0 && end == num_keys) ? key_columns[i] : key_columns[i]->cut(begin, end - begin);
                 key_block.insert({std::move(column), key_types[i], key_names[i]});
             }
 

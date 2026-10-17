@@ -42,7 +42,8 @@ private:
     /// Data commands require an authenticated session. If the client has not sent AUTH,
     /// try to authenticate as the `default` user with an empty password; if that fails,
     /// the client has to authenticate explicitly.
-    void ensureAuthenticated();
+    /// Then creates a fresh query context for the command.
+    void prepareQueryContext();
 
     void checkDBSet() const;
 
