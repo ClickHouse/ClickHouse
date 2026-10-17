@@ -544,7 +544,12 @@ static void writeDataFiles(
             /// schema (and any other evolution step) may otherwise be missing here.
             schema_processor->addIcebergTableSchema(schema_object);
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
                 column_mapper = createColumnMapper(schema_object);
+                const auto & metadata_object = initial_plan.initial_metadata_object;
+                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
+                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
+            }
         }
     }
 
@@ -608,7 +613,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
