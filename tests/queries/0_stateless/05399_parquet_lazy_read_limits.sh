@@ -17,7 +17,7 @@ S3_SOURCE="s3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_lazy_read_limits.parqu
 
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION ${FILE_SOURCE}
-    SELECT number AS k, randomString(65536) AS payload FROM numbers(100)
+    SELECT number AS k, concat(toFixedString(toString(number), 8), randomString(65528)) AS payload FROM numbers(100)
     SETTINGS output_format_parquet_compression_method = 'none';
     INSERT INTO FUNCTION ${S3_SOURCE} SELECT * FROM ${FILE_SOURCE}
     SETTINGS s3_truncate_on_insert = 1, output_format_parquet_compression_method = 'none';
@@ -29,7 +29,7 @@ CLIENT=(${CLICKHOUSE_CLIENT}
     --query_plan_optimize_lazy_materialization_for_file=1
     --query_plan_optimize_lazy_materialization_for_object_storage=1 --s3_validate_etag_on_read=1
     --read_overflow_mode=throw --read_overflow_mode_leaf=throw --timeout_overflow_mode=throw
-    --max_threads=1 --max_block_size=1 --input_format_parquet_max_block_size=1)
+    --max_threads=1 --max_parsing_threads=1 --max_block_size=1 --input_format_parquet_max_block_size=1)
 
 for source in "${FILE_SOURCE}" "${S3_SOURCE}"; do
     QUERY="SELECT sum(length(payload)) FROM (SELECT payload FROM ${source} ORDER BY k LIMIT 20)"
@@ -39,6 +39,9 @@ for source in "${FILE_SOURCE}" "${S3_SOURCE}"; do
     "${CLIENT[@]}" --query "SELECT sum(k) FROM (SELECT k FROM ${source} ORDER BY k LIMIT 20)
         SETTINGS max_bytes_to_read = 1000000, max_bytes_to_read_leaf = 1000000"
     "${CLIENT[@]}" --query "${QUERY}"
+    "${CLIENT[@]}" --query "SELECT count() = 20 AND sum(k) = 190
+        AND countIf(substring(payload, 1, 8) != toFixedString(toString(k), 8)) = 0
+        FROM (SELECT k, payload FROM ${source} ORDER BY k LIMIT 20)"
 
     # The deferred payload crosses the budget after the main source has already finished.
     for limit in max_bytes_to_read max_bytes_to_read_leaf; do
@@ -54,4 +57,10 @@ for source in "${FILE_SOURCE}" "${S3_SOURCE}"; do
     # One-row Parquet blocks ensure that the read can stop before the full result.
     "${CLIENT[@]}" --query "SELECT (${QUERY}) < 1310720 SETTINGS max_bytes_to_read = 1000000, read_overflow_mode = 'break'"
     "${CLIENT[@]}" --query "SELECT (${QUERY}) < 1310720 SETTINGS max_bytes_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'"
+    for suffix in '' _leaf; do
+        "${CLIENT[@]}" --query "SELECT count() > 0 AND count() < 20
+            AND countIf(substring(payload, 1, 8) != toFixedString(toString(k), 8)) = 0
+            FROM (SELECT k, payload FROM ${source} ORDER BY k LIMIT 20)
+            SETTINGS max_bytes_to_read${suffix} = 1000000, read_overflow_mode${suffix} = 'break'"
+    done
 done

@@ -509,6 +509,19 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::ColumnData:
         {
+            /// Count rows once, on the first step, and each column's decoded bytes on its own
+            /// step. In particular, a subgroup rejected by `PREWHERE` still consumed this budget.
+            size_t read_rows = step_idx == (reader.steps.empty() ? 0 : 1) ? row_subgroup.filter.rows_pass : 0;
+            if (!parser_shared_resources->reportReadProgress(read_rows, row_subgroup.read_bytes.exchange(0)))
+            {
+                {
+                    std::lock_guard lock(delivery_mutex);
+                    read_stopped = true;
+                }
+                delivery_cv.notify_all();
+                return;
+            }
+
             if (row_subgroup.filter.rows_pass == 0)
                 break;
             if (step_idx > 0 && step_idx <= reader.steps.size())
@@ -1063,9 +1076,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 size_t prev_page_idx = column.data_pages_idx;
 
                 chassert(task.row_subgroup_idx != UINT64_MAX);
-                reader.decodePrimitiveColumn(
+                size_t read_bytes = reader.decodePrimitiveColumn(
                     column, column_info, row_subgroup.columns.at(task.column_idx),
                     row_group, row_subgroup);
+                row_subgroup.read_bytes.fetch_add(read_bytes, std::memory_order_relaxed);
 
                 for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
                 {
@@ -1220,6 +1234,13 @@ ReadManager::ReadResult ReadManager::read()
             if (exception)
                 std::rethrow_exception(copyMutableException(exception));
 
+            if (read_stopped || parser_shared_resources->isReadStopped())
+            {
+                lock.unlock();
+                shutdownTasks();
+                return {};
+            }
+
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row
             /// subgroups are read and added to `delivery_queue` in order.
@@ -1324,24 +1345,9 @@ ReadManager::ReadResult ReadManager::read()
     }
     chunk.getChunkInfos().add(std::move(row_numbers_info));
 
-    /// This is a terrible hack to make progress indication kind of work.
-    ///
-    /// TODO: Fix progress bar in many ways:
-    ///        1. use number of rows instead of bytes;
-    ///           don't lie about number of bytes read (getApproxBytesReadForChunk()),
-    ///        2. estimate total rows to read after filtering row groups;
-    ///           for rows filtered out by PREWHERE, either report them as read or reduce the
-    ///           estimate of number of rows to read (make it signed),
-    ///        3. report uncompressed deserialized IColumn bytes instead of file bytes, for
-    ///           consistency with MergeTree reads,
-    ///        4. correctly extrapolate progress when reading many files in sequence, e.g.
-    ///           file('part{1..1000}.parquet'),
-    ///        5. correctly merge progress info when a query reads both from MergeTree and files, or
-    ///           parquet and text files.
-    ///       Probably get rid of getApproxBytesReadForChunk() and use the existing
-    ///       ISource::progress()/addTotalRowsApprox instead.
-    ///       For (4) and (5), either add things to struct Progress or make progress bar use
-    ///       ProfileEvents instead of Progress.
+    /// Keep the compressed file-progress estimate for callers without a scan-progress callback.
+    /// Query read limits use the decoded bytes reported before filtering above, independently of
+    /// this estimate and of how many rows survive the filters.
     /// Sum compressed sizes of selected columns only. `reader.primitive_columns[i].column_idx`
     /// indexes into the parquet row group's `columns` array, so we pick exactly the column
     /// chunks that the query reads. Using `row_group.meta->total_compressed_size` here would

@@ -118,7 +118,7 @@ public:
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
-        bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
+        bool trace_processors, std::shared_ptr<ReadProgressCallback> callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via

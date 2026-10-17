@@ -1829,12 +1829,20 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     return true;
 }
 
+void StorageFileSource::setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback)
+{
+    parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+}
+
 Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
     while (!finished_generate)
     {
+        if (parser_shared_resources->isReadStopped())
+            return {};
+
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
         if (!reader)
         {
@@ -2267,10 +2275,10 @@ Chunk StorageFileSource::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
-            size_t chunk_size = 0;
-            if (input_format && storage->format_name != "Distributed")
-                chunk_size = input_format->getApproxBytesReadForChunk();
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            if (input_format && input_format->reportsReadProgress())
+                progress(0, 0);
+            else
+                progress(num_rows, chunk.bytes());
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -2360,6 +2368,11 @@ Chunk StorageFileSource::generate()
 
             return chunk;
         }
+
+        /// A format can stop internally on a read limit without exhausting the file.
+        /// Do not publish partial row counts or unmatched row groups to the caches.
+        if (parser_shared_resources->isReadStopped())
+            return {};
 
         /// Read only once for file descriptor.
         if (storage->use_table_fd)
@@ -2949,10 +2962,18 @@ public:
 
     String getName() const override { return "StorageFileLazyRows"; }
 
+    void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback) override
+    {
+        parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+    }
+
     Chunk generate() override
     {
         while (true)
         {
+            if (parser_shared_resources->isReadStopped())
+                return {};
+
             if (!reader)
             {
                 if (next_file_index >= files.size())
@@ -3070,8 +3091,10 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                progress(chunk.getNumRows(), chunk_size ? chunk_size : chunk.bytes());
+                if (input_format->reportsReadProgress())
+                    progress(0, 0);
+                else
+                    progress(chunk.getNumRows(), chunk.bytes());
                 return chunk;
             }
 

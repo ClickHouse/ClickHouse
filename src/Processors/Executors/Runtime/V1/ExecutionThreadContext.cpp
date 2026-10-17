@@ -42,8 +42,8 @@ namespace Runtime::V1
 {
 
 ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_,
-    ReadProgressCallback * callback, StepProfiler * step_profiler_, QueryStatus * process_list_element_)
-    : read_progress_callback(callback)
+    std::shared_ptr<ReadProgressCallback> callback, StepProfiler * step_profiler_, QueryStatus * process_list_element_)
+    : read_progress_callback(std::move(callback))
     , process_list_element(process_list_element_)
     , step_profiler(step_profiler_)
     , thread_number(thread_number_)
@@ -83,7 +83,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(IProcessor & processor, ReadProgressCallback * read_progress_callback,
+static void executeJob(IProcessor & processor, const std::shared_ptr<ReadProgressCallback> & read_progress_callback,
     QueryStatus * process_list_element, ISpillable * spill_target)
 {
     try
@@ -129,8 +129,13 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
                 CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
         }
 
+        bool is_source = processor.getInputs().empty();
         if (!spill_target)
+        {
+            if (is_source && read_progress_callback)
+                processor.setReadProgressCallback(read_progress_callback);
             processor.work();
+        }
 
         if (reservation)
         {
@@ -142,8 +147,6 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
             return;
 
         /// Update read progress only for source nodes.
-        bool is_source = processor.getInputs().empty();
-
         if (is_source && read_progress_callback)
         {
             if (auto read_progress = processor.getReadProgress())

@@ -659,7 +659,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// be invoked but actually 1 thread used.
 
     tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors,
-        read_progress_callback.get(), step_profiler.get(), process_list_element.get());
+        read_progress_callback, step_profiler.get(), process_list_element.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
     if (auto * reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr)
         reservation->addSpillListener(tasks);

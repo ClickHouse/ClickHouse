@@ -87,7 +87,7 @@ private:
 
     LoggerPtr log = getLogger("PipelineExecutor");
 
-    ReadProgressCallbackPtr read_progress_callback;
+    std::shared_ptr<ReadProgressCallback> read_progress_callback;
     StepProfilerPtr step_profiler;
 
     /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking

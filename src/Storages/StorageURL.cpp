@@ -799,11 +799,16 @@ StorageURLSource::Status StorageURLSource::prepare()
     return status;
 }
 
+void StorageURLSource::setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback)
+{
+    parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+}
+
 Chunk StorageURLSource::generate()
 {
     while (true)
     {
-        if (isCancelled())
+        if (isCancelled() || parser_shared_resources->isReadStopped())
         {
             if (reader)
                 reader->cancel();
@@ -912,11 +917,10 @@ Chunk StorageURLSource::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
-            size_t chunk_size = 0;
-            if (input_format)
-                chunk_size = input_format->getApproxBytesReadForChunk();
-
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            if (input_format && input_format->reportsReadProgress())
+                progress(0, 0);
+            else
+                progress(num_rows, chunk.bytes());
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -968,8 +972,9 @@ Chunk StorageURLSource::generate()
         /// the query succeeds with its partial result - see cancel. The rows read by an interrupted
         /// read are not the row count of the file and must not poison the count cache. The inner
         /// pipeline has no process list element of its own, so every cancellation which can reach
-        /// it is recorded either on this source or in its cancellation flag.
-        const bool read_whole_file = !isCancelled() && !cancellation->isCancelled();
+        /// it is recorded either on this source or in its cancellation flag. A format can also
+        /// stop internally when its scan-progress callback reaches a read limit.
+        const bool read_whole_file = !isCancelled() && !cancellation->isCancelled() && !parser_shared_resources->isReadStopped();
 
         if (read_whole_file && input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))

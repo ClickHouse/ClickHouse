@@ -161,6 +161,11 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
+bool ParquetV3BlockInputFormat::reportsReadProgress() const
+{
+    return parser_shared_resources->hasReadProgressCallback() && !need_only_count && !min_max_from_statistics;
+}
+
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
     if (!reader || min_max_from_statistics)

@@ -743,13 +743,18 @@ void StorageObjectStorageSource::onFinish()
     parser_shared_resources->finishStream();
 }
 
+void StorageObjectStorageSource::setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback)
+{
+    parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+}
+
 Chunk StorageObjectStorageSource::generate()
 {
     lazyInitialize();
 
     while (true)
     {
-        if (isCancelled() || !reader)
+        if (isCancelled() || parser_shared_resources->isReadStopped() || !reader)
         {
             if (reader)
                 reader->cancel();
@@ -762,11 +767,10 @@ Chunk StorageObjectStorageSource::generate()
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
 
-            size_t chunk_size = 0;
-            if (const auto * input_format = reader.getInputFormat())
-                chunk_size = input_format->getApproxBytesReadForChunk();
-
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            if (const auto * input_format = reader.getInputFormat(); input_format && input_format->reportsReadProgress())
+                progress(0, 0);
+            else
+                progress(num_rows, chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
@@ -926,7 +930,8 @@ Chunk StorageObjectStorageSource::generate()
             }
 
 #if USE_PARQUET
-            if (chunk_size && chunk.hasColumns())
+            if (const auto * input_format = reader.getInputFormat();
+                input_format && input_format->getApproxBytesReadForChunk() && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
                 if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
@@ -1006,6 +1011,8 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
+        else if (parser_shared_resources->isReadStopped())
+            break;
         /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
         /// from the rows of all files the query reads: a row group can end up without a returned row
         /// only because the threshold had excluded it. The key covers just the predicate, so such an

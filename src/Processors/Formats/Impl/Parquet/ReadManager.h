@@ -116,6 +116,7 @@ private:
     std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
+    bool read_stopped = false; /// Protected by `delivery_mutex`; a read limit with overflow mode `break`.
     /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 

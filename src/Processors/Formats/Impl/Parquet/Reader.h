@@ -461,6 +461,8 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+        /// Decoded column bytes for the current step, before its filtering expressions run.
+        std::atomic<size_t> read_bytes {0};
     };
 
     struct RowGroup
@@ -682,7 +684,7 @@ struct Reader
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;
 
-    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
+    size_t decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
