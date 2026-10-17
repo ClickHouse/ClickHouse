@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `MODIFY ORDER BY` would change the direction of the forced `DESC` key column
+SET force_primary_key_reverse_order = 0;
+
 -- A column whose subcolumn is used in a table key is a key column: a column TTL on it is refused,
 -- and neither a TTL merge nor an UPDATE may change it by recomputing a MATERIALIZED expression.
 

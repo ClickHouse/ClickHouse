@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the order of elements of `groupArray` follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- A LATERAL subquery that aggregates without GROUP BY yields one row per outer row,
 -- also when its filtered input is empty for that outer row (the empty-set aggregate result).
 

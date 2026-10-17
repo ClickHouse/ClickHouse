@@ -1,5 +1,7 @@
 -- Regression test for intDiv(unsigned_variable, signed_constant) monotonicity in key analysis.
 -- Each query prints 1 when the index-pruned count matches the full-scan ground truth.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_intdiv_mono;
 

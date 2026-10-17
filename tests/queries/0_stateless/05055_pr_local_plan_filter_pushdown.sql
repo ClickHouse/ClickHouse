@@ -8,6 +8,9 @@
 -- replicas 03733.
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
 
+-- Disable force_primary_key_reverse_order: the test checks `Read type: InOrder`, which becomes `InReverseOrder` with a reversed sorting key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP TABLE IF EXISTS t_pr_local_pd_lambda_key;
 DROP VIEW IF EXISTS v_pr_local_pd;

@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: creates ReplicatedMergeTree with ORDER BY, async insert with MV join
+SET force_primary_key_reverse_order = 0;
 set async_insert = 1;
 set wait_for_async_insert = 0;
 set async_insert_deduplicate = 1;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 SET joined_subquery_requires_alias = 0;
 SET max_threads = 1;
 -- It affects number of read rows and max_rows_to_read.

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks `_part_offset` values, which depend on the key direction
+SET force_primary_key_reverse_order = 0;
+
 -- A bucketed distributed read is pinned to the coordinator's part list, but the worker re-runs its own
 -- index analysis. With `use_index_for_in_with_subqueries = 0` the coordinator cannot use the IN set while
 -- the worker receives it as shipped tuple values and can, so the worker prunes a part the coordinator

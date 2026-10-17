@@ -6,6 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT --optimize_aggregation_in_order=1 -m -q "
 drop table if exists data_01753;
 create table data_01753 (key Int) engine=MergeTree() order by key as select * from numbers(8);

@@ -1,5 +1,7 @@
 -- Read-in-order analysis over a column fixed by `WHERE`: with a normal `PROJECTION` on a fixed key,
 -- and through an `ALIAS` on the filter column.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;

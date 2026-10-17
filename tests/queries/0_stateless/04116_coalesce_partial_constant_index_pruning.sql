@@ -3,6 +3,8 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- `coalesce(...) <op> const` with partial-constant arguments (NULL literals, middle/trailing constants).
 -- See `src/Storages/MergeTree/KeyCondition.cpp::tryRewriteCoalesceComparison`.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;

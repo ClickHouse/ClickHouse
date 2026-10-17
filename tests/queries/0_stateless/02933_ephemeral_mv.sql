@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: tests materialized views, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 CREATE TABLE raw
 (

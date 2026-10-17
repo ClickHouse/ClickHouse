@@ -1,4 +1,6 @@
 -- Tags: no-parallel-replicas
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- Constant folding must work for derived partition keys (PARTITION BY toYYYYMM(d)): within a
 -- partition toYYYYMM(d) is constant, so per-partition specialization eliminates non-matching OR

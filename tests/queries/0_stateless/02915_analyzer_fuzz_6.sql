@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 set allow_suspicious_low_cardinality_types=1;
 set enable_analyzer=1;
 set optimize_trivial_insert_select=0;

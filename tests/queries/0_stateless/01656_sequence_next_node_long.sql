@@ -1,5 +1,7 @@
 -- Tags: long, no-azure-blob-storage
 
+-- sequenceNextNode traverses events within partitions in physical key order; reversing keys changes traversal direction
+SET force_primary_key_reverse_order = 0;
 SET enable_funnel_functions = 1;
 
 DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;

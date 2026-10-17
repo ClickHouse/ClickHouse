@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: tests join with PREWHERE, output depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;

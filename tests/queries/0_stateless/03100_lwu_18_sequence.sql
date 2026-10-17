@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the hardcoded patch partition ID is a hash that includes the sorting key expression, which changes with `DESC`
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_lwu_sequence;
 SET enable_lightweight_update = 1;
 

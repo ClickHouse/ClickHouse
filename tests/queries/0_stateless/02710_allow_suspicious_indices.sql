@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests ALTER TABLE MODIFY ORDER BY
+SET force_primary_key_reverse_order = 0;
+
 -- Check CREATE TABLE
 
 DROP TABLE IF EXISTS tbl;

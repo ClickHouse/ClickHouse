@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the number of rows read through a skip index depends on the physical row layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Test: graceful fallback when set skip index cannot build subquery set
 -- Covers: src/Storages/MergeTree/MergeTreeIndexSet.cpp:369-370
 --         if (!set->buildOrderedSetInplace(context)) return;

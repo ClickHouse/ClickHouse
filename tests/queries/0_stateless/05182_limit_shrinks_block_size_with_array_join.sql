@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `LIMIT` without `ORDER BY` returns rows in the physical order, and `read_rows` depends on where the matching rows are
+SET force_primary_key_reverse_order = 0;
+
 -- LIMIT still shrinks the block size with arrayJoin, only the source-side limit stays off (#82279)
 DROP TABLE IF EXISTS t_aj_limit;
 CREATE TABLE t_aj_limit (k UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;

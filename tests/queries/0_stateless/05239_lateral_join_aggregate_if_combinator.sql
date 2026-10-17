@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the results of `groupArray` and `any` follow the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- A LATERAL subquery aggregating without GROUP BY restores the empty-set row for an outer row
 -- with an empty input. Aggregates that already have the -If combinator must keep their own filter.
 

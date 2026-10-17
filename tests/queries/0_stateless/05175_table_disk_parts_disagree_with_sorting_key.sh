@@ -16,6 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: it flips the declared directions, so the readers would no longer disagree with the parts
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 disk_path="${CLICKHOUSE_DISKS_FILES}/05175/${CLICKHOUSE_DATABASE}/"
 
 # The writer owns the root and writes 4 unmerged parts, all in ascending key order.

@@ -1,6 +1,9 @@
 -- Tags: no-parallel, no-fasttest
 -- A fail point armed here fires for every query on the server, so this test must run alone.
 
+-- Disable force_primary_key_reverse_order: the test checks `Read type: InOrder`, which becomes `InReverseOrder` with a reversed sorting key
+SET force_primary_key_reverse_order = 0;
+
 -- Where the replicas do not get a condition that could fix a sort key column, it must stay above the
 -- initiator's copy of the fragment, or that copy reads in order while the replicas do not: "Got read
 -- request from replica N for unknown stream". Two conditions whose effect only shows inside the fragment:

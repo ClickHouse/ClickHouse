@@ -1,4 +1,7 @@
 -- Tags: no-asan
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- no-asan: the flaky check complains that the test sometimes runs > 60 sec on asan builds
 
 set allow_suspicious_codecs=1;

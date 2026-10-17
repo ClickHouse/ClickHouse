@@ -7,6 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests ReplicatedMergeTree merge exceptions with specific ORDER BY keys
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # Test that retriable errors during merges/mutations
 # (i.e. "No active replica has part X or covering part")
 # does not appears as errors (level=Error), only as info message (level=Information).

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- Checks that no bad things happen when the table optimizes the row order to improve compressability during insert.
 
 

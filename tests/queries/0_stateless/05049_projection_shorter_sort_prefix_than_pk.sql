@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database, no-parallel-replicas: EXPLAIN output differs.
 
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/116801 (second repro from the comments)
 -- The table `ORDER BY (source_id, date, have_reply, id)` satisfies the query's
 -- `ORDER BY` on all 4 columns, while the projection key `(source_id, date, id)`

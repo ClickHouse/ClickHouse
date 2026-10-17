@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests materialized views with CTE, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- TEST CACHE
 CREATE TABLE t1 (i Int64, j Int64) ENGINE = Memory;
 INSERT INTO t1 SELECT number, number FROM system.numbers LIMIT 100;

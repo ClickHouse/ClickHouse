@@ -2,6 +2,9 @@
 -- no-parallel-replicas: the top-K heap needs `LimitStep` directly above `AggregatingStep` in a
 -- single-stage plan, and the dynamic filter links the aggregation to the local reading step.
 
+-- Disable force_primary_key_reverse_order: the reference pins granule skipping by the primary key, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `GROUP BY key [ORDER BY key] LIMIT n` publishes the boundary of the aggregation's top-K heap to
 -- the `MergeTree` reading step (`enable_group_by_top_k_dynamic_filtering`): rows whose key lies
 -- beyond the boundary are dropped by a PREWHERE before the other columns are read, and granules

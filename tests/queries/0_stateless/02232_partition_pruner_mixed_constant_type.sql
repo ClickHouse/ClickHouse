@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests partition pruning with MergeTree, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS broken;
 
 CREATE TABLE broken (time UInt64) ENGINE = MergeTree PARTITION BY toYYYYMMDD(toDate(time / 1000)) ORDER BY time;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET max_threads=0;
 -- Do not lower `max_threads = auto` to the fair share of CPU slots under concurrent queries: the pipeline shape depends on it.
 SET use_concurrency_control_for_max_threads = 0;

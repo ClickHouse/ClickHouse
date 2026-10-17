@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the number of rows read with `indexHint` depends on the physical row layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SELECT '--- Test 1: Int32 column used as boolean condition in WHERE';
 
 DROP TABLE IF EXISTS test_bool_index;
