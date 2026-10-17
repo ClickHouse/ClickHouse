@@ -12,7 +12,7 @@ CREATE TABLE default.j\n(\n    `x` Int64\n)\nENGINE = S3(\'https://example.s3.am
 CREATE TABLE default.k\n(\n    `x` Int64\n)\nENGINE = GCS(\'https://example.s3.amazonaws.com/a.csv\', \'NOSIGN\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\'), partition_strategy = \'none\')
 CREATE TABLE default.l\n(\n    `x` Int64\n)\nENGINE = OSS(\'https://example.s3.amazonaws.com/a.csv\', \'NOSIGN\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\'), partition_strategy = \'none\')
 CREATE TABLE default.m\n(\n    `x` Int64\n)\nENGINE = COSN(\'https://example.s3.amazonaws.com/a.csv\', \'NOSIGN\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\'), partition_strategy = \'none\')
-CREATE TABLE default.n\n(\n    `x` Int64\n)\nENGINE = Hudi(\'https://example.s3.amazonaws.com/t/\', \'NOSIGN\', \'Parquet\', headers(\'foo\' = \'[HIDDEN]\'), compression_method = \'none\')
+CREATE TABLE default.n\n(\n    `x` Int64\n)\nENGINE = Hudi(\'https://example.s3.amazonaws.com/t/\', \'NOSIGN\', \'Parquet\', headers(\'foo\' = \'[HIDDEN]\'), compression_method = \'auto\')
 CREATE TABLE default.o\n(\n    `x` Int64\n)\nENGINE = S3Queue(\'https://example.s3.amazonaws.com/q/\', \'NOSIGN\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\'), compression_method = \'none\')\nSETTINGS mode = \'unordered\', keeper_path = \'/clickhouse/default/02968_o\'
 x	Int64
 x	Int64
