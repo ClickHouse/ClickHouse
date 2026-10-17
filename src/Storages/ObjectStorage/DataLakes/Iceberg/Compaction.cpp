@@ -338,6 +338,9 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
+                const auto & metadata_object = initial_plan.initial_metadata_object;
+                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
+                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -374,7 +377,7 @@ static void writeDataFiles(
             settings,
             /*num_streams_=*/1);
 
-        auto input_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr);
+        auto input_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
         input_format_filter_info->need_row_numbers = delete_file_transform != nullptr;
         auto input_format = FormatFactory::instance().getInput(
             data_file->data_object_info->getFileFormat().value_or(write_format),
