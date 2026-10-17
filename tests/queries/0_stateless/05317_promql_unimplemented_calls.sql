@@ -15,7 +15,7 @@ SELECT * FROM prometheusQuery(ts, 'end()', 100); -- { serverError NOT_IMPLEMENTE
 SELECT * FROM prometheusQuery(ts, 'sort_by_label(up, "job")', 100); -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM prometheusQuery(ts, 'sort_by_label_desc(up, "job")', 100); -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM prometheusQuery(ts, 'double_exponential_smoothing(up[5m], 0.01, 0.1)', 100); -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM prometheusQuery(ts, 'limit_ratio(0.5, up)', 100) SETTINGS log_comment = '05317_limit_ratio'; -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery(ts, 'limit_ratio(0.5, up)', 100) SETTINGS log_comment = '05317_limit_ratio'; -- { serverError NOT_IMPLEMENTED }
 
 SYSTEM FLUSH LOGS query_log;
 
