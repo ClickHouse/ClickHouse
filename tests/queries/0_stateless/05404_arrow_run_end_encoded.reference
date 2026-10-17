@@ -55,6 +55,11 @@ m	Map(Int32, Nullable(Int32))
 (7)	(7)
 0	0
 7	7
+--- rows hidden by a null struct row in a struct-valued run ---
+0	0
+7	7
+0	0
+7	7
 --- a null list run inside a union ---
 \N
 \N

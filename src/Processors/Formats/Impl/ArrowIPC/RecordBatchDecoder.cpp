@@ -676,6 +676,28 @@ void fillFixed(
     defaultInvisibleFixed(reinterpret_cast<char *>(data.data()), sizeof(V), rows, invisible_rows);
 }
 
+/// Clears the null bits of the last row of a column that has just received `insertDefault`, through `Nullable`
+/// wrappers and `Tuple` elements, so the row is the non-null default an invisible row of an unencoded field decodes
+/// to. A `Nullable(Nothing)` (the `Null` type) stays null. Arrays and maps default to empty, so they have nothing to
+/// clear. Returns whether the last row is null.
+bool clearLastDefaultNulls(IColumn & column)
+{
+    if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
+    {
+        const bool is_null = typeid_cast<const ColumnNothing *>(&nullable->getNestedColumn()) != nullptr;
+        if (!is_null)
+            clearLastDefaultNulls(nullable->getNestedColumn());
+        nullable->getNullMapData().back() = is_null;
+        return is_null;
+    }
+    if (auto * tuple = typeid_cast<ColumnTuple *>(&column))
+    {
+        for (size_t i = 0; i < tuple->tupleSize(); ++i)
+            clearLastDefaultNulls(tuple->getColumn(i));
+    }
+    return false;
+}
+
 }
 
 ColumnUInt8::Ptr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const
@@ -1794,15 +1816,10 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     if (has_invisible_rows)
     {
         /// The default of an invisible row is not null, as in `defaultInvisibleFixed`, unless the values are of the
-        /// `Null` type.
+        /// `Null` type; neither are the elements of a struct default (see `clearLastDefaultNulls`).
         auto extended_values = IColumn::mutate(std::move(values));
         extended_values->insertDefault();
-        bool default_is_null = false;
-        if (auto * nullable = typeid_cast<ColumnNullable *>(extended_values.get()))
-        {
-            default_is_null = typeid_cast<const ColumnNothing *>(&nullable->getNestedColumn()) != nullptr;
-            nullable->getNullMapData().back() = default_is_null;
-        }
+        const bool default_is_null = clearLastDefaultNulls(*extended_values);
         values = std::move(extended_values);
         if (values_null_map)
         {

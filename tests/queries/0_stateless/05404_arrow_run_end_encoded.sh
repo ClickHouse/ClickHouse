@@ -98,6 +98,14 @@ write("masked", {
     "p": pa.StructArray.from_arrays([pa.array([7, 7], pa.int32())], names=["r"], mask=pa.array([True, False])),
 })
 
+# The same for a struct-valued run: the elements of the hidden default are not null either.
+struct_run = ree(pa.array([2], pa.int32()), pa.StructArray.from_arrays([pa.array([7], pa.int32())], names=["a"]))
+write("masked_struct", {
+    "t": pa.StructArray.from_arrays([struct_run], names=["r"], mask=pa.array([True, False])),
+    "p": pa.StructArray.from_arrays(
+        [pa.StructArray.from_arrays([pa.array([7, 7], pa.int32())], names=["a"])], names=["r"], mask=pa.array([True, False])),
+})
+
 null_list_run = ree(pa.array([2, 4], pa.int32()), pa.array([None, [7]], pa.list_(pa.int32())))
 write("union", {"u": pa.UnionArray.from_dense(
     pa.array([0, 0, 0, 0], pa.int8()), pa.array([0, 1, 2, 3], pa.int32()), [null_list_run], ["l"])})
@@ -140,6 +148,12 @@ ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.masked', 'ArrowStr
 ${CLICKHOUSE_LOCAL} --query "
     SELECT * FROM file('${DATA_FILE}.masked', 'ArrowStream', '\`t.r\` Nullable(Int32), \`p.r\` Nullable(Int32)')
     SETTINGS enable_nullable_tuple_type = 0"
+echo "--- rows hidden by a null struct row in a struct-valued run ---"
+for STRUCTURE in "'\`t.r.a\` Nullable(Int32), \`p.r.a\` Nullable(Int32)'" "'\`t.r.a\` Int32, \`p.r.a\` Int32'"; do
+    ${CLICKHOUSE_LOCAL} --query "
+        SELECT * FROM file('${DATA_FILE}.masked_struct', 'ArrowStream', ${STRUCTURE})
+        SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0"
+done
 echo "--- a null list run inside a union ---"
 ${CLICKHOUSE_LOCAL} --max_threads 1 --query "SELECT u FROM file('${DATA_FILE}.union', 'ArrowStream')"
 echo "--- an opaque-tagged value ---"
