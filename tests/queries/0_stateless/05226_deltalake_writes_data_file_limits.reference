@@ -1,0 +1,41 @@
+-- rows limit 50000 on an unpartitioned table: 4 files of exactly 50000 rows, one commit
+versions: 1
+data files in latest commit: 4
+rows per file: 50000,50000,50000,50000
+readable rows: 200000
+-- rows limit 50000 on a table partitioned by p: the limit applies per partition
+versions: 1
+data files in latest commit: 4
+rows per file: 50000,50000,50000,50000
+readable rows: 200000
+p=0: rows per file: 50000,50000
+p=1: rows per file: 50000,50000
+-- bytes limit rotates too: a 200k-row INSERT of ~110-byte rows must not fit one 2 MB file,
+-- and no file may exceed the limit by more than one 10000-row chunk
+versions: 1
+more than one data file: 1
+no file exceeds the limit by more than one chunk: 1
+all rows committed: 1
+readable rows: 200000
+-- bytes limit on a table partitioned by p: the budget is per partition. Every partition gets 5000 rows
+-- of each 10000-row chunk (~117 bytes each), so it rotates after the 4th chunk: 20000-row files.
+-- A budget shared across the two partitions would rotate after 2 chunks and give 10000-row files.
+versions: 1
+data files in latest commit: 10
+rows per file: 20000,20000,20000,20000,20000,20000,20000,20000,20000,20000
+readable rows: 200000
+p=0: rows per file: 20000,20000,20000,20000,20000
+p=1: rows per file: 20000,20000,20000,20000,20000
+-- default limits (1M rows, 1 GiB): the same INSERT stays in a single file
+versions: 1
+data files in latest commit: 1
+rows per file: 200000
+readable rows: 200000
+-- both limits set: the tighter one wins (rows 50000 vs bytes 100 MB)
+versions: 1
+data files in latest commit: 4
+rows per file: 50000,50000,50000,50000
+readable rows: 200000
+-- a zero limit is rejected up front
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)

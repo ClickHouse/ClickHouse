@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Beta; on so that every INSERT into a DeltaLake table exercises the writer. The alias name
+                 is used because install.sh also serves previous-release jobs (older than 26.7). -->
+            <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+        </default>
+    </profiles>
+</clickhouse>
