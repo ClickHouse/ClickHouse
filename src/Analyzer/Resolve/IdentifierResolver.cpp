@@ -305,6 +305,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
+
+    /// The destination of `INSERT INTO FUNCTION ... RETURNING` is not in the database catalog,
+    /// and the RETURNING query reads the inserted data from the view source.
+    if (auto view_source = context->getViewSource();
+        view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().database_name == database_name
+        && view_source->getStorageID().table_name == table_name
+        && !DatabaseCatalog::instance().isDatabaseExist(database_name))
+        return std::make_shared<TableNode>(view_source, context);
+
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -359,7 +369,6 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
     if (!storage)
         return {};
-
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);

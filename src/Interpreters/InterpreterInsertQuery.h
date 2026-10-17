@@ -95,7 +95,8 @@ public:
         const StoragePtr & table,
         size_t max_threads_,
         bool no_squash_,
-        bool async_insert_);
+        bool async_insert_,
+        ProcessorPtr * returning_output = nullptr);
 
 private:
     static Block getSampleBlock(
@@ -120,6 +121,10 @@ private:
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
+
+    /// For INSERT ... RETURNING: the processor with the copy of the data written into the table.
+    ProcessorPtr returning_output;
+    void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.
