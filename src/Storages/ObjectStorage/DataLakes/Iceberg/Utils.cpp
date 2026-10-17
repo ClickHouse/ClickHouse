@@ -2050,6 +2050,26 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
 
+    /// An Iceberg `time` partition value is microseconds since midnight. A manifest declaring it as
+    /// `time-micros` is read as `Time64(6)`, one declaring a plain `long` is read as `Int64`; bring
+    /// either to the type of the column, which is `Int64` with setting `iceberg_time_as_int64`.
+    if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isTime64())
+    {
+        const UInt32 scale = getDecimalScale(*value_type);
+        if (scale != 6)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} of an Iceberg `time` partition column", value_type->getName());
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), scale);
+    }
+    if (value.getType() == Field::Types::Decimal64 && WhichDataType(value_type).isInt64())
+    {
+        const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
+        if (decimal.getScale() != 6)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg partition value {} of an `Int64` column has scale {}, expected an Iceberg `time` of scale 6",
+                value.dump(), decimal.getScale());
+        return decimal.getValue().value;
+    }
+
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
 
