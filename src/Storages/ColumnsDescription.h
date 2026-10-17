@@ -233,6 +233,10 @@ public:
 
     bool hasOnlyOrdinary() const;
 
+    /// Throws `CYCLIC_ALIASES` if an ALIAS column reads itself, directly or through other ALIAS columns,
+    /// by name or through a subcolumn (`c String ALIAS c.size`).
+    void checkAliasColumnsAreNotCyclic() const;
+
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
