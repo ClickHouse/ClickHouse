@@ -30,6 +30,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , skip_extremes(other.skip_extremes)
     {}
 
     String getName() const override { return "Filter"; }
@@ -42,6 +43,11 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
+
+    /// The extremes stream passes through without the predicate being evaluated or applied.
+    /// Only for a step whose actions compute nothing besides the predicate, like the result filter.
+    void setSkipExtremes() { skip_extremes = true; }
+    bool skipsExtremes() const { return skip_extremes; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
     bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
@@ -133,6 +139,7 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool skip_extremes = false;
 };
 
 }
