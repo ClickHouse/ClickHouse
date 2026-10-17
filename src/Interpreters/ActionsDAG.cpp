@@ -792,8 +792,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
 
     node.function_base = function_base;
     node.result_type = result_type;
-    if (all_const)
-        CurrentThread::checkIfNotCancelled();
+    CurrentThread::checkIfNotCancelled();
     node.function = node.function_base->prepare(arguments);
 
     tryFoldFunctionToConstant(node, arguments, all_const, /*best_effort=*/false);
@@ -1109,8 +1108,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                 if (evaluate_constants && node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
                 {
                     auto [arguments, all_const] = getFunctionArguments(node->children);
-                    if (all_const)
-                        CurrentThread::checkIfNotCancelled();
+                    CurrentThread::checkIfNotCancelled();
                     node->function = node->function_base->prepare(arguments);
                     tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }

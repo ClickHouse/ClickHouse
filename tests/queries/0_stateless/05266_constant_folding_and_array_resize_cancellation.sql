@@ -21,6 +21,11 @@ SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase(toString(
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), quantile(number)(number) FROM numbers(1) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT quantile(editDistance(repeat('a', 20000), repeat('b', 20000)))(number) FROM numbers(1) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT arrayFilter(x -> editDistance(repeat('a', 20000), repeat('b', 20000)), [1]) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+-- Nor the conversion of an inserted column to the type of the table column, which otherwise reports the unsupported cast.
+DROP TABLE IF EXISTS t_insert_cast;
+CREATE TABLE t_insert_cast (a Map(UInt8, UInt8), b UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_insert_cast (a, b) SELECT dummy, editDistance(repeat('a', 20000), repeat('b', 20000)) FROM system.one SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_insert_cast;
 -- A constant of more than 1 MiB is not kept by the analyzer, so it is evaluated again when the query plan is built.
 SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 
@@ -53,3 +58,10 @@ CREATE TABLE t_key_fold (p UInt16) ENGINE = MergeTree ORDER BY length(arrayResiz
 INSERT INTO t_key_fold VALUES (1);
 SELECT count() FROM t_key_fold WHERE p = 8000 SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 DROP TABLE t_key_fold;
+
+-- And for the predicate that a text index evaluates on the value of a missing map key.
+DROP TABLE IF EXISTS t_text_fold;
+CREATE TABLE t_text_fold (m Map(String, String), INDEX idx mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_text_fold VALUES ({'k': 'v'});
+SELECT count() FROM t_text_fold WHERE length(arrayResize([], 8000, repeat(m['k'] || 'x', 16384))) = 0 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_text_fold;

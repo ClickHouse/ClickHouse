@@ -687,6 +687,9 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
 template <typename T>
 size_t valueBytes(const NumericValueSlice<T> &) { return sizeof(T); }
 
+/// `rangeBytes` of a column that wraps others, from its components.
+size_t wrappedRangeBytes(const IColumn & column, size_t begin, size_t end);
+
 /// The sum of `byteSizeAt` over rows [begin, end), without visiting each element of fixed-size, string or array data.
 inline size_t rangeBytes(const IColumn & column, size_t begin, size_t end)
 {
@@ -697,10 +700,7 @@ inline size_t rangeBytes(const IColumn & column, size_t begin, size_t end)
     if (const auto * array = typeid_cast<const ColumnArray *>(&column))
         return (end - begin) * sizeof(ColumnArray::Offset)
             + rangeBytes(array->getData(), array->getOffsets()[begin - 1], array->getOffsets()[end - 1]);
-    size_t bytes = 0;
-    for (size_t i = begin; i < end; ++i)
-        bytes += column.byteSizeAt(i);
-    return bytes;
+    return wrappedRangeBytes(column, begin, end);
 }
 
 inline size_t valueBytes(const GenericValueSlice & slice) { return rangeBytes(*slice.elements, slice.position, slice.position + 1); }
@@ -708,11 +708,26 @@ inline size_t valueBytes(const GenericValueSlice & slice) { return rangeBytes(*s
 template <typename Slice>
 size_t valueBytes(const NullableSlice<Slice> & slice) { return valueBytes(static_cast<const Slice &>(slice)) + 1; }
 
+template <typename T>
+size_t averageValueBytes(const NumericValueSource<T> &) { return sizeof(T); }
+
+inline size_t averageValueBytes(const GenericValueSource & source)
+{
+    return source.column->byteSize() / std::max<size_t>(1, source.column->size());
+}
+
+template <typename Base>
+size_t averageValueBytes(const NullableValueSource<Base> & source) { return averageValueBytes(static_cast<const Base &>(source)) + 1; }
+
 template <typename Source>
 constexpr bool is_const_source = false;
 
 template <typename Base>
 constexpr bool is_const_source<ConstSource<Base>> = true;
+
+/// Fewer copies of a non-constant value are priced by the average value of its column: the size of a value can cost
+/// more to compute than to copy the value.
+constexpr size_t min_copies_to_price_value = 16;
 
 template <typename ValueSource, typename Sink>
 NO_INLINE void writeValueRepeatedlyChunked(
@@ -729,14 +744,17 @@ NO_INLINE void writeValueRepeatedlyChunked(
     }
 }
 
-/// `units_per_value` is 0 until the first priced value; a constant extender is priced only once.
+/// `average_units_per_value` is 0 until the first fill.
 template <typename ValueSource, typename Sink>
 ALWAYS_INLINE void writeValueRepeatedly(
-    ValueSource && value_source, Sink && sink, size_t count, size_t & units_per_value, CancellationBudget & budget)
+    ValueSource && value_source, Sink && sink, size_t count, size_t & average_units_per_value, CancellationBudget & budget)
 {
     if (count == 0)
         return;
-    if (units_per_value == 0 || !is_const_source<std::remove_cvref_t<ValueSource>>)
+    if (average_units_per_value == 0)
+        average_units_per_value = 1 + averageValueBytes(value_source) / CancellationBudget::bytes_per_unit;
+    size_t units_per_value = average_units_per_value;
+    if (!is_const_source<std::remove_cvref_t<ValueSource>> && count >= min_copies_to_price_value)
         units_per_value = 1 + valueBytes(value_source.getWhole()) / CancellationBudget::bytes_per_unit;
     if (count * units_per_value > CancellationBudget::units_per_check)
     {
@@ -755,7 +773,7 @@ void resizeDynamicSize(
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
     const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
     const IColumn * size_nested_column = size_nullable ? &size_nullable->getNestedColumn() : &size_column;
-    size_t units_per_value = 0;
+    size_t average_units_per_value = 0;
 
     while (!sink.isEnd())
     {
@@ -777,7 +795,7 @@ void resizeDynamicSize(
                 if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
-                    writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
+                    writeValueRepeatedly(value_source, sink, length - array_size, average_units_per_value, budget);
                 }
                 else
                     writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -791,7 +809,7 @@ void resizeDynamicSize(
 
                 if (array_size <= length)
                 {
-                    writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
+                    writeValueRepeatedly(value_source, sink, length - array_size, average_units_per_value, budget);
                     writeSlice(array_source.getWhole(), sink);
                 }
                 else
@@ -811,7 +829,7 @@ template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeConstantSize(
     ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size, CancellationBudget & budget)
 {
-    size_t units_per_value = 0;
+    size_t average_units_per_value = 0;
     while (!sink.isEnd())
     {
         auto array_size = array_source.getElementSize();
@@ -826,7 +844,7 @@ void resizeConstantSize(
             if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
-                writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
+                writeValueRepeatedly(value_source, sink, length - array_size, average_units_per_value, budget);
             }
             else
                 writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -840,7 +858,7 @@ void resizeConstantSize(
 
             if (array_size <= length)
             {
-                writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
+                writeValueRepeatedly(value_source, sink, length - array_size, average_units_per_value, budget);
                 writeSlice(array_source.getWhole(), sink);
             }
             else
