@@ -165,6 +165,16 @@ struct GroupArraySortedData
             values.push_back(element, arena);
     }
 
+    /// Whether a string would not get into the result, checked without making a `Field` and copying the string:
+    /// when the heap is full, most values are not less than its maximum and are rejected.
+    ALWAYS_INLINE bool rejectsString(std::string_view value, size_t max_elements) const
+    {
+        if constexpr (is_value_generic_field && strategy == GroupArraySortedStrategy::heap)
+            return values.size() >= max_elements && value >= std::string_view(values[0].template safeGet<String>());
+        else
+            return false;
+    }
+
     ALWAYS_INLINE void addElement(T && element, size_t max_elements, Arena * arena)
     {
         if constexpr (strategy == GroupArraySortedStrategy::heap)
@@ -240,6 +250,7 @@ public:
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , max_elements(max_elements_)
         , serialization(data_type_->getDefaultSerialization())
+        , is_string(isStringOrFixedString(data_type_))
     {
         if (max_elements > aggregate_function_group_array_sorted_max_element_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -253,6 +264,9 @@ public:
     {
         if constexpr (std::is_same_v<T, Field>)
         {
+            if (is_string && this->data(place).rejectsString(columns[0]->getDataAt(row_num), max_elements))
+                return;
+
             auto row_value = (*columns[0])[row_num];
             this->data(place).addElement(std::move(row_value), max_elements, arena);
         }
@@ -351,6 +365,8 @@ public:
 private:
     UInt64 max_elements;
     SerializationPtr serialization;
+    /// Values are `String` or `FixedString`, and their `Field`s are strings.
+    bool is_string;
 };
 
 template <typename T>
