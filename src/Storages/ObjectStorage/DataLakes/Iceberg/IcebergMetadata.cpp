@@ -1639,12 +1639,14 @@ IcebergMetadata::estimateRead(
     }
 
     DataLakeReadEstimate estimate;
-    estimate.rows = 0;
 
     /// A table that was never written has no snapshot and no rows.
     auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
     if (!data_snapshot)
+    {
+        estimate.profile.emplace();
         return estimate;
+    }
 
     ManifestColumnStatistics column_statistics(
         column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id, context);
@@ -1739,17 +1741,12 @@ IcebergMetadata::estimateRead(
                     has_negative_record_count = true;
                     return false;
                 }
-                /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
-                *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
                 column_statistics.addFile(*data_file, manifest_list_entry.manifest_file_path);
             }
             return true;
         });
     if (has_negative_record_count)
-    {
-        estimate.rows.reset();
         return estimate;
-    }
     column_statistics.finalize(estimate);
     return estimate;
 }

@@ -174,9 +174,10 @@ namespace
 
         if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
         {
-            if (auto point = deserializeUUIDPointFromBinaryRepr(left_str, right_str))
-                hyperrectangles.emplace(column_id, DB::Range(*point));
-            continue;
+            auto point = deserializeUUIDPointFromBinaryRepr(left_str, right_str);
+            if (!point)
+                return std::nullopt;
+            return ColumnBounds{*point, *point, *point, *point};
         }
 
         auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);

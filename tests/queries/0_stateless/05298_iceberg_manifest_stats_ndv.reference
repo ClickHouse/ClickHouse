@@ -21,30 +21,26 @@ ResultRows: 10000
 Expect 400: dense_int is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.
 Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 400
---- T5: use_iceberg_manifest_column_statistics = 0
-Expect 100000: without column statistics the Iceberg key has no NDV, so only the NDV of dim10 divides: 100000 * 10 / 10.
-Join: ice_keys[100000] ⋈ dim10[10]
-ResultRows: 100000
---- T6: use_statistics = 0
-Expect ~~100000: neither key has an NDV, so the join is taken as FK -> PK and keeps the larger side; dim10 rows are imprecise.
-Join: ice_keys[100000] ⋈ dim10[no_stats~10]
-ResultRows: ~~100000
---- T7: rule 2, sparse integer: range clamped to the rows
+--- T5: use_statistics = 0
+Expect no estimate for ice_keys and no result rows: the manifests are not read; dim10 rows are imprecise.
+Join: ice_keys ⋈ dim10[no_stats~10]
+ResultRows: unknown
+--- T6: rule 2, sparse integer: range clamped to the rows
 Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).
 Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 10
---- T8: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8
+--- T7: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8
 Expect 100000 * 10 / (column_sizes of decimal_key / 8); the size depends on the Parquet encoder, so it is read.
 as expected
---- T9: rule 4, String: 10% of the rows
+--- T8: rule 4, String: 10% of the rows
 Expect 100: 10% of the 100000 rows, as MergeTree without `uniq`: 100000 * 10 / 10000 (true NDV 2500, result 400).
 Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 100
---- T10: Float64: no bounds written, not countable, no column_sizes in the Avro file: rule 4, 10% of rows
+--- T9: Float64: no bounds written, not countable, no column_sizes in the Avro file: rule 4, 10% of rows
 Expect 100: rule 2 skips floats, rule 3 needs column_sizes in every file: 10% of 2000 rows, 2000 * 10 / 200.
 Join: ice_mixed_formats[2000] ⋈ dim10[10]
 ResultRows: 100
---- T11: int_key Int32, then Int64, then renamed to renamed_key: range 1000
+--- T10: int_key Int32, then Int64, then renamed to renamed_key: range 1000
 Expect 20: int_key is 0..499 as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if the bounds were lost).
 Join: ice_promoted[2000] ⋈ dim10[10]
 ResultRows: 20
