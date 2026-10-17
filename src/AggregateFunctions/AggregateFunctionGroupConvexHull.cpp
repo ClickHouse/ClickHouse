@@ -448,7 +448,7 @@ SELECT wkt(groupConvexHull(pt)) FROM (
             R"(
 POLYGON((0 0,0 1,1 1,1 0,0 0))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -457,7 +457,10 @@ POLYGON((0 0,0 1,1 1,1 0,0 0))
     /// all-NULL group returns an empty `Ring` either way, consistent with the empty-group result. But with true,
     /// a literal NULL argument would be replaced by `AggregateFunctionNothingUInt64`, i.e. `groupConvexHull(NULL)`
     /// would return `0 :: UInt64` instead of `NULL`.
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    /// `is_order_dependent` is false: unlike the polygon overlay aggregates, both the result and the serialized
+    /// state are the canonical hull of the accumulated point set (`computeGeoConvexHull` sorts its input and
+    /// `serialize` writes the hull rather than the raw points), so an input `ORDER BY` can be removed.
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = false};
     factory.registerFunction("groupConvexHull", {createAggregateFunctionGroupConvexHull, documentation, properties});
 }
 
