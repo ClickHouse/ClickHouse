@@ -887,8 +887,9 @@ def test_audit_log_create_token_is_dcl(start_cluster):
 
 def test_audit_log_fire_and_forget_async_insert_flush_failure(start_cluster):
     """With `wait_for_async_insert = 0` the `INSERT` is audited as soon as its data is queued, before
-    it is parsed and written. A flush that fails afterwards must leave its own DML record with a
-    non-zero exception code, so the audit trail does not show only a successful `INSERT`."""
+    it is parsed and written. A flush that fails afterwards must leave its own DML record (of kind
+    `AsyncInsertFlush`) with a non-zero exception code, so the audit trail does not show only a
+    successful `INSERT`."""
     node_dml_misc.query("DROP TABLE IF EXISTS audit_async_flush_table")
     node_dml_misc.query(
         "CREATE TABLE audit_async_flush_table (a UInt32, CONSTRAINT c CHECK a < 10) ENGINE = Memory"
@@ -902,14 +903,14 @@ def test_audit_log_fire_and_forget_async_insert_flush_failure(start_cluster):
     )
     node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
 
-    for _ in range(20):
+    for _ in range(60):
         log_content = node_dml_misc.grep_in_log(
             "audit_async_flush_table", from_host=True, filename="clickhouse-server.audit.log"
         )
         failed = [
             line for line in log_content.strip().split("\n")
             if "AUDIT:" in line
-            and line.split("AUDIT: ", 1)[1].split(", ")[1] == "Insert"
+            and line.split("AUDIT: ", 1)[1].split(", ")[1] == "AsyncInsertFlush"
             and line.split("AUDIT: ", 1)[1].split(", ")[2] != "0"
         ]
         if failed:
