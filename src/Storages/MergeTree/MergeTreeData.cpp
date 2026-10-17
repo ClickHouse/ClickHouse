@@ -13195,7 +13195,8 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
     if (!isEmpty())
     {
         for (const auto & part : precommitted_parts)
-            part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
+            if (!isAbandonedPublishedPart(part))
+                part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
         auto non_detached_precommitted_parts = precommitted_parts;
 
@@ -13208,7 +13209,9 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
         for (auto it = non_detached_precommitted_parts.begin(); it != non_detached_precommitted_parts.end();)
         {
             const auto & part = *it;
-            if (part->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
+            /// An abandoned published part may be active on another leader: take it out of the
+            /// working set without scheduling the removal of its directory.
+            if (part->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME || isAbandonedPublishedPart(part))
             {
                 detached_precommitted_parts.push_back(part);
                 it = non_detached_precommitted_parts.erase(it);
@@ -13270,6 +13273,7 @@ void MergeTreeData::Transaction::clear()
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
     published_parts_pending_commit.clear();
+    abandoned_published_parts.clear();
     commit_prepared = false;
     covered_parts_for_commit.clear();
     covering_parts.clear();
@@ -13337,6 +13341,26 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// input of the command). For the same reason an entry whose part is already at its recorded
     /// source is dropped without renaming: entries are journaled before the publishing rename, which
     /// can fail without moving the part.
+    ///
+    /// The undo is itself a write to shared storage, so it is done only while this node still holds
+    /// the lease in the epoch of the publish. Otherwise another leader may already have taken over
+    /// and adopted the published parts: for example, a merged part published before a stall, after
+    /// which the new leader removed the covered source parts. Renaming it away would then lose the
+    /// data. The parts are left in place instead, exactly as if this node had crashed right after
+    /// the publish, which the next leader has to handle anyway.
+    if (publish_fence_epoch && !published_parts_pending_commit.empty()
+        && (!data.mayMutateSharedStorage() || data.currentLeadershipEpoch() != *publish_fence_epoch))
+    {
+        for (auto & entry : published_parts_pending_commit)
+        {
+            LOG_WARNING(data.log, "Leaving published part {} in place: this node no longer holds the leader lease in the epoch of the publish",
+                entry.first->name);
+            abandoned_published_parts.push_back(std::move(entry.first));
+        }
+        published_parts_pending_commit.clear();
+        return;
+    }
+
     std::exception_ptr first_exception;
     std::vector<std::pair<MutableDataPartPtr, String>> failed_entries;
     while (!published_parts_pending_commit.empty())
@@ -13372,6 +13396,11 @@ void MergeTreeData::Transaction::undoPublishedRenames()
 
     if (first_exception)
         std::rethrow_exception(first_exception);
+}
+
+bool MergeTreeData::Transaction::isAbandonedPublishedPart(const MutableDataPartPtr & part) const
+{
+    return std::find(abandoned_published_parts.begin(), abandoned_published_parts.end(), part) != abandoned_published_parts.end();
 }
 
 void MergeTreeData::Transaction::validateCommitPreconditions()

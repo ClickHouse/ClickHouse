@@ -513,6 +513,14 @@ public:
         /// `undoPublishedRenames`) can still rename them back. Only tracked when the publish
         /// fence is armed.
         std::vector<std::pair<MutableDataPartPtr, String>> published_parts_pending_commit;
+
+        /// Published parts that `undoPublishedRenames` left under their persistent names because
+        /// this node no longer owned the shared storage in the epoch of the publish: another
+        /// leader may have adopted them. The rollback removes them from the working set without
+        /// touching their directories.
+        MutableDataPartsVector abandoned_published_parts;
+
+        bool isAbandonedPublishedPart(const MutableDataPartPtr & part) const;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
