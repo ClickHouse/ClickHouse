@@ -4,7 +4,7 @@ stage:                Query log rows
 read_rows:            300
 written_rows:         201
 databases:            ['_table_function','default']
-tables:               ['_table_function.numbers','default.table_a','default.table_b','default.table_c']
+tables:               ['_table_function.numbers','default.matview_a_to_b','default.matview_b_to_c','default.table_a','default.table_b','default.table_c']
 views:                ['default.matview_a_to_b','default.matview_b_to_c']
 sleep_calls:          200
 sleep_us:             300
@@ -51,7 +51,7 @@ stage:                Query log rows 2
 read_rows:            100
 written_rows:         100
 databases:            ['_table_function','default']
-tables:               ['_table_function.numbers','default.table_d','default.table_e','default.table_f']
+tables:               ['_table_function.numbers','default.matview_join_d_e','default.table_d','default.table_e','default.table_f']
 views:                ['default.matview_join_d_e']
 sleep_calls:          50
 sleep_us:             150
