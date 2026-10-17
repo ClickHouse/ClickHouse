@@ -29,10 +29,9 @@ SELECT toUnixTimestamp64Nano(toDateTime64(-1e30, 9)) = toInt64('-922337203685477
        toUnixTimestamp64Nano(toDateTime64(-300000000000::Int64, 9)) = toInt64('-9223372036854775808');
 SELECT toTime64(-3600000, 6), toTime64(-3600000::Int64, 6), toTime64(-3600000.0, 6), toTime64(-3600000::Int64, 9);
 
-SELECT 'numeric sources are rejected under throw';
-SELECT toTime64(materialize(3600000.0), 6) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toTime64(materialize(3600000::Int64), 6) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toTime64(materialize(3600000::UInt64), 6) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT 'a numeric source is rejected under throw, which reaches the transforms now';
+SELECT toTime64(materialize(3600000.0), 6), toTime64(materialize(3600000::Int64), 6), toTime64(materialize(3600000::UInt64), 6)
+SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT 'a fraction inside the boundary second survives, only real overflow saturates';
 SELECT toDateTime64(9223372036.5, 9), toDateTime64(-9223372036.5, 9);
@@ -48,3 +47,6 @@ SELECT 'a wide source beyond Int64 keeps its sign instead of narrowing first';
 SELECT toTime64(toInt128('9223372036854775808'), 6), toTime64(toInt128('-9223372036854775809'), 6);
 SELECT toTime64(toInt256('9223372036854775808'), 6), toTime64(toUInt128('9223372036854775808'), 6);
 SELECT toDateTime64(toInt128('9223372036854775808'), 9), toDateTime64(toInt128('-9223372036854775809'), 9);
+
+-- The accurate casts honour their "fail when not representable" contract for these targets as well, including
+-- for a wide integer source; `05099` asserts that.

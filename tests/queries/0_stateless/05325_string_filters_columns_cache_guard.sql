@@ -13,8 +13,10 @@ INSERT INTO t_string_filter_columns_cache SELECT number, if(number % 100 = 0, 'n
 
 SET use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
 SELECT count(), sum(length(s)) FROM t_string_filter_columns_cache PREWHERE s LIKE '%needle%'
-SETTINGS apply_string_filters_during_scan = 1, log_comment = '05325_filtered';
+SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05325_filtered';
 
 -- Served from the columns cache populated by the previous query.
 SELECT count(), countIf(empty(s)), sum(length(s)) FROM t_string_filter_columns_cache
