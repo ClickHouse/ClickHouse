@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
+# TEST RIG (do not merge): force build jobs to run and recompile to exercise the sccache hit-rate warning.
 
 # Some CMakeLists.txt in contrib/ are not being good citizens and change cmake cache variables
 # globally. This policy prevents such *cache* variable assignments from altering *normal* variables
