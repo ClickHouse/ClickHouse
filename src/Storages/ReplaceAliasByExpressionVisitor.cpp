@@ -73,7 +73,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
                 else if (const auto * identifier = sub_ast->as<ASTIdentifier>())
                 {
                     /// A compound identifier like `t.v` is captured when its root `t` is a lambda parameter.
-                    const String & root = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front();
+                    const String & root = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front().spelling;
                     if (bound.contains(root))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "ALIAS column '{}' cannot be expanded inside a lambda: its expression references '{}', "

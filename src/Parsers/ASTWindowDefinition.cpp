@@ -23,6 +23,7 @@ ASTPtr ASTWindowDefinition::clone() const
     auto result = make_intrusive<ASTWindowDefinition>();
 
     result->parent_window_name = parent_window_name;
+    result->parent_window_name_quote = parent_window_name_quote;
 
     if (partition_by)
     {
@@ -71,6 +72,8 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
+    /// `parent_window_name_quote` is not hashed: formatting does not preserve quote styles, and the
+    /// hash must survive a format/reparse round trip. The query result cache key mixes it in instead.
     hash_state.update(frame_is_default);
     hash_state.update(frame_type);
     hash_state.update(frame_begin_type);
@@ -180,6 +183,7 @@ ASTPtr ASTWindowListElement::clone() const
     auto result = make_intrusive<ASTWindowListElement>();
 
     result->name = name;
+    result->name_quote = name_quote;
     result->definition = definition->clone();
     result->children.push_back(result->definition);
 
@@ -197,10 +201,11 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
     /// into whatever `getID` writes next.
     static_assert(
-        sizeof(void *) != 8 || sizeof(*this) == 64,
+        sizeof(void *) != 8 || sizeof(*this) == 72,
         "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
+    /// `name_quote` is not hashed, see `ASTWindowDefinition::updateTreeHashImpl`.
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -217,7 +222,10 @@ void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WindowDefinition");
     if (!parent_window_name.empty())
+    {
         w.writeString("parent_window_name", parent_window_name);
+        w.writeQuote("parent_window_name_quote", parent_window_name_quote);
+    }
     w.writeChild("partition_by", partition_by);
     w.writeChild("order_by", order_by);
     if (!frame_is_default)
@@ -270,6 +278,7 @@ void ASTWindowListElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WindowListElement");
     w.writeString("name", name);
+    w.writeQuote("name_quote", name_quote);
     w.writeChild("definition", definition);
 }
 
@@ -294,6 +303,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     parent_window_name = r.getString("parent_window_name");
+    parent_window_name_quote = r.readQuote("parent_window_name_quote");
 
     /// `partition_by` and `order_by` are parser-owned `ASTExpressionList`s; the analyzer builds an
     /// expression list from `partition_by` and a sort list from `order_by` (whose children must be
@@ -398,6 +408,7 @@ void ASTWindowListElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    name_quote = r.readQuote("name_quote");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'name' for WindowListElement during AST JSON deserialization");
 

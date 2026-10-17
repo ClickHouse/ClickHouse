@@ -59,6 +59,7 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -482,13 +483,22 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
+/// The table identifier AST carries the quoting of the parts, so double-quoted parts stay exact under `standard` name matching.
+ASTPtr makeTableIdentifierAST(const IdentifierNode & identifier_node)
+{
+    const auto & identifier_name = identifier_node.getIdentifierName();
+    if (identifier_name.size() != 1 && identifier_name.size() != 2)
+        return {};
+    return make_intrusive<ASTTableIdentifier>(identifier_name);
+}
+
 bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
 {
     QueryTreeNodePtr resolved_table = join_tree;
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -524,7 +534,7 @@ bool hasLateAttachedTableFilter(
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -1471,7 +1481,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
     {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        /// A function name is written without quotes, so it folds under `standard` matching.
+        IdentifierLookup function_name_lookup{Identifier{function_name}, IdentifierLookupContext::FUNCTION};
+        function_name_lookup.identifier_name = IdentifierName({IdentifierPart{function_name, IdentifierPartQuote::Unquoted}});
+        auto function_lookup_result = tryResolveIdentifier(function_name_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
@@ -1652,6 +1665,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+        identifier_lookup.identifier_name = first_argument_identifier.getIdentifierName();
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())
@@ -1674,7 +1688,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, makeTableIdentifierAST(first_argument_identifier)).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -2041,7 +2056,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
                 if (subquery_projection_columns.size() == 1)
                 {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({IdentifierPart{unique_column_name, IdentifierPartQuote::Unquoted}});
                     subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
                 }
                 else
@@ -2277,13 +2292,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 /// Now check if the identifier resolves as a column or alias.
                                 /// This is deferred to here because tryResolveIdentifier may allocate
                                 /// tree nodes that affect node ID numbering.
-                                auto expression_resolve_result = tryResolveIdentifier(
-                                    {identifier, IdentifierLookupContext::EXPRESSION}, scope, {});
+                                IdentifierLookup rewrite_expression_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+                                rewrite_expression_lookup.identifier_name = identifier_node->getIdentifierName();
+                                auto expression_resolve_result = tryResolveIdentifier(rewrite_expression_lookup, scope, {});
 
                                 if (!expression_resolve_result.isResolved())
                                 {
-                                    auto function_resolve_result = tryResolveIdentifier(
-                                        {identifier, IdentifierLookupContext::FUNCTION}, scope, {});
+                                    IdentifierLookup rewrite_function_lookup{identifier, IdentifierLookupContext::FUNCTION};
+                                    rewrite_function_lookup.identifier_name = identifier_node->getIdentifierName();
+                                    auto function_resolve_result = tryResolveIdentifier(rewrite_function_lookup, scope, {});
 
                                     if (!function_resolve_result.isResolved())
                                     {

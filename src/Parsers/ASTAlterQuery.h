@@ -229,6 +229,14 @@ public:
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
+
+    /// Quoting of the secondary table name parts as written in the query.
+    /// Placed in the padding after `replace`, so they do not grow the node.
+    IdentifierPartQuote from_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote from_table_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote to_table_quote = IdentifierPartQuote::Unquoted;
+
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
