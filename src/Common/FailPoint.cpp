@@ -405,6 +405,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(attach_from_path_pause_before_relocation) \
     PAUSEABLE_ONCE(rocksdb_rename_pause_before_rollback) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
+    PAUSEABLE(database_catalog_drop_finally_after_notify) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
     ONCE(mt_drop_selected_ttl_merge_once) \
