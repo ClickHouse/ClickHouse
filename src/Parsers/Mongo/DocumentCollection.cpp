@@ -210,6 +210,18 @@ const ASTIdentifier * elementWiseField(const ASTPtr & node)
   */
 ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
 {
+    /** Mongo's `null` equals both a `null` and a missing field, and the path of a missing field is
+      * `NULL` as well. `equals` with `NULL` is `NULL` for every document rather than true, which
+      * would match nothing - and under a negation, which takes a `NULL` condition as not holding,
+      * everything - so the comparison with a `null` is a test of `NULL` instead.
+      */
+    auto make_equality = [](ASTPtr path, const ASTPtr & value) -> ASTPtr
+    {
+        if (const auto * literal = value->as<ASTLiteral>(); literal && literal->value.isNull())
+            return makeASTFunction("isNull", std::move(path));
+        return makeASTFunction("equals", std::move(path), value->clone());
+    };
+
     if (!function.arguments || function.arguments->children.size() != 2)
         return nullptr;
 
@@ -228,7 +240,7 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
     if (function.name == "has")
     {
         if (const auto * field = elementWiseField(left))
-            return makeASTFunction("equals", field_or_path(*field), right->clone());
+            return make_equality(field_or_path(*field), right);
         return nullptr;
     }
 
@@ -253,7 +265,7 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
         ASTPtr matches;
         for (const auto & candidate : candidates->arguments->children)
         {
-            auto match = makeASTFunction("equals", path->clone(), candidate->clone());
+            auto match = make_equality(path->clone(), candidate);
             matches = matches ? makeASTFunction("or", std::move(matches), std::move(match)) : std::move(match);
         }
         return matches;
@@ -268,9 +280,31 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
   * `keep_name_as_alias` is for the select list, where the column of the result must keep the name of
   * the field: `json.name` as a column name would be read back as the `name` member of a `json`
   * document, because a dotted column name is the nested document it names.
+  *
+  * `input_table` is the alias of the table the select reads, which the object id is qualified with
+  * when it is not empty, so that it names the column of the input even where the select list has
+  * an alias `_id` of its own - see `rewriteSelect`.
   */
-void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_name_as_alias = false)
+void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_name_as_alias = false, const String & input_table = {})
 {
+    /// The object id of the input: a column of the table rather than a path of the document.
+    auto make_object_id = [&](const String & alias) -> ASTPtr
+    {
+        if (input_table.empty())
+        {
+            auto object_id = make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+            object_id->setAlias(alias);
+            return object_id;
+        }
+        auto object_id = make_intrusive<ASTIdentifier>(std::vector<String>{input_table, String(OBJECT_ID_COLUMN)});
+        /// A qualified name would also be the name of the column of the result.
+        if (!alias.empty())
+            object_id->setAlias(alias);
+        else if (keep_name_as_alias)
+            object_id->setAlias(String(OBJECT_ID_COLUMN));
+        return object_id;
+    };
+
     if (!node)
         return;
 
@@ -290,7 +324,7 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
 
         if (*field == OBJECT_ID_COLUMN)
         {
-            node = make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+            node = make_object_id({});
             return;
         }
 
@@ -305,8 +339,13 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
     {
         /// The object id is a column of the table, and a name the query binds itself - an alias of
         /// the select list, the element of a lambda - is not a field of a document.
-        if (identifier->name() == OBJECT_ID_COLUMN || bound.contains(identifier->name()))
+        if (bound.contains(identifier->name()))
             return;
+        if (identifier->name() == OBJECT_ID_COLUMN)
+        {
+            node = make_object_id(identifier->tryGetAlias());
+            return;
+        }
 
         auto field_name = identifier->name();
         const bool named_by_itself = identifier->tryGetAlias().empty();
@@ -330,7 +369,33 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
     }
 
     for (auto & child : node->children)
-        rewriteField(child, bound);
+        rewriteField(child, bound, /* keep_name_as_alias = */ false, input_table);
+}
+
+/** Gives the table a select reads an alias, unless it has one already, and returns that alias. The
+  * fields of the input are qualified with it where a name of the select list could capture them.
+  */
+String aliasInputTable(ASTSelectQuery & select)
+{
+    static constexpr std::string_view input_alias = "__mongo_input";
+
+    const auto tables = select.tables();
+    if (!tables || tables->children.empty())
+        return {};
+    auto * element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        return {};
+    auto * table_expression = element->table_expression->as<ASTTableExpression>();
+    if (!table_expression)
+        return {};
+
+    ASTPtr table = table_expression->database_and_table_name ? table_expression->database_and_table_name : table_expression->subquery;
+    auto * with_alias = dynamic_cast<ASTWithAlias *>(table.get());
+    if (!with_alias)
+        return {};
+    if (with_alias->alias.empty())
+        with_alias->setAlias(String(input_alias));
+    return with_alias->alias;
 }
 
 void rewriteSelect(ASTSelectQuery & select)
@@ -347,26 +412,34 @@ void rewriteSelect(ASTSelectQuery & select)
     collectAliases(select.select(), aliases);
     const std::unordered_set<String> input_scope;
 
+    /** The fields of a document are paths of the `json` column, which no alias of the select list
+      * captures, but the object id is a column of its own, and an alias wins over a column of the
+      * same name here (see `preferAliasesToColumns`). `{$group: {_id: null, ids: {$push: "$_id"}}}`
+      * would collect its own key rather than the object ids of the documents it groups, so the object
+      * id of the input is qualified with the table it is read from when the select binds `_id`.
+      */
+    const String input_table = aliases.contains(String(OBJECT_ID_COLUMN)) ? aliasInputTable(select) : String{};
+
     /// A field of the select list becomes a path that keeps the name of the field as its alias.
     if (const auto select_list = select.select())
     {
         for (auto & child : select_list->children)
-            rewriteField(child, input_scope, /* keep_name_as_alias = */ true);
+            rewriteField(child, input_scope, /* keep_name_as_alias = */ true, input_table);
     }
 
     /// A clause whose whole expression may be a field of its own is taken by reference, so that the
     /// field can be replaced. The rest are lists, whose children are replaced one by one.
     if (select.where())
-        rewriteField(select.refWhere(), input_scope);
+        rewriteField(select.refWhere(), input_scope, /* keep_name_as_alias = */ false, input_table);
     if (select.prewhere())
-        rewriteField(select.refPrewhere(), input_scope);
+        rewriteField(select.refPrewhere(), input_scope, /* keep_name_as_alias = */ false, input_table);
     if (select.having())
         rewriteField(select.refHaving(), aliases);
 
     if (const auto group_by = select.groupBy())
     {
         for (auto & child : group_by->children)
-            rewriteField(child, input_scope);
+            rewriteField(child, input_scope, /* keep_name_as_alias = */ false, input_table);
     }
 
     for (const auto & list : {select.orderBy(), select.limitBy()})
@@ -384,7 +457,7 @@ void rewriteSelect(ASTSelectQuery & select)
         {
             auto * element = child->as<ASTTablesInSelectQueryElement>();
             if (element && element->array_join)
-                rewriteField(element->array_join, input_scope);
+                rewriteField(element->array_join, input_scope, /* keep_name_as_alias = */ false, input_table);
         }
     }
 }
@@ -484,6 +557,11 @@ bool selectDocumentsOfCollection(const ASTPtr & query)
 {
     auto * select = outermostSelect(query);
     if (!select)
+        return false;
+
+    /// An asterisk over the result of a stage that builds documents of its own - a `$sort` after a
+    /// `$group` - selects the columns of that result, not the stored documents.
+    if (!readsDocuments(*select))
         return false;
 
     const auto select_list = select->select();

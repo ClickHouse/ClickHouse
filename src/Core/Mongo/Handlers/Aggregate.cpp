@@ -6,6 +6,7 @@
 #include <Parsers/Mongo/DocumentCollection.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
@@ -51,6 +52,55 @@ bool pipelineReadsOtherCollections(const rapidjson::Value & pipeline)
     }
 
     return false;
+}
+
+/// The names of the columns a select produces, in their order.
+std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<QueryExecutor> executor)
+{
+    String select_text;
+    {
+        WriteBufferFromString buffer(select_text);
+        select->format(buffer, IAST::FormatSettings(true));
+    }
+
+    std::vector<String> names;
+    for (const auto & line : splitByNewline(executor->execute(fmt::format("DESCRIBE TABLE ({}) FORMAT TabSeparated", select_text))))
+    {
+        if (line.empty())
+            continue;
+        names.push_back(line.substr(0, line.find('\t')));
+    }
+    return names;
+}
+
+/** A `$unionWith` is lowered into a `UNION ALL`, which matches the columns of its selects by their
+  * positions, while Mongo keeps the field names of every document: a collection `b(y, x)` united
+  * with `a(x, y)` would have its `y` returned as `x`. The fields are not known until the selects are
+  * analyzed, so the union is refused when its selects do not produce the same names in the same
+  * order, rather than answered with values under the wrong fields.
+  */
+void checkUnionColumnNames(const ASTPtr & node, std::shared_ptr<QueryExecutor> executor)
+{
+    if (!node)
+        return;
+
+    if (const auto * union_query = node->as<ASTSelectWithUnionQuery>();
+        union_query && union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
+    {
+        const auto & selects = union_query->list_of_selects->children;
+        const auto first_names = resultColumnNames(selects.front(), executor);
+        for (size_t i = 1; i < selects.size(); ++i)
+        {
+            if (resultColumnNames(selects[i], executor) != first_names)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A '$unionWith' whose documents do not have the same fields in the same order as the documents of the pipeline it "
+                    "is added to is not supported: project the same fields in the same order on both sides");
+        }
+    }
+
+    for (const auto & child : node->children)
+        checkUnionColumnNames(child, executor);
 }
 
 /// A query-wide rewrite is correct only when every source collection has the same physical shape.
@@ -212,6 +262,7 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
 
     try
     {
+        checkUnionColumnNames(ast, executor);
         return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
     }
     catch (const Exception & e)
