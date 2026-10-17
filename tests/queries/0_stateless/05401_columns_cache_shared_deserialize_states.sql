@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- no-parallel: `SYSTEM DROP COLUMNS CACHE` clears the cache of every test, and the reads of the test rely on the
+-- admission to the cache, which other tests filling the cache at the same time can make probabilistic.
+
 -- The columns cache serves a subcolumn for some granules and reads it from the part for others, so the reader that decodes
 -- the streams shared by the subcolumns of a column changes between calls. The deserialize states of such streams are shared
 -- by those readers, so the new decoder continues from where the previous one stopped.
