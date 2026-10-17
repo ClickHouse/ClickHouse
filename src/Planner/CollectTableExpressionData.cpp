@@ -50,7 +50,7 @@ public:
     {
         if (isIndexHintFunction(node))
         {
-            is_inside_index_hint_function = true;
+            ++index_hint_depth;
             return;
         }
 
@@ -64,7 +64,7 @@ public:
         /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
         /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
         /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
-        if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
+        if (index_hint_depth > 0 && isColumnSourceMergeTree(*column_node))
         {
             /// The column is not read, but index analysis over it prunes granules, and which granules
             /// survive is observable in the result. Keep enforcing column grants for it.
@@ -98,6 +98,8 @@ public:
             return;
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
+        if (index_hint_depth == 0 && referencesColumnOutsideIndexHint(node))
+            table_expression_data.markColumnReferencedOutsideIndexHint();
 
         if (isAliasColumn(node))
         {
@@ -110,6 +112,7 @@ public:
                 /// See also comment for `select_added_columns`
                 visitor_for_alias_column.select_added_columns = false;
                 visitor_for_alias_column.keep_alias_columns = keep_alias_columns;
+                visitor_for_alias_column.index_hint_depth = index_hint_depth;
                 visitor_for_alias_column.visit(column_node->getExpression());
 
                 if (!keep_alias_columns)
@@ -184,13 +187,12 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (isIndexHintFunction(node))
-        {
-            is_inside_index_hint_function = false;
+        /// An inlined ALIAS expression was entered as its column, not as an "indexHint" call.
+        if (inlined_alias_expressions.erase(node.get()))
             return;
-        }
 
-        inlined_alias_expressions.erase(node.get());
+        if (isIndexHintFunction(node))
+            --index_hint_depth;
     }
 
     static bool isAliasColumn(const QueryTreeNodePtr & node)
@@ -251,6 +253,30 @@ public:
         return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
     }
 
+    /// Whether `node` references a table column outside an "indexHint" argument once its ALIAS columns are expanded.
+    static bool referencesColumnOutsideIndexHint(const QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
+            return false;
+
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            if (isAliasColumn(node))
+                return referencesColumnOutsideIndexHint(column_node->getExpression());
+
+            const auto column_source = column_node->getColumnSourceOrNull();
+            return !column_source
+                || (column_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
+                    && column_source->getNodeType() != QueryTreeNodeType::INTERPOLATE);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child && referencesColumnOutsideIndexHint(child))
+                return true;
+
+        return false;
+    }
+
     static bool isColumnSourceMergeTree(const ColumnNode & node)
     {
         const auto * source_table = node.getColumnSource()->as<TableNode>();
@@ -278,8 +304,8 @@ private:
     /// Distinguishing such columns is important for checking access rights for ALIAS columns.
     bool select_added_columns = true;
 
-    /// True if we are traversing arguments of function "indexHint".
-    bool is_inside_index_hint_function = false;
+    /// Depth of nested "indexHint" calls whose arguments are being traversed.
+    size_t index_hint_depth = 0;
 
     /// Expressions that replaced ALIAS columns while `keep_alias_columns` is false; their columns are already collected.
     std::unordered_set<const IQueryTreeNode *> inlined_alias_expressions;
