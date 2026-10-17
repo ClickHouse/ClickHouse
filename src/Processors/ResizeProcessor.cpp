@@ -23,9 +23,11 @@ IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_in
     {
         initialized = true;
 
+        input_ports.reserve(inputs.size());
         for (auto & input : inputs)
             input_status[&input] = InputStatus::NotActive;
 
+        output_ports.reserve(outputs.size());
         for (auto & output : outputs)
             output_status[&output] = OutputStatus::NotActive;
     }
