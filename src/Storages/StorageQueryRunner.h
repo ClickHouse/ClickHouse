@@ -1,16 +1,23 @@
 #pragma once
 
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 
 namespace DB
 {
 
+class ASTStorage;
 class QueryRunnerDispatcher;
 enum class QueryRunnerMode : uint8_t;
 struct QueryRunnerSettings;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// Validates the `cluster`/`shard` settings of a `QueryRunner` engine and performs the
+/// `READ`+`WRITE ON REMOTE` check a clustered one requires, under `local_context`. Called both while
+/// the storage is constructed and from the `ON CLUSTER` initiator preflight.
+void validateQueryRunnerTarget(ASTStorage & storage_def, ContextPtr local_context, LoadingStrictnessLevel mode);
 
 class StorageQueryRunner final : public IStorage, WithContext
 {
