@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsString s3_upload_checksum_algorithm;
     extern const SettingsUInt64 s3_upload_part_size_multiply_factor;
     extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
+    extern const SettingsBool s3_use_idempotency_id;
 }
 
 namespace S3RequestSetting
@@ -1699,6 +1700,39 @@ TEST_P(SyncAsync, SinglepartConditionalPutKeepsCallerMetadata) {
     ASSERT_FALSE(injection->seen_metadata.empty());
     EXPECT_EQ(injection->seen_metadata[0].at("caller-key"), "caller-value");
     EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-idempotency-id").empty());
+}
+
+/// With `s3_use_idempotency_id` disabled, neither a single-part nor a multipart upload puts the token into
+/// the object metadata: some S3-compatible storages (Amazon S3 Tables) reject any `x-amz-meta-*` header.
+TEST_P(SyncAsync, DisabledIdempotencyIdIsNotStamped) {
+    getSettings()[Setting::s3_use_idempotency_id] = false;
+
+    {
+        auto buffer = getWriteBuffer("no_idempotency_id_put", {}, ObjectAttributes{{"caller-key", "caller-value"}});
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    {
+        auto buffer = getWriteBuffer("no_idempotency_id_mpu", {}, ObjectAttributes{{"caller-key", "caller-value"}});
+        writeAsOneBlock(*buffer, 10);
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    for (const auto * key : {"no_idempotency_id_put", "no_idempotency_id_mpu"})
+    {
+        const auto & metadata = bStore.object_metadata.at(key);
+        EXPECT_FALSE(metadata.contains("clickhouse-idempotency-id")) << key;
+        EXPECT_EQ(metadata.at("caller-key"), "caller-value") << key;
+    }
 }
 
 /// A 412 must not be accepted on an object carrying no token at all -- a pre-Fix or non-ClickHouse
