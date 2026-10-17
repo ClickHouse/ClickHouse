@@ -150,6 +150,12 @@ public:
         addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
     }
 
+    void addBatchSparseSinglePlaceInOrder(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const override
+    {
+        addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
+    }
+
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
