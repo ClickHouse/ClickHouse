@@ -2777,12 +2777,19 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// Settings
     ///
 
+    /// Use the current query kind rather than the previous query's kind on this connection.
+    query_kind = state->query_context->getClientInfo().query_kind;
+
     /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
-    /// different servers.
+    /// different servers. Check the connecting server's version: `client_version_*` belongs
+    /// to the original application, whose version is unrelated to ClickHouse server versions.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+        && VersionNumber(
+               client_info.connection_client_version_major,
+               client_info.connection_client_version_minor,
+               client_info.connection_client_version_patch)
             < VersionNumber(23, 3, 0)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
@@ -2794,7 +2801,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         passed_settings.set("optimize_const_name_size", -1);
 
     auto settings_changes = passed_settings.changes();
-    query_kind = state->query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
