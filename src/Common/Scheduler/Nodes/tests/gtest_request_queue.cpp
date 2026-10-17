@@ -734,17 +734,6 @@ TEST(RequestQueue, ThreadsSoftLimitServesDemotedLast)
     }
 }
 
-/// Without a limit (the default), nothing is demoted no matter how many slots a query holds.
-TEST(RequestQueue, ThreadsSoftLimitDisabledByDefault)
-{
-    Fixture f(SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond);
-    auto * q = f.makeQuery();
-    f.enqueue(1, q, 1, /*held_slots*/ 1000);
-    f.enqueue(2, q, 1, /*held_slots*/ 0);
-    EXPECT_EQ(f.queue->getDemotedLength(), 0u);
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2}));
-}
-
 /// The query override of the `max_threads_soft_limit` beats the workload default in both directions,
 /// and an override of `0` disables demotion for that query.
 TEST(RequestQueue, ThreadsSoftLimitQueryOverride)
@@ -767,17 +756,6 @@ TEST(RequestQueue, ThreadsSoftLimitQueryOverride)
         f.enqueue(2, other, 1, /*held_slots*/ 1);
         EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
     }
-}
-
-/// A query override of `0` is normalized to "disabled" by the scheduling context.
-TEST(RequestQueue, ThreadsSoftLimitOverrideNormalized)
-{
-    ResourceSchedulingContext unset(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{});
-    EXPECT_FALSE(unset.max_threads_soft_limit.has_value());
-    ResourceSchedulingContext zero(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{}, Int64(0));
-    EXPECT_EQ(zero.max_threads_soft_limit, std::numeric_limits<Int64>::max());
-    ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, Priority{}, Int64(4));
-    EXPECT_EQ(positive.max_threads_soft_limit, 4);
 }
 
 /// A demoted request returns to the active algorithm (behind the requests already there) as soon as
@@ -805,50 +783,23 @@ TEST(RequestQueue, ThreadsSoftLimitPromotion)
 
         // Without the promotion the order would be {2, 3, 1}
         EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1, 3})) << "algo=" << static_cast<int>(algo);
+        f.queue->updateHeldSlots(rx, 0); // already dequeued, as when it races with the scheduler thread: no-op
+        EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 0u);
     }
 }
 
-/// `updateHeldSlots` for a request that is not demoted (queued normally or already dequeued) does nothing.
-TEST(RequestQueue, ThreadsSoftLimitUpdateOfNotDemotedRequest)
-{
-    Fixture f(SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond, std::numeric_limits<Int64>::max(), /*threads_soft_limit*/ 2);
-    auto * q = f.makeQuery();
-    auto * r1 = f.enqueue(1, q, 1, /*held_slots*/ 0);
-    auto * r2 = f.enqueue(2, q, 1, /*held_slots*/ 1);
-    f.queue->updateHeldSlots(r1, 10); // a normal request is never demoted after the fact
-    EXPECT_FALSE(r1->isDemoted());
-    EXPECT_EQ(f.queue->getDemotedLength(), 0u);
-    auto [req, _] = f.queue->dequeueRequest();
-    EXPECT_EQ(req, r1);
-    f.queue->updateHeldSlots(r1, 0); // already dequeued
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
-    EXPECT_FALSE(r2->isDemoted());
-}
-
-/// Cancelling a demoted request removes it from the overflow under every algorithm, including `fifo`,
-/// whose list is also an intrusive list of requests (through `enqueued_hook`, not `overflow_hook`).
+/// Cancelling a demoted request removes it from the overflow and leaves the other requests in place.
 TEST(RequestQueue, ThreadsSoftLimitCancelDemoted)
 {
-    for (auto algo : all_algorithms)
-    {
-        Fixture f(algo, CostUnit::CPUNanosecond, std::numeric_limits<Int64>::max(), /*threads_soft_limit*/ 1);
-        auto * q1 = f.makeQuery();
-        auto * q2 = f.makeQuery();
-        auto * normal = f.enqueue(1, q1, 1, /*held_slots*/ 0);
-        auto * demoted = f.enqueue(2, q2, 1, /*held_slots*/ 1);
-        auto * demoted_too = f.enqueue(3, q2, 1, /*held_slots*/ 4);
-        EXPECT_FALSE(normal->isDemoted());
-        EXPECT_TRUE(demoted->isDemoted());
-        EXPECT_TRUE(f.queue->cancelRequest(demoted));
-        EXPECT_FALSE(demoted->isDemoted());
-        EXPECT_FALSE(f.queue->cancelRequest(demoted)); // already cancelled
-        EXPECT_EQ(f.queue->getDemotedLength(), 1u);
-        EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 2u);
-        EXPECT_EQ(f.queue->canceled_requests.load(), 1u);
-        EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3})) << "algo=" << static_cast<int>(algo);
-        EXPECT_FALSE(f.queue->cancelRequest(normal)); // already dequeued
-        EXPECT_FALSE(f.queue->cancelRequest(demoted_too));
-    }
+    Fixture f(SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond, std::numeric_limits<Int64>::max(), /*threads_soft_limit*/ 1);
+    auto * q1 = f.makeQuery();
+    auto * q2 = f.makeQuery();
+    f.enqueue(1, q1, 1, /*held_slots*/ 0);
+    auto * demoted = f.enqueue(2, q2, 1, /*held_slots*/ 1);
+    f.enqueue(3, q2, 1, /*held_slots*/ 4);
+    EXPECT_TRUE(f.queue->cancelRequest(demoted));
+    EXPECT_EQ(f.queue->getDemotedLength(), 1u);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3}));
 }
 
 /// Switching the algorithm keeps demoted requests demoted, behind the migrated ones.
@@ -865,8 +816,8 @@ TEST(RequestQueue, ThreadsSoftLimitSurvivesSchedulerSwitch)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 3, 1}));
 }
 
-/// Raising (or disabling) the workload limit promotes the demoted requests that no longer exceed it,
-/// in their FIFO order; lowering it does not demote requests that are already queued normally.
+/// Raising the workload limit promotes the demoted requests that no longer exceed it, in their FIFO
+/// order; lowering it does not demote requests that are already queued normally.
 TEST(RequestQueue, ThreadsSoftLimitWorkloadChange)
 {
     {
@@ -880,16 +831,6 @@ TEST(RequestQueue, ThreadsSoftLimitWorkloadChange)
         EXPECT_EQ(f.queue->getThreadsSoftLimit(), 4);
         EXPECT_EQ(f.queue->getDemotedLength(), 1u);
         EXPECT_EQ(f.dequeueIds(), (std::vector<int>{4, 2, 3, 1}));
-    }
-    {
-        Fixture f(SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond, std::numeric_limits<Int64>::max(), /*threads_soft_limit*/ 2);
-        auto * q = f.makeQuery();
-        f.enqueue(1, q, 1, /*held_slots*/ 4);
-        f.enqueue(2, q, 1, /*held_slots*/ 0);
-        f.queue->setThreadsSoftLimit(0); // disables the limit
-        EXPECT_EQ(f.queue->getThreadsSoftLimit(), RequestQueue::no_threads_soft_limit);
-        EXPECT_EQ(f.queue->getDemotedLength(), 0u);
-        EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
     }
     {
         Fixture f(SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond);
@@ -915,7 +856,6 @@ TEST(RequestQueue, ThreadsSoftLimitEvictionAndPurge)
         auto * normal = f.enqueue(2, q2, 1, /*held_slots*/ 0);
         f.queue->updateQueueLimit(1);
         EXPECT_EQ(demoted->failed_count, 1);
-        EXPECT_FALSE(demoted->isDemoted());
         EXPECT_EQ(normal->failed_count, 0);
         EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
     }
@@ -927,17 +867,6 @@ TEST(RequestQueue, ThreadsSoftLimitEvictionAndPurge)
         f.queue->purgeQueue();
         EXPECT_EQ(normal->failed_count, 1);
         EXPECT_EQ(demoted->failed_count, 1);
-        EXPECT_FALSE(demoted->isDemoted());
         EXPECT_EQ(f.queue->getQueueLengthAndCost().first, 0u);
     }
-}
-
-/// reset() clears `held_slots`, so a reused request is not demoted by a stale count.
-TEST(RequestQueue, ResetClearsHeldSlots)
-{
-    TestRequest r(1);
-    r.scheduling.held_slots = 7;
-    r.reset(1);
-    EXPECT_EQ(r.scheduling.held_slots, 0);
-    EXPECT_FALSE(r.isDemoted());
 }

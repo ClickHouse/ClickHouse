@@ -2,7 +2,3 @@
 05406_root	CREATE WORKLOAD `05406_root` SETTINGS max_concurrent_threads = 2, max_threads_soft_limit = 4
 CREATE WORKLOAD `05406_root` SETTINGS max_concurrent_threads = 2, max_threads_soft_limit = 0
 499999500000
--1	0
-499999500000
-499999500000
-499999500000

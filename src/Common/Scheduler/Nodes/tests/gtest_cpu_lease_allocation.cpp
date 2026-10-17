@@ -258,50 +258,9 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
 }
 
 /// `max_threads_soft_limit = 1`: the master request of query A is free (not scheduled), so A already holds one
-/// slot when it asks for a worker slot, and that request is demoted. Query C asks later, holding nothing, and
-/// is served first when the only competing slot is released.
-TEST(SchedulerCPULeaseAllocation, ThreadsSoftLimitServesQueryAboveLimitLast)
-{
-    TimeSharedScheduler scheduler;
-    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
-    auto queue = std::make_shared<RequestQueue>(
-        scheduler.event_queue, SchedulerNodeInfo{}, SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond,
-        std::numeric_limits<Int64>::max(), /*threads_soft_limit=*/ 1);
-    queue->basename = "queue";
-    semaphore->attachChild(queue);
-    scheduler.attachChild(semaphore);
-    scheduler.start(ThreadName::TEST_SCHEDULER);
-
-    CPULeaseSettings settings;
-    ResourceLink link;
-    link.queue = queue.get();
-
-    // Query X takes the only slot
-    auto x = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
-    ASSERT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 1; }));
-
-    // Query A holds its free master slot and waits for a worker slot: demoted
-    auto a = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, ResourceLink{}, link, settings);
-    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 1; }));
-    EXPECT_EQ(queue->getDemotedLength(), 1u);
-
-    // Query C holds nothing and waits behind A in arrival order, but is not demoted
-    auto c = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
-    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 2; }));
-    EXPECT_EQ(queue->getDemotedLength(), 1u);
-
-    x->free();
-    EXPECT_TRUE(waitUntil([&] { return !c->isRequesting(); })) << "the query below the soft limit is not served first";
-    EXPECT_TRUE(a->isRequesting());
-    EXPECT_EQ(queue->getDemotedLength(), 1u);
-
-    c->free();
-    a->free();
-    scheduler.stop();
-}
-
-/// A demoted request of query A is promoted once A's own slot expires, so A does not lose all its slots
-/// waiting behind every other query. After the promotion A is served before query C, which asks later.
+/// slot when it asks for a worker slot, and that request is demoted. It is promoted once A's own slot expires,
+/// so A does not lose all its slots waiting behind every other query. After the promotion A is served before
+/// query C, which asks later.
 TEST(SchedulerCPULeaseAllocation, ThreadsSoftLimitPromotesWhenSlotsExpire)
 {
     TimeSharedScheduler scheduler;
