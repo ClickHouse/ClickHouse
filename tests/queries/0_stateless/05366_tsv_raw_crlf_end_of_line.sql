@@ -1,5 +1,5 @@
 -- input_format_tsv_crlf_end_of_line must remove the '\r' of a CRLF line ending in the TSVRaw formats,
--- as it already does in TSV.
+-- as it already does in TSV. 
 
 SET input_format_tsv_crlf_end_of_line = 1;
 
