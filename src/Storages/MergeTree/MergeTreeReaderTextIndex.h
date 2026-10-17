@@ -79,6 +79,8 @@ private:
     MergeTreeDataPartPtr getDataPart() const;
 
     void readGranule();
+    /// True if the granule's analyzer holds a query builder for every one of `search_queries`.
+    bool granuleAnalyzedSearchQueries(const MergeTreeIndexGranuleText & index_granule) const;
     /// Sets per-column flags from the analyzer's verdict.
     void classifyVirtualColumns();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
