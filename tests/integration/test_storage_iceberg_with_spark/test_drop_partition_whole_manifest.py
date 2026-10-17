@@ -2,6 +2,7 @@ import os
 import re
 
 import pytest
+from py4j.protocol import Py4JJavaError
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -27,6 +28,82 @@ def update_spark_version_hint(cluster, storage_type, table_name):
         hint.write(str(max(versions)))
 
     return local_dir
+
+
+@pytest.mark.parametrize("shared_manifest", [False, True], ids=["whole", "partial"])
+def test_drop_partition_conflicts_with_prepared_overwrite(
+    started_cluster_iceberg_with_spark, shared_manifest
+):
+    cluster = started_cluster_iceberg_with_spark
+    instance = cluster.instances["node1"]
+    spark = cluster.spark_session
+    table_name = f"drop_conflict_{get_uuid_str()}"
+    prepared_name = f"{table_name}_prepared"
+    root = "/var/lib/clickhouse/user_files/iceberg_data/default"
+
+    def spark_query(name, query):
+        execute_spark_query_general(spark, cluster, "local", name, query)
+
+    for name in (table_name, prepared_name):
+        spark_query(
+            name,
+            f"CREATE TABLE {name} (tag INT, value STRING) USING iceberg "
+            "PARTITIONED BY (identity(tag)) OPTIONS('format-version'='2')",
+        )
+
+    if shared_manifest:
+        spark_query(table_name, f"INSERT INTO {table_name} VALUES (1, 'old'), (2, 'keep')")
+    else:
+        spark_query(table_name, f"INSERT INTO {table_name} VALUES (1, 'old')")
+        spark_query(table_name, f"INSERT INTO {table_name} VALUES (2, 'keep')")
+    spark_query(prepared_name, f"INSERT INTO {prepared_name} VALUES (1, 'replacement')")
+
+    iceberg = spark._jvm.org.apache.iceberg
+    tables = iceberg.hadoop.HadoopTables(spark._jsc.hadoopConfiguration())
+    table = tables.load(f"{root}/{table_name}")
+    prepared = tables.load(f"{root}/{prepared_name}")
+    tasks = prepared.newScan().planFiles()
+    try:
+        replacement = tasks.iterator().next().file().copy()
+    finally:
+        tasks.close()
+
+    # Prepare the write against the old snapshot, before ClickHouse drops the partition.
+    starting_snapshot = table.currentSnapshot().snapshotId()
+    pending = (
+        table.newOverwrite()
+        .overwriteByRowFilter(iceberg.expressions.Expressions.equal("tag", 1))
+        .addFile(replacement)
+        .validateFromSnapshot(starting_snapshot)
+        .validateNoConflictingData()
+        .validateNoConflictingDeletes()
+    )
+
+    create_iceberg_table("local", instance, table_name, cluster)
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 1",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag") == "2\tkeep\n"
+    local_dir = update_spark_version_hint(cluster, "local", table_name)
+    table.refresh()
+    dropped_snapshot = table.currentSnapshot().snapshotId()
+    assert dropped_snapshot != starting_snapshot
+    assert len(list(table.currentSnapshot().removedDataFiles(table.io()))) == 1
+
+    # Commit against refreshed metadata: the prepared write must detect the intervening drop.
+    with pytest.raises(Py4JJavaError, match="Found conflicting deleted files") as error:
+        pending.commit()
+    assert (
+        error.value.java_exception.getClass().getName()
+        == "org.apache.iceberg.exceptions.ValidationException"
+    )
+
+    rows = sorted(
+        (row["tag"], row["value"])
+        for row in spark.read.format("iceberg").load(local_dir).collect()
+    )
+    assert rows == [(2, "keep")]
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
@@ -84,8 +161,7 @@ def test_drop_partition_whole_manifest_spark_round_trip(
         (3, "keep-b"),
     ]
 
-    # Verify that Spark accepts the header-only manifest list produced after
-    # `DROP PARTITION` removes the last remaining manifests.
+    # Verify that Spark reads an empty table after all partitions have been dropped.
     instance.query(
         f"ALTER TABLE {table_name} DROP PARTITION 2",
         settings={"allow_insert_into_iceberg": 1},
@@ -146,7 +222,7 @@ def test_drop_partition_after_position_delete(
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
-def test_drop_partition_shared_spark_manifest_is_rejected(
+def test_drop_partition_shared_spark_manifest(
     started_cluster_iceberg_with_spark, storage_type
 ):
     cluster = started_cluster_iceberg_with_spark
@@ -171,15 +247,20 @@ def test_drop_partition_shared_spark_manifest_is_rejected(
     )
 
     create_iceberg_table(storage_type, instance, table_name, cluster)
-    error = instance.query_and_get_error(
+    instance.query(
         f"ALTER TABLE {table_name} DROP PARTITION 1",
         settings={"allow_insert_into_iceberg": 1},
     )
-    assert "NOT_IMPLEMENTED" in error, error
-    assert "rewriting a manifest" in error, error
 
-    expected = "1\tdrop\n2\tkeep-a\n3\tkeep-b\n"
+    expected = "2\tkeep-a\n3\tkeep-b\n"
     assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag") == expected
+
+    local_dir = update_spark_version_hint(cluster, storage_type, table_name)
+    spark_rows = spark.read.format("iceberg").load(local_dir).collect()
+    assert sorted((row["tag"], row["value"]) for row in spark_rows) == [
+        (2, "keep-a"),
+        (3, "keep-b"),
+    ]
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])

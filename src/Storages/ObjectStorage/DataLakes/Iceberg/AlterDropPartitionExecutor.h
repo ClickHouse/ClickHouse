@@ -73,19 +73,12 @@ private:
     struct TargetManifest
     {
         ManifestFileCacheKey manifest_key;
-    };
-
-    struct TargetManifests
-    {
-        std::vector<TargetManifest> fully_matched;
-        std::vector<TargetManifest> partially_matched;
-
-        bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
+        std::unordered_set<Int64> rows_to_remove;
     };
 
     struct DropPlan
     {
-        TargetManifests target_manifests;
+        std::vector<TargetManifest> target_manifests;
         Iceberg::SnapshotSummaryUpdateDelete snapshot_summary_update;
     };
 
