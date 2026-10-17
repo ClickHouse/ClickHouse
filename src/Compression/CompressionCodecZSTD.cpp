@@ -48,12 +48,21 @@ namespace
 
 /// A new `ZSTD` context allocates about 650 KiB at level 3 and zeroes a large part of it. A context keeps no state that affects
 /// the next block once it is reset, so the contexts are shared by all queries and tables through process-wide per-CPU pools.
-template <typename ContextPtr>
-SimpleObjectPool<ContextPtr> & contextPool()
+/// When the pool of the current CPU is empty, an idle context is taken from the pool of another CPU before a new one is created:
+/// threads roam over CPUs, and otherwise every CPU a thread happens to run on would keep its own resident context.
+template <typename ContextPtr, typename Factory>
+typename SimpleObjectPool<ContextPtr>::Pointer getPooledContext(Factory && create)
 {
     static const size_t num_pools = PerCPU::getNumPossibleCPUs();
     static auto * pools = new SimpleObjectPool<ContextPtr>[num_pools];
-    return pools[static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools];
+    const size_t current = static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools;
+    for (size_t i = 0; i < num_pools; ++i)
+    {
+        auto holder = pools[(current + i) % num_pools].get([] { return static_cast<ContextPtr *>(nullptr); });
+        if (holder)
+            return holder;
+    }
+    return pools[current].get(std::forward<Factory>(create));
 }
 
 /// Memory of a context as the memory tracker counts it: the holder, the context from `ZSTD_createCCtx` and the workspace
@@ -88,7 +97,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     /// Returning a context to its pool happens in a destructor, which must not throw `MEMORY_LIMIT_EXCEEDED`.
     LockMemoryExceptionInThread lock(VariableContext::Global);
     bool created = false;
-    auto holder = contextPool<ZstdCCtxPtr>().get([&]
+    auto holder = getPooledContext<ZstdCCtxPtr>([&]
     {
         ZstdCCtxPtr ctx(ZSTD_createCCtx());
         if (!ctx)
@@ -131,7 +140,7 @@ UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source
     static std::atomic<size_t> num_contexts = 0;
     MemoryTrackerBlockerInThread blocker;
     LockMemoryExceptionInThread lock(VariableContext::Global);
-    auto holder = contextPool<ZstdDCtxPtr>().get([]
+    auto holder = getPooledContext<ZstdDCtxPtr>([]
     {
         ZstdDCtxPtr ctx(ZSTD_createDCtx());
         if (!ctx)
