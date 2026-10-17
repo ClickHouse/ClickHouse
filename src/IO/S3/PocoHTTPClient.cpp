@@ -13,6 +13,7 @@
 #include <functional>
 
 #include <Common/logger_useful.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
@@ -563,6 +564,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// Reset times, as this may be a next session after a redirect
             connect_time = first_byte_time = 0;
             latency_recorded = false;
+
+            /// Count the attempt before the connection is set up, which can fail on its own.
+            beginHTTPConnectionInfoTransportAttempt();
+
             auto session = makeHTTPSession(
                 group,
                 target_uri,
