@@ -2269,6 +2269,7 @@ class JobConfigs:
                 "./utils/storage-memory-profiler/",
             ],
         ),
+        enable_gh_auth=True,
     )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,

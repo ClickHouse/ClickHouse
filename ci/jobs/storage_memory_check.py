@@ -24,6 +24,9 @@ from ci.jobs.parser_memory_check import (
     generate_html_report,
     get_merge_base_profiler_url,
 )
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika.gh import GH
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -33,6 +36,8 @@ SCENARIOS_DIR = Path(Utils.cwd()) / "utils/storage-memory-profiler/scenarios"
 # checkpoint. Its tracked allocations vary by several hundred bytes between
 # otherwise identical runs, unlike the single-threaded parser measurements.
 STORAGE_CHANGE_THRESHOLD_BYTES = 1024
+# A performance PR may trade memory for speed.
+ACCEPT_INCREASE_LABELS = (Labels.MEMORY, Labels.PR_PERFORMANCE)
 
 
 def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
@@ -291,6 +296,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
     regressions = 0
     improvements = 0
     errors = 0
+    accept_increases = None
 
     for index, scenario in enumerate(scenarios, start=1):
         master_analysis = analyze_heap_profiles(
@@ -318,7 +324,10 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             absolute_change > STORAGE_CHANGE_THRESHOLD_BYTES
             and percent_change > CHANGE_THRESHOLD_PCT
         )
-        if significant and change > 0:
+        increase = significant and change > 0
+        if increase and accept_increases is None:
+            accept_increases = set(ACCEPT_INCREASE_LABELS).issubset(Info().pr_labels) or set(ACCEPT_INCREASE_LABELS).issubset(GH.get_pr_labels())
+        if increase and not accept_increases:
             status = Result.Status.FAIL
             regressions += 1
         else:
@@ -338,6 +347,8 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             f"PR={pr_bytes:+,} bytes, change={change:+,} bytes "
             f"({percent_change:.1f}%)"
         )
+        if increase and accept_increases:
+            info += f"\nAccepted by the PR labels {', '.join(ACCEPT_INCREASE_LABELS)}"
         scenario_results.append(Result(name=scenario.name, status=status, info=info))
         html_data.append(
             {
@@ -393,11 +404,16 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         ),
     )
     setup_results.append(tests)
+    if accept_increases:
+        Info().add_workflow_note(
+            f"Memory increases accepted by the PR labels {', '.join(ACCEPT_INCREASE_LABELS)}"
+        )
+    # The digest does not cover the labels, so do not reuse an accepted result.
     Result.create_from(
         results=setup_results,
         stopwatch=stopwatch,
         files=[report_path],
-    ).complete_job()
+    ).complete_job(do_not_cache=bool(accept_increases))
 
 
 if __name__ == "__main__":

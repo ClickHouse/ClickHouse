@@ -62,6 +62,7 @@ class Labels:
     NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
     JEPSEN_TEST = "jepsen-test"
+    MEMORY = "memory"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
     PR_BACKPORTS_CREATED = "pr-backports-created"
