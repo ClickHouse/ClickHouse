@@ -17,6 +17,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageView.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -50,6 +51,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -129,6 +131,7 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsBool array_join_use_nulls;
 }
 
 namespace MergeTreeSetting
@@ -145,10 +148,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
 {
+
+/// Whether any `SETTINGS` clause of the query enables `array_join_use_nulls`.
+bool enablesArrayJoinUseNulls(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
+        if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"); value && SettingFieldBool(*value))
+            return true;
+    }
+
+    for (const auto & child : ast.children)
+    {
+        if (child && enablesArrayJoinUseNulls(*child))
+            return true;
+    }
+    return false;
+}
+
 /// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
 /// squashing does not accumulate more data than the host can hold. Shared between direct
 /// INSERT and materialized-view pipelines so the cap is applied symmetrically.
@@ -649,6 +671,22 @@ private:
         }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
+
+        /// The target table of the view has the column types fixed at creation time, but the `SELECT` runs
+        /// with the settings of the `INSERT`, possibly overridden by `SETTINGS` clauses of the view query.
+        /// `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined columns `Nullable`, which cannot be
+        /// stored into the non-`Nullable` columns of the target table. Report it explicitly, like `StorageView`
+        /// does for ordinary views.
+        if ((local_context->getSettingsRef()[Setting::array_join_use_nulls] || enablesArrayJoinUseNulls(*select_query))
+            && hasLeftArrayJoin(*select_query)
+            && changedNullabilityOneWay(pipeline.getHeader(), inner_metadata->getSampleBlock()))
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query from materialized view {} returned Nullable column having not Nullable type in the target table {}. "
+                            "If query from materialized view has LEFT ARRAY JOIN, it may be caused by different values of 'array_join_use_nulls' setting. "
+                            "You may explicitly specify 'array_join_use_nulls' in the SETTINGS clause of the materialized view query to avoid this error",
+                            view_id.getFullTableName(), inner_id.getFullTableName());
+        }
 
         bool insert_null_as_default = false;
 
