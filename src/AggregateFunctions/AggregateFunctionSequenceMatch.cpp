@@ -48,17 +48,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// helper type for comparing `std::pair`s using solely the .first member
-template <template <typename> class Comparator>
-struct ComparePairFirst final
-{
-    template <typename T1, typename T2>
-    bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
-    {
-        return Comparator<T1>{}(lhs.first, rhs.first);
-    }
-};
-
 constexpr size_t max_events = 32;
 
 template <typename T>
@@ -66,8 +55,16 @@ struct AggregateFunctionSequenceMatchData final
 {
     using Timestamp = T;
     using Events = std::bitset<max_events>;
-    using TimestampEvents = std::pair<Timestamp, Events>;
-    using Comparator = ComparePairFirst<std::less>;
+    /// Must stay trivially copyable: otherwise ::stableSort falls back to std::stable_sort.
+    struct TimestampEvents
+    {
+        Timestamp first;
+        Events second;
+    };
+    struct Comparator
+    {
+        bool operator()(const TimestampEvents & lhs, const TimestampEvents & rhs) const { return lhs.first < rhs.first; }
+    };
 
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
@@ -79,7 +76,7 @@ struct AggregateFunctionSequenceMatchData final
         /// store information exclusively for rows with at least one event
         if (events.any())
         {
-            events_list.emplace_back(timestamp, events);
+            events_list.push_back(TimestampEvents{timestamp, events});
             sorted = false;
             conditions_met |= events;
         }
@@ -100,7 +97,9 @@ struct AggregateFunctionSequenceMatchData final
         if (sorted)
             return;
 
-        ::sort(std::begin(events_list), std::end(events_list), Comparator{});
+        /// ::stableSort allocates a scratch buffer even when the events are already sorted.
+        if (!std::is_sorted(std::begin(events_list), std::end(events_list), Comparator{}))
+            ::stableSort(std::begin(events_list), std::end(events_list), Comparator{});
         sorted = true;
     }
 
@@ -145,7 +144,7 @@ struct AggregateFunctionSequenceMatchData final
             UInt64 events = 0;
             readBinary(events, buf);
 
-            events_list.emplace_back(timestamp, Events{events});
+            events_list.push_back(TimestampEvents{timestamp, Events{events}});
         }
     }
 };
@@ -949,9 +948,10 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
-    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
-    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    AggregateFunctionProperties properties = { .is_order_dependent = true };
+    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 }
 
 }
