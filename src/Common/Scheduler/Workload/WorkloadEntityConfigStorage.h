@@ -6,6 +6,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <mutex>
+
 namespace DB
 {
 

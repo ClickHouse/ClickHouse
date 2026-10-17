@@ -11,6 +11,7 @@ namespace DB
 class ASTCreateWorkloadQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+    /// Null for the root workload (empty name), which has no SQL text form.
     ASTPtr workload_name;
     ASTPtr workload_parent;
 

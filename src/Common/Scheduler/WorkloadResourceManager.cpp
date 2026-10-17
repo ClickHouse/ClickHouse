@@ -311,6 +311,14 @@ WorkloadResourceManager::~WorkloadResourceManager()
 void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
 {
     std::unique_lock lock{mutex};
+    if (workload_name.empty())
+    {
+        root_workload_entity = ast;
+        for (auto & [resource_name, resource] : resources)
+            resource->updateRootSettings(getRootSettings(*resource));
+        return;
+    }
+
     if (auto workload_iter = workloads.find(workload_name); workload_iter != workloads.end())
         workload_iter->second->updateWorkload(ast);
     else
@@ -320,6 +328,14 @@ void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_nam
 void WorkloadResourceManager::deleteWorkload(const String & workload_name)
 {
     std::unique_lock lock{mutex};
+    if (workload_name.empty())
+    {
+        root_workload_entity.reset();
+        for (auto & [resource_name, resource] : resources)
+            resource->updateRootSettings(WorkloadSettings{});
+        return;
+    }
+
     if (auto workload_iter = workloads.find(workload_name); workload_iter != workloads.end())
     {
         // Note that we rely of the fact that workload entity storage will not drop workload that is used as a parent
@@ -341,6 +357,10 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
         for (Workload * workload : topologicallySortedWorkloads())
             resource->createNode(NodeInfo(resource->getUnit(), workload->workload_entity, resource_name));
 
+        // Apply the root workload entity that already exists
+        if (root_workload_entity)
+            resource->updateRootSettings(getRootSettings(*resource));
+
         // Attach the resource
         resources.emplace(resource_name, resource);
     }
@@ -355,6 +375,13 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
     }
     else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
+}
+
+WorkloadSettings WorkloadResourceManager::getRootSettings(const Resource & resource) const
+{
+    if (!root_workload_entity)
+        return {};
+    return NodeInfo(resource.getUnit(), root_workload_entity, resource.getName()).settings;
 }
 
 WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
@@ -478,6 +505,20 @@ void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resour
     chassert(getEntityName(new_resource_entity) == resource_name);
     chassert(getResourceUnit(new_resource_entity) == unit); // resource unit cannot be changed
     resource_entity = new_resource_entity;
+}
+
+void WorkloadResourceManager::Resource::updateRootSettings(const WorkloadSettings & root_settings)
+{
+    executeInSchedulerThread([&, this]
+    {
+        // The implicit root has no parent or priority to change, so the update never requires detach
+        // (see `updateRequiresDetach`)
+        if (auto root = implicitRoot())
+        {
+            root->updateSchedulingSettings(root_settings);
+            updateCurrentVersion();
+        }
+    });
 }
 
 std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)
