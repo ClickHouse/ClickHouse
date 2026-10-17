@@ -985,12 +985,13 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// does not tell the next insert that it is taken. Once its object is committed, it is kept as committed in the
     /// configuration instead, before the reservation is released, so that the next insert with
     /// `*_create_new_file_on_insert` steps aside from it even if the object storage does not report it yet.
-    publish_path = [config = configuration, reservations, raw_key = paths.front().path](const String & new_key)
+    publish_path = [config = configuration, reservations, raw_key = paths.front().path,
+                    written_by_split = settings.split_on_write_by_size_bytes != 0](const String & new_key)
     {
         if (new_key == raw_key)
             config->commitPathWrittenByInsert(new_key);
         else
-            config->appendPath({new_key});
+            config->appendPath({new_key}, written_by_split);
     };
 
     auto sink = std::make_shared<StorageObjectStorageSink>(
@@ -1008,7 +1009,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         /* path_is_published = */ false);
 
     /// A truncating insert overwrites the table: it starts from the base key, the split objects
-    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
+    /// of the previous split inserts are forgotten, and the numbering starts over, overwriting them one by one.
     /// It does not matter whether the current insert is split by size: a rewrite with
     /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous
     /// split insert as well, otherwise both this table and the readers of a wildcard path over the same
@@ -1026,14 +1027,26 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         /// The same logger the storage uses; the sink is created from a static context.
         const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
 
-        if (paths.size() > 1)
+        /// A truncating insert split by size claims the whole numbered sequence, and so deletes every key
+        /// after the first one. An insert that is not split deletes only the keys written by a previous split
+        /// insert: the keys that an insert stepped aside into with `*_create_new_file_on_insert` alone are kept,
+        /// as before the splitting by size existed.
+        std::vector<String> stale_keys;
+        if (settings.split_on_write_by_size_bytes)
         {
-            /// These objects were written by this table, and are deleted whatever their keys are - unless
-            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
-            std::vector<String> stale_keys;
             stale_keys.reserve(paths.size() - 1);
             for (auto it = paths.begin() + 1; it != paths.end(); ++it)
                 stale_keys.push_back(it->path);
+        }
+        else
+        {
+            stale_keys = configuration->getSplitTailPaths();
+        }
+
+        if (!stale_keys.empty())
+        {
+            /// These objects were written by this table, and are deleted whatever their keys are - unless
+            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
 
             /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
             /// remove one leaves the table reading exactly the objects that are still there: neither the whole
@@ -1045,7 +1058,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
                 [&](const String & removed_key) { configuration->retirePath(removed_key); },
                 log);
         }
-        else if (settings.split_on_write_by_size_bytes)
+        else if (settings.split_on_write_by_size_bytes && paths.size() == 1)
         {
             /// The table has no numbered tail of its own to delete - it either never had one, or lost it
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.

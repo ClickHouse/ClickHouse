@@ -162,9 +162,12 @@ public:
     /// Appends a path to the list, unless it is already there.
     /// An insert split by size publishes every object it writes, so the list is mutated in place rather than
     /// copied per object - a split export of thousands of objects would otherwise copy the whole list as many times.
-    void appendPath(const Path & path)
+    /// `written_by_split` marks a key written by an insert with `*_split_on_write_by_size_bytes`, see `getSplitTailPaths`.
+    void appendPath(const Path & path, bool written_by_split)
     {
         std::lock_guard lock(paths_mutex);
+        if (written_by_split)
+            paths_written_by_split.insert(path.path);
         Paths & paths = getMutablePathsUnlocked();
         if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) != paths.end())
             return;
@@ -172,10 +175,25 @@ public:
         onPathsUpdatedUnlocked();
     }
 
+    /// The keys after the first one that were written by an insert split by size, in the order of the list.
+    /// A truncating insert that is not split itself deletes only these: the keys that an insert stepped aside
+    /// into with `*_create_new_file_on_insert` alone are kept, as they always were.
+    Strings getSplitTailPaths() const
+    {
+        std::lock_guard lock(paths_mutex);
+        const Paths & paths = getPathsUnlocked();
+        Strings result;
+        for (size_t i = 1; i < paths.size(); ++i)
+            if (paths_written_by_split.contains(paths[i].path))
+                result.push_back(paths[i].path);
+        return result;
+    }
+
     /// Drops a path from the list. Used to retire a key as soon as it has been removed from the object storage.
     void retirePath(const String & path)
     {
         std::lock_guard lock(paths_mutex);
+        paths_written_by_split.erase(path);
         Paths & paths = getMutablePathsUnlocked();
         if (std::erase_if(paths, [&](const auto & p) { return p.path == path; }) == 0)
             return;
@@ -582,6 +600,9 @@ protected:
         ReservedPaths & operator=(const ReservedPaths &) { paths.clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
     };
     ReservedPaths paths_reserved_for_write;
+    /// The keys of the list of the paths written by an insert split by size, see `getSplitTailPaths`.
+    /// Guarded by `paths_mutex`. They name the keys of the list, so they are copied with it.
+    std::unordered_set<String> paths_written_by_split;
     /// See `commitPathWrittenByInsert`. Guarded by `paths_mutex`. Unlike the reservations, the keys name
     /// the committed objects, which a copy of the configuration reads as well, so they are copied with it.
     struct CommittedPaths

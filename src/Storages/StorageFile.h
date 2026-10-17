@@ -17,6 +17,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/stat.h>
 
 namespace DB
@@ -211,6 +212,10 @@ private:
     /// numbered files to it, and a truncating insert retires them - while a read snapshots it at planning time,
     /// so every access outside the constructors goes through the accessors below and is guarded by `paths_mutex`.
     std::vector<std::string> paths;
+    /// The files of `paths` written by an insert with `engine_file_split_on_write_by_size_bytes`. A truncating
+    /// insert that is not split itself deletes only these: the files that an insert stepped aside into with
+    /// `engine_file_allow_create_multiple_files` alone are kept, as they always were.
+    std::unordered_set<std::string> paths_written_by_split;
     mutable std::mutex paths_mutex;
 
     /// A copy of the list of the files, safe to use while a concurrent insert is appending to it.
@@ -218,7 +223,9 @@ private:
     size_t getPathsCount() const;
     void setPaths(std::vector<std::string> new_paths);
     /// Appends a file to the list, unless it is already there.
-    void appendPath(const std::string & path);
+    void appendPath(const std::string & path, bool written_by_split);
+    /// The files after the first one that were written by an insert split by size, in the order of the list.
+    std::vector<std::string> getSplitTailSnapshot() const;
     /// Drops a file from the list. Used to retire a file as soon as it has been deleted.
     void retirePath(const std::string & path);
     /// Replaces a file in the list, keeping its position. Used when a file is renamed after processing.

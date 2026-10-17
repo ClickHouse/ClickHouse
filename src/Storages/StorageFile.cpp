@@ -3834,7 +3834,7 @@ SinkToStoragePtr StorageFile::write(
             "Cannot split the data by size while writing into the table {}: its path does not name a file to write into",
             getStorageID().getNameForLogs());
 
-    /// A truncating insert overwrites the table: the numbered files of the previous inserts are forgotten,
+    /// A truncating insert overwrites the table: the numbered files of the previous split inserts are forgotten,
     /// and the numbering starts over, overwriting them one by one. It does not matter whether the current
     /// insert is split by size: a rewrite with `engine_file_split_on_write_by_size_bytes` turned back to 0
     /// has to drop the numbered tail of the previous split insert as well, otherwise both this table and
@@ -3845,18 +3845,25 @@ SinkToStoragePtr StorageFile::write(
     /// when nothing could be removed, nor a file that is already gone when the removal stopped in the middle.
     if (!use_table_fd && !current_paths.empty() && context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
     {
-        if (current_paths.size() > 1 || split_on_write_by_size_bytes)
+        /// A truncating insert split by size claims the whole numbered sequence, and so deletes every file
+        /// after the first one. An insert that is not split deletes only the files written by a previous split
+        /// insert: the files that an insert stepped aside into with `engine_file_allow_create_multiple_files`
+        /// alone are kept, as before the splitting by size existed.
+        Strings stale_tail = split_on_write_by_size_bytes
+            ? Strings(current_paths.begin() + 1, current_paths.end())
+            : getSplitTailSnapshot();
+
+        if (!stale_tail.empty() || split_on_write_by_size_bytes)
             checkFileCanBeOpenedForWriting(path);
 
-        if (current_paths.size() > 1)
+        if (!stale_tail.empty())
         {
             /// These files were written by this table, and are deleted whatever their names are.
             removeStaleSplitFiles(
-                Strings(current_paths.begin() + 1, current_paths.end()),
+                stale_tail,
                 [this](const String & removed_path) { retirePath(removed_path); });
-            current_paths.resize(1);
         }
-        else if (split_on_write_by_size_bytes)
+        else if (split_on_write_by_size_bytes && current_paths.size() == 1)
         {
             /// The table has no numbered tail of its own to delete - it either never had one, or lost it
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
@@ -3885,9 +3892,10 @@ SinkToStoragePtr StorageFile::write(
     /// a `SELECT` would then fail on.
     if (!first_path_is_published || get_next_path)
     {
-        publish_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this())](const String & new_path)
+        publish_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this()),
+                        written_by_split = split_on_write_by_size_bytes != 0](const String & new_path)
         {
-            storage->appendPath(new_path);
+            storage->appendPath(new_path, written_by_split);
         };
     }
 
@@ -3933,23 +3941,38 @@ void StorageFile::setPaths(Strings new_paths)
     paths = std::move(new_paths);
 }
 
-void StorageFile::appendPath(const String & path)
+void StorageFile::appendPath(const String & path, bool written_by_split)
 {
     std::lock_guard lock(paths_mutex);
     if (std::find(paths.begin(), paths.end(), path) == paths.end())
         paths.push_back(path);
+    if (written_by_split)
+        paths_written_by_split.insert(path);
+}
+
+Strings StorageFile::getSplitTailSnapshot() const
+{
+    std::lock_guard lock(paths_mutex);
+    Strings result;
+    for (size_t i = 1; i < paths.size(); ++i)
+        if (paths_written_by_split.contains(paths[i]))
+            result.push_back(paths[i]);
+    return result;
 }
 
 void StorageFile::retirePath(const String & path)
 {
     std::lock_guard lock(paths_mutex);
     std::erase(paths, path);
+    paths_written_by_split.erase(path);
 }
 
 void StorageFile::renamePath(const String & path, const String & new_path)
 {
     std::lock_guard lock(paths_mutex);
     std::replace(paths.begin(), paths.end(), path, new_path);
+    if (paths_written_by_split.erase(path))
+        paths_written_by_split.insert(new_path);
 }
 
 Strings StorageFile::getDataPaths() const
