@@ -459,7 +459,9 @@ def test_data_keyword():
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify settings which do not affect inner-table schemas.
+# Checks that ALTER TABLE works and can modify the `id_generator` setting
+# and `prometheus_remote_write_dynamic_routing_enabled`, and rejects `filter_by_min_time_and_max_time`,
+# which applies to tables of version 7 or earlier only.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -471,13 +473,10 @@ def test_alter_modify_settings():
     )
     node.query("ALTER TABLE prometheus RESET SETTING id_generator")
 
-    # `filter_by_min_time_and_max_time` is a pure query-time setting, so it can be altered.
-    node.query("ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0")
-    assert re.search(
-        r"\bfilter_by_min_time_and_max_time\s*=\s*false",
-        node.query("SHOW CREATE TABLE prometheus"),
+    # `filter_by_min_time_and_max_time` applies to tables of version 7 or earlier only.
+    assert "INVALID_SETTING_VALUE" in node.query_and_get_error(
+        "ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0"
     )
-    node.query("ALTER TABLE prometheus RESET SETTING filter_by_min_time_and_max_time")
 
     # `prometheus_remote_write_dynamic_routing_enabled` is checked at INSERT time, so it can be altered.
     node.query("ALTER TABLE prometheus MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1")
@@ -491,6 +490,7 @@ def test_alter_modify_settings():
     bound_settings = [
         "tags_to_columns = {'job': 'job'}",
         "use_all_tags_column_to_generate_id = 0",
+        "store_time_ranges = 0",
         "store_min_time_and_max_time = 0",
         "aggregate_min_time_and_max_time = 0",
     ]

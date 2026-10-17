@@ -291,7 +291,16 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     size_t values_replaced = 0;
     size_t bytes_skipped = 0;
 
+    /// The values decided by the bulk scan are accounted separately: they are not checked one by one,
+    /// so filtering them pays off even when they are short. Only the found candidates are checked
+    /// one by one against the other conditions of the filter, if there are any.
+    size_t bulk_values_checked = 0;
+    size_t bulk_values_replaced = 0;
+    size_t bulk_bytes_skipped = 0;
+    size_t bulk_values_checked_individually = 0;
+
     const bool use_bulk_scan = filter.hasBulkScanCondition();
+    const bool has_other_conditions = filter.hasOtherConditions();
 
     /// The original (unfiltered) cumulative offset of the current stream position.
     /// The invariant `chars.size() == offsets.back()` held before the new offsets were appended.
@@ -352,13 +361,14 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 const char * value_data = buffer_begin + (original_pos - scan_original_start);
                 original_pos = offsets[i];
 
-                ++values_checked;
+                ++bulk_values_checked;
 
                 bool matches = false;
                 if (next_matched < matched_values.size() && matched_values[next_matched] == i)
                 {
                     ++next_matched;
                     matches = filter.matchOtherConditions(value_data, value_size);
+                    bulk_values_checked_individually += has_other_conditions;
                 }
 
                 if (matches)
@@ -370,8 +380,8 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 }
                 else
                 {
-                    ++values_replaced;
-                    bytes_skipped += value_size;
+                    ++bulk_values_replaced;
+                    bulk_bytes_skipped += value_size;
                 }
 
                 offsets[i] = offset;
@@ -390,6 +400,7 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
 
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
+    filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
 }
 
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.

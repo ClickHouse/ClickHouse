@@ -31,10 +31,10 @@ ALTER TABLE ts_version MODIFY SETTING version = 2; -- { serverError NOT_IMPLEMEN
 ALTER TABLE ts_version RESET SETTING version; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- altering another setting does not drop the version or other settings from the metadata ---';
-ALTER TABLE ts_version MODIFY SETTING filter_by_min_time_and_max_time = false;
+ALTER TABLE ts_version MODIFY SETTING id_generator = 'sipHash64(tags)';
 SELECT extract(create_table_query, 'version = (\d+)'),
        position(create_table_query, 'tags_to_columns') > 0,
-       position(create_table_query, 'filter_by_min_time_and_max_time') > 0,
+       position(create_table_query, 'id_generator') > 0,
        position(create_table_query, 'recent_samples_ttl_seconds') > 0
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
