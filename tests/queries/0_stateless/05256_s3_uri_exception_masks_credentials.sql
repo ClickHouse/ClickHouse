@@ -16,6 +16,8 @@ SELECT count() FROM s3('http://vu:SECRET_virtual@127.0.0.1:9/bucketname/k.csv', 
 SELECT count() FROM s3('http://pu:SECRET_path@127.0.0.1:9', 'CSV') SETTINGS s3_uri_style = 'path'; -- { serverError BAD_ARGUMENTS }
 -- The query parameters of a presigned URL.
 SELECT count() FROM s3('http://127.0.0.1:9/b/k.csv?X-Amz-Signature=SECRET_signature', 'CSV'); -- { serverError BAD_ARGUMENTS }
+-- A SigV2 presigned URL carries its session token as the lower-case `x-amz-security-token`.
+SELECT count() FROM s3('http://127.0.0.1:9/b/k.csv?AWSAccessKeyId=SECRET_v2_key&Signature=SECRET_v2_signature&x-amz-security-token=SECRET_v2_token&Expires=1', 'CSV'); -- { serverError BAD_ARGUMENTS }
 -- With `compatibility_s3_presigned_url_query_in_path` the query of a presigned URL is folded into the path...
 SELECT count() FROM s3('http://127.0.0.1:9/b/k.csv?X-Amz-Signature=SECRET_compat_uri', 'CSV') SETTINGS compatibility_s3_presigned_url_query_in_path = 1; -- { serverError BAD_ARGUMENTS }
 -- ... so it ends up in the key...

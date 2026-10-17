@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HiddenSecret.h>
+#include <Common/StringUtils.h>
 
 #include <algorithm>
 #include <array>
@@ -280,7 +281,8 @@ inline bool matchesPresignedURLCredentialName(std::string_view name)
 
     for (auto prefix : prefixes)
     {
-        if (!name.starts_with(prefix))
+        /// The prefixes are header names, so any case: a SigV2 presigned URL carries `x-amz-security-token`.
+        if (!equalsCaseInsensitive(name.substr(0, prefix.size()), prefix))
             continue;
         /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
         bool rest_matches = true;
@@ -348,9 +350,9 @@ inline bool isPresignedURLSecretParameterName(std::string_view name)
   * is masked. Returns whether anything was masked.
   *
   * This used to be the regular expression
-  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. Matching is case-sensitive, as in the expression, and equal
-  * to it for names with no percent escape; the scan also classifies the decoded name.
+  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[A-Za-z0-9\-]*)=)[^&#]*`
+  * rewritten to `\1[HIDDEN]` globally, and is equal to it for names with no percent escape: the exact
+  * names match as spelled, the two prefixes in any case. The scan also classifies the decoded name.
   * `src/Common/tests/gtest_mask_uri_password.cpp` checks both, against re2 and against a table.
   *
   * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,

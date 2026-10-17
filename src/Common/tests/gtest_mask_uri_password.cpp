@@ -115,7 +115,7 @@ bool maskPresignedURLParametersWithRE2(std::string & url)
 {
     return RE2::GlobalReplace(
         &url,
-        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[A-Za-z0-9\-]*)=)[^&#]*)",
         "\\1[HIDDEN]");
 }
 
@@ -155,6 +155,13 @@ const std::vector<std::string> url_corpus = {
     "https://bucket/key?Signature=a&Signature=b",
     "https://bucket/key?Expires=1&Expires=2&Expires=3",
     "https://bucket/key?Signature=a=b&next=1",
+
+    /// The prefixes are header names, so any case: a SigV2 presigned URL carries `x-amz-security-token`.
+    "https://s3.amazonaws.com/b/k?AWSAccessKeyId=AKIA&Signature=abc&x-amz-security-token=tok&Expires=1",
+    "https://h/f?X-AMZ-SECURITY-TOKEN=a",
+    "https://h/f?x-goog-signature=a",
+    "https://h/f?x-amz-=empty",
+    "https://h/f?x-amz-bad_name=visible",
 
     /// An Azure shared access signature: `sig` is the signature, the other fields say what it grants.
     "https://acct.blob.core.windows.net/c/b?sp=r&sig=abc",
@@ -211,7 +218,7 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     const std::vector<std::string> tokens = {
         "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
         "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
-        "sig", "SIG", "design",
+        "sig", "SIG", "design", "x-amz-", "X-AMZ-", "x-Goog-",
     };
     std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> count_dist(0, 12);
@@ -261,6 +268,7 @@ TEST(MaskS3URLCredentials, MasksPercentEncodedSecretParameterNames)
         /// The decoding serves every name in the set, and the prefixes too.
         {"https://h/f?%53ignature=x", "https://h/f?%53ignature=[HIDDEN]"},
         {"https://h/f?%58-Amz-Signature=x", "https://h/f?%58-Amz-Signature=[HIDDEN]"},
+        {"https://h/f?%78-amz-security-token=x", "https://h/f?%78-amz-security-token=[HIDDEN]"},
 
         /// Decodes to `SIG`, which does not authenticate, so it stays readable like `?SIG=` itself.
         {"https://h/f?%53IG=x", "https://h/f?%53IG=x"},
