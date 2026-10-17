@@ -13,12 +13,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Expansion is a per-frame property, so a small table shows it. Row count is what this test
 # costs: it is one Keeper node per row, and dropping the table walks all of them, so keep it
 # only as large as the ratio needs, which is any size at all.
+# test is filled with ast_fuzzer_runs = 0: under the Stress test, fuzzed copies of that INSERT would multiply it.
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test SYNC;
 CREATE TABLE test (key UInt64, value String)
 ENGINE = KeeperMap('/' || currentDatabase() || '/test04802') PRIMARY KEY(key);
-INSERT INTO test SELECT number, 'Hello, world' FROM numbers(200);
+INSERT INTO test SETTINGS ast_fuzzer_runs = 0 SELECT number, 'Hello, world' FROM numbers(200);
 "
 
 function check_backup()
