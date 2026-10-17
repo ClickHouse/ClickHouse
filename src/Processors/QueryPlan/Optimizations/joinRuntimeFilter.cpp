@@ -337,6 +337,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
+    /// For `ASOF`, pruning `join_algorithms` below would force `hash`/`parallel_hash` even if the user picked
+    /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
+    /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
+    /// excluded below never run `ASOF`, so they fall through regardless of list order.
+    if (join_operator.strictness == JoinStrictness::Asof)
+    {
+        const auto first_candidate = std::ranges::find_if(
+            join_algorithms,
+            [](JoinAlgorithm algorithm)
+            {
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                    && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
+                    && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
+            });
+        if (first_candidate == join_algorithms.end()
+            || (*first_candidate != JoinAlgorithm::HASH && *first_candidate != JoinAlgorithm::PARALLEL_HASH))
+            return false;
+    }
+
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
