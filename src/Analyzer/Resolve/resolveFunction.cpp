@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_IDENTIFIER;
     extern const int SYNTAX_ERROR;
+    extern const int ILLEGAL_DIVISION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
@@ -1993,7 +1994,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                        if (e.code() != ErrorCodes::ILLEGAL_DIVISION)
                             throw;
                         apply_constant_case_optimization = true;
                     }
@@ -2012,7 +2013,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                        if (e.code() != ErrorCodes::ILLEGAL_DIVISION)
                             throw;
                         apply_constant_case_optimization = true;
                     }
