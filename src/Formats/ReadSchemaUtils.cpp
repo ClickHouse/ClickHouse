@@ -34,6 +34,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
+static void removeColumnsWithEmptyNames(NamesAndTypesList & names_and_types)
+{
+    names_and_types.erase(
+        std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
+        names_and_types.end());
+}
+
 static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndTypesList & columns_list, const Names & columns_order_hint)
 {
     if (columns_list.size() != columns_order_hint.size())
@@ -105,7 +113,8 @@ static std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool structure_is_required)
 try
 {
     FormatFactory & format_factory = FormatFactory::instance();
@@ -264,14 +273,17 @@ try
                     if (num_rows)
                         read_buffer_iterator.setNumRowsToLastFile(*num_rows);
 
-                    if (!names_and_types.empty())
-                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+                    /// A cache hit returns the cached description verbatim, so the cache must hold the same filtered structure this function returns.
+                    auto columns_to_cache = names_and_types;
+                    removeColumnsWithEmptyNames(columns_to_cache);
+                    if (!columns_to_cache.empty())
+                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(columns_to_cache));
 
                     /// In default mode, we finish when schema is inferred successfully from any file.
                     if (mode == SchemaInferenceMode::DEFAULT)
                         break;
 
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(columns_to_cache, read_buffer_iterator.getLastFilePath());
                 }
                 catch (...)
                 {
@@ -423,8 +435,14 @@ try
                         read_buffer_iterator.setFormatName(*format_name);
                 }
 
+                NamesAndTypesList columns_to_cache;
                 if (format_name)
-                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+                {
+                    columns_to_cache = names_and_types;
+                    removeColumnsWithEmptyNames(columns_to_cache);
+                    if (!columns_to_cache.empty())
+                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(columns_to_cache));
+                }
 
                 if (mode == SchemaInferenceMode::UNION)
                 {
@@ -434,7 +452,7 @@ try
                     if (!format_name)
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(columns_to_cache, read_buffer_iterator.getLastFilePath());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)
@@ -504,7 +522,11 @@ try
                 names_and_types.emplace_back(name, names_to_types[name]);
         }
 
-        if (names_and_types.empty())
+        /// An empty merge in UNION mode can also mean every file was read and contributed only empty names.
+        const bool inferred_all_files_in_union_mode
+            = mode == SchemaInferenceMode::UNION && !schemas_for_union_mode.empty();
+
+        if (names_and_types.empty() && !inferred_all_files_in_union_mode)
         {
             if (iterations <= 1)
             {
@@ -539,10 +561,14 @@ try
                 names_and_types = *ordered_list;
         }
 
-        /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
-        names_and_types.erase(
-            std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
-            names_and_types.end());
+        removeColumnsWithEmptyNames(names_and_types);
+
+        if (structure_is_required && names_and_types.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "The table structure cannot be extracted from a {} format file: all inferred column names are empty. "
+                "You can specify the structure manually",
+                *format_name);
 
         return {ColumnsDescription(names_and_types), *format_name};
     }
@@ -566,15 +592,16 @@ ColumnsDescription readSchemaFromFormat(
     IReadBufferIterator & read_buffer_iterator,
     const ContextPtr & context)
 {
-    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, context).first;
+    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, context, /*structure_is_required=*/true).first;
 }
 
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool structure_is_required)
 {
-    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, context);
+    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, context, structure_is_required);
 }
 
 SchemaCache::Key getKeyForSchemaCache(
