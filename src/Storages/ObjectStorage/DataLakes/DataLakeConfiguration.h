@@ -374,10 +374,16 @@ public:
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void drop(ContextPtr local_context) override
+    void drop(
+        ContextPtr local_context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        DropCleanupPolicy policy) override
     {
         if (auto metadata = tryGetMetadata())
-            metadata->drop(local_context);
+            metadata->drop(local_context, catalog, storage_id, policy);
+        else
+            IDataLakeMetadata::dropFromCatalog(local_context, catalog, storage_id);
     }
 
     SinkToStoragePtr write(
