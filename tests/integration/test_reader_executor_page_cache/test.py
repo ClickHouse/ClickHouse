@@ -31,12 +31,14 @@ def started_cluster():
 #    PageCacheProvider tier.
 #  - page_cache_inject_eviction=0: keep the cold read's populate alive for the warm read.
 #  - read_from_page_cache_if_exists_otherwise_bypass_cache=0: populate on miss (not read-only bypass).
+#  - use_columns_cache=0: keep the warm read from being served by the columns cache above the page cache.
 READER_EXECUTOR_PAGE_CACHE_SETTINGS = (
     "use_reader_executor=1, "
     "remote_filesystem_read_method='read', "
     "use_page_cache_for_disks_without_file_cache=1, "
     "page_cache_inject_eviction=0, "
-    "read_from_page_cache_if_exists_otherwise_bypass_cache=0"
+    "read_from_page_cache_if_exists_otherwise_bypass_cache=0, "
+    "use_columns_cache=0"
 )
 
 

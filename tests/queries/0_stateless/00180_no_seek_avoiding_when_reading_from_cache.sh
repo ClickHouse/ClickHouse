@@ -30,12 +30,13 @@ $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE hits_s3_sampled FINAL"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE '$cache_name'"
 
-# Warm up the cache
-$CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
+# Warm up the cache. The columns cache is disabled, otherwise the measured query could be served from it
+# without reading from the filesystem cache at all, and the checks below would pass vacuously.
+$CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000, use_columns_cache=0"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000, use_columns_cache=0"
 
 query_id=02906_read_from_cache_$RANDOM
-$CLICKHOUSE_CLIENT --query_id ${query_id} -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
+$CLICKHOUSE_CLIENT --query_id ${query_id} -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000, use_columns_cache=0"
 
 $CLICKHOUSE_CLIENT -q "
   SYSTEM FLUSH LOGS query_log;

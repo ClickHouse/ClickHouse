@@ -270,7 +270,8 @@ public:
     ///
     /// Called periodically by `MemoryWorker`, and by `MemoryTracker` when an allocation is about
     /// to exceed the limit, before it resorts to stopping a query. Returns true if the memory
-    /// usage fits the limit after the resize.
+    /// usage fits the limit after the resize. Does nothing for an allocation that an operation
+    /// of the cache makes in the same thread: it may hold a mutex the resize takes.
     bool autoResize(Int64 memory_usage, size_t memory_limit) override;
 
     /// The size in effect, see `autoResize`; the configured size while the server has memory to spare.

@@ -2,6 +2,7 @@
 #include <chrono>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -27,6 +28,24 @@ namespace DB
 {
 
 template class CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
+
+namespace
+{
+
+/// The number of operations of a columns cache in progress in this thread. They allocate under
+/// the mutexes of the shards and `index_mutex`, and an allocation that exceeds the memory limit
+/// calls `autoResize` from `MemoryTracker`, which takes these mutexes again: the shards' for their
+/// sizes and evictions, and `index_mutex` in `onEntryRemoval`. So `autoResize` does nothing while
+/// this is nonzero.
+thread_local size_t operations_in_thread = 0;
+
+struct OperationInThread
+{
+    OperationInThread() { ++operations_in_thread; }
+    ~OperationInThread() { --operations_in_thread; }
+};
+
+}
 
 size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_ram_ratio)
 {
@@ -97,6 +116,8 @@ ColumnsCache::~ColumnsCache() = default;
 
 std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe)
 {
+    OperationInThread operation;
+
     const size_t num_keys = end_stripe - first_stripe;
     std::vector<MappedPtr> result(num_keys);
 
@@ -163,6 +184,8 @@ void ColumnsCache::accountAdmitted(size_t admitted)
 
 UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
 {
+    OperationInThread operation;
+
     std::lock_guard lock(index_mutex);
     return currentGeneration(table_uuid);
 }
@@ -227,6 +250,8 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
 
 size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation)
 {
+    OperationInThread operation;
+
     if (entries.empty())
         return 0;
 
@@ -290,6 +315,12 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
 
     if (to_store.empty())
         return 0;
+
+    /// From here on, the index and the shards are updated in steps that must all happen: an exception
+    /// in between would leave the index with stripes that no shard holds, or a shard with an entry that
+    /// was taken out of its accounted size but not of its queue. The allocations are only for the
+    /// bookkeeping, the columns are allocated already, so they are not allowed to fail the limit.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     /// Record the stripes before the entries are inserted, so that the eviction callback, which
     /// may run inside the insertion itself, always finds the bit to reset.
@@ -377,6 +408,10 @@ void ColumnsCache::Shard::onEntryRemoval(size_t weight_loss, const MappedPtr & m
     if (!mapped->used.load(std::memory_order_relaxed))
         parent.recent_evicted_unused.fetch_add(1, std::memory_order_relaxed);
 
+    /// The cache policy has already subtracted the weight of the entry and removes it from its
+    /// queue after this returns: an exception here would leave the entry there, unaccounted.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Runs under the mutex of the shard; `index_mutex` is taken second, see `part_index`.
     std::lock_guard lock(parent.index_mutex);
 
@@ -437,6 +472,10 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
     const bool disabled = shards.front()->maxSizeInBytes() == 0;
 
@@ -488,6 +527,10 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// No invalidation stamp is advanced here, see the declaration: the part is removed from
     /// the cache only once no reader can hold it, so there is no deferred write to reject.
     std::vector<Key> keys_to_remove;
@@ -509,12 +552,18 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 
 bool ColumnsCache::containsPart(const UUID & table_uuid, const String & part_name) const
 {
+    OperationInThread operation;
+
     std::lock_guard lock(index_mutex);
     return part_index.contains(PartIdentifier{table_uuid, part_name});
 }
 
 void ColumnsCache::clearAll()
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     {
         std::lock_guard lock(index_mutex);
         global_generation = nextGeneration();
@@ -584,6 +633,12 @@ size_t ColumnsCache::count() const
 
 bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
+    /// An allocation of an operation of the cache in this thread, which may hold the mutex the
+    /// resize would take: it is left to the other means of `MemoryTracker`, stopping a query or
+    /// the exception.
+    if (operations_in_thread > 0)
+        return false;
+
     /// This is called from `MemoryTracker` when an allocation is about to exceed the limit;
     /// anything allocated here must not be tracked, or it would end up right back there.
     /// The entries evicted below were allocated by the queries that read them, and tracked,
@@ -655,6 +710,8 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 
 std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
 {
+    OperationInThread operation;
+
     std::vector<EntryMetadata> result;
     for (auto & shard : shards)
     {

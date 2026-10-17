@@ -265,6 +265,11 @@ private:
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
+/// Whether the columns of the part can be read from and written to the columns cache: only those of a wide part
+/// of a table with a UUID (in an `Atomic` or `Replicated` database). Not those of a projection part, which has
+/// the name of the projection as its part name, not unique across the parent parts: the cache keys would collide.
+bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMergeTreeDataPartInfoForReader & part);
+
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,

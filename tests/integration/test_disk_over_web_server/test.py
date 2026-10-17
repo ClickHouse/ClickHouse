@@ -341,13 +341,13 @@ def test_page_cache(cluster):
         )
 
         result1 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test cold cache"
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1, use_columns_cache=0 -- test cold cache"
         )
         result2 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test warm cache"
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1, use_columns_cache=0 -- test warm cache"
         )
         result3 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=0 -- test no cache"
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=0, use_columns_cache=0 -- test no cache"
         )
 
         assert result1 == result3
