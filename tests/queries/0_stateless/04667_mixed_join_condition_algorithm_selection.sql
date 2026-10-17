@@ -69,8 +69,8 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 SELECT 'FULL ALL rows', count() FROM t1 FULL JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
--- MergeJoin, unlike FullSortingMergeJoin, does admit Left + Semi, so partial_merge is the
--- list that reaches its capability predicate with a Semi strictness.
+-- MergeJoin, unlike FullSortingMergeJoin, does admit Left + Semi, and it evaluates the
+-- mixed condition itself.
 SELECT 'LEFT SEMI partial_merge,hash', count() FROM t1 LEFT SEMI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'partial_merge,hash';
 
@@ -120,19 +120,21 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 SELECT 'LEFT ANTI fsm,hash', count() FROM t1 LEFT ANTI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
-SELECT '-- rejection when the list has no hash family member is unchanged --';
+SELECT '-- rejection when the list has no capable member is unchanged --';
 
 SELECT count() FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 
 SELECT count() FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'partial_merge'; -- { serverError NOT_IMPLEMENTED }
-
-SELECT count() FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'prefer_partial_merge'; -- { serverError NOT_IMPLEMENTED }
-
-SELECT count() FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'auto'; -- { serverError NOT_IMPLEMENTED }
+
+SELECT '-- partial merge join evaluates the mixed condition itself --';
+
+SELECT 'partial_merge alone', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SETTINGS join_algorithm = 'partial_merge';
+
+SELECT 'prefer_partial_merge alone', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SETTINGS join_algorithm = 'prefer_partial_merge';
 
 SELECT '-- a merge algorithm is still selected where it is valid --';
 
