@@ -92,6 +92,14 @@ reply = sock.recv(1)
 print("UTF-8 alias:", "authentication request" if reply == b"R" else "unexpected reply " + repr(reply))
 sock.close()
 
+# `UNICODE` is a documented PostgreSQL alias for UTF8, matched case-insensitively.
+sock = connect()
+payload = b"user\x00default\x00client_encoding\x00unicode\x00\x00"
+sock.sendall(struct.pack(">ii", 8 + len(payload), 196608) + payload)
+reply = sock.recv(1)
+print("UNICODE alias:", "authentication request" if reply == b"R" else "unexpected reply " + repr(reply))
+sock.close()
+
 # ClickHouse serializes PostgreSQLWire text as UTF-8 and does not transcode result data. Refuse a
 # different client encoding instead of advertising it and returning bytes in the wrong encoding.
 sock = connect()
