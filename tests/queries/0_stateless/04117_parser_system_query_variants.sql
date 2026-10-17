@@ -1,8 +1,3 @@
--- Tags: no-parallel
--- ^^ required because the parser test mentions SYSTEM DROP subcommands. The
--- EXPLAIN SYNTAX wrapper means no command actually runs, but the style check
--- is grep-based and flags any file containing `SYSTEM DROP`.
---
 -- Exercise the SYSTEM query parser and AST formatter for a wide variety of
 -- subcommands. EXPLAIN SYNTAX round-trips the AST so this hits both
 -- ParserSystemQuery::parseImpl and ASTSystemQuery::formatImpl without

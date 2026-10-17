@@ -30,9 +30,11 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -nq "
         as select 1 as x;
 "
 
-# Wait for the first refresh to succeed.
+# Wait for the first refresh to succeed and for the view to leave its initial
+# Disabled state. Under parallel load, the success timestamp can become visible
+# just before the refresh status update reaches `system.view_refreshes`.
 for _ in $(seq 1 60); do
-    if [ "$($CLICKHOUSE_CLIENT -q "select last_success_time is null from ${db}.refreshes -- $LINENO" | xargs)" = '0' ]; then
+    if [ "$($CLICKHOUSE_CLIENT -q "select last_success_time is not null and status != 'Disabled' from ${db}.refreshes -- $LINENO" | xargs)" = '1' ]; then
         break
     fi
     sleep 0.5

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel:metadata-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/92348
 # Iceberg std::out_of_range exception when metadata `location` field differs from
 # ClickHouse table path (e.g. table created by Spark with a different URI scheme/path).

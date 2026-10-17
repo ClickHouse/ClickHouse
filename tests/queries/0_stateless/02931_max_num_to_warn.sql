@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
 DROP DATABASE IF EXISTS test_max_num_to_warn_1;

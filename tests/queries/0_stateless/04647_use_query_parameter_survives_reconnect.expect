@@ -1,4 +1,8 @@
 #!/usr/bin/expect -f
+# Tags: no-parallel
+# Tag no-parallel: relies on seeing the server close its idle connection; a concurrent test that makes the server
+#                  start processes (e.g. an `executable_pool` dictionary) can inherit the accepted socket and keep
+#                  it open, so the client never reconnects: https://github.com/ClickHouse/ClickHouse/pull/125753
 
 # `USE {db:Identifier}` keeps the database name in a query parameter, so the client has to
 # substitute the parameters to learn the new database name. Otherwise it remembers an empty

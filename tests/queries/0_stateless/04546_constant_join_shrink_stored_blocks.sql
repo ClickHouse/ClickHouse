@@ -18,8 +18,9 @@ SYSTEM FLUSH LOGS query_log, text_log;
 SELECT count() > 0 AS shrunk_stored_blocks
 FROM system.text_log
 WHERE (event_date >= yesterday())
--- Must exceed any `SYSTEM FLUSH LOGS` delay possible within the 600s per-test timeout: `event_time` is the emission time.
-AND (event_time >= (now() - 600))
+-- Must exceed any `SYSTEM FLUSH LOGS` delay possible within the 300s per-test timeout:
+-- `event_time` is the emission time.
+AND (event_time >= (now() - 360))
 AND (query_id IN
 (
     -- Newest matching query only: `clickhouse-test --database` reuses the database across runs,

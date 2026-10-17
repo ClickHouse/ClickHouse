@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed
 
 -- just a smoke test
 

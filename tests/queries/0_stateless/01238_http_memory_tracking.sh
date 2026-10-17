@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
+# Tags: no-replicated-database, no-fasttest, no-parallel
+# Tag no-parallel: sends 1000 sequential HTTP queries that must all overlap a 5 s background query of the same user; under parallel load they take minutes and the test times out.
 # Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

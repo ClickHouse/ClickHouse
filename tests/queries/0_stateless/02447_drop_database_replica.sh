@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 # Tags: no-parallel, no-fasttest
-# no-parallel: This test is not parallel because when we execute system-wide SYSTEM DROP REPLICA,
-#  other tests might shut down the storage in parallel and the test will fail.
+# Tag no-parallel: `system drop replica 'doesntexist...'` (no `FROM DATABASE`/`FROM TABLE`) iterates
+#  every `ReplicatedMergeTree` table on the server; a concurrent test dropping/detaching its own
+#  replicated table mid-iteration could make this global scan throw unrelated to this test's logic.
 # no-fasttest: It has several tests with timeouts for inactive replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

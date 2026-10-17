@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, long, no-random-settings
+-- Tags: no-fasttest, long, no-random-settings
 
 SET max_bytes_before_external_sort = 33554432;
 SET max_bytes_ratio_before_external_sort = 0;

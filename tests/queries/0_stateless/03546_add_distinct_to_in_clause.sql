@@ -1,4 +1,4 @@
--- Tags: shard, no-parallel
+-- Tags: shard
 
 drop table if exists local_table_1;
 drop table if exists local_table_2;

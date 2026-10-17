@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-fasttest, no-parallel
-# no-parallel: the `database_replicated_pause_after_reading_log_pointer` failpoint
+# Tag no-parallel: the `database_replicated_pause_after_reading_log_pointer` failpoint
 #   is `PAUSEABLE_ONCE` and fires globally; a concurrent backup from another test
 #   could steal the pause from this test's submitted backup, causing
 #   `SYSTEM WAIT FAILPOINT ... PAUSE` to hang or to be unblocked by the wrong query.

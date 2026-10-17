@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-random-settings, no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 set -eo pipefail
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

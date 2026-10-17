@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 -- SHOW [ROW|MASKING] POLICIES used to reject a trailing FORMAT / SETTINGS /
 -- INTO OUTFILE clause: the optional bare-identifier short name greedily

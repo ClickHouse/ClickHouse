@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-parallel, no-msan
+# Tags: deadlock, no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +20,9 @@ function thread1()
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-        seq 1 100 | awk '{ print "SELECT x FROM a WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
+        # The time limit is checked between batches, and each query scans all tables of the server, which is slow
+        # when many tests run concurrently, so keep the batches short.
+        seq 1 10 | awk '{ print "SELECT x FROM a WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
     done
 }
 
@@ -30,7 +32,9 @@ function thread2()
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-        seq 1 100 | awk '{ print "SELECT x FROM b WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
+        # The time limit is checked between batches, and each query scans all tables of the server, which is slow
+        # when many tests run concurrently, so keep the batches short.
+        seq 1 10 | awk '{ print "SELECT x FROM b WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
     done
 }
 

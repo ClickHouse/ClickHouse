@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: race, no-parallel
-# no-parallel: runs 20 concurrent ALTER workers for 30 s — too heavy to share the server
-#              with other tests; under asan_ubsan the server hits the docker memory limit
+# Tag no-parallel: runs 20 concurrent ALTER workers for 30 s — too heavy to share the server
+# with other tests; under asan_ubsan the server hits the docker memory limit
 
 # Regression test for a data race in DatabaseMemory::alterTable.
 # alterTable() used to take a raw (non-cloned) pointer to the stored

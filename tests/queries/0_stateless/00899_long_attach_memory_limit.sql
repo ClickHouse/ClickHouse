@@ -1,5 +1,6 @@
 -- Tags: long, no-debug, no-parallel, no-fasttest, no-msan, no-tsan, no-flaky-check
 -- Random settings limits: optimize_trivial_count_query=(1, None)
+-- Tag no-parallel: ATTACH must load 5M-row MergeTree metadata within a tight 39MB per-query memory budget; concurrent-suite memory pressure risks tipping actual allocations over that budget and causing a false failure
 -- This test is slow under MSan or TSan.
 -- no-flaky-check: the ThreadFuzzer of the flaky check makes the 5M-row INSERT over 10x slower,
 -- which runs past the per-test timeout.

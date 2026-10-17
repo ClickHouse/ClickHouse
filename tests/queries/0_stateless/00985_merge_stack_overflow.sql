@@ -1,4 +1,3 @@
--- Tags: no-parallel
 --       ^^^^^^^^^^^ otherwise you may hit TOO_DEEP_RECURSION error during querying system.columns
 
 DROP TABLE IF EXISTS merge1;

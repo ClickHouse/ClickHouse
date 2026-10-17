@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, long, no-fasttest, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+# Tag no-parallel: deliberately buffers a ~2 GiB S3 part in memory (`max_memory_usage 16G`,
+# up to 300s execution time) to reproduce a part-size-exceeds-INT_MAX regression; running
+# concurrently with other tests risks OOM-ing or timing out the shared test server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

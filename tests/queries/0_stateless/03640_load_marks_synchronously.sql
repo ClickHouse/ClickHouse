@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas, no-parallel
--- Test depends on mark cache, don't run with others in parallel
+-- Tag no-parallel: asserts mark cache hits, which concurrent SYSTEM CLEAR MARK CACHE in other tests would break
 
 -- Note: we need to have index_granularity==number or rows, to avoid processing
 -- parts in parallel, since in this case marks can be requested from multiple

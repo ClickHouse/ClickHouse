@@ -1,5 +1,6 @@
 -- Tags: no-parallel
--- Do not run this test in parallel because `all` workload might affect other queries execution process
+-- Tag no-parallel: creates, replaces, and drops the process-global root `WORKLOAD all` and its
+-- `RESOURCE`s, which would disrupt query scheduling for any concurrently running test
 
 -- Test simple resource and workload hierarchy creation
 create resource 03232_write (write disk 03232_fake_disk);

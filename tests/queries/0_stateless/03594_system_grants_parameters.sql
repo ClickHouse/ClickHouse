@@ -1,4 +1,7 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
+-- Tag no-parallel: the test creates the fixed global users `test_user_03593`
+-- and `test_user_03593_1`, so a concurrent copy of the test would race on
+-- those names.
 
 DROP USER IF EXISTS test_user_03593;
 DROP USER IF EXISTS test_user_03593_1;

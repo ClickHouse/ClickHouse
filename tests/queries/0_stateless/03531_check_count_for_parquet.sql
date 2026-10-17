@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-parallel
 -- no-fasttest because of Parquet
--- no-parallel because we're writing a file with fixed name
+-- Tag no-parallel: we're writing a file with fixed name
 
 select count() from url('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet');
 select count() from url('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') where column1 = 'meow';

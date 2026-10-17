@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-msan, no-parallel, no-parallel-replicas, no-random-settings
+-- Tags: no-fasttest, no-msan, no-parallel-replicas, no-random-settings, no-parallel:metadata-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 -- Tag no-fasttest: Depends on AWS
 -- Tag no-msan: delta-kernel is not built with msan
 -- Tag no-parallel, no-parallel-replicas: the cache is system-wide so concurrent queries can influence the cache

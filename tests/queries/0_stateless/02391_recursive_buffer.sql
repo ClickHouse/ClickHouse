@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- because of system.tables poisoning
 
 DROP TABLE IF EXISTS test;

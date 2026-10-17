@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 # Test that MergeTree introspection functions check table grants correctly.
 # These functions should require SELECT permission on the source table.

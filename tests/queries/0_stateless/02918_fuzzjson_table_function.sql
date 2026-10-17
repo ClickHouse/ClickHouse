@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-replicated-database: Named collection is used
+-- Tag no-parallel: creates and drops the server-global named collection `02918_json_fuzzer` under a fixed name
 --
 SET explain_query_plan_default = 'legacy';
 
@@ -91,3 +92,4 @@ SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=0) L
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=11) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM fuzzJSON(02918_json_fuzzer, equals(random_seed, viewExplain('EXPLAIN', 'actions = 1', (SELECT count(*) FROM numbers(10))), 54321)) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 
+DROP NAMED COLLECTION 02918_json_fuzzer;

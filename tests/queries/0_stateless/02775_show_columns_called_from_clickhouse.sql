@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 -- no-fasttest: json type needs rapidjson library, geo types need s2 geometry
 -- no-parallel: can't provide currentDatabase() to SHOW COLUMNS
 

@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: creates and drops server-global users and roles with fixed names
 
 DROP USER IF EXISTS test_user_01073;
 DROP ROLE IF EXISTS test_role_01073;

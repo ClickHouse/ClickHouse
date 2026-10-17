@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: race, no-parallel, no-flaky-check
+# Tag no-parallel: runs 4 concurrent copies of 00097_long_storage_buffer_race_condition.sh, amplifying its CPU-contention timing sensitivity; times out under concurrent-suite load on busy machines
 #  - no-parallel: FIXME start to timeout on bigger machines under high load, no-flaky-check - too long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

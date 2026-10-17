@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, long, no-parallel
-# Disable parallel since it creates 10 different threads querying and might overload the server
+# Tag no-parallel: a heavy race test; under concurrent load its queries exceed `max_estimated_execution_time`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

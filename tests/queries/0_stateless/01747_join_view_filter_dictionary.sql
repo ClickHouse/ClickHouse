@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SET optimize_on_insert = 1;
 

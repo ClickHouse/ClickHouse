@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: asserts the process-wide primary index cache metrics and clears the cache
 
 SET parallel_replicas_local_plan = 1;
 

@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Creates and drops fixed names in the server-wide handler registry.
 -- ^ Handlers are a global, server-wide namespace, and this test uses fixed handler names. The flaky
 -- check runs several copies of the same test concurrently (`--test-runs N --jobs M`), so without this
 -- tag a `DROP HANDLER IF EXISTS` in one copy removes a handler another copy is about to drop, leading

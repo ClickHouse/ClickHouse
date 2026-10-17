@@ -5,8 +5,7 @@
 -- coordinator would have to fully sort.
 
 -- Tags: distributed, no-parallel
--- ^ no-parallel: the SQL SECURITY DEFINER cases below create globally-named users,
--- which would collide across concurrent runs (e.g. the flaky check).
+-- Tag no-parallel: the SQL SECURITY DEFINER cases below create globally-named users, which would collide across concurrent runs (e.g. the flaky check).
 
 SET allow_experimental_analyzer = 1;
 -- This test targets `pushOrderByIntoView` specifically. Disable the unrelated

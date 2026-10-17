@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, replica, no-parallel, no-fasttest
 # long: 5-replica parallel-ALTER stress + teardown drain legitimately exceeds the 180s flaky-check cap
+# Tag no-parallel: concurrent suite load makes the five-replica mutation stress exceed the TSan test timeout.
 
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all

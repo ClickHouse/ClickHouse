@@ -1,4 +1,5 @@
--- Tags: use-xray
+-- Tags: use-xray, no-parallel:xray
+-- Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 -- SYSTEM INSTRUMENT ADD must reject literal arguments of unsupported types
 -- (e.g. NULL) instead of silently consuming them.

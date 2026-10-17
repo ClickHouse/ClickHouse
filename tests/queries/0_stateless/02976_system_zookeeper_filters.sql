@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-fasttest, long
+-- Tags: zookeeper, no-fasttest, long
 
 SET allow_unrestricted_reads_from_keeper = 'false';
 

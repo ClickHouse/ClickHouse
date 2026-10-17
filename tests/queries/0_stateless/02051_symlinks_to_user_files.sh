@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-FILE_PATH="${USER_FILES_PATH}/file"
+FILE_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}/file"
 mkdir -p ${FILE_PATH}
 chmod 777 ${FILE_PATH}
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 # shellcheck disable=SC2015
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+user="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 
 echo "Using non-existent session with the 'session_check' flag will throw exception:"
@@ -25,22 +27,22 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_4&se
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_5&session_timeout=60" --data-binary "SELECT 1"
 
 echo "Sessions are local per user:"
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS test_00463; CREATE USER test_00463; GRANT ALL ON *.* TO test_00463;"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}; CREATE USER ${user}; GRANT ALL ON *.* TO ${user};"
 
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('Hello')"
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('World')"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&session_id=${CLICKHOUSE_DATABASE}_6&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=${user}&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=${user}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('World')"
 
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t"
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=${user}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER test_00463";
+${CLICKHOUSE_CLIENT} --query "DROP USER ${user}";
 
 echo "And cannot be accessed for a non-existent user:"
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t" | grep -c -F 'Exception'
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=${user}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t" | grep -c -F 'Exception'
 
 echo "The temporary tables created in a session are not accessible without entering this session:"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM t" | grep -c -F 'Exception'
@@ -59,15 +61,20 @@ done
 
 echo "A session successfully expire after a timeout and the session's temporary table shadows the permanent table:"
 # An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
+# Every attempt uses a fresh session: under load the previous attempt's session may still be alive, and reusing it
+# would fail `CREATE TEMPORARY TABLE` with `TABLE_ALREADY_EXISTS` and leak that error into the matched output.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t; CREATE TABLE t (s String) ENGINE = Memory; INSERT INTO t VALUES ('World');"
+attempt=0
 while true
 do
+    attempt=$((attempt + 1))
+    session_id="${CLICKHOUSE_DATABASE}_8_${attempt}"
     (
-        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
-        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "INSERT INTO t VALUES ('Hello')"
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${session_id}&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "INSERT INTO t VALUES ('Hello')"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "SELECT * FROM t"
         sleep 3
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "SELECT * FROM t"
     ) | tr -d '\n' | grep -F 'HelloWorld' && break || sleep 1
 done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"

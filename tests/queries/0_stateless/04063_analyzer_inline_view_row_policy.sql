@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SET enable_analyzer = 1;
 SET analyzer_inline_views = 1;

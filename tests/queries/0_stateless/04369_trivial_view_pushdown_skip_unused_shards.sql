@@ -9,6 +9,7 @@
 -- optimized and non-optimized paths.
 --
 -- Tags: distributed, no-parallel
+-- Tag no-parallel: Uses fixed tables in the shared `shard_0` and `shard_1` databases.
 
 SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;

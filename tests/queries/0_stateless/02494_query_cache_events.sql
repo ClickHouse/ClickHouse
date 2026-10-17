@@ -1,8 +1,8 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query cache QC
-SYSTEM CLEAR QUERY CACHE;
+SET query_cache_tag = '02494_query_cache_events';
+
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_events';
 
 SELECT 1 SETTINGS use_query_cache = true;
 SELECT 1 SETTINGS use_query_cache = true;
@@ -17,4 +17,4 @@ ORDER BY event_time_microseconds;
 
 -- (The 1st execution was a cache miss, the 2nd execution was a cache hit)
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_events';

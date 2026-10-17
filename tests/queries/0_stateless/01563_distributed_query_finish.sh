@@ -27,7 +27,7 @@ salt=$(random_str 10)
 run_start=$($CLICKHOUSE_CLIENT -q "SELECT now()")
 network_errors=0
 for ((i = 0; i < 100; ++i)); do
-    query_id="01563_distributed_query_finish-$CLICKHOUSE_DATABASE-$salt-$i"
+    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${salt}_$i"
 
     opts=(
         "--max_distributed_connections=1"

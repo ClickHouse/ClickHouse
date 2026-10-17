@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-tsan, no-asan, no-debug, no-object-storage, no-fasttest, no-replicated-database, no-flaky-check
+# Tags: long, no-tsan, no-asan, no-debug, no-object-storage, no-fasttest, no-replicated-database, no-flaky-check
 
 # `no-flaky-check`: this test floods `system.trace_log` on purpose (four threads at a 10 ms profiler
 # period with `trace_profile_events` and a 0.9 memory profiler sample probability) while a fifth thread

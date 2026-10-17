@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
+# Tags: long, zookeeper, no-fasttest, no-shared-merge-tree
+# Tag long: creates 10 replicas and runs wall-clock-bounded insert/sync/drop loops; under
+#   sanitizers with a loaded worker it legitimately needs more than the default test timeout
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

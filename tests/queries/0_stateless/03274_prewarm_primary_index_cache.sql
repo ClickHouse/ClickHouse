@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 SET parallel_replicas_local_plan = 1;
 
@@ -16,6 +17,7 @@ ORDER BY a PARTITION BY a % 2
 SETTINGS prewarm_primary_key_cache = 1, use_primary_key_cache = 1;
 
 SYSTEM CLEAR PRIMARY INDEX CACHE;
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 SYSTEM STOP FETCHES t_prewarm_cache_rmt_2;
 
 -- Check that prewarm works on insert.
@@ -25,6 +27,7 @@ SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a > 100 AND a < 10
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = currentDatabase() AND table IN ('t_prewarm_cache_rmt_1', 't_prewarm_cache_rmt_2');
 
 -- Check that prewarm works on fetch.
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 SYSTEM CLEAR PRIMARY INDEX CACHE;
 SYSTEM START FETCHES t_prewarm_cache_rmt_2;
 SYSTEM SYNC REPLICA t_prewarm_cache_rmt_2;
@@ -44,6 +47,7 @@ SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = curre
 
 -- Check that prewarm works on restart.
 SYSTEM CLEAR PRIMARY INDEX CACHE;
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 DETACH TABLE t_prewarm_cache_rmt_1;
 DETACH TABLE t_prewarm_cache_rmt_2;
@@ -55,6 +59,7 @@ SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a > 100 AND a < 10
 SELECT count() FROM t_prewarm_cache_rmt_2 WHERE a % 2 = 0 AND a > 100 AND a < 1000;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = currentDatabase() AND table IN ('t_prewarm_cache_rmt_1', 't_prewarm_cache_rmt_2');
 
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a > 100 AND a < 1000;
