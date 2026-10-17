@@ -58,12 +58,14 @@ public:
         const size_t old_size = buffer.size();
         buffer.resize(old_size + count);
         auto * __restrict appended = buffer.data() + old_size;
-        for (size_t i = 0; i < count; ++i)
-            appended[i] = {timestamps[i], values[i]};
-
         UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
+
+        appended[0] = {timestamps[0], values[0]};
         for (size_t i = 1; i < count; ++i)
+        {
+            appended[i] = {timestamps[i], values[i]};
             in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
+        }
         sorted = sorted && in_order;
     }
 

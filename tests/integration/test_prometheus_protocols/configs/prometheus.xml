@@ -35,7 +35,7 @@
                 </handler>
             </my_rule_4>
 
-            <!-- Query and metadata endpoints of the Prometheus HTTP API -->
+            <!-- Query and metadata endpoints of the Prometheus HTTP API, including /api/v1/status/tsdb. -->
             <my_rule_5>
                 <url>/api/v1/query</url>
                 <handler>
@@ -78,6 +78,20 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_13>
+            <my_rule_18>
+                <url>/api/v1/status/tsdb</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_18>
+            <my_rule_17>
+                <url>/empty/api/v1/status/tsdb</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_empty</table>
+                </handler>
+            </my_rule_17>
             <!-- A table which never gets any metrics metadata: /api/v1/metadata must return an empty result for it. -->
             <my_rule_14>
                 <url>/empty/api/v1/metadata</url>
