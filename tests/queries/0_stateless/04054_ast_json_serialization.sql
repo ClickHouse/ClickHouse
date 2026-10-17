@@ -278,7 +278,7 @@ FROM (SELECT parseQueryToJSON('SELECT count(*) AS cnt FROM t') AS j);
 
 -- ==========================================================================
 -- 9. ASTSubquery
--- Fields: cte_name(string), alias(string), children(array)
+-- Fields: cte_name(string), recursive_with(bool), alias(string), children(array)
 -- ==========================================================================
 
 SELECT 'Subquery' AS t,
