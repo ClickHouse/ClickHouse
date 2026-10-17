@@ -1,0 +1,86 @@
+-- test_db_disk_plain_rewritable_05340: a finished exchange leaves no record
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: an exchange that fails while writing its record changes nothing, the next load removes what it left
+FAULT_INJECTED
+store/053/05340000-0000-0000-0000-000000000001/: [.a.sql.exchange.tmp a.sql b.sql]
+header
+both paths
+new content of the first file
+new content of the second file
+db	a	6
+db	b	30
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: no move done
+db	a	6
+db	b	30
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: first move copied
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: first move done
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: second move copied
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: second move done
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: third move copied
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: a file that is not a record is left as is
+db	a	6
+db	b	30
+store/053/05340000-0000-0000-0000-000000000001/: [.c.sql.exchange a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: an exchange between databases records itself in both directories
+FAULT_INJECTED
+store/053/05340000-0000-0000-0000-000000000002/: [.b.sql.exchange.tmp b.sql]
+store/053/05340000-0000-0000-0000-000000000003/: [.a.sql.exchange.tmp a.sql]
+the two records are the same
+db	a	6
+db	b	30
+db_1	b	30
+db_2	a	6
+store/053/05340000-0000-0000-0000-000000000002/: [b.sql]
+store/053/05340000-0000-0000-0000-000000000003/: [a.sql]
+-- test_db_disk_plain_rewritable_05340: between databases, first move done
+db	a	6
+db	b	30
+db_1	b	6
+db_2	a	30
+store/053/05340000-0000-0000-0000-000000000002/: [b.sql]
+store/053/05340000-0000-0000-0000-000000000003/: [a.sql]
+-- test_db_disk_plain_rewritable_05340: between databases, second move done
+db	a	6
+db	b	30
+db_1	b	6
+db_2	a	30
+store/053/05340000-0000-0000-0000-000000000002/: [b.sql]
+store/053/05340000-0000-0000-0000-000000000003/: [a.sql]
+-- test_db_disk_plain_rewritable_05340: a file with neither of the recorded contents stops the load, nothing is changed
+CORRUPTED_DATA
+store/053/05340000-0000-0000-0000-000000000001/: [.a.sql.exchange a.sql.tmp_exchange b.sql]
+-- test_db_disk_local_metadata_05340: a finished exchange leaves no record
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: no move done
+db	a	6
+db	b	30
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: a temporary record is left
+db	a	6
+db	b	30
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: first move done
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: second move done
+db	a	30
+db	b	6
+store/053/05340000-0000-0000-0000-000000000001/: [a.sql b.sql]
