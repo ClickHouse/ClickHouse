@@ -515,6 +515,13 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
     if (!column)
         return nullptr;
 
+    /// A `FixedString` constant compares with zero padding: `'a'` equals `toFixedString('a', 2)`,
+    /// and so does `'a\0'` equal `toFixedString('a', 1)`. The scan compares the bytes as they are.
+    /// A `String` column against a constant of another type is not compared as strings either.
+    const DataTypePtr constant_type = value_type ? removeLowCardinalityAndNullable(value_type) : nullptr;
+    if (constant_type && (isFixedString(constant_type) || (isString(column->cmp_type) && !isString(constant_type))))
+        return nullptr;
+
     auto literal = makeLiteral(*column->field->type(), column->cmp_type, value, value_type);
     if (!literal)
         return nullptr;
@@ -585,11 +592,18 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
         return nullptr;
 
     /// `Set::execute` converts the column to the type of the keys, while the literals below convert
-    /// the keys to the type of the column. The two agree only when the conversion is invertible,
-    /// which a parse between a string and anything else is not: a numeric row `1` is looked up as
-    /// the string `'1'` and does not match the key `'01'`, yet `'01'` parses to the literal `1`.
-    if (isStringOrFixedString(removeLowCardinalityAndNullable(set_types.front()))
-        != isStringOrFixedString(removeLowCardinalityAndNullable(column->cmp_type)))
+    /// the keys to the type of the column. The two agree only when the conversion of the column is
+    /// injective, and a key that converts back exactly does not prove that: a numeric row `1` is
+    /// looked up as the string `'1'` and misses the key `'01'`, which parses to the literal `1`; a
+    /// `String` row `'a'` is padded to match the `FixedString(2)` key `'a\0'`; a `UInt8` row `2`
+    /// becomes `true` and matches a `Bool` key that is the literal `1`; a `DateTime` row at noon is
+    /// cut down to a `Date` key. So only keys of the column's own type are pushed, and integer keys
+    /// for an integer column, which `Set::execute` converts exactly or not at all.
+    const DataTypePtr key_type = removeLowCardinalityAndNullable(set_types.front());
+    const auto is_plain_integer = [](const DataTypePtr & type) { return isInteger(type) && !isBool(type); };
+    /// `Bool` is checked apart because it `equals` `UInt8`.
+    if (isBool(key_type) != isBool(column->cmp_type)
+        || (!key_type->equals(*column->cmp_type) && !(is_plain_integer(key_type) && is_plain_integer(column->cmp_type))))
         return nullptr;
 
     const IColumn & elements = *set_elements.front();
