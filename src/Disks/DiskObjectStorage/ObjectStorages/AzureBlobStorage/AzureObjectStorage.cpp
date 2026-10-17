@@ -697,6 +697,13 @@ void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
                 if (!throw_at_end)
                     throw_at_end = std::current_exception();
             }
+            catch (...)
+            {
+                /// An Azure error, such as a denied delete, must not hide a changed object either.
+                if (throw_at_end)
+                    std::rethrow_exception(throw_at_end);
+                throw;
+            }
         }
         if (throw_at_end)
             std::rethrow_exception(throw_at_end);
