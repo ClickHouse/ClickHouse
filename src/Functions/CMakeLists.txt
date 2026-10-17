@@ -49,6 +49,7 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl26.cpp
     FunctionsConversion_impl27.cpp
     FunctionsConversion_impl28.cpp
+    FunctionsConversion_impl29.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
