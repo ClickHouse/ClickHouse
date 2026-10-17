@@ -8,6 +8,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -68,16 +69,7 @@ void writeTombstoneMarkerContent(
     const std::string & removed_name,
     const std::string & content)
 {
-    StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
-    auto buf = object_storage.writeObject(
-        marker_object,
-        WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettingsForMetadata());
-
-    writeString(content, *buf);
-    buf->finalize();
+    writeMetadataObject(object_storage, StoredObject(layout.constructTombstoneMarkerKey(removed_name)), content, getWriteSettingsForMetadata());
 }
 
 void writeTombstoneMarker(
@@ -109,6 +101,29 @@ void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritabl
     object_storage.removeObjectIfExists(StoredObject(layout.constructTombstoneMarkerKey(removed_name)));
 }
 
+/// See `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+void writeBlobRemovalTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & marker_name,
+    const std::string & blob_key)
+{
+    writeTombstoneMarkerContent(object_storage, layout, marker_name, PlainRewritableLayout::makeBlobRemovalTombstoneContent(blob_key));
+}
+
+/// A name of the shape of `generateRemovedName` that exists in the filesystem is ordinary data created by an older
+/// version, and `copyObject` overwrites the destination, so a temporary name must not collide with it, nor with
+/// another temporary name of the same operation.
+std::string generateUnusedRemovedName(const FsSnapshot & fs_tree, const std::string & other_name = {})
+{
+    while (true)
+    {
+        auto name = PlainRewritableLayout::generateRemovedName();
+        if (name != other_name && !fs_tree.existsFile(name) && !fs_tree.existsDirectory(name))
+            return name;
+    }
+}
+
 }
 
 namespace
@@ -137,15 +152,11 @@ void writeDirectoryMetadata(
         metadata_object_key,
         info.has_explicit_file_list ? info.files.size() : 0);
 
-    auto buf = object_storage.writeObject(
+    writeMetadataObject(
+        object_storage,
         StoredObject(metadata_object_key, directory.string()),
-        WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettings());
-
-    writeString(serializePrefixPath(getLogicalDirectoryPath(directory), info), *buf);
-    buf->finalize();
+        serializePrefixPath(getLogicalDirectoryPath(directory), info),
+        getWriteSettings());
 }
 
 DirectoryRemoteInfo getDirectoryInfoOrThrow(const FsSnapshot & fs_tree, const NormalizedPath & directory)
@@ -202,6 +213,25 @@ void copyBlobOfListedFile(
 
 }
 
+WriteSettings getWriteSettingsForMetadataObject(WriteSettings settings)
+{
+    settings.object_storage_write_atomically = true;
+    return settings;
+}
+
+void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & object, const std::string & contents, const WriteSettings & settings)
+{
+    auto buf = object_storage.writeObject(
+        object,
+        WriteMode::Rewrite,
+        /*object_attributes*/ std::nullopt,
+        /*buf_size*/ std::max<size_t>(contents.size(), 1),
+        getWriteSettingsForMetadataObject(settings));
+
+    writeString(contents, *buf);
+    buf->finalize();
+}
+
 bool isMetadataOnlyMove(
     const FsSnapshot & fs_tree,
     const DirectoryRemoteInfo & directory_from,
@@ -246,9 +276,9 @@ MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainO
 
 void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
 {
-    /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
-    /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
-    /// the blob, so the last link is found only here, where the publications are serialized.
+    /// The transactions removing different links to a shared blob are serialized by the locks of the shared blobs
+    /// (see `collectSharedBlobKeys`), so the one that removes the last link sees it in its own snapshot and removes
+    /// the blob through a tombstone marker. Whatever still loses its last link only here is removed in `finalize`.
     for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
         unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
 }
@@ -314,14 +344,15 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     auto metadata_object = StoredObject(metadata_object_key, path);
 
     write_attempted = true;
+    const auto contents = path.string();
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettings());
+        /*buf_size*/ std::max<size_t>(contents.size(), 1),
+        /*settings*/ getWriteSettingsForMetadataObject(getWriteSettings()));
 
-    writeString(path.string(), *buf);
+    writeString(contents, *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
     });
@@ -367,7 +398,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
-    const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path)
+    const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path, size_t buf_size)
 {
     auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info.remote_path);
     StoredObject metadata_object(metadata_object_key);
@@ -400,18 +431,18 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettings());
+        std::max<size_t>(buf_size, 1),
+        /*settings*/ getWriteSettingsForMetadataObject(getWriteSettings()));
 
     return write_buf;
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleDirectory(
-    const std::filesystem::path & from, const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer)
+    const std::filesystem::path & from, const std::filesystem::path & to, const std::string & contents, WriteBuffer & buffer)
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
-    writeString(serializePrefixPath(to.string(), remote_info), buffer);
+    writeString(contents, buffer);
     buffer.finalize();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Updated '{}' to '{}'", from, to);
@@ -445,7 +476,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
             continue;
         }
 
-        auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
+        const auto contents = serializePrefixPath(sub_path_to.string(), remote_info.value());
+        auto write_buf = createWriteBuf(
+            remote_info.value(), /*expected_logical_path*/validate_content ? std::make_optional(sub_path_from) : std::nullopt, contents.size());
 
         /// Forward pass only: the reversal rewrites markers through the same helper, and a fault that never stops
         /// firing cannot be retried to an end.
@@ -455,7 +488,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
                 ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
         });
 
-        rewriteSingleDirectory(sub_path_from, sub_path_to, remote_info.value(), *write_buf);
+        rewriteSingleDirectory(sub_path_from, sub_path_to, contents, *write_buf);
     }
 
     fs_tree->moveDirectory(path_from, path_to);
@@ -478,8 +511,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 
         undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
         {
-            auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt);
-            rewriteSingleDirectory(sub_path_to, sub_path_from, remote_info.value(), *write_buf);
+            const auto contents = serializePrefixPath(sub_path_from.string(), remote_info.value());
+            auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt, contents.size());
+            rewriteSingleDirectory(sub_path_to, sub_path_from, contents, *write_buf);
         });
     }
 }
@@ -533,16 +567,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-        auto metadata_object = StoredObject(metadata_object_key, path);
-
-        auto buf = object_storage->writeObject(
-            metadata_object,
-            WriteMode::Rewrite,
-            /*object_attributes*/ std::nullopt,
-            /*buf_size*/ 128,
-            /*settings*/ DB::getWriteSettings());
-        writeString(serializePrefixPath(path.string(), info), *buf);
-        buf->finalize();
+        writeMetadataObject(*object_storage, StoredObject(metadata_object_key, path), serializePrefixPath(path.string(), info), DB::getWriteSettings());
     });
 }
 
@@ -589,7 +614,11 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
         /// When the key is reused (an in-place overwrite in the default location) the caller has already replaced the
         /// blob's content, so there is nothing to remove and the link count is unchanged.
         if (existing_blob_key != new_blob_key)
+        {
             replaced_blob = removeLinkAndGetBlobToRemove(*fs_tree, *layout, existing_blob_key);
+            if (replaced_blob)
+                replaced_blob_key = existing_blob_key;
+        }
 
         fs_tree->removeFile(path);
     }
@@ -604,20 +633,38 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
     previous_directory_info = directory_info;
     fs_tree->markDirectoryExplicit(directory);
 
+    /// The replaced blob is unreachable once `prefix.path` is rewritten, so it is marked before that.
+    if (replaced_blob)
+    {
+        blob_removal_marker_name = generateUnusedRemovedName(*fs_tree);
+        writeBlobRemovalTombstoneMarker(*object_storage, *layout, blob_removal_marker_name, replaced_blob_key);
+    }
+
     prefix_path_written = true;
     writeDirectoryMetadata(*object_storage, *layout, directory, getDirectoryInfoOrThrow(*fs_tree, directory));
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
-    if (!prefix_path_written)
-        return;
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation");
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-    undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path), [&]
+    if (prefix_path_written)
     {
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
-    });
+        LOG_TRACE(log, "Reversing the metadata rewrite for the directory of '{}'", path);
+        undoWithRetries(log, fmt::format("restore the metadata of the directory of '{}'", path), [&]
+        {
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        });
+    }
+
+    /// The marker outlives the rewrite of `prefix.path`, so the blob it names is referenced again by now.
+    if (!blob_removal_marker_name.empty())
+    {
+        undoWithRetries(log, fmt::format("remove the marker of the removal of the replaced blob of '{}'", path), [&]
+        {
+            removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
+        });
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::finalize()
@@ -628,6 +675,9 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::finalize()
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Removing the replaced blob '{}' of the file '{}'", replaced_blob->remote_path, path);
     object_storage->removeObjectIfExists(*replaced_blob);
     removed_objects.push_back(*replaced_blob);
+    /// The marker outlives the blob it names, so that a process that dies in the middle of this leaves it reclaimable.
+    if (!blob_removal_marker_name.empty())
+        removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -680,13 +730,20 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         blob_to_remove = removeLinkAndGetBlobToRemove(*fs_tree, *layout, blob_key);
         fs_tree->markDirectoryExplicit(directory);
 
+        /// The blob is unreachable once `prefix.path` is rewritten, so it is marked before that.
+        if (blob_to_remove)
+        {
+            blob_removal_marker_name = generateUnusedRemovedName(*fs_tree);
+            writeBlobRemovalTombstoneMarker(*object_storage, *layout, blob_removal_marker_name, blob_key);
+        }
+
         prefix_path_written = true;
         writeDirectoryMetadata(*object_storage, *layout, directory, getDirectoryInfoOrThrow(*fs_tree, directory));
         return;
     }
 
     remote_source_path = layout->constructBlobObjectKey(blob_key);
-    tmp_name = PlainRewritableLayout::generateRemovedName();
+    tmp_name = generateUnusedRemovedName(*fs_tree);
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name);
 
     copy_attempted = true;
@@ -711,7 +768,15 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         {
             writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
         });
-        return;
+    }
+
+    /// The marker outlives the rewrite of `prefix.path`, so the blob it names is referenced again by now.
+    if (!blob_removal_marker_name.empty())
+    {
+        undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), fmt::format("remove the marker of the removal of the blob of '{}'", path), [&]
+        {
+            removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
+        });
     }
 
     if (!copy_attempted)
@@ -762,6 +827,8 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Removing the blob '{}' of the unlinked file '{}'", blob_to_remove->remote_path, path);
         object_storage->removeObjectIfExists(*blob_to_remove);
         removed_objects.push_back(*blob_to_remove);
+        /// The marker outlives the blob it names, so that a process that dies in the middle of this leaves it reclaimable.
+        removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
     }
 
     if (copy_attempted)
@@ -999,6 +1066,13 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             replaced_blob = removeLinkAndGetBlobToRemove(*fs_tree, *layout, *blob_key_of_existing_target);
         }
 
+        /// The replaced blob is unreachable once `prefix.path` is rewritten, so it is marked before that.
+        if (replaced_blob)
+        {
+            blob_removal_marker_name = generateUnusedRemovedName(*fs_tree);
+            writeBlobRemovalTombstoneMarker(*object_storage, *layout, blob_removal_marker_name, *blob_key_of_existing_target);
+        }
+
         /// The blob stays in place, only the file lists change.
         fs_tree->removeFile(path_from);
         fs_tree->recordFile(path_to, FileRemoteInfo{.bytes_size = file_from_remote_info->bytes_size, .last_modified = file_from_remote_info->last_modified, .blob_key = blob_key_from});
@@ -1019,8 +1093,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_info_from.remote_path, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_info_to.remote_path, normalized_path_to.filename());
-    tmp_name_from = PlainRewritableLayout::generateRemovedName();
-    tmp_name_to = PlainRewritableLayout::generateRemovedName();
+    tmp_name_from = generateUnusedRemovedName(*fs_tree);
+    tmp_name_to = generateUnusedRemovedName(*fs_tree, tmp_name_from);
     tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_from);
     tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_to);
     const auto read_settings = getReadSettingsForMetadata();
@@ -1111,6 +1185,15 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_from), [&]
             {
                 writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+            });
+        }
+
+        /// The marker outlives the rewrites of `prefix.path`, so the blob it names is referenced again by now.
+        if (!blob_removal_marker_name.empty())
+        {
+            undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("remove the marker of the removal of the replaced blob of '{}'", path_to), [&]
+            {
+                removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
             });
         }
 
@@ -1227,6 +1310,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
             LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), "Removing the blob '{}' of the replaced file '{}'", replaced_blob->remote_path, path_to);
             object_storage->removeObjectIfExists(*replaced_blob);
             removed_objects.push_back(*replaced_blob);
+            /// The marker outlives the blob it names, so that a process that dies in the middle of this leaves it reclaimable.
+            removeTombstoneMarker(*object_storage, *layout, blob_removal_marker_name);
         }
 
         return;
@@ -1267,7 +1352,7 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     chassert(metrics);
     /// The subtree is moved under a reserved name, so that a concurrent load does not resurrect it under the original path,
     /// and so that the objects can be reclaimed on the next load if the process dies before `finalize` deletes them.
-    tmp_name = PlainRewritableLayout::generateRemovedName();
+    tmp_name = generateUnusedRemovedName(*fs_tree);
     tmp_path = tmp_name;
     move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", fs_tree, object_storage, layout, metrics);
 }
@@ -1349,7 +1434,12 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
     }
 
     if (marker_written)
-        removeTombstoneMarker(*object_storage, *layout, tmp_name);
+    {
+        undoWithRetries(log, fmt::format("remove the tombstone marker of the removal of '{}'", path), [&]
+        {
+            removeTombstoneMarker(*object_storage, *layout, tmp_name);
+        });
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()

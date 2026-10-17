@@ -896,3 +896,45 @@ TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
 
     EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"counter.text"});
 }
+
+/// An atomic write must leave the object with its previous contents until it is finalized, however much of the new
+/// contents is already flushed, so that a writer killed in the middle never leaves a torn object.
+TEST(LocalObjectStorage, AtomicWritePublishesOnlyCompleteContents)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_atomic_write");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "__meta" / "directory" / "prefix.path";
+
+    writeObject(storage, path, "previous", DB::WriteSettings{});
+
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
+    {
+        auto buffer = storage->writeObject(
+            DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, /*buf_size=*/ 4096, atomic_settings);
+        const std::string chunk(4096, 'x');
+        for (size_t i = 0; i < 256; ++i)
+            buffer->write(chunk.data(), chunk.size());
+        buffer->next();
+
+        EXPECT_EQ(readObject(storage, path).data, "previous") << "a partially written object must not be visible";
+
+        /// Like a writer that is interrupted before it publishes the object.
+        buffer->cancel();
+    }
+
+    EXPECT_EQ(readObject(storage, path).data, "previous");
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"prefix.path"})
+        << "the staging file of the interrupted write must be cleaned up";
+
+    writeObject(storage, path, "new", atomic_settings);
+    EXPECT_EQ(readObject(storage, path).data, "new") << "an atomic write must replace an existing object";
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"prefix.path"});
+
+    const auto new_path = root / "__meta" / "other" / "prefix.path";
+    writeObject(storage, new_path, "created", atomic_settings);
+    EXPECT_EQ(readObject(storage, new_path).data, "created") << "an atomic write must create a missing object";
+}
