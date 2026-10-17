@@ -1,0 +1,76 @@
+load(":codegen_rules.bzl", "CODEGEN_RULES")
+load(":build_options.bzl", "build_options")
+load(":build_options_data.bzl", "BUILD_OPTIONS")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob(["*.bzl", "*.MODULE.bazel", "config/**"]) + ["license_manifest.json", "contrib_repositories.json"])
+
+bool_flag(
+    name = "cmake_metadata",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_cmake_metadata",
+    flag_values = {":cmake_metadata": "true"},
+)
+
+[
+    build_options(
+        name = "build_options_" + arch,
+        template = attrs["template"],
+        out = attrs["out"],
+        c_flags = attrs["c_flags"],
+        cxx_flags = attrs["cxx_flags"],
+        link_flags = attrs["link_flags"],
+        cmake_substitutions = attrs["cmake_substitutions"],
+        cmake_metadata = select({
+            ":use_cmake_metadata": True,
+            "//conditions:default": False,
+        }),
+        features = ["-static_link_cpp_runtimes", "-fortify_source"],
+        target_compatible_with = ["@platforms//cpu:" + arch],
+    )
+    for arch, attrs in BUILD_OPTIONS.items()
+]
+
+[
+    py_binary(
+        name = name,
+        srcs = [name + ".py"],
+        # Tool startup must not write bytecode caches into its input tree.
+        interpreter_args = ["-B"],
+        python_version = "3.11",
+    )
+    for name in [
+        "prepare_hdfs_crc",
+        "extract_archive",
+        "generate_licenses",
+        "embed_resources",
+        "process_rust_archive",
+        "generate_delta_headers",
+        "generate_timezones",
+    ]
+]
+
+[
+    genrule(
+        name = name,
+        srcs = attrs["srcs"],
+        outs = attrs["outs"],
+        tools = attrs["tools"],
+        cmd = attrs["cmd"],
+    )
+    for name, attrs in CODEGEN_RULES.items()
+]
+
+[
+    filegroup(
+        name = "generated_" + arch,
+        srcs = [":build_options_" + arch] + [":" + name for name in CODEGEN_RULES if name.startswith("generate_" + arch + "_") or name == "extract_googleapis_" + arch],
+    )
+    for arch in ["x86_64", "aarch64"]
+]

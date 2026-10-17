@@ -1,0 +1,10 @@
+diff --git a/libcxx/include/__config_site b/libcxx/include/__config_site
+--- a/libcxx/include/__config_site
++++ b/libcxx/include/__config_site
+@@ -19,3 +19,6 @@
+ #define _LIBCPP_HAS_UNICODE 1
+ #define _LIBCPP_HAS_WIDE_CHARACTERS 1
+ #define _LIBCPP_HAS_NO_STD_MODULES
++
++// Use the same exception ABI in the compiler, runtimes, and ClickHouse.
++#define STD_EXCEPTION_HAS_STACK_TRACE 1

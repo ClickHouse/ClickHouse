@@ -1,0 +1,100 @@
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel:rust_archive.bzl", "rust_archive")
+load("//bazel:delta_headers.bzl", "delta_headers")
+load("//bazel:rust_cxx_flags.bzl", "RUST_CXX")
+load("//bazel:openssl_headers.bzl", "openssl_headers")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob(["*/Cargo.toml", "*/Cargo.lock"]))
+
+openssl_headers(
+    name = "openssl_include",
+    configured_headers = "//:openssl_configured_headers",
+)
+
+genrule(
+    name = "skim_cxx_codegen",
+    srcs = ["//rust/workspace:skim/src/lib.rs"],
+    outs = ["skim_bridge.h", "skim_bridge.cc"],
+    tools = ["@clickhouse_crates//:cxxbridge_cli"],
+    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location skim_bridge.h) -o $(location skim_bridge.cc)",
+)
+
+[
+    cc_library(
+        name = name,
+        srcs = srcs,
+        hdrs = hdrs + select({
+            "@platforms//cpu:" + arch: config["hdrs"]
+            for arch, config in RUST_CXX.items()
+        }),
+        copts = ["-std=" + standard] + select({
+            "@platforms//cpu:" + arch: config["copts"]
+            for arch, config in RUST_CXX.items()
+        }),
+        features = ["-fortify_source"],
+        deps = deps,
+    )
+    for name, srcs, hdrs, standard, deps in [
+        # cxx/build.rs selects C++11; skim/build.rs uses Clang's C++17 default.
+        ("cxx_runtime", ["@clickhouse_crates//:cxx_source"], ["@clickhouse_crates//:cxx_header"], "c++11", []),
+        ("skim_bridge", ["skim_bridge.cc", "//rust/workspace:skim/src/check_abi.cpp"], ["skim_bridge.h"], "gnu++17", [":cxx_runtime"]),
+    ]
+]
+
+alias(
+    name = "protoc",
+    actual = select({
+        "@platforms//cpu:x86_64": "@chdig_crates//:protoc_linux_x86_64",
+        "@platforms//cpu:aarch64": "@chdig_crates//:protoc_linux_aarch64",
+    }),
+)
+
+delta_headers(
+    name = "delta_ffi_headers",
+    srcs = ["//:delta_cbindgen_sources"],
+)
+
+rust_static_library(
+    name = "delta_kernel_ffi",
+    srcs = ["delta.rs"],
+    edition = "2021",
+    deps = ["@delta_crates//:delta_kernel_ffi"],
+)
+
+rust_static_library(
+    name = "chdig",
+    srcs = ["chdig.rs"],
+    edition = "2024",
+    deps = ["@chdig_crates//:chdig"],
+)
+
+[
+    rust_archive(
+        name = name + "_processed",
+        src = (":" if name in ["delta_kernel_ffi", "chdig"] else "//rust/workspace:") + name,
+        references = ["@llvm-project//libc:clickhouse_math", "@llvm-project//compiler-rt:builtins"],
+        keep_symbols = symbols,
+    )
+    for name, symbols in {
+        "delta_kernel_ffi": [],
+        "chdig": [],
+        "skim": [],
+        "wasmtime": [],
+        "prql": ["prql_to_sql", "prql_free_pointer"],
+        "polyglot": ["polyglot_transpile", "polyglot_free_pointer"],
+        "pco": ["pco_compress", "pco_decompress"],
+    }.items()
+]
+
+[
+    cc_import(
+        name = name + "_cc",
+        static_library = ":" + name + "_processed",
+        deps = [":skim_bridge"] if name == "skim" else [],
+    )
+    for name in ["delta_kernel_ffi", "chdig", "skim", "wasmtime", "prql", "polyglot", "pco"]
+]

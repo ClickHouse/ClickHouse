@@ -1,0 +1,26 @@
+common --check_direct_dependencies=error
+
+build --incompatible_strict_action_env
+build --compilation_mode=opt
+# Match cmake/cxx.cmake for libraries supplied by external Bazel modules too.
+build --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+build --verbose_failures
+build --@rules_rust//rust/toolchain/channel=nightly
+build --@rules_python//python/config_settings:bootstrap_impl=script
+build --@llvm//toolchain:bootstrap_stage=stage1_from_source
+# Match contrib/llvm-project-cmake/config/llvm-config.h.in. ClickHouse links
+# its own compression libraries; the compiler retains its compression support.
+build --@llvm-project//third-party:llvm_enable_zlib=false
+build --@llvm-project//third-party:llvm_enable_zstd=false
+
+build:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+# Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
+# per_file_copt leaves exec tools and the separately configured runtimes alone.
+build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-O3,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
+build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.](c|cpp)$@-fPIE
+build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]cpp$@-fstrict-vtable-pointers
+build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
+build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
+build:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
+
+try-import %workspace%/.bazelrc.local

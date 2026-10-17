@@ -1,0 +1,244 @@
+module(name = "clickhouse")
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "llvm", version = "0.8.24")
+bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
+bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_perl", version = "1.1.1")
+bazel_dep(name = "rules_python", version = "1.8.0")
+bazel_dep(name = "rules_rs", version = "0.1.0")
+
+include("//bazel:contrib.MODULE.bazel")
+
+# ClickHouse enables the fast decoder on Linux ARM64 as well as x86-64.
+single_version_override(
+    module_name = "lz4",
+    patch_strip = 1,
+    patches = ["//bazel/patches:lz4-fast-decoder.patch"],
+)
+
+single_version_override(
+    module_name = "llvm",
+    patch_strip = 1,
+    patches = ["//bazel/patches:llvm-clickhouse-runtime.patch"],
+)
+
+# Resolve path dependencies that belong to nested vendored Cargo workspaces.
+single_version_override(
+    module_name = "rules_rs",
+    patch_strip = 1,
+    patches = ["//bazel/patches:rules_rs-local-workspaces.patch"],
+)
+
+# Export declared zstd headers without an empty generated include directory.
+single_version_override(
+    module_name = "zstd",
+    patch_strip = 1,
+    patches = ["//bazel/patches:zstd-public-headers.patch"],
+)
+
+include("//bazel:llvm.MODULE.bazel")
+
+cc_toolchains = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
+cc_toolchains.exec(arch = "x86_64", os = "linux")
+cc_toolchains.exec(arch = "aarch64", os = "linux")
+cc_toolchains.target(arch = "x86_64", os = "linux")
+cc_toolchains.target(arch = "aarch64", os = "linux")
+use_repo(cc_toolchains, "llvm_toolchains")
+register_toolchains("@llvm_toolchains//:all")
+
+rust_toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
+rust_toolchains.toolchain(
+    edition = "2021",
+    extra_rustc_flags = {
+        "aarch64-unknown-linux-gnu": [
+            "-Ctarget-feature=+dotprod,+ssbs,+rcpc,+bf16",
+            "-Csymbol-mangling-version=v0",
+        ],
+        "x86_64-unknown-linux-gnu": [
+            "-Ctarget-cpu=x86-64-v3",
+            "-Ctarget-feature=+pclmulqdq",
+            "-Csymbol-mangling-version=v0",
+        ],
+    },
+    # Keep in sync with contrib/corrosion-cmake/CMakeLists.txt.
+    version = "nightly/2026-03-22",
+)
+use_repo(rust_toolchains, "default_rust_toolchains")
+register_toolchains("@default_rust_toolchains//...")
+
+rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+use_repo(rules_rust, "rules_rust")
+
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "clickhouse_crates",
+    cargo_lock = "@clickhouse_cargo_sources//rust/workspace:Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//rust/workspace:Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "clickhouse_crates")
+
+crate.annotation(
+    crate = "cxxbridge-cmd",
+    extra_aliased_targets = {"cxxbridge_cli": "cxxbridge__bin"},
+    gen_binaries = ["cxxbridge"],
+    repositories = ["clickhouse_crates"],
+)
+
+# Compile the native runtime with ClickHouse's patched C++ exception ABI.
+crate.annotation(
+    crate = "cxx",
+    additive_build_file_content = "exports_files([\"src/cxx.cc\", \"include/cxx.h\"])\n",
+    extra_aliased_targets = {
+        "cxx_source": "src/cxx.cc",
+        "cxx_header": "include/cxx.h",
+    },
+    repositories = ["clickhouse_crates"],
+)
+
+# This script only installs C headers through cmake -P. ClickHouse configures
+# those headers separately in rust/workspace/wasmtime/CMakeLists.txt; Bazel
+# generates the configured headers in the fetched Wasmtime repository.
+crate.annotation(
+    crate = "wasmtime-c-api-impl",
+    gen_build_script = "off",
+    repositories = ["clickhouse_crates"],
+)
+
+crate.from_cargo(
+    name = "delta_crates",
+    cargo_lock = "@clickhouse_cargo_sources//bazel/rust:delta-kernel-rs/Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//bazel/rust:delta-kernel-rs/Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+crate.from_cargo(
+    name = "chdig_crates",
+    cargo_lock = "@clickhouse_cargo_sources//bazel/rust:chdig/Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//bazel/rust:chdig/Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+# Cbindgen runs in a separate action with declared offline metadata inputs.
+# The Rust library consumes no output from its cbindgen-only build script.
+crate.annotation(
+    crate = "delta_kernel_ffi",
+    gen_build_script = "off",
+    repositories = ["delta_crates"],
+)
+use_repo(crate, "delta_crates", "chdig_crates")
+
+crate.annotation(
+    crate = "cbindgen",
+    extra_aliased_targets = {"cbindgen_cli": "cbindgen__bin"},
+    gen_binaries = ["cbindgen"],
+    repositories = ["delta_crates"],
+)
+
+# Reuse the same audited LZ4 implementation for Rust and C++ consumers.
+crate.annotation(
+    crate = "lz4-sys",
+    deps = ["@lz4//:lz4_frame"],
+    gen_build_script = "off",
+)
+
+# Match delta-kernel-rs-cmake: probe ClickHouse's OpenSSL headers and leave
+# linking to the C++ binary, which already links its ssl/crypto targets.
+crate.annotation(
+    crate = "openssl-sys",
+    build_script_data = ["//bazel/rust:openssl_include"],
+    build_script_env = {
+        # Build-script location expansion already makes execpath absolute.
+        "OPENSSL_INCLUDE_DIR": "$(execpath @@//bazel/rust:openssl_include)",
+        # No libraries are requested, but openssl-sys checks directory existence.
+        "OPENSSL_LIB_DIR": "$(execpath @@//bazel/rust:openssl_include)",
+        "OPENSSL_LIBS": "",
+        "OPENSSL_NO_VENDOR": "1",
+        "OPENSSL_STATIC": "1",
+    },
+    gen_build_script = "on",
+)
+
+# Vendored protoc stays at the Cargo.lock version, but its path is supplied
+# when the Perfetto build script runs, never embedded from a compile sandbox.
+
+crate.annotation(
+    crate = "protoc-bin-vendored-linux-aarch_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+    additive_build_file_content = "exports_files([\"bin/protoc\"])\n",
+    extra_aliased_targets = {"protoc_linux_aarch64": "bin/protoc"},
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-linux-x86_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+    additive_build_file_content = "exports_files([\"bin/protoc\"])\n",
+    extra_aliased_targets = {"protoc_linux_x86_64": "bin/protoc"},
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-linux-x86_32",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-linux-ppcle_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-linux-s390_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-macos-aarch_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-macos-x86_64",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "protoc-bin-vendored-win32",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
+    repositories = ["chdig_crates"],
+)
+
+crate.annotation(
+    crate = "perfetto_protos",
+    build_script_env = {"PROTOC": "$(execpath @@//bazel/rust:protoc)"},
+    build_script_tools = ["//bazel/rust:protoc"],
+    repositories = ["chdig_crates"],
+)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11")
+use_repo(python, "python_3_11")

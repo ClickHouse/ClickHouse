@@ -1,0 +1,15 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -11,7 +11,10 @@ cc_library(
+     hdrs = [
+         "lib/lz4.h",
+     ],
+-    local_defines = ["XXH_NAMESPACE=LZ4_"],
++    local_defines = [
++        "LZ4_FAST_DEC_LOOP=1",
++        "XXH_NAMESPACE=LZ4_",
++    ],
+     strip_include_prefix = "lib/",
+     visibility = ["//visibility:public"],
+ )

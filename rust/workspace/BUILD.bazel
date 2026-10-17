@@ -1,0 +1,30 @@
+load("@clickhouse_crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["Cargo.toml", "Cargo.lock"] + glob(["*/include/*.h", "*/Cargo.toml"]))
+exports_files(["skim/src/lib.rs", "skim/src/check_abi.cpp"])
+
+[
+    rust_static_library(
+        name = name,
+        srcs = glob([name + "/src/**/*.rs"]),
+        crate_name = "_ch_rust_" + ("skim_rust" if name == "skim" else name),
+        crate_root = name + "/src/lib.rs",
+        edition = "2021",
+        aliases = aliases(package_name = "rust/workspace/" + name),
+        deps = all_crate_deps(normal = True, package_name = "rust/workspace/" + name),
+    )
+    for name in ["skim", "prql", "polyglot", "pco", "wasmtime"]
+]
+
+[
+    rust_test(
+        name = name + "_test",
+        size = "small",
+        crate = ":" + name,
+    )
+    for name in ["pco", "prql", "polyglot"]
+]

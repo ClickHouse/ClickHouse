@@ -1,0 +1,14 @@
+exports_files([
+    "llvm-clickhouse-clang-tidy-multicall.patch",
+    "llvm-clickhouse-exception-abi.patch",
+    "llvm-clickhouse-lld-coff-thinlto-lazy-index.patch",
+    "llvm-clickhouse-llvm-driver-tool-order.patch",
+    "llvm-clickhouse-llvm-dsymutil-corefoundation.patch",
+    "llvm-clickhouse-llvm-profdata-multicall.patch",
+    "llvm-clickhouse-runtime.patch",
+    "librdkafka-config-include.patch",
+    "lz4-fast-decoder.patch",
+    "protoc-vendored-runtime-path.patch",
+    "rules_rs-local-workspaces.patch",
+    "zstd-public-headers.patch",
+])
