@@ -11,6 +11,7 @@ distinct	1	10
 limit by	1	10
 two columns	1	30
 returned rows exist	30
+correlated subquery, unbuffered	10	30
 sparse	['Sparse','Sparse']
 sparse string	1	30
 sparse string desc	1	30

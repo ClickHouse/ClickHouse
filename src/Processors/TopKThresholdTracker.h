@@ -31,10 +31,15 @@ public:
     /// Changes every time a new threshold value is stored.
     UInt64 getVersion() const { return version.load(std::memory_order_relaxed); }
 
+    /// Set when the reading step is cloned: then several sorts may publish to this tracker.
+    void setSharedByPlanCopies() { shared_by_plan_copies.store(true, std::memory_order_relaxed); }
+    bool isSharedByPlanCopies() const { return shared_by_plan_copies.load(std::memory_order_relaxed); }
+
 protected:
     SortColumnDescription sort_desc;
     DataTypePtr data_type;
     std::atomic<UInt64> version{0};
+    std::atomic<bool> shared_by_plan_copies{false};
 };
 
 /// Lock-free tracker for types whose values are represented in a `Field` by a plain

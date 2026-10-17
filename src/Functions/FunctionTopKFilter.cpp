@@ -135,7 +135,8 @@ public:
         auto current_threshold = threshold_tracker->getValue();
         const auto & argument = arguments[0];
 
-        if (!rows_equal_to_threshold_dropped)
+        /// Rows equal to the threshold can be dropped only while the threshold is backed by rows of the sort this read feeds.
+        if (!rows_equal_to_threshold_dropped || threshold_tracker->isSharedByPlanCopies())
             return compare(argument, current_threshold, input_rows_count, Mode::NotWorse);
 
         if (rows_equal_to_threshold_dropped->load(std::memory_order_relaxed))

@@ -75,6 +75,12 @@ SELECT 'two columns', a = b, length(a) FROM (SELECT
     (SELECT groupArray((s, n)) FROM (SELECT s, n FROM t_topk_ties ORDER BY s, n DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0, use_query_condition_cache = 0) AS b);
 SELECT 'returned rows exist', count() FROM (SELECT id, s, ns FROM t_topk_ties ORDER BY ns NULLS FIRST LIMIT 30)
 WHERE (id, s, isNull(ns), coalesce(ns, '')) IN (SELECT id, s, isNull(ns), coalesce(ns, '') FROM t_topk_ties);
+-- Without the buffer, `q` is read and sorted twice, and both sorts publish to one threshold.
+SELECT 'correlated subquery, unbuffered', count(), sum(n) FROM (
+    SELECT s, (SELECT count() FROM numbers(3) WHERE toString(number) >= q.s) AS n
+    FROM (SELECT s FROM t_topk_ties ORDER BY s LIMIT 10) AS q)
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0, max_threads = 1, max_block_size = 64, query_plan_optimize_lazy_materialization = 0,
+    use_query_condition_cache = 0;
 
 -- Sparse columns: `s` and `n` are mostly default values.
 CREATE TABLE t_topk_sparse (id UInt64, s String, n UInt32)
