@@ -442,10 +442,23 @@ DataTypePtr resolveHint(
 
 /// Whether a field's row count is backed by its buffers, so that it can be checked against the message body. The rows of a
 /// `RunEndEncoded` field come from its run ends: a few physical runs can describe many rows. Its run ends and values are
-/// checked when it is decoded (see `decodeRunEndEncoded`).
+/// checked when it is decoded (see `decodeRunEndEncoded`). A struct or fixed-size-list wrapper is backed when one of its
+/// children is: otherwise its only buffers are optional validity bitmaps, and a present bitmap satisfies the bound anyway.
 bool hasRowsBackedByBuffers(const ArrowField & field)
 {
-    return field.dictionary || field.type.kind != TypeKind::RunEndEncoded;
+    if (field.dictionary)
+        return true;
+    switch (field.type.kind)
+    {
+        case TypeKind::RunEndEncoded:
+            return false;
+        case TypeKind::Struct:
+            return field.type.children.empty() || std::ranges::any_of(field.type.children, hasRowsBackedByBuffers);
+        case TypeKind::FixedSizeList:
+            return field.type.list_size == 0 || hasRowsBackedByBuffers(field.type.children.at(0));
+        default:
+            return true;
+    }
 }
 
 /// A `Null` field has no buffers. A struct or fixed-size-list tree of such fields needs only optional
@@ -1116,7 +1129,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// A sliced map can retain unreferenced entries. Its declared entry count must cover every
             /// referenced entry and stay within the message-body row bound.
             expectNextNodeLengthAtLeast(static_cast<size_t>(prev), "map entries");
-            checkRowCountWithinBody(peekNodeRows(), "map entries");
+            if (hasRowsBackedByBuffers(entries_field))
+                checkRowCountWithinBody(peekNodeRows(), "map entries");
 
             /// Entry rows that only invisible map slots reference — or that no slot references — hold
             /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
@@ -1716,20 +1730,29 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC RunEndEncoded field '{}' has {} rows but its runs cover only {}", field.name, rows, previous_end);
 
-    /// Map every row to its run. A run is invisible (its value bytes are undefined) when all of its rows are, or when
-    /// it is past the last row.
+    /// Map every visible row to its run. A run is invisible (its value bytes are undefined) when all of its rows are, or
+    /// when it is past the last row. An invisible row decodes as the default, like a row of an unencoded field, even
+    /// when it shares its run with visible rows: it indexes a default value appended after the runs.
     auto indexes = ColumnUInt64::create(rows);
     auto & index_data = indexes->getData();
     InvisibleRowsMask runs_invisible(runs, 1);
+    bool has_invisible_rows = false;
     size_t row = 0;
     for (size_t run = 0; run < runs && row < rows; ++run)
     {
         const UInt64 end = static_cast<UInt64>(run_ends->getInt(run));
         for (; row < rows && row < end; ++row)
         {
-            index_data[row] = run;
-            if (!isInvisible(invisible_rows, row))
+            if (isInvisible(invisible_rows, row))
+            {
+                index_data[row] = runs;
+                has_invisible_rows = true;
+            }
+            else
+            {
+                index_data[row] = run;
                 runs_invisible[run] = 0;
+            }
         }
     }
     std::optional<InvisibleRowsMask> values_invisible;
@@ -1742,9 +1765,30 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     /// in a `Nullable` wrapper, but a caller such as `decodeUnion` still needs it.
     expectNextNodeLength(runs, "run-end-encoded values");
     ColumnUInt8::Ptr values_null_map;
-    const ColumnPtr values = decodeField(
+    ColumnPtr values = decodeField(
         values_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth, maskPtr(values_invisible),
         &values_null_map);
+    if (has_invisible_rows)
+    {
+        /// The default of an invisible row is not null, as in `defaultInvisibleFixed`, unless the values are of the
+        /// `Null` type.
+        auto extended_values = IColumn::mutate(std::move(values));
+        extended_values->insertDefault();
+        bool default_is_null = false;
+        if (auto * nullable = typeid_cast<ColumnNullable *>(extended_values.get()))
+        {
+            default_is_null = typeid_cast<const ColumnNothing *>(&nullable->getNestedColumn()) != nullptr;
+            nullable->getNullMapData().back() = default_is_null;
+        }
+        values = std::move(extended_values);
+        if (values_null_map)
+        {
+            auto extended_null_map = ColumnUInt8::create();
+            extended_null_map->getData().assign(values_null_map->getData());
+            extended_null_map->getData().push_back(default_is_null);
+            values_null_map = std::move(extended_null_map);
+        }
+    }
     if (decoded_null_map && values_null_map)
         *decoded_null_map = assert_cast<const ColumnUInt8 &>(*values_null_map->index(*indexes, 0)).getPtr();
     return values->index(*indexes, 0);

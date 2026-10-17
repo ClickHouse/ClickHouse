@@ -36,6 +36,14 @@ t	Nullable(Tuple(r Nullable(Float64), n Nullable(Int8)))
 6	30	2.5
 --- one run of 1000 rows ---
 1000	7000
+--- one run of 1000 rows in a struct, a list and a fixed-size list ---
+1000	7000
+1000	7000	1000	7000
+--- rows hidden by a null struct row ---
+\N	\N
+(7)	(7)
+0	0
+7	7
 --- a null list run inside a union ---
 \N
 \N

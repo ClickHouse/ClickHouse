@@ -45,7 +45,9 @@ for FMT in Arrow ArrowStream; do
         SELECT id, i, t.r FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'id Int32, i Nullable(Int64), t Tuple(r Float64)') ORDER BY id;"
 done
 
-# A few physical runs can describe many rows: one run of 1000 rows is far more rows than the body has bytes.
+# A few physical runs can describe many rows: one run of 1000 rows is far more rows than the body has bytes, also
+# inside a struct, a list or a fixed-size list. Rows hidden by a null struct row decode as defaults, even when they share
+# a run with visible rows.
 # A null run of a list value inside a union stays null. An opaque-tagged value (written by ClickHouse with
 # `output_format_arrow_unsupported_types = 'binary'`) is read back through the run-end encoding.
 ${CLICKHOUSE_LOCAL} --query "
@@ -68,7 +70,21 @@ def write(name, columns):
             writer.write_batch(batch)
 
 
-write("long", {"v": ree(pa.array([1000], pa.int32()), pa.array([7], pa.int32()))})
+long_run = ree(pa.array([1000], pa.int32()), pa.array([7], pa.int32()))
+write("long", {"v": long_run})
+long_struct = pa.StructArray.from_arrays([long_run], names=["r"])
+write("long_struct", {"t": long_struct})
+write("long_lists", {
+    "l": pa.ListArray.from_arrays(pa.array([0, 1000], pa.int32()), long_struct),
+    "f": pa.FixedSizeListArray.from_arrays(long_struct, 1000),
+})
+
+# Rows hidden by a null struct row decode as defaults, even when they share a run with visible rows.
+masked = ree(pa.array([2], pa.int32()), pa.array([7], pa.int32()))
+write("masked", {
+    "t": pa.StructArray.from_arrays([masked], names=["r"], mask=pa.array([True, False])),
+    "p": pa.StructArray.from_arrays([pa.array([7, 7], pa.int32())], names=["r"], mask=pa.array([True, False])),
+})
 
 null_list_run = ree(pa.array([2, 4], pa.int32()), pa.array([None, [7]], pa.list_(pa.int32())))
 write("union", {"u": pa.UnionArray.from_dense(
@@ -96,6 +112,14 @@ EOF
 
 echo "--- one run of 1000 rows ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(v) FROM file('${DATA_FILE}.long', 'ArrowStream')"
+echo "--- one run of 1000 rows in a struct, a list and a fixed-size list ---"
+${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(t.r) FROM file('${DATA_FILE}.long_struct', 'ArrowStream')"
+${CLICKHOUSE_LOCAL} --query "SELECT length(l), arrayReduce('sum', l.r), length(f), arrayReduce('sum', f.r) FROM file('${DATA_FILE}.long_lists', 'ArrowStream')"
+echo "--- rows hidden by a null struct row ---"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.masked', 'ArrowStream')"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT * FROM file('${DATA_FILE}.masked', 'ArrowStream', '\`t.r\` Nullable(Int32), \`p.r\` Nullable(Int32)')
+    SETTINGS enable_nullable_tuple_type = 0"
 echo "--- a null list run inside a union ---"
 ${CLICKHOUSE_LOCAL} --max_threads 1 --query "SELECT u FROM file('${DATA_FILE}.union', 'ArrowStream')"
 echo "--- an opaque-tagged value ---"
