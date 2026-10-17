@@ -1019,9 +1019,20 @@ void StorageObjectStorage::dropImpl(
     const StorageID & storage_id,
     const std::shared_ptr<const Settings> & query_settings)
 {
-    auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
+    /// A table of an `Atomic` database is dropped by a background thread, which has no query context,
+    /// so the settings of the `DROP` query are captured in `checkTableCanBeDropped`.
+    /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
+    ContextPtr drop_context;
     if (query_settings)
-        drop_context->setSettings(*query_settings);
+    {
+        auto context_with_settings = Context::createCopy(Context::getGlobalContextInstance());
+        context_with_settings->setSettings(*query_settings);
+        drop_context = context_with_settings;
+    }
+    else if (auto query_context = CurrentThread::tryGetQueryContext())
+        drop_context = query_context;
+    else
+        drop_context = Context::getGlobalContextInstance();
     const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
 
     /// A catalog that manages the table location purges the files itself.
