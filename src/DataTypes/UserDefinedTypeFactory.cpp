@@ -21,6 +21,7 @@
 #include <Poco/String.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -254,6 +255,61 @@ void checkNoCycle(const ASTCreateTypeQuery & create, const std::unordered_set<St
     }
 }
 
+/// The definitions that are about to be stored, by type name: the definition `registerType` is about to store in place
+/// of an existing one, or all the definitions `restore` replays from a backup. While they are set, `tryGet` and
+/// `getAllDefinitions` return them instead of the stored definitions of these types, so the types can be validated and
+/// expanded as they would be after the definitions are stored.
+using PendingDefinitions = std::unordered_map<String, ASTPtr>;
+thread_local const PendingDefinitions * pending_definitions = nullptr;
+
+class PendingDefinitionsGuard
+{
+public:
+    /// The new definitions take precedence over the ones set by an enclosing guard.
+    explicit PendingDefinitionsGuard(PendingDefinitions definitions_)
+        : definitions(std::move(definitions_))
+        , previous(pending_definitions)
+    {
+        if (previous)
+            definitions.insert(previous->begin(), previous->end());
+        pending_definitions = &definitions;
+    }
+
+    explicit PendingDefinitionsGuard(const ASTPtr & definition)
+        : PendingDefinitionsGuard(PendingDefinitions{{getCreateTypeQuery(*definition).name, definition}})
+    {
+    }
+
+    ~PendingDefinitionsGuard() { pending_definitions = previous; }
+
+    PendingDefinitionsGuard(const PendingDefinitionsGuard &) = delete;
+    PendingDefinitionsGuard & operator=(const PendingDefinitionsGuard &) = delete;
+
+private:
+    PendingDefinitions definitions;
+    const PendingDefinitions * previous;
+};
+
+/// All definitions of the storage, with the pending definitions in place of the stored ones.
+VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllDefinitions(const IUserDefinedSQLObjectsStorage & storage)
+{
+    auto objects = storage.getAllObjects();
+    if (!pending_definitions)
+        return objects;
+
+    for (auto & [name, create_query] : objects)
+    {
+        if (auto it = pending_definitions->find(name); it != pending_definitions->end())
+            create_query = it->second;
+    }
+    for (const auto & [name, create_query] : *pending_definitions)
+    {
+        if (!storage.has(name))
+            objects.emplace_back(name, create_query);
+    }
+    return objects;
+}
+
 /// A use of the type `type_name` in the definition of another user-defined type.
 struct DependentUse
 {
@@ -264,7 +320,7 @@ struct DependentUse
 std::vector<DependentUse> findDependentUses(const IUserDefinedSQLObjectsStorage & storage, const String & type_name)
 {
     std::vector<DependentUse> uses;
-    for (const auto & [dependent_name, create_query] : storage.getAllObjects())
+    for (const auto & [dependent_name, create_query] : getAllDefinitions(storage))
     {
         if (dependent_name == type_name)
             continue;
@@ -296,17 +352,6 @@ bool dependsOnParameters(const ASTPtr & node, const std::unordered_set<String> &
     });
     return result;
 }
-
-/// The definition `registerType` is about to store in place of an existing one. While it is set, `tryGet` returns it
-/// instead of the stored definition of that type, so the types depending on it can be expanded as they would be
-/// after the replacement.
-thread_local ASTPtr pending_definition;
-
-struct PendingDefinitionGuard
-{
-    explicit PendingDefinitionGuard(ASTPtr definition) { pending_definition = std::move(definition); }
-    ~PendingDefinitionGuard() { pending_definition = nullptr; }
-};
 
 /// Throws if replacing `type_name` with `new_definition` makes the definition of another user-defined type invalid.
 /// Matching the number of parameters is not enough: after
@@ -341,12 +386,13 @@ void checkDependentsAfterReplacement(const IUserDefinedSQLObjectsStorage & stora
     std::sort(dependents.begin(), dependents.end());
 
     const auto & data_type_factory = DataTypeFactory::instance();
-    PendingDefinitionGuard guard(new_definition);
+    const auto & udt_factory = UserDefinedTypeFactory::instance();
+    PendingDefinitionsGuard guard(new_definition);
 
     for (const auto & dependent_name : dependents)
     {
         /// A type may disappear concurrently; then there is nothing to check.
-        auto create_query = storage.tryGet(dependent_name);
+        auto create_query = udt_factory.tryGet(dependent_name);
         if (!create_query)
             continue;
 
@@ -379,6 +425,70 @@ void checkDependentsAfterReplacement(const IUserDefinedSQLObjectsStorage & stora
             throw;
         }
     }
+}
+
+/// Throws if no actual arguments make the parameterized definition `create` a valid data type. The family name alone
+/// does not tell whether it is used with a valid number of arguments: `CREATE TYPE Broken(T) AS Map(T)` and
+/// `CREATE TYPE Broken(T) AS Map(String)` must be rejected. A parameter can stand for a type (`Array(T)`) or a value
+/// (`FixedString(N)`, `DateTime64(3, TZ)`), so the definition is instantiated with every combination of a few probe
+/// arguments, and is accepted if any of them gives a valid type. `normalized_query` is the definition to instantiate, it is used in place of a stored one.
+void checkInstantiableWithSomeArguments(const ASTCreateTypeQuery & create, const ASTPtr & normalized_query)
+{
+    /// The number of combinations grows exponentially; definitions with more parameters are checked only by
+    /// `validateDefinition` and are instantiated exactly when they are used.
+    static constexpr size_t max_probed_parameters = 4;
+
+    size_t num_parameters = getNumberOfParameters(create);
+    if (num_parameters == 0 || num_parameters > max_probed_parameters)
+        return;
+
+    const ASTs probes{
+        make_intrusive<ASTIdentifier>("UInt8"),
+        make_intrusive<ASTLiteral>(Field(UInt64(1))),
+        make_intrusive<ASTIdentifier>("String"),
+        make_intrusive<ASTLiteral>(Field(String("UTC"))),
+        make_intrusive<ASTIdentifier>("Float32"),
+    };
+
+    const auto & data_type_factory = DataTypeFactory::instance();
+    PendingDefinitionsGuard guard(normalized_query);
+
+    std::vector<size_t> probe_indices(num_parameters, 0);
+    std::optional<Exception> first_error;
+    while (true)
+    {
+        auto arguments = make_intrusive<ASTExpressionList>();
+        for (size_t probe_index : probe_indices)
+            arguments->children.push_back(probes[probe_index]->clone());
+
+        auto probe_type = makeASTDataType(create.name);
+        probe_type->children.push_back(arguments);
+
+        try
+        {
+            data_type_factory.get(probe_type);
+            return;
+        }
+        catch (Exception & exception)
+        {
+            if (!first_error)
+                first_error.emplace(exception);
+        }
+
+        /// The next combination, as in counting with `probes.size()` as the base.
+        size_t position = 0;
+        while (position < num_parameters && ++probe_indices[position] == probes.size())
+        {
+            probe_indices[position] = 0;
+            ++position;
+        }
+        if (position == num_parameters)
+            break;
+    }
+
+    first_error->addMessage(fmt::format(
+        "the definition of user-defined type {} is not a valid data type for any actual arguments", backQuote(create.name)));
+    throw *first_error;
 }
 
 /// Orders `objects` (pairs of a name and a `CREATE TYPE` query) so that every type comes after the types of
@@ -512,10 +622,11 @@ bool UserDefinedTypeFactory::registerType(
     /// A definition without parameters is a complete data type expression, so it can be checked exactly by
     /// instantiating it. This rejects definitions like `Map(String)` that name a known family with a wrong
     /// number of arguments. (Referenced user-defined types still expand to their current definitions here.)
+    auto normalized_query = normalizeCreateTypeQuery(create);
     if (parameter_names.empty())
         data_type_factory.get(create.base_type);
-
-    auto normalized_query = normalizeCreateTypeQuery(create);
+    else
+        checkInstantiableWithSomeArguments(create, normalized_query);
 
     /// Other types keep using the replaced type with the number of arguments they were defined with, and the new
     /// definition must stay valid for the actual arguments they use it with.
@@ -576,8 +687,11 @@ bool UserDefinedTypeFactory::unregisterType(const ContextMutablePtr & current_co
 
 ASTPtr UserDefinedTypeFactory::tryGet(const String & type_name) const
 {
-    if (pending_definition && getCreateTypeQuery(*pending_definition).name == type_name)
-        return pending_definition;
+    if (pending_definitions)
+    {
+        if (auto it = pending_definitions->find(type_name); it != pending_definitions->end())
+            return it->second;
+    }
 
     const auto * storage = tryGetStorage();
     if (!storage)
@@ -631,6 +745,19 @@ void UserDefinedTypeFactory::restore(RestorerFromBackup & restorer, const String
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
     auto restore_context = restorer.getContext();
+
+    /// When replacing, the backup is validated as the set of types it will become, not against the types it replaces
+    /// one definition at a time: if the server has `A(T) AS Array(T)` and `B AS A(UInt8)`, and the backup has
+    /// `A(K, V) AS Map(K, V)` and `B AS A(String, UInt8)`, replacing `A` must be checked against the restored `B`.
+    std::optional<PendingDefinitionsGuard> guard;
+    if (replace_if_exists)
+    {
+        PendingDefinitions definitions;
+        for (const auto & [type_name, create_type_query] : restored_types)
+            definitions.emplace(type_name, normalizeCreateTypeQuery(getCreateTypeQuery(*create_type_query)));
+        guard.emplace(std::move(definitions));
+    }
+
     for (const auto & [type_name, create_type_query] : restored_types)
         registerType(restore_context, type_name, create_type_query, throw_if_exists, replace_if_exists);
 }

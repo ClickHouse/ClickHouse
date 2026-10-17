@@ -39,7 +39,8 @@ public:
     ///
     /// The definition is rejected when the name is a built-in type, alias or type family; when it references an
     /// unknown type, a known type family with a wrong number of arguments, or a user-defined type with a wrong
-    /// number of arguments; and when it would make the type depend on itself. Replacing a type that other types
+    /// number of arguments; when a parameterized definition is not a valid type for any actual arguments
+    /// (`CREATE TYPE Broken(T) AS Map(T)`); and when it would make the type depend on itself. Replacing a type that other types
     /// use is only allowed if the new definition keeps the number of parameters those uses rely on
     /// and stays valid for the actual arguments they use it with.
     bool registerType(
@@ -69,6 +70,7 @@ public:
 
     /// Restores user-defined types from the backup. The types are registered after the types they are defined
     /// through, and the `create_function` restore setting decides what happens to the types that already exist.
+    /// When they are replaced, every definition is validated against the set of types after the restore.
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup) const;
 
 private:
