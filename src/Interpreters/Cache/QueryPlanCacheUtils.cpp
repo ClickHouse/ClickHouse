@@ -307,12 +307,26 @@ Names getReadColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_con
     return Names(read_columns.begin(), read_columns.end());
 }
 
+Names getAccessCheckedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context)
+{
+    if (!planner_context)
+        return {};
+
+    const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
+    if (table_expression_data.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Query plan cache: expected exactly one table expression, got {}", table_expression_data.size());
+
+    return table_expression_data.begin()->second.getAccessCheckedColumnsNames();
+}
+
 std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     const QueryPlanCacheLookupContext & lookup_context,
     const QueryPlan & plan,
     const PlannerContextPtr & planner_context,
     const Names & selected_columns,
-    const Names & read_columns)
+    const Names & read_columns,
+    const Names & access_checked_columns)
 {
     if (!plan.isInitialized())
         return {};
@@ -361,6 +375,8 @@ std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     auto & dependency_columns = columns_by_table.begin()->second;
     dependency_columns.insert(selected_columns.begin(), selected_columns.end());
     dependency_columns.insert(read_columns.begin(), read_columns.end());
+    /// An `ALIAS` column inlined into `PREWHERE` is not read physically, but the cached plan depends on its expression.
+    dependency_columns.insert(access_checked_columns.begin(), access_checked_columns.end());
     Names names(dependency_columns.begin(), dependency_columns.end());
     auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names, lookup_context.has_wildcard);
     if (!dependency)
@@ -417,25 +433,35 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 }
 
 void checkAccessForQueryPlanCacheHit(
-    const ContextPtr & context, const StorageID & storage_id, const StorageMetadataPtr & metadata_snapshot, const Names & selected_columns)
+    const ContextPtr & context,
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & selected_columns,
+    const Names & access_checked_columns)
 {
     if (selected_columns.empty() && metadata_snapshot && !metadata_snapshot->getColumns().empty())
     {
         auto access = context->getAccess();
-        for (const auto & column : metadata_snapshot->getColumns())
+        const auto & columns = metadata_snapshot->getColumns();
+        bool any_column_granted = std::ranges::any_of(columns, [&](const auto & column)
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
-                return;
-        }
+            return access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name);
+        });
 
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-            context->getUserName(),
-            storage_id.getFullTableName());
+        if (!any_column_granted)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                context->getUserName(),
+                storage_id.getFullTableName());
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
     }
 
-    context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
+    if (!access_checked_columns.empty())
+        context->checkAccess(AccessType::SELECT, storage_id, access_checked_columns);
 }
 
 void checkStorageSupportsTransactionsForQueryPlanCacheHit(

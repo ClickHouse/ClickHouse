@@ -97,6 +97,11 @@ struct QueryPlanCacheEntry
     /// additional privilege requirement.
     Names read_columns;
 
+    /// Columns that the planner resolves away but that still require the SELECT privilege, e.g. `ALIAS`
+    /// columns inlined into `PREWHERE` and `indexHint` arguments (see `TableExpressionData::getAccessCheckedColumnsNames`).
+    /// They are part of the dependencies of the entry and are rechecked for access on a hit.
+    Names access_checked_columns;
+
     /// Planner/storage dependencies captured from universalized read leaves.
     std::vector<QueryPlanCacheStorageDependency> dependencies;
 
@@ -123,6 +128,8 @@ struct QueryPlanCacheEntryWeight
         for (const auto & column : entry.selected_columns)
             weight += column.size();
         for (const auto & column : entry.read_columns)
+            weight += column.size();
+        for (const auto & column : entry.access_checked_columns)
             weight += column.size();
         for (const auto & dependency : entry.dependencies)
         {

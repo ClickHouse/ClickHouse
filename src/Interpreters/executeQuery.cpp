@@ -2,7 +2,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
 #include <Common/saturatedDuration.h>
@@ -31,6 +30,7 @@
 #include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/universalizePlan.h>
 #include <Interpreters/materializePlan.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -196,8 +196,6 @@ namespace Setting
     extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -3367,7 +3365,8 @@ static BlockIO executeQueryImpl(
                                 context,
                                 validated_cache_entry->storage_id,
                                 validated_cache_entry->metadata_snapshot,
-                                cached_entry->selected_columns);
+                                cached_entry->selected_columns,
+                                cached_entry->access_checked_columns);
 
                             checkStorageSupportsTransactionsForQueryPlanCacheHit(context, validated_cache_entry->storage);
 
@@ -3386,10 +3385,9 @@ static BlockIO executeQueryImpl(
                                 std::move(validated_cache_entry->table_lock));
 
                             /// The plan-level thread limit was computed for the warm-up query; recompute it
-                            /// from the current `max_threads` and free memory.
+                            /// from the current `max_threads`, free memory and fair share of CPU slots.
                             if (cached_entry->max_threads_follows_settings)
-                                plan.setMaxThreads(getMaxThreadsForAvailableMemory(
-                                    settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
+                                plan.setMaxThreads(getEffectiveMaxThreads(settings));
 
                             /// Restore query-access logging skipped with analyzer construction.
                             if (!internal && context->hasQueryContext())
@@ -3448,14 +3446,18 @@ static BlockIO executeQueryImpl(
                             serialized_plan.finalize();
                             QueryPlanCacheEntry entry;
                             entry.serialized_plan = serialized_plan.str();
-                            entry.max_threads_follows_settings = plan_copy.getMaxThreads()
-                                == getMaxThreadsForAvailableMemory(
-                                    settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+                            entry.max_threads_follows_settings = plan_copy.getMaxThreads() == getEffectiveMaxThreads(settings);
                             const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
                             entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
                             entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);
+                            entry.access_checked_columns = getAccessCheckedColumnsForQueryPlanCacheEntry(planner_context);
                             entry.dependencies = buildQueryPlanCacheDependencies(
-                                *query_plan_cache_lookup_context, plan_copy, planner_context, entry.selected_columns, entry.read_columns);
+                                *query_plan_cache_lookup_context,
+                                plan_copy,
+                                planner_context,
+                                entry.selected_columns,
+                                entry.read_columns,
+                                entry.access_checked_columns);
                             query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
                         }
                         catch (const Exception & e)

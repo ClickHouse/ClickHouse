@@ -27,12 +27,15 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
 
 Names getReadColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
+Names getAccessCheckedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
+
 std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     const QueryPlanCacheLookupContext & lookup_context,
     const QueryPlan & plan,
     const PlannerContextPtr & planner_context,
     const Names & selected_columns,
-    const Names & read_columns);
+    const Names & read_columns,
+    const Names & access_checked_columns);
 
 struct ValidatedQueryPlanCacheEntry
 {
@@ -49,8 +52,14 @@ struct ValidatedQueryPlanCacheEntry
 std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildSnapshot(
     const QueryPlanCacheLookupContext & lookup_context, const ContextPtr & context, const QueryPlanCacheEntry & entry);
 
+/// Rechecks the SELECT privilege for the current user: for `selected_columns` in the same way as the miss path
+/// does (a trivial query needs a grant on any one column), and for every column of `access_checked_columns`.
 void checkAccessForQueryPlanCacheHit(
-    const ContextPtr & context, const StorageID & storage_id, const StorageMetadataPtr & metadata_snapshot, const Names & selected_columns);
+    const ContextPtr & context,
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & selected_columns,
+    const Names & access_checked_columns);
 
 void checkStorageSupportsTransactionsForQueryPlanCacheHit(
     const ContextPtr & context, const StoragePtr & storage);
