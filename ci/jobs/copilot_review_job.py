@@ -87,6 +87,10 @@ Review instructions:
 - Follow the Review Instructions in .claude/skills/review/SKILL.md.
 - Repo is checked out at PR head.
 - Post findings as individual inline review comments on specific lines.
+- Start the body of every new inline comment with its severity tag: `[Blocker]` for a `❌ Blockers`
+  finding, `[Major]` for a `⚠️ Majors` finding. The CI review-threads gate holds the full test suite
+  and the merge only on unresolved threads that are not tagged as non-blocking (`[Major]`, `[P2]`,
+  `[P3]`, `[Nit]`), see `ci/jobs/scripts/workflow_hooks/review_threads.py`.
 """
 
 
