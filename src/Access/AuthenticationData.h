@@ -116,6 +116,11 @@ public:
         static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
         static Digest encodeBcrypt(std::string_view text, int workfactor);
         static bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt);
+
+        /// Caps the number of bcrypt verifications running concurrently across the whole process.
+        /// 0 means unlimited (the default). Cache hits are never throttled.
+        static void setMaxConcurrentBcryptAuthentications(UInt64 limit);
+        static UInt64 getMaxConcurrentBcryptAuthentications();
     };
 
 private:
