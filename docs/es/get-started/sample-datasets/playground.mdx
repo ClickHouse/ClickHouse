@@ -13,9 +13,7 @@ Hay varios conjuntos de datos de ejemplo disponibles en Playground.
 
 Puede enviar consultas a Playground con cualquier cliente HTTP, por ejemplo [curl](https://curl.haxx.se) o [wget](https://www.gnu.org/software/wget/), o configurar una conexión mediante los controladores [JDBC](/es/integrations/language-clients/java/jdbc) u [ODBC](/es/concepts/features/interfaces/odbc). Encontrará más información sobre los productos de software compatibles con ClickHouse [aquí](/es/integrations/home).
 
-<div id="credentials">
-  ## Credenciales
-</div>
+## Credenciales {#credentials}
 
 | Parámetro           | Valor                              |
 | :------------------ | :--------------------------------- |
@@ -24,20 +22,18 @@ Puede enviar consultas a Playground con cualquier cliente HTTP, por ejemplo [cur
 | Usuario             | `explorer` o `play`                |
 | Contraseña          | (vacía)                            |
 
-<div id="limitations">
-  ## Limitaciones
-</div>
+## Limitaciones {#limitations}
 
-Las consultas se ejecutan con un usuario de solo lectura. Esto implica algunas limitaciones:
+Las consultas se ejecutan con un usuario de solo lectura, por lo que se aplican las siguientes limitaciones:
 
 * No se permiten las consultas DDL
 * No se permiten las consultas INSERT
 
-El servicio también tiene cuotas de uso.
+El servicio también está sujeto a cuotas de uso.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+Para sortear las limitaciones del modo de solo lectura y probar a cargar sus propios datos, puede registrarse para obtener una [prueba gratuita de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) o [instalar ClickHouse](/es/get-started/setup/install) en su equipo.
+
+## Ejemplos {#examples}
 
 Ejemplo de endpoint HTTPS con `curl`:
 
@@ -51,11 +47,9 @@ Ejemplo de endpoint TCP con [ClickHouse client](/es/concepts/features/interfaces
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## Especificaciones del Playground
-</div>
+## Especificaciones del Playground {#specifications}
 
-nuestro ClickHouse Playground se ejecuta con las siguientes especificaciones:
+Nuestro ClickHouse Playground se ejecuta con las siguientes especificaciones:
 
 * Alojado en Google Cloud (GCE) en la región central de EE. UU. (US-Central-1)
 * Configuración de 3 réplicas
