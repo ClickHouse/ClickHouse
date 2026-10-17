@@ -296,9 +296,8 @@ inline bool matchesPresignedURLCredentialName(std::string_view name)
     return false;
 }
 
-/// The storage endpoint percent-decodes a parameter name before authenticating, so `?%73ig=`
-/// authenticates exactly like `?sig=`; a single pass, as the endpoint's is, so `?%2573ig=` is not a
-/// credential there either. `+` is a space to `HTMLForm::readQuery`, not to the storage client.
+/// The storage endpoint percent-decodes a parameter name once before authenticating: `?%73ig=` is `?sig=`,
+/// `?%2573ig=` is not. `+` is a space to `HTMLForm::readQuery`, not to the storage client.
 inline bool isPresignedURLSecretParameterName(std::string_view name)
 {
     if (matchesPresignedURLCredentialName(name))
@@ -331,7 +330,6 @@ inline bool isPresignedURLSecretParameterName(std::string_view name)
             low = hex_digit(name[i + 2]);
         }
 
-        /// A malformed escape is copied through: this feeds the decision below, never the output.
         if (high < 0 || low < 0)
         {
             decoded.push_back(name[i]);
@@ -351,13 +349,11 @@ inline bool isPresignedURLSecretParameterName(std::string_view name)
   *
   * This used to be the regular expression
   * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally, and is equal to it for names with no percent escape: the exact
-  * names match as spelled, the two prefixes in any case. The scan also classifies the decoded name.
-  * `src/Common/tests/gtest_mask_uri_password.cpp` checks both, against re2 and against a table.
+  * rewritten to `\1[HIDDEN]` globally, and still equals it for a name with no percent escape; a name is also
+  * classified percent-decoded. `src/Common/tests/gtest_mask_uri_password.cpp` checks both.
   *
-  * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,
-  * `sr`, ...) states what that signature grants and stays visible. `BackupInfo::removeCredentialsFromS3URL`
-  * does not add `sig`: it REMOVES parameters from a locator that must stay openable on restore.
+  * `sig` is the signature of an Azure SAS; its other parameters (`sv`, `sp`, `se`, `sr`, ...) state what it grants
+  * and stay visible. `BackupInfo::removeCredentialsFromS3URL` does not add `sig`: its locator must stay openable on restore.
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
