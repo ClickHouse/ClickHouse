@@ -103,7 +103,13 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
 
 /// `before_file_remove_op` runs after the copy and before the source removal. Returning
 /// `false` rejects the move: the source is kept, the caller cleans up the copied target.
-void moveFileBetweenDisks(
+///
+/// Returns true once `before_file_remove_op` has repointed the caller's metadata at `disk_to`,
+/// false when it has not - because a sub-operation ran out of retries, or shutdown was
+/// requested, or the caller rejected the move. A caller that goes on to write to `disk_to` must
+/// check this: on false the metadata still names `disk_from`. A failure to remove the source
+/// file afterwards does not make the result false; it only leaves an untracked copy behind.
+[[nodiscard]] bool moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
