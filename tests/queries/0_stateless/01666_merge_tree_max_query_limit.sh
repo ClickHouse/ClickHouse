@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-azure-blob-storage
+# Tags: no-azure-blob-storage, no-random-detach
+# Tag no-random-detach: parallel running queries
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

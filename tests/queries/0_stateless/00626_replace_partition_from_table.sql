@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
+
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 

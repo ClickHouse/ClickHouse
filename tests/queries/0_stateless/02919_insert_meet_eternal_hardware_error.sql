@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest, no-random-detach
+-- no-random-detach: test checks replication state
 -- no-shared-merge-tree: This failure injection is only RMT specific
 
 DROP TABLE IF EXISTS t_hardware_error NO DELAY;

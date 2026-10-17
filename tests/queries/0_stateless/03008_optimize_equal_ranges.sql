@@ -1,5 +1,10 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-random-detach, no-flaky-check
 -- Tag no-parallel-replicas: the ProfileEvents of the replicas are missing in the initiator's `query_log`, https://github.com/ClickHouse/ClickHouse/issues/123994
+-- no-random-detach: attach of a table affects
+-- used_aggregate_functions because of building minmax projection
+-- no-flaky-check: takes 158 s on its own and exceeds the 180 s per-run budget of the flaky check
+-- under TSan; this PR only added a tag, the test itself is unchanged
+
 DROP TABLE IF EXISTS t_optimize_equal_ranges;
 
 CREATE TABLE t_optimize_equal_ranges (a UInt64, b String, c UInt64) ENGINE = MergeTree ORDER BY a;

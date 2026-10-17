@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-random-detach
+# no-random-detach: test checks mutation state
 # no-shared-merge-tree -- we have similar tests for SMT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

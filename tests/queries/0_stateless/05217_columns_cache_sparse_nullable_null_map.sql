@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- The null map of a `Nullable` column with sparse serialization has no stream of its own: it is
 -- derived from the sparse offsets while reading. The columns cache must read such a column like
 -- any other - it is not a column absent from the part - and cache it like any other.

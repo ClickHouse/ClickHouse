@@ -1,4 +1,5 @@
--- Tags: no-sanitizers, long, no-parallel, no-distributed-cache
+-- Tags: no-sanitizers, long, no-parallel, no-random-detach, no-distributed-cache
+-- no-random-detach: test checks cache state
 -- no-sanitizers: too slow
 -- long: for flaky check
 -- no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")

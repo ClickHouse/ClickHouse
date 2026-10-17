@@ -1,4 +1,6 @@
--- Tags: no-async-insert
+-- Tags: no-async-insert, no-random-detach, no-flaky-check
+-- no-random-detach: DETACH/ATTACH adds too much overhead per query
+-- no-flaky-check: takes ~200s on the debug build with randomized settings, over the 180s flaky-check cap
 
 DROP TABLE IF EXISTS t_leading_zeroes;
 DROP TABLE IF EXISTS t_leading_zeroes_f;

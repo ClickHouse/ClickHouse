@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- Reads of projection index parts must never populate the columns cache: projection parts
 -- share the projection name as their part name, which is not unique across parent parts,
 -- so their entries would collide in the cache. `MergeTreeReadPoolProjectionIndex` therefore

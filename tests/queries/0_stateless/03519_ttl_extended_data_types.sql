@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
 -- Row TTL with extended data types
 DROP TABLE IF EXISTS ttl_03519_1 SYNC;
 CREATE TABLE ttl_03519_1 (date Date32, date_key Int) ENGINE=MergeTree TTL date + INTERVAL 1 MONTH ORDER BY date;

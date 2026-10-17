@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-random-detach
+# no-random-detach: a random DETACH/ATTACH of `src` by the concurrent INSERT makes the atomic
+# POPULATE correctly fail with "dropped, renamed or exchanged concurrently".
 
 # Test that CREATE MATERIALIZED VIEW ... POPULATE is atomic: rows inserted into the source table
 # concurrently with the population are delivered to the view exactly once - neither missed nor

@@ -1,3 +1,8 @@
+-- Tags: no-random-detach
+-- no-random-detach: the tables are created under a session-level `SET session_timezone`, and the
+-- implicit time zone of a `DateTime` / `DateTime64` column is resolved when the table is attached.
+-- A random `DETACH`/`ATTACH` re-resolves it in another context, which changes what the stored
+-- values mean whenever that context's time zone differs from the one the test set.
 -- `optimize_time_filter_with_preimage` rewrites `toYear(x) = y` into `x >= 'y-01-01 00:00:00' AND x < 'y+1-01-01 00:00:00'`,
 -- with the literals re-parsed in the column's time zone. A year or month boundary is not always local midnight:
 -- `America/Lima` started 1994 at 01:00:00 (the clocks jumped from 1993-12-31 23:59:59 to 1994-01-01 01:00:00), and

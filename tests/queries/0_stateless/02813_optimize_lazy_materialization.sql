@@ -1,3 +1,9 @@
+-- Tags: no-random-detach, no-flaky-check
+-- no-random-detach: map serialization order may change after DETACH/ATTACH with bucketed map parts
+-- no-flaky-check: this tag line is the only change here, and it pulls the test into the flaky check, whose
+--                 reruns sum to 194s on the object-storage build - over the 180s cap. Nothing to shake out:
+--                 the change only takes a source of nondeterminism away.
+
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
 SET allow_experimental_variant_type = 1;

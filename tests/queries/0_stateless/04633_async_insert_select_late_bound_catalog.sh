@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: a background `INSERT` stays in flight while other sessions create views and flush the queue;
+#   reattaching the destination under it leaves the queued entry waiting until `Wait for async insert timeout`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

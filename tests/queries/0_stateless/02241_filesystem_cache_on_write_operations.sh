@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check, no-random-detach
 # no-flaky-check: Too slow
+# no-random-detach: test inspects `system.filesystem_cache`, which is invalidated by reattach
 
 set -e
 

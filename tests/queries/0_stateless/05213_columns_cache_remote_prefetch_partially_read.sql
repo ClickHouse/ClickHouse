@@ -1,10 +1,11 @@
--- Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-replicated-database
+-- Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-replicated-database, no-random-detach
 -- - no-fasttest -- requires S3
 -- - no-parallel -- `SYSTEM DROP COLUMNS CACHE` is server-wide
 -- - no-random-settings, no-random-merge-tree-settings -- the read method, the prefetch flag and
 --   the task split have to be deterministic
 -- - no-parallel-replicas -- another replica would do the reading, and the prefetching
 -- - no-replicated-database -- the cache is per server
+-- - no-random-detach -- the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 
 -- The counterpart of `05154_columns_cache_remote_prefetch_skip`: a cache hit is not the same as a
 -- read without IO, and only the second one may skip the prefetch.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-random-detach
+# no-random-detach: race condition test, DETACH/ATTACH makes it worse
 
 # Test for use-after-free in ReadBufferFromEncryptedFile when a query is
 # cancelled mid-read. Destroying the reader chain from one thread while

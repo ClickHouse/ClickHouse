@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- The columns cache holds one entry per stripe of granules of a column (a fixed cut of the part
 -- into stripes of about 65536 rows), served granule by granule, so reads that cut the part into
 -- different mark ranges find each other's entries: a query with a condition, whose reader skips

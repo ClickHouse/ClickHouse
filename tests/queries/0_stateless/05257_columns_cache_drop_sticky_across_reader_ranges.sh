@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-fasttest, no-random-settings, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # no-parallel: SYSTEM ENABLE FAILPOINT is process-wide, and SYSTEM DROP COLUMNS CACHE clears the
 # cache of every other test.
 # no-fasttest: a test that arms a fail point runs alone, and such tests are kept out of the fast test.
