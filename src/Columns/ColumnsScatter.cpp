@@ -859,7 +859,9 @@ MutableColumns scatterImpl(
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Release builds get only TypeIndex plus the width and arity guards inside the kernels. Every
     /// type with a dedicated kernel implements `structureEquals`; the fallback types need not.
-    if (kernel_id != ScatterKernelId::Fallback)
+    /// Blocks of one LowCardinality column differ in index width, and its kernel hands several sources
+    /// to the fallback.
+    if (kernel_id != ScatterKernelId::Fallback && kernel_id != ScatterKernelId::LowCardinality)
         for (size_t b = 1; b < sources.size(); ++b)
             chassert(sources[b]->structureEquals(*sources[0]));
 #endif
