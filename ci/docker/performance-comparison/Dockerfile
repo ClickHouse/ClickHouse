@@ -41,7 +41,7 @@ COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:2988a688adcef0b4a779 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # aws cli to acquire secrets and params from ssm

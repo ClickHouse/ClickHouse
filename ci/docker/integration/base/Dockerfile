@@ -72,10 +72,10 @@ maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:2988a688adcef0b4a779 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=clickhouse/cctools:2988a688adcef0b4a779 \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
