@@ -426,6 +426,8 @@ Converts a value to a specified data type.
 Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
 
 This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
+
+The syntax `TRY_CAST(x AS T)`, as in the SQL dialects of Trino, Spark, Snowflake, and SQL Server, is the same as `accurateCastOrNull(x, 'T')`.
     )";
     FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
     FunctionDocumentation::Arguments accurateCastOrNull_arguments = {

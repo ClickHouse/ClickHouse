@@ -132,6 +132,18 @@ const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
     return getNullMapData().data();
 }
 
+ColumnPtr ColumnNullable::convertToFullIfWrapped() const
+{
+    ColumnPtr map = tryGetNullMapColumnPtr();
+    ColumnPtr new_nested = nested_column->convertToFullIfWrapped();
+    ColumnPtr new_map = map ? map->convertToFullIfWrapped() : nullptr;
+
+    if (new_nested.get() == nested_column.get() && new_map.get() == map.get())
+        return getPtr();
+
+    return ColumnNullable::create(new_nested, new_map);
+}
+
 bool ColumnNullable::dropNullMapIfNoNulls()
 {
     const auto * map = tryGetNullMapData();

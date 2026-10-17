@@ -379,7 +379,13 @@ Int32 IcebergMetadata::parseTableSchema(
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
 
-    if (format_version == 2)
+    if (format_version > 3)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
+            format_version);
+
+    if (format_version >= 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
         schema_processor.addIcebergTableSchema(schema);
@@ -1048,11 +1054,13 @@ void IcebergMetadata::createInitial(
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
-    if (compression_method != CompressionMethod::None)
+    if (!compression_method_str.empty())
     {
         /// A catalog that writes the first metadata file itself reads the codec from this property.
+        /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
+        const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("write.metadata.compression-codec", toContentEncodingName(compression_method));
+        properties->set("write.metadata.compression-codec", codec_name);
         metadata_content_object->set("properties", properties);
         metadata_content = stringifyJSON(metadata_content_object, 4);
     }

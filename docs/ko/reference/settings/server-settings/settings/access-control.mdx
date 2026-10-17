@@ -10,14 +10,13 @@ doc_type: '참고'
 
 이 설정은 ClickHouse 서버를 구성하는 항목이며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="access_control_improvements">
-  ## access_control_improvements
-</div>
+## access_control_improvements {#access_control_improvements}
 
-접근 제어 시스템의 선택적 개선 사항에 대한 설정입니다.
+액세스 제어 시스템의 선택적 개선 사항에 대한 설정입니다.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                          | Default |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `enable_read_write_grants`                      | `S3`, `HDFS`, `Kafka` 등의 외부 데이터 소스에 대한 `READ` 권한과 `WRITE` 권한을 분리합니다. 버전 25.7부터 사용할 수 있습니다. `true`로 설정하면 두 권한을 하나로 묶어 부여하는 대신 데이터 소스에 대한 `READ` 권한과 `WRITE` 권한을 각각 부여할 수 있습니다.                                                                                                                                                                                                                        | `false` |
 | `on_cluster_queries_require_cluster_grant`      | `ON CLUSTER` 쿼리에 `CLUSTER` 권한이 필요한지 설정합니다.                                                                                                                                                                                                                                                                                                                                                           | `true`  |
 | `role_cache_expiration_time_seconds`            | 마지막으로 접근한 시점부터 역할이 Role Cache에 저장되는 시간을 초 단위로 설정합니다.                                                                                                                                                                                                                                                                                                                                                 | `600`   |
 | `select_from_information_schema_requires_grant` | `SELECT * FROM information_schema.<table>` 실행에 권한이 필요한지, 또는 모든 사용자가 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리를 실행하려면 일반 테이블과 마찬가지로 `GRANT SELECT ON information_schema.<table>`가 필요합니다.                                                                                                                                                                                                                       | `true`  |
@@ -39,12 +38,11 @@ doc_type: '참고'
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 
-<div id="access_control_path">
-  ## access_control_path
-</div>
+## access_control_path {#access_control_path}
 
 ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 저장하는 폴더 경로입니다.
 

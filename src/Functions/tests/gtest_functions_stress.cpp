@@ -566,6 +566,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
+    context->setSetting("enable_ipcrypt", 1);
     return context;
 }
 

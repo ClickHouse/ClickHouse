@@ -15,13 +15,13 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FR
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #!comment"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #!comment', 1700000000)"
 
-echo "-- EOF comments must match the shared SQL lexer prefix contract"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #comment" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #comment', 1700000000)" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
+echo "-- PromQL doesn't require a space after '#', also at EOF"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #comment"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #comment', 1700000000)"
 
-echo "-- A bare '#' at EOF is an error in both PromQL entry points"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #', 1700000000)" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
+echo "-- A bare '#' at EOF is an empty comment"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #', 1700000000)"
 
 echo "-- A bare CR ends a PromQL comment, so the next statement is not swallowed"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 -m --query $'up #comment\r; SET dialect = \'clickhouse\'; SELECT \'next statement\''

@@ -151,6 +151,7 @@ add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/SpaceShared)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/TimeShared)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
+add_headers_and_sources(clickhouse_common_io IO/HTTP)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
@@ -557,6 +558,7 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
+    Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
@@ -607,14 +609,16 @@ if (TARGET ch_contrib::llvm)
 endif ()
 
 # Otherwise it will slow down stack traces printing too much.
+set (SYMBOLIZER_SOURCES
+        Common/Elf.cpp
+        Common/Dwarf.cpp
+        Common/MachO.cpp
+        Common/SymbolIndex.cpp
+        Common/ThreadFuzzer.cpp)
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
-    set_source_files_properties(
-            Common/Elf.cpp
-            Common/Dwarf.cpp
-            Common/MachO.cpp
-            Common/SymbolIndex.cpp
-            Common/ThreadFuzzer.cpp
-            PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+    set_source_files_properties(${SYMBOLIZER_SOURCES} PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+elseif (WITH_COVERAGE)
+    set_property(SOURCE ${SYMBOLIZER_SOURCES} APPEND PROPERTY COMPILE_OPTIONS ${WITHOUT_COVERAGE_FLAGS_LIST})
 endif()
 
 target_link_libraries (clickhouse_common_io
@@ -640,6 +644,11 @@ target_link_libraries (clickhouse_compression
 )
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
+
+if (TARGET ch_rust::pco)
+    target_include_directories(clickhouse_compression PRIVATE $<TARGET_PROPERTY:ch_rust::pco,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_compression PUBLIC ch_rust::pco)
 endif()
 
 target_link_libraries(clickhouse_common_io

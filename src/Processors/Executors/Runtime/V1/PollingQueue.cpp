@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <algorithm>
 
 #include <IO/WriteBufferFromString.h>
@@ -14,6 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char polling_queue_before_try_poll[];
 }
 
 namespace Runtime::V1
@@ -60,7 +66,7 @@ std::optional<PollingQueue::Key> PollingQueue::Deadlines::popExpired()
 
 PollingQueue::PollingQueue()
 {
-    epoll.add(finish_signal.fd(), &finish_signal);
+    epoll.add(notification_signal.fd(), &notification_signal);
     epoll.add(timer_signal.getDescriptor(), &timer_signal);
 }
 
@@ -128,15 +134,24 @@ std::string PollingQueue::dumpTasks() const
 
 PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock, int timeout)
 {
+    constexpr auto finish_mask = static_cast<uint8_t>(Notification::Finish);
     while (true)
     {
-        if (is_finished)
-            return {};
+        if (pending_notifications.load(std::memory_order_acquire) & finish_mask)
+            return {.notifications = finish_mask};
 
         if (auto expired_task = popExpiredDeadlineTask())
             return expired_task;
 
         lock.unlock();
+
+        if (timeout == 0)
+        {
+            fiu_do_on(FailPoints::polling_queue_before_try_poll,
+            {
+                FailPointInjection::notifyPauseAndWaitForResume(FailPoints::polling_queue_before_try_poll);
+            });
+        }
 
         epoll_event event{};
         event.data.ptr = nullptr;
@@ -147,8 +162,17 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
         if (num_events == 0)
             return {};
 
-        if (event.data.ptr == &finish_signal)
-            return {};
+        if (event.data.ptr == &notification_signal)
+        {
+            /// Drain before consuming bits so a concurrent notification is either returned now or leaves a readable pipe.
+            notification_signal.drain();
+            /// Keep Finish flag only (Spill is not permanent)
+            auto notifications = pending_notifications.fetch_and(finish_mask, std::memory_order_acq_rel);
+            if (notifications)
+                return {.notifications = notifications};
+            /// A notifier may write its byte after its bit was already consumed by an earlier poll.
+            continue;
+        }
 
         if (event.data.ptr == &timer_signal)
         {
@@ -174,8 +198,13 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
 void PollingQueue::finish()
 {
-    is_finished = true;
-    finish_signal.notify();
+    notify(Notification::Finish);
+}
+
+void PollingQueue::notify(Notification notification)
+{
+    pending_notifications.fetch_or(static_cast<uint8_t>(notification), std::memory_order_release);
+    notification_signal.notify();
 }
 
 }

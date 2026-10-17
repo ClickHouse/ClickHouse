@@ -41,19 +41,6 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     return resolved_uri;
 }
 
-class ReadBufferFromSessionResponse : public DB::ReadBufferFromIStream
-{
-private:
-    DB::HTTPSessionPtr session;
-
-public:
-    ReadBufferFromSessionResponse(DB::HTTPSessionPtr && session_, std::istream & rstr, size_t size)
-    : ReadBufferFromIStream(rstr, size)
-    , session(std::move(session_))
-    {
-    }
-};
-
 }
 
 
@@ -97,12 +84,6 @@ namespace FailPoints
     extern const char http_read_buffer_pause_before_metadata_fallback[];
     extern const char storage_url_pause_before_request_attempt[];
     extern const char storage_url_pause_before_retry_attempt[];
-}
-
-std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
-{
-    chassert(session);
-    return std::make_unique<ReadBufferFromSessionResponse>(std::move(session), *response_stream, buf_size);
 }
 
 bool ReadWriteBufferFromHTTP::withPartialContent() const
@@ -317,15 +298,18 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto & stream_out = session->sendRequest(request);
+    auto body_out = sendHTTPRequest(*session, request, buffer_size);
     if (out_stream_callback && with_request_body)
-        out_stream_callback(stream_out);
+        out_stream_callback(*body_out);
+    body_out->finalize();
 
-    auto & resp_stream = session->receiveResponse(response);
+    /// In the external buffer mode the caller hands its own memory to every read, so the body
+    /// buffer needs none of its own.
+    auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(current_uri.toString(), response, resp_stream, allow_redirects);
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects);
 
-    return ReadWriteBufferFromHTTP::CallResult(std::move(session), resp_stream);
+    return response_body;
 }
 
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
@@ -689,7 +673,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     if (!read_range.end && response.hasContentLength())
         file_info = parseFileInfo(response, range.has_value() ? getOffset() : 0);
 
-    return std::move(result).transformToReadBuffer(use_external_buffer ? 0 : buffer_size);
+    return result;
 }
 
 bool ReadWriteBufferFromHTTP::nextImpl()
@@ -794,7 +778,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     explanation);
             }
 
-            copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
+            copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
 
             ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
 

@@ -941,6 +941,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
     factory.registerFunction("arrayUnion",
         [](ContextPtr ctx){ return FunctionArrayIntersect::create("arrayUnion", ArraySetMode::Union, std::move(ctx)); },
         union_documentation);
+    factory.registerAlias("array_union", "arrayUnion", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 

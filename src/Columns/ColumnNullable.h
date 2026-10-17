@@ -198,6 +198,11 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
+    /// The null map can be created concurrently by another thread, so the generic implementation,
+    /// which visits the subcolumns twice, could see a different set of subcolumns in the second pass.
+    /// This implementation takes a single snapshot of the null map.
+    [[nodiscard]] ColumnPtr convertToFullIfWrapped() const override;
+
     /// The null map is visited only if it is present.
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {

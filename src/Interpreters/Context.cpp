@@ -307,6 +307,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -317,6 +318,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
@@ -2315,21 +2317,35 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
     if (!isUserDefinedInConfig(user_id_))
     {
-        auto global_context = getGlobalContext();
-        const auto & new_session_settings = global_context->getSettingsRef();
-        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
-        new_session_constraints->constraints.check(
-            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        new_session_constraints->constraints.check(
-            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
-            /* skip_config_defined_profiles= */ true);
+        try
+        {
+            auto global_context = getGlobalContext();
+            const auto & new_session_settings = global_context->getSettingsRef();
+            auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+            const auto * resolved_constraints = &enabled_profiles->constraints;
+            new_session_constraints->constraints.check(
+                new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+            new_session_constraints->constraints.check(
+                new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+                /* skip_config_defined_profiles= */ true, /* actor_is_config_defined= */ false, resolved_constraints);
 
-        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
-        SettingsProfileElements applied_profiles;
-        for (const auto & profile_id : enabled_profiles->profiles)
-            applied_profiles.emplace_back().parent_profile = profile_id;
-        new_session_constraints->constraints.check(
-            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
+            /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+            SettingsProfileElements applied_profiles;
+            for (const auto & profile_id : enabled_profiles->profiles)
+                applied_profiles.emplace_back().parent_profile = profile_id;
+            new_session_constraints->constraints.check(
+                new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+        }
+        catch (Exception & e)
+        {
+            /// A new session starts with the constraints of the system profile.
+            e.addMessage(
+                "while checking the settings of user {} against the constraints of the system profile {}",
+                backQuote(user->getName()), backQuote(getSystemProfileName()));
+            throw;
+        }
     }
 
     /// Apply user's profiles, constraints, settings, roles.
@@ -3960,6 +3976,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
         *settings, after_reset->getSettingsRef(), names, source);
+}
+
+void Context::clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampResetToDefault(*settings, names, clamped_changes, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -9529,7 +9551,22 @@ QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
     return query_execution_counters;
 }
 
-bool Context::canUseTaskBasedParallelReplicas() const
+UInt64 Context::getAutomaticParallelReplicasMode(const Settings & settings_ref)
+{
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        return 0;
+    return settings_ref[Setting::automatic_parallel_replicas_mode];
+}
+
+bool Context::isParallelReplicasEnabled() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && getAutomaticParallelReplicasMode(settings_ref) != 0);
+}
+
+bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const
 {
     const auto & settings_ref = getSettingsRef();
 
@@ -9537,7 +9574,25 @@ bool Context::canUseTaskBasedParallelReplicas() const
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
             || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+        && (ignore_automatic_parallel_replicas || getAutomaticParallelReplicasMode(settings_ref) == 0);
+}
+
+bool Context::canUseTaskBasedParallelReplicas() const
+{
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
+}
+
+bool Context::canReplaceClusterEngineWithClusterVariant() const
+{
+    const auto & settings_ref = getSettingsRef();
+    /// A replica matches `additional_table_filters` by the table name or alias in the query it receives, and the shipped
+    /// query renames the table expression (`__table1`), so the replica would silently read unfiltered data.
+    /// `serialize_query_plan` does not help here: cluster engines ship the query text, not the plan.
+    return !settings_ref[Setting::cluster_for_parallel_replicas].value.empty()
+        && settings_ref[Setting::parallel_replicas_for_cluster_engines]
+        && canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/true)
+        && settings_ref[Setting::additional_table_filters].value.empty()
+        && !isDistributed();
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -9650,7 +9705,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_input_tokens_per_query],
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
-            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;
 }

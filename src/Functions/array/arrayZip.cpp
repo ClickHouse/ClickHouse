@@ -200,6 +200,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
     factory.registerFunction("arrayZipUnaligned", [](ContextPtr){ return FunctionArrayZip::create("arrayZipUnaligned", true); }, documentation_unaligned);
+    factory.registerAlias("zip", "arrayZipUnaligned", FunctionFactory::Case::Insensitive);
 }
 
 }

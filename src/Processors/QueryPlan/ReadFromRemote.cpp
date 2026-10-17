@@ -247,7 +247,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    ContextMutablePtr & context,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -431,6 +432,11 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (!has_all_args && !is_function_and)
             continue;
 
+        if (!has_all_args && dropped_conjuncts)
+            for (const auto * child : node->children)
+                if (!node_to_ast[child])
+                    dropped_conjuncts->push_back(child);
+
         if (is_function_and && arguments.empty())
             continue;
 
@@ -512,24 +518,29 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
-static void addFilters(
+/// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
+/// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
+/// rewrite happens at all.
+static bool addFilters(
     Tables * external_tables,
     ContextMutablePtr & context,
+    const ContextPtr & rewrite_context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
-    const ActionsDAG & pushed_down_filters)
+    const ActionsDAG & pushed_down_filters,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
     if (!query_tree || !planner_context)
-        return;
+        return false;
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = rewrite_context->getSettingsRef();
     if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
-        return;
+        return false;
 
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
-        return;
+        return false;
 
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
@@ -542,14 +553,15 @@ static void addFilters(
     for (const auto & node : query_node->getProjection())
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
     if (!predicate)
-        return;
+        return false;
 
     auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
-        return;
+        return false;
 
     /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
     /// Supported cases:
@@ -585,15 +597,15 @@ static void addFilters(
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
-            return;
+            return false;
 
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
-            return;
+            return false;
 
         if (!extract_from_expression(table_expressions.front()))
-            return;
+            return false;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
@@ -605,9 +617,46 @@ static void addFilters(
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
 
     ASTs predicates{predicate};
-    PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
+    PredicateRewriteVisitor::Data data(rewrite_context, predicates, table_with_columns, optimize_final, optimize_with);
 
-    data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+    return data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+}
+
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context)
+{
+    /// The splice itself, run on copies: of the query, and of the condition as a DAG of its own, built the
+    /// way the remote step builds one from what is pushed into it - the conversion's answer depends on the
+    /// DAG around the condition. The copy is made node for node, so its atoms come in the same order as
+    /// these. No external tables: only a `GLOBAL IN` needs them, and it cannot fix a column.
+    auto atoms = ActionsDAG::extractConjunctionAtoms(&condition);
+    auto dag = ActionsDAG::buildFilterActionsDAG({&condition});
+    ContextMutablePtr no_context;
+    std::vector<const ActionsDAG::Node *> dropped;
+    if (!query_ast || !dag
+        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
+        return atoms;
+
+    auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
+    if (copied_atoms.size() != atoms.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A copy of a filter condition has {} conjuncts, the condition {}",
+            copied_atoms.size(), atoms.size());
+
+    /// A dropped node is a child of an `and` in the chain from the root, so its atoms are atoms of the root.
+    ActionsDAG::NodeRawConstPtrs left_out;
+    for (const auto * node : dropped)
+        for (const auto * copied_atom : ActionsDAG::extractConjunctionAtoms(node))
+        {
+            auto it = std::ranges::find(copied_atoms, copied_atom);
+            if (it == copied_atoms.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A conjunct the conversion dropped is not one of the condition's");
+            left_out.push_back(atoms[it - copied_atoms.begin()]);
+        }
+    return left_out;
 }
 
 void ReadFromRemote::addLazyPipe(
@@ -774,7 +823,7 @@ void ReadFromRemote::addLazyPipe(
         /// and the temporary table which we are about to send would be empty.
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
-            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
+            addFilters(nullptr, my_context, my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
@@ -897,7 +946,7 @@ void ReadFromRemote::addPipe(
     else
     {
         if (filter_actions_dag)
-            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
         const String query_string = formattedAST(shard.query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
@@ -1103,6 +1152,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     SharedHeader header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
+    ContextPtr filter_rewrite_context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
@@ -1121,6 +1171,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
+    , filter_rewrite_context(std::move(filter_rewrite_context_))
     , throttler(throttler_)
     , scalars(scalars_)
     , external_tables{external_tables_}
@@ -1160,8 +1211,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
-        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+    /// The initiator's copy of the fragment took what this splice carries (see `tryPushDownFilter`), on the
+    /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
+    /// replica too old to receive it, and a condition read out of it could order that replica's read.
+    if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
 

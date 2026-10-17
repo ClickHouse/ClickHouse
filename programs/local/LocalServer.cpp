@@ -1297,8 +1297,16 @@ void LocalServer::connect()
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
     }
+    /// Profile events feed only the progress bar and table, the interactive statistics, `--print-profile-events`
+    /// and `--memory-usage`. Producing them is not free (the sample block loads the time zone), so skip them otherwise.
+    const auto & print_memory_mode = getClientConfiguration().getString("print-memory-to-stderr", "");
+    const bool send_profile_events = need_render_profile_events
+        && (is_interactive || delayed_interactive || need_render_progress || need_render_progress_table || profile_events.print
+            || getClientConfiguration().getBool("print-profile-events", false) || print_memory_mode == "default"
+            || print_memory_mode == "readable");
+
     connection = LocalConnection::createConnection(
-        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, send_profile_events, server_display_name);
 }
 
 

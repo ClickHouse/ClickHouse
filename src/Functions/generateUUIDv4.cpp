@@ -25,6 +25,7 @@ public:
     /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
@@ -102,6 +103,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateUUIDv4>(documentation);
+    factory.registerAlias("uuid", "generateUUIDv4", FunctionFactory::Case::Insensitive);
 }
 
 }

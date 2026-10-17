@@ -239,6 +239,7 @@ Runs [integration tests](/resources/develop-contribute/contribute/tests#integrat
 The master branch runs the stateless, integration and unit tests on a build with LLVM coverage instrumentation on every commit and publishes the coverage report.
 Pull requests run these jobs only with the `ci-coverage` label (or when they change the code collecting and reporting the coverage); add it to get the coverage report of the pull request and the coverage of the changed lines.
 Without the label, pull requests run the same stateless and integration test configurations on the `arm_binary` build instead; unit tests already run with sanitizers.
+A pull request that only adds stateless tests and needs the coverage report can use the `ci-llvm-coverage` label instead: it runs the coverage jobs, the jobs for the tests excluded from coverage, the stateless flaky checks of the changed tests and the style check, and skips every other job. Such a pull request can merge with the label; a pull request that changes anything else cannot.
 
 ## Bugfix validate check {#bugfix-validate-check}
 

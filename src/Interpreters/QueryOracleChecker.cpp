@@ -80,120 +80,124 @@ namespace
 /// produces a different value than direct evaluation (so they aren't
 /// "non-deterministic functions" in the `system.functions` sense, but they are
 /// unsafe for oracle equality).
-const std::unordered_set<String> non_deterministic_functions = {
-    "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
-    "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
-    "randFisherF", "randLogNormal", "randPoisson",
-    "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID",
-    "now", "now64", "today", "yesterday",
-    "rowNumberInBlock", "blockNumber", "blockSize",
-    "runningDifference", "runningDifferenceStartingWithFirstValue",
-    /// `neighbor` and `runningAccumulate` read across rows in physical block
-    /// order (offset neighbours / a running state), so any rewrite that reorders,
-    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
-    /// toggles, multi-thread reads) changes their per-row output legitimately.
-    "neighbor", "runningAccumulate",
-    "currentDatabase", "queryID", "serverUUID",
-    "getSetting", "fuzzBits", "throwIf",
-    /// `indexHint` filters at granule granularity: the rows that survive it
-    /// depend on index layout, not on the predicate value, so any rewrite
-    /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
-    /// the result legitimately.
-    "indexHint",
-    /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
-    /// returns the query plan as rows. The plan text legitimately changes when
-    /// DQP toggles an optimizer setting, so comparing such results is comparing
-    /// plans, not data.
-    "viewExplain",
-    "file", "url", "s3", "hdfs", "input",
-    "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
-    "generate_series", "generateSeries",
-    "randomPrintableASCII", "randomString", "randomFixedString",
-    "fuzzQuery",
-    "materialize",
-    /// Non-deterministic or approximate aggregate functions.
-    "anyRespectNulls", "anyLastRespectNulls",
-    /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
-    /// names they are registered under and are equally valid in a query.
-    "any_respect_nulls", "anyLast_respect_nulls",
-    "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
-    /// Approximate quantile/median functions: State/Merge gives different results
-    /// than direct computation due to approximate merging algorithms. Block both
-    /// the singular and plural-result variants (the fuzzer dictionary contains
-    /// `quantiles*` as well, and they share the same approximate merge logic).
-    "median", "quantile", "quantiles",
-    "quantileTDigest", "quantileTDigestWeighted",
-    "quantilesTDigest", "quantilesTDigestWeighted",
-    "quantileGK", "quantilesGK",
-    "quantileBFloat16", "quantileBFloat16Weighted",
-    "quantilesBFloat16", "quantilesBFloat16Weighted",
-    "quantileDD", "quantilesDD",
-    "quantileTiming", "quantileTimingWeighted",
-    "quantilesTiming", "quantilesTimingWeighted",
-    "quantileDeterministic", "quantilesDeterministic",
-    "quantileExact", "quantileExactWeighted",
-    "quantilesExact", "quantilesExactWeighted",
-    "quantileExactLow", "quantileExactHigh",
-    "quantilesExactLow", "quantilesExactHigh",
-    "quantileExactExclusive", "quantileExactInclusive",
-    "quantilesExactExclusive", "quantilesExactInclusive",
-    "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
-    /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
-    /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
-    /// are order-dependent, unlike the `UInt64`-weighted
-    /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
-    /// deliberately NOT listed here.
-    "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
-    /// Floating-point aggregates whose State/Merge path can differ from direct
-    /// computation. `sum` / `sumWithOverflow` are
-    /// blocked because floating-point addition is non-associative — the
-    /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
-    /// different rounded value than direct `sum` over Float32/Float64
-    /// arguments. We don't try to inspect argument types here, so we exclude
-    /// `sum` family unconditionally — that costs some integer-sum coverage
-    /// but eliminates a flaky-mismatch source.
-    "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
-    "varPop", "varSamp", "varPopStable", "varSampStable",
-    "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
-    "corrMatrix", "covarPopMatrix", "covarSampMatrix",
-    "avg", "avgWeighted",
-    "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sum", "sumWithOverflow", "sumKahan", "sumCount",
-    /// Per-key sums over maps and arrays add the same floating-point values in
-    /// a merge-order-dependent order, exactly like `sum` above.
-    "sumMappedArrays", "sumMapWithOverflow",
-    "sumMapFiltered", "sumMapFilteredWithOverflow",
-    "initializeAggregation",
-    /// Order-dependent aggregate functions.
-    "groupArraySorted",
-    /// Events with equal timestamps are matched in arrival order.
-    "sequenceMatch", "sequenceCount", "sequenceMatchEvents", "sequenceNextNode",
-    /// Approximate/formatting-dependent aggregates.
-    "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
-    "simpleLinearRegression", "sparkBar", "histogram",
-    "retentionState",
-    /// `largestTriangleThreeBuckets` (LTTB) downsamples to a fixed number of
-    /// points; the selection depends on input row order, and with the `Distinct`
-    /// combinator the deduplicated set feeds LTTB in a parallel-merge-dependent
-    /// order, so the result varies run-to-run even at a fixed setting. Any
-    /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
-    /// then legitimately differs from direct evaluation.
-    "largestTriangleThreeBuckets",
-    /// `boundingRatio` divides by the gap between the leftmost and rightmost
-    /// points: on ties in the x argument which point wins is merge-order
-    /// dependent, and the ratio is a Float64 either way.
-    "boundingRatio",
-    /// Depends on physical data layout, not values.
-    "estimateCompressionRatio",
-    /// Statistical hypothesis-test / correlation aggregates: they return
-    /// floating-point statistics or p-values computed with rank/tie handling
-    /// and non-associative summation, so the State/Merge, DQP and
-    /// subquery-rewrite paths legitimately differ from direct evaluation.
-    "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
-    "analysisOfVariance",
-    "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
-    "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
-};
+const std::unordered_set<String> & nonDeterministicFunctions()
+{
+    static const std::unordered_set<String> non_deterministic_functions = {
+        "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
+        "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
+        "randFisherF", "randLogNormal", "randPoisson",
+        "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID",
+        "now", "now64", "today", "yesterday",
+        "rowNumberInBlock", "blockNumber", "blockSize",
+        "runningDifference", "runningDifferenceStartingWithFirstValue",
+        /// `neighbor` and `runningAccumulate` read across rows in physical block
+        /// order (offset neighbours / a running state), so any rewrite that reorders,
+        /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
+        /// toggles, multi-thread reads) changes their per-row output legitimately.
+        "neighbor", "runningAccumulate",
+        "currentDatabase", "queryID", "serverUUID",
+        "getSetting", "fuzzBits", "throwIf",
+        /// `indexHint` filters at granule granularity: the rows that survive it
+        /// depend on index layout, not on the predicate value, so any rewrite
+        /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
+        /// the result legitimately.
+        "indexHint",
+        /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
+        /// returns the query plan as rows. The plan text legitimately changes when
+        /// DQP toggles an optimizer setting, so comparing such results is comparing
+        /// plans, not data.
+        "viewExplain",
+        "file", "url", "s3", "hdfs", "input",
+        "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
+        "generate_series", "generateSeries",
+        "randomPrintableASCII", "randomString", "randomFixedString",
+        "fuzzQuery",
+        "materialize",
+        /// Non-deterministic or approximate aggregate functions.
+        "anyRespectNulls", "anyLastRespectNulls",
+        /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
+        /// names they are registered under and are equally valid in a query.
+        "any_respect_nulls", "anyLast_respect_nulls",
+        "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
+        /// Approximate quantile/median functions: State/Merge gives different results
+        /// than direct computation due to approximate merging algorithms. Block both
+        /// the singular and plural-result variants (the fuzzer dictionary contains
+        /// `quantiles*` as well, and they share the same approximate merge logic).
+        "median", "quantile", "quantiles",
+        "quantileTDigest", "quantileTDigestWeighted",
+        "quantilesTDigest", "quantilesTDigestWeighted",
+        "quantileGK", "quantilesGK",
+        "quantileBFloat16", "quantileBFloat16Weighted",
+        "quantilesBFloat16", "quantilesBFloat16Weighted",
+        "quantileDD", "quantilesDD",
+        "quantileTiming", "quantileTimingWeighted",
+        "quantilesTiming", "quantilesTimingWeighted",
+        "quantileDeterministic", "quantilesDeterministic",
+        "quantileExact", "quantileExactWeighted",
+        "quantilesExact", "quantilesExactWeighted",
+        "quantileExactLow", "quantileExactHigh",
+        "quantilesExactLow", "quantilesExactHigh",
+        "quantileExactExclusive", "quantileExactInclusive",
+        "quantilesExactExclusive", "quantilesExactInclusive",
+        "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
+        /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
+        /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
+        /// are order-dependent, unlike the `UInt64`-weighted
+        /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
+        /// deliberately NOT listed here.
+        "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
+        /// Floating-point aggregates whose State/Merge path can differ from direct
+        /// computation. `sum` / `sumWithOverflow` are
+        /// blocked because floating-point addition is non-associative — the
+        /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
+        /// different rounded value than direct `sum` over Float32/Float64
+        /// arguments. We don't try to inspect argument types here, so we exclude
+        /// `sum` family unconditionally — that costs some integer-sum coverage
+        /// but eliminates a flaky-mismatch source.
+        "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
+        "varPop", "varSamp", "varPopStable", "varSampStable",
+        "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
+        "corrMatrix", "covarPopMatrix", "covarSampMatrix",
+        "avg", "avgWeighted",
+        "skewPop", "skewSamp", "kurtPop", "kurtSamp",
+        "sum", "sumWithOverflow", "sumKahan", "sumCount",
+        /// Per-key sums over maps and arrays add the same floating-point values in
+        /// a merge-order-dependent order, exactly like `sum` above.
+        "sumMappedArrays", "sumMapWithOverflow",
+        "sumMapFiltered", "sumMapFilteredWithOverflow",
+        "initializeAggregation",
+        /// Order-dependent aggregate functions.
+        "groupArraySorted",
+        /// Events with equal timestamps are matched in arrival order.
+        "sequenceMatch", "sequenceCount", "sequenceMatchEvents", "sequenceNextNode",
+        /// Approximate/formatting-dependent aggregates.
+        "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
+        "simpleLinearRegression", "sparkBar", "histogram",
+        "retentionState",
+        /// `largestTriangleThreeBuckets` (LTTB) downsamples to a fixed number of
+        /// points; the selection depends on input row order, and with the `Distinct`
+        /// combinator the deduplicated set feeds LTTB in a parallel-merge-dependent
+        /// order, so the result varies run-to-run even at a fixed setting. Any
+        /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
+        /// then legitimately differs from direct evaluation.
+        "largestTriangleThreeBuckets",
+        /// `boundingRatio` divides by the gap between the leftmost and rightmost
+        /// points: on ties in the x argument which point wins is merge-order
+        /// dependent, and the ratio is a Float64 either way.
+        "boundingRatio",
+        /// Depends on physical data layout, not values.
+        "estimateCompressionRatio",
+        /// Statistical hypothesis-test / correlation aggregates: they return
+        /// floating-point statistics or p-values computed with rank/tie handling
+        /// and non-associative summation, so the State/Merge, DQP and
+        /// subquery-rewrite paths legitimately differ from direct evaluation.
+        "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
+        "analysisOfVariance",
+        "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
+        "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
+    };
+    return non_deterministic_functions;
+}
 
 /// Maximum formatted query length for oracle sub-queries.
 constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
@@ -205,22 +209,22 @@ constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
 /// post-execution size check in `executeAndCollect*` triggers.
 constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
-/// Case-insensitive view of `non_deterministic_functions`. ClickHouse resolves
+/// Case-insensitive view of `nonDeterministicFunctions`. ClickHouse resolves
 /// aggregate (and scalar) function names case-insensitively and the parser
 /// preserves whatever spelling the fuzzer produced, so a query using `SUM` or
 /// `AVG` must still match the unsafe set. Compare lowercased.
-const std::unordered_set<String> non_deterministic_functions_lower = []
+const std::unordered_set<String> & nonDeterministicFunctionsLower()
 {
-    std::unordered_set<String> result;
-    result.reserve(non_deterministic_functions.size());
-    for (const auto & name : non_deterministic_functions)
-        result.insert(Poco::toLower(name));
-    return result;
-}();
-
-/// Aggregate-function combinator suffixes — shared with the fuzzer, see
-/// `aggregate_combinator_suffixes` in `QueryFuzzer.h`.
-const Strings & combinator_suffixes = aggregate_combinator_suffixes;
+    static const std::unordered_set<String> non_deterministic_functions_lower = []
+    {
+        std::unordered_set<String> result;
+        result.reserve(nonDeterministicFunctions().size());
+        for (const auto & name : nonDeterministicFunctions())
+            result.insert(Poco::toLower(name));
+        return result;
+    }();
+    return non_deterministic_functions_lower;
+}
 
 /// Strip the LONGEST matching combinator suffix from `name`, returning false
 /// when nothing matched. Longest-match (rather than first-in-list) is what
@@ -230,7 +234,7 @@ const Strings & combinator_suffixes = aggregate_combinator_suffixes;
 bool stripLongestCombinatorSuffix(String & name)
 {
     const String * best = nullptr;
-    for (const auto & suffix : combinator_suffixes)
+    for (const auto & suffix : aggregateCombinatorSuffixes())
         if (name.size() > suffix.size() && name.ends_with(suffix)
             && (!best || suffix.size() > best->size()))
             best = &suffix;
@@ -270,7 +274,7 @@ String resolveAggregateAlias(const String & name)
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
-/// entry of `non_deterministic_functions` (matched case-insensitively).
+/// entry of `nonDeterministicFunctions` (matched case-insensitively).
 /// Membership must be tested at EVERY stripping stage, not only at the
 /// fixpoint: real aggregate names can themselves end in a combinator-looking
 /// word, e.g. `retentionStateOrNull` strips to `retentionState` (a set
@@ -280,7 +284,7 @@ bool namesUnsafeFunctionAfterStripping(String name)
 {
     while (true)
     {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+        if (nonDeterministicFunctionsLower().contains(Poco::toLower(name)))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
@@ -298,7 +302,7 @@ bool isOracleUnsafeFunctionName(String name)
 
     while (true)
     {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+        if (nonDeterministicFunctionsLower().contains(Poco::toLower(name)))
             return true;
         /// The raw spelling is tested first and separately, never replaced by
         /// the canonical one: the set is free to name a function by whichever
@@ -318,11 +322,26 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
+{
+    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
+        if (!resolver->isDeterministic())
+            return true;
+    if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
+        /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+        return true;
+    if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name, context))
+        if (!udf_exec->isDeterministic())
+            return true;
+    return false;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
 /// non-deterministic functions are caught automatically without needing to
-/// touch the local list. The static `non_deterministic_functions` set above
+/// touch the local list. The static `nonDeterministicFunctions` set above
 /// is the backstop for two cases `FunctionFactory` cannot reach:
 ///   1. Table functions (`file`, `url`, `s3`, `numbers`, ...) — registered in
 ///      `TableFunctionFactory`; would slip through as scalar calls otherwise.
@@ -391,17 +410,45 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            if (namesNonDeterministicRegularFunction(name.get(), context))
                 return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
+    }
+
+    /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
+    /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
+    /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
+    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: its name part
+    /// is empty in the AST, and the value is substituted only when the query text is executed, so look
+    /// the value up in the query parameters of the context. An unknown parameter skips the query.
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
+    {
+        if (identifier->isParam())
+        {
+            const auto param = identifier->getParam();
+            const auto & params = context->getQueryParameters();
+            const auto it = params.find(param->as<ASTQueryParameter &>().name);
+            if (it == params.end() || namesNonDeterministicRegularFunction(it->second, context))
+                return true;
+        }
+        else if (namesNonDeterministicRegularFunction(identifier->name(), context))
+            return true;
+    }
+
+    /// `* APPLY(f)` and `* APPLY(x -> ...)` keep the function name, its parameters and the lambda
+    /// outside of `children`.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply->func_name.empty())
+        {
+            if (isOracleUnsafeFunctionName(apply->func_name))
+                return true;
+            for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
+                if (namesNonDeterministicRegularFunction(name, context))
                     return true;
         }
+        if (hasNonDeterministicFunctionsImpl(apply->parameters, context)
+            || hasNonDeterministicFunctionsImpl(apply->lambda, context))
+            return true;
     }
 
     for (const auto & child : ast->children)
@@ -575,48 +622,52 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
 /// at `max_rows_to_read`. A query carrying any of these inline (top level or
 /// in a subquery) cannot be compared; session-level leakage from a seed's
 /// `SET` is neutralized in `makeOracleContext`.
-const std::unordered_set<String> truncating_settings = {
-    "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
-    "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
-    "max_rows_to_group_by", "group_by_overflow_mode",
-    "max_rows_to_sort", "max_bytes_to_sort", "sort_overflow_mode",
-    "max_result_rows", "max_result_bytes", "result_overflow_mode",
-    "max_rows_in_distinct", "max_bytes_in_distinct", "distinct_overflow_mode",
-    "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
-    "max_rows_in_join", "max_bytes_in_join", "join_overflow_mode",
-    "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
-    "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
-    "max_estimated_execution_time",
-    /// The `limit` / `offset` SETTINGS (distinct from LIMIT/OFFSET clauses)
-    /// apply a final LIMIT/OFFSET to every query result. That truncation is
-    /// not distributive over the oracle rewrites — the reference and the
-    /// partitioned UNION are limited/offset over differently-ordered results,
-    /// so they keep different row subsets (observed: `SET offset = 10` made a
-    /// single batch produce 174 TLP mismatches).
-    "limit", "offset",
-    /// Not truncation per se, but the same "results depend on which granules
-    /// the predicate prunes" effect: with exact mode off, skip indexes under
-    /// FINAL may keep stale row versions whose newer version lives in a
-    /// pruned granule — documented behaviour, not comparable across rewrites.
-    "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
-    /// Changes aggregate semantics asymmetrically across oracle rewrites:
-    /// `count()` over zero input rows becomes NULL while NoREC's `countIf`
-    /// aggregates every row and returns 0. Pinned off in `makeOracleContext`
-    /// for session leakage, but an inline `SETTINGS` clause survives in the
-    /// clones and overrides the pin, so gate it here too.
-    "aggregate_functions_null_for_empty",
-    /// Same asymmetry from the other direction: with this on, an aggregation
-    /// with no GROUP BY over an *empty* input returns ZERO rows instead of one
-    /// default row. NoREC's `count()` over an empty (always-false WHERE)
-    /// subquery then yields no row, while the `countIf` form over the
-    /// non-empty table yields one `0` row — a false mismatch. (This was the
-    /// cause of the long-unreproducible NoREC count()=NULL family, surfaced
-    /// once mismatch reproducers started carrying their active settings.)
-    "empty_result_for_aggregation_by_empty_set",
-    /// Appends an extremes block (blank separator + min/max rows) to every
-    /// result; the oracle's row collection would count those as data rows.
-    "extremes",
-};
+const std::unordered_set<String> & truncatingSettings()
+{
+    static const std::unordered_set<String> truncating_settings = {
+        "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
+        "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
+        "max_rows_to_group_by", "group_by_overflow_mode",
+        "max_rows_to_sort", "max_bytes_to_sort", "sort_overflow_mode",
+        "max_result_rows", "max_result_bytes", "result_overflow_mode",
+        "max_rows_in_distinct", "max_bytes_in_distinct", "distinct_overflow_mode",
+        "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
+        "max_rows_in_join", "max_bytes_in_join", "join_overflow_mode",
+        "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
+        "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
+        "max_estimated_execution_time",
+        /// The `limit` / `offset` SETTINGS (distinct from LIMIT/OFFSET clauses)
+        /// apply a final LIMIT/OFFSET to every query result. That truncation is
+        /// not distributive over the oracle rewrites — the reference and the
+        /// partitioned UNION are limited/offset over differently-ordered results,
+        /// so they keep different row subsets (observed: `SET offset = 10` made a
+        /// single batch produce 174 TLP mismatches).
+        "limit", "offset",
+        /// Not truncation per se, but the same "results depend on which granules
+        /// the predicate prunes" effect: with exact mode off, skip indexes under
+        /// FINAL may keep stale row versions whose newer version lives in a
+        /// pruned granule — documented behaviour, not comparable across rewrites.
+        "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
+        /// Changes aggregate semantics asymmetrically across oracle rewrites:
+        /// `count()` over zero input rows becomes NULL while NoREC's `countIf`
+        /// aggregates every row and returns 0. Pinned off in `makeOracleContext`
+        /// for session leakage, but an inline `SETTINGS` clause survives in the
+        /// clones and overrides the pin, so gate it here too.
+        "aggregate_functions_null_for_empty",
+        /// Same asymmetry from the other direction: with this on, an aggregation
+        /// with no GROUP BY over an *empty* input returns ZERO rows instead of one
+        /// default row. NoREC's `count()` over an empty (always-false WHERE)
+        /// subquery then yields no row, while the `countIf` form over the
+        /// non-empty table yields one `0` row — a false mismatch. (This was the
+        /// cause of the long-unreproducible NoREC count()=NULL family, surfaced
+        /// once mismatch reproducers started carrying their active settings.)
+        "empty_result_for_aggregation_by_empty_set",
+        /// Appends an extremes block (blank separator + min/max rows) to every
+        /// result; the oracle's row collection would count those as data rows.
+        "extremes",
+    };
+    return truncating_settings;
+}
 
 bool hasTruncatingInlineSettings(const ASTPtr & ast)
 {
@@ -624,7 +675,7 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
         return false;
     if (const auto * set_query = ast->as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (truncating_settings.contains(change.name))
+            if (truncatingSettings().contains(change.name))
                 return true;
     for (const auto & child : ast->children)
         if (hasTruncatingInlineSettings(child))
@@ -640,21 +691,25 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
 /// significant setting (`join_use_nulls`, `apply_mutations_on_fly`,
 /// `optimize_*`, `final`, ...) would make the oracle validate a different
 /// query than the one that actually succeeded. Anything not explicitly listed
-/// here (and not already rejected by `truncating_settings`) causes the whole
+/// here (and not already rejected by `truncatingSettings`) causes the whole
 /// query to be skipped — fail closed, since new settings appear all the time.
-const std::unordered_set<String> strippable_resource_settings = {
-    "max_memory_usage", "max_memory_usage_for_user", "max_untracked_memory",
-    "max_bytes_before_external_group_by", "max_bytes_before_external_sort",
-    "max_bytes_ratio_before_external_group_by", "max_bytes_ratio_before_external_sort",
-    "max_threads", "max_insert_threads", "max_final_threads", "max_block_size",
-    "max_query_size", "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements",
-    "max_parser_depth", "max_parser_backtracks", "max_execution_speed",
-    "log_comment", "log_queries", "log_query_threads", "log_processors_profiles",
-    "send_logs_level", "priority", "os_thread_priority",
-};
+const std::unordered_set<String> & strippableResourceSettings()
+{
+    static const std::unordered_set<String> strippable_resource_settings = {
+        "max_memory_usage", "max_memory_usage_for_user", "max_untracked_memory",
+        "max_bytes_before_external_group_by", "max_bytes_before_external_sort",
+        "max_bytes_ratio_before_external_group_by", "max_bytes_ratio_before_external_sort",
+        "max_threads", "max_insert_threads", "max_final_threads", "max_block_size",
+        "max_query_size", "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements",
+        "max_parser_depth", "max_parser_backtracks", "max_execution_speed",
+        "log_comment", "log_queries", "log_query_threads", "log_processors_profiles",
+        "send_logs_level", "priority", "os_thread_priority",
+    };
+    return strippable_resource_settings;
+}
 
 /// True if any inline `SETTINGS` clause (top level or nested) carries a
-/// setting outside `strippable_resource_settings`. Checked recursively for
+/// setting outside `strippableResourceSettings`. Checked recursively for
 /// symmetry with `hasTruncatingInlineSettings`: nested clauses are never
 /// stripped, but proving a nested semantic setting harmless would require
 /// per-oracle reasoning, so skip conservatively.
@@ -664,7 +719,7 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
         return false;
     if (const auto * set_query = ast->as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (!strippable_resource_settings.contains(change.name))
+            if (!strippableResourceSettings().contains(change.name))
                 return true;
     for (const auto & child : ast->children)
         if (hasNonStrippableInlineSettings(child))
@@ -1365,7 +1420,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// becomes NULL while `countIf` still aggregates every row and returns 0.
     /// Pin it off so both sides of every comparison use standard semantics.
     oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
-    /// See `truncating_settings`: with this on, `count()` over an empty input
+    /// See `truncatingSettings`: with this on, `count()` over an empty input
     /// returns zero rows while the NoREC `countIf` form returns one `0` row.
     oracle_context->setSetting("empty_result_for_aggregation_by_empty_set", Field(false));
     /// Constraint-based optimization trusts `CONSTRAINT ... ASSUME ...`
@@ -1380,7 +1435,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("convert_query_to_cnf", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
-    /// oracle sub-queries asymmetrically — see `truncating_settings`).
+    /// oracle sub-queries asymmetrically — see `truncatingSettings`).
     /// `max_result_rows`/`max_result_bytes`/`result_overflow_mode` and
     /// `max_execution_time` are pinned above/below to the oracle's own caps,
     /// which throw rather than truncate.
@@ -1404,7 +1459,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
         oracle_context->setSetting(mode, String("throw"));
     /// Session-leaked `SET use_skip_indexes_if_final = 1,
     /// use_skip_indexes_if_final_exact_mode = 0` would make oracle
-    /// sub-queries keep stale FINAL row versions (see `truncating_settings`).
+    /// sub-queries keep stale FINAL row versions (see `truncatingSettings`).
     oracle_context->setSetting("use_skip_indexes_if_final_exact_mode", Field(true));
     /// A session-leaked `SET extremes = 1` would append extremes blocks to
     /// every oracle sub-query result (counted as data rows).
@@ -2096,7 +2151,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     /// names that are known to be float-sensitive.
     /// Lowercased: aggregate names resolve case-insensitively (AVG == avg), but the
     /// parser preserves the original spelling, so we must lowercase before the lookup
-    /// (same as `non_deterministic_functions_lower` above). Otherwise `AVG`/`SUM`
+    /// (same as `nonDeterministicFunctionsLower` above). Otherwise `AVG`/`SUM`
     /// bypass this denylist while `AVGState`/`SUMState` still resolve, producing
     /// false State/Merge oracle mismatches on floating-point inputs.
     static const std::unordered_set<String> non_associative_aggregates = {
