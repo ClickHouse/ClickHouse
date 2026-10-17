@@ -280,11 +280,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
-struct MergeTreeIndexWithCondition;
+struct IndexReadTask;
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules);
 }
