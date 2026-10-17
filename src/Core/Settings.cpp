@@ -334,6 +334,7 @@ This can speed up the non-joined phase of hash joins with large right tables tha
 When disabled, or when the hash table is built on one thread, non-joined rows are processed by a single thread.
 In every case the non-joined rows come out in no fixed order. Use `ORDER BY` when the query needs a stable order.
 )", 0, \
+        {"26.10", true, true, "Applies to RIGHT/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."}, \
         {"26.2", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."}) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT` query.
@@ -4372,7 +4373,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache. A separate thread inserts each partition into its own range of one shared hash table. The left table is probed against that table and is not partitioned.
 
- The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage. A query with `max_bytes_before_external_join` set also uses the next enabled algorithm, or `hash`.
+ The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. With `max_bytes_before_external_join` set, it spills to disk through `grace_hash` like the other hash joins. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage.
 
 - partial_merge
 
@@ -10139,6 +10140,7 @@ The estimate comes from the query plan, or from the statistics of earlier runs o
 A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
 `partitioned_hash` uses the same threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. At or above the threshold, the build uses at least one partition per thread.
 )", 0, \
+        {"26.10", 100'000, 100'000, "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."}, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
         {"25.3", 0, 0, "New setting"}) \
