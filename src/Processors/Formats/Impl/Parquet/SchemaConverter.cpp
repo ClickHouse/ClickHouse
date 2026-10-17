@@ -509,12 +509,21 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     auto geo_it = geo_columns.find(node.getParquetName());
     auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
+    bool time_as_stored_integer = false;
+    if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
+        time_as_stored_integer = node.element->__isset.field_id
+            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
+            : column_mapper->hasIcebergTimeFieldIds();
+
     DataTypePtr inferred_type;
     DataTypePtr decoded_type;
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata, primitive_column_idx - 1);
+        processPrimitiveColumn(
+            *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
+            primitive_column_idx - 1);
     }
     catch (Exception & e)
     {
@@ -1256,7 +1265,7 @@ std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_
 }
 
 void SchemaConverter::processPrimitiveColumn(
-    const parq::SchemaElement & element, DataTypePtr type_hint,
+    const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
     DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const
 {
@@ -1454,6 +1463,16 @@ void SchemaConverter::processPrimitiveColumn(
     auto is_output_type_string = [&]() -> bool
     {
         return get_output_type_index() == TypeIndex::String;
+    };
+
+    auto set_plain_int64_decoder = [&]
+    {
+        out_inferred_type = std::make_shared<DataTypeInt64>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
+        out_decoder.fixed_size_converter = std::move(converter);
     };
 
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
@@ -1695,6 +1714,12 @@ void SchemaConverter::processPrimitiveColumn(
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
+
+        if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
+        {
+            set_plain_int64_decoder();
+            return;
+        }
 
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
@@ -2043,12 +2068,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            out_inferred_type = std::make_shared<DataTypeInt64>();
-            auto converter = std::make_shared<IntConverter>();
-            converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
-            out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
-            out_decoder.fixed_size_converter = std::move(converter);
+            set_plain_int64_decoder();
             return;
         }
         case parq::Type::INT96:
