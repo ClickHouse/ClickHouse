@@ -32,7 +32,7 @@ public:
 
     void startup() override;
 
-    void setRestoreQueryIsSentToOtherHosts() override;
+    void setRestoreQueryIsSentToOtherHosts(const String & ddl_entry_path) override;
     bool isRestoreQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
     void setError(std::exception_ptr exception, bool throw_if_error) override;

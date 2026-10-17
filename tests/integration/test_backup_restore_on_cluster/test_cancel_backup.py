@@ -777,6 +777,114 @@ def test_long_disconnection_stops_backup():
             assert time_to_fail < 45
 
 
+# A host that refuses the query before it can reach the coordination is reported with its own error,
+# read from the distributed DDL queue, instead of being waited out.
+def test_host_that_cannot_start_stops_backup():
+    wait_for_backups_to_finish()
+
+    create_and_fill_table(node1)
+
+    with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
+        backup_id = random_id()
+
+        # node2 never joins the coordination, so nobody removes its share of it.
+        no_trash_checker.allow_unfinished_backups = [backup_id]
+        no_trash_checker.check_zookeeper = False
+
+        # `max_result_rows` is read-only on node2 and unconstrained on node1, so the query below is
+        # accepted by the initiator and refused by the other host. That refusal happens while the
+        # settings of the query are being applied, before BackupsWorker runs and long before there is
+        # anything in the coordination to write an error to.
+        config_manager.add_user_config([node2], "configs/readonly_max_result_rows.xml")
+
+        # Deliberately not shortening `backup_restore_failure_after_host_disconnected_for_seconds`:
+        # the point is that the initiator no longer needs it to notice.
+        node1.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} "
+            f"SETTINGS id='{backup_id}', max_result_rows=1000 ASYNC"
+        )
+
+        # `wait_status` gives up on its own, so a regression fails here rather than hanging until the
+        # client's timeout.
+        wait_status(node1, "BACKUP_FAILED", backup_id=backup_id, timeout=90)
+
+        error = get_error(node1, backup_id=backup_id)
+        print(f"error={error}")
+        assert "node2" in error
+        assert "failed to start working on this backup" in error
+        # The host's own words, not a guess made on its behalf.
+        assert "max_result_rows" in error
+
+        no_trash_checker.expect_errors = ["SETTING_CONSTRAINT_VIOLATION"]
+        # Aborting the backup mid-flight on the initiator is the expected consequence.
+        no_trash_checker.allow_errors = [
+            "FAILED_TO_SYNC_BACKUP_OR_RESTORE",
+            "QUERY_WAS_CANCELLED",
+        ]
+
+
+# A host that never picks the query up is reported as such, not as a lost connection.
+def test_host_that_never_starts_stops_backup():
+    wait_for_backups_to_finish()
+
+    create_and_fill_table(node1)
+
+    with NoTrashChecker() as no_trash_checker:
+        backup_id = random_id()
+
+        # node2 is stopped for the whole backup, so it never finishes and never cleans its share of
+        # the coordination up, and node1 briefly loses the peer it replicates from.
+        no_trash_checker.allow_unfinished_backups = [backup_id]
+        no_trash_checker.allow_errors = [
+            "FAILED_TO_SYNC_BACKUP_OR_RESTORE",
+            "KEEPER_EXCEPTION",
+            "SOCKET_TIMEOUT",
+            "NETWORK_ERROR",
+            "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
+        ]
+        no_trash_checker.check_zookeeper = False
+
+        print("node2: Stopping...")
+        node2.stop_clickhouse()
+        print("node2: Stopped")
+
+        try:
+            # node2 never reads the query from its distributed DDL queue, so it never creates its
+            # 'alive' node. Five seconds instead of the default hour: the initiator has nothing to
+            # wait for, and the test has no reason to.
+            time_before_backup = node1.query("SELECT now64(6)").strip()
+            node1.query(
+                f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
+                settings={
+                    "backup_restore_failure_after_host_disconnected_for_seconds": 5
+                },
+            )
+
+            end_time = wait_status(node1, "BACKUP_FAILED", backup_id=backup_id)
+
+            error = get_error(node1, backup_id=backup_id)
+            print(f"error={error}")
+            assert "node2" in error
+            assert "hasn't started working on this backup" in error
+            assert "distributed DDL queue" in error
+            # The old message blamed a connection that was never established.
+            assert "Lost connection" not in error
+
+            time_to_fail = seconds_between(time_before_backup, end_time)
+            print(f"Backup failed after {time_to_fail} seconds (server-side)")
+            assert time_to_fail > 5
+            assert time_to_fail < 45
+        finally:
+            print("node2: Starting...")
+            node2.start_clickhouse()
+            print("node2: Started")
+
+        # Started again, node2 reads the query it missed and gives up on it right away.
+        wait_for_backups_to_finish()
+        no_trash_checker.expect_errors = ["FAILED_TO_SYNC_BACKUP_OR_RESTORE"]
+
+
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_backup():
     wait_for_backups_to_finish()
