@@ -1,0 +1,9 @@
+deterministic view not null	1
+non-deterministic view null	1
+2	qc_04759_nondet
+non-deterministic query not stored	1
+2	qc_04759_control
+control query stored	1
+ordinary view null	1
+ordinary materialized view null	1
+recreated view hash changed	1

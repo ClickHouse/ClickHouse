@@ -1,0 +1,4 @@
+2	qc_04826_txn
+query inside a transaction not stored	1
+2	qc_04826_control
+control query stored	1

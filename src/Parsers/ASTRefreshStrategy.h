@@ -37,6 +37,9 @@ public:
 
     bool isAppend() const { return mode != RefreshMode::Replace; }
     bool isIncremental() const { return mode == RefreshMode::AppendIncremental; }
+    /// `REFRESH ... IF CHANGED`: skip a scheduled refresh if none of the tables the view reads from
+    /// changed since the last refresh.
+    bool if_changed = false;
 
     String getID(char) const override { return "Refresh strategy definition"; }
 

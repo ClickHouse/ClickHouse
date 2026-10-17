@@ -1,0 +1,3 @@
+query cache settings keep the watermark: yes
+changed source triggers refresh: yes
+a row-affecting setting invalidates the watermark: yes
