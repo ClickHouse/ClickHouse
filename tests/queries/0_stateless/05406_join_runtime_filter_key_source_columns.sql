@@ -58,7 +58,8 @@ FROM
     )
     WHERE explain LIKE '%Input (%'
 );
-SELECT count() > 0
+-- Both joins build a runtime filter, including the outer one on the merged alias key.
+SELECT count() >= 2
 FROM
 (
     EXPLAIN SELECT sum(o_price)
