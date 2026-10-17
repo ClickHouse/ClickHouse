@@ -250,7 +250,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// Start to make the main work
     /// Size and place the reservation for the moment the merge itself evaluates TTL at (entry.create_time, passed
     /// to mergePartsToTemporaryPart below), not for the local clock, which may lag behind the assigning replica's.
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true, entry.create_time);
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, *metadata_snapshot, true, entry.create_time);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;

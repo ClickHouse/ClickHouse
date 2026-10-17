@@ -40,7 +40,10 @@ namespace CompactionStatistics
 {
 
 UInt64 estimateNeededDiskSpace(
-    const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted, time_t current_time)
+    const MergeTreeDataPartsVector & source_parts,
+    const StorageInMemoryMetadata & metadata_snapshot,
+    const bool & account_for_deleted,
+    time_t current_time)
 {
     size_t bytes_size = 0;
     if (!current_time)
@@ -50,7 +53,7 @@ UInt64 estimateNeededDiskSpace(
     {
         /// Exclude expired parts
         time_t part_max_ttl = part->ttl_infos.part_max_ttl;
-        if (part_max_ttl && part_max_ttl <= current_time)
+        if (metadata_snapshot.hasRowsTTL() && part->ttl_infos.table_ttl.max && part_max_ttl && part_max_ttl <= current_time)
             continue;
 
         if (account_for_deleted)
