@@ -1432,6 +1432,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
     stripInitiatorOnlySettingsFromQueryText(*new_query);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out into the query text too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*new_query, local_context->getSettingsRef());
 
     String new_query_str;
     {
@@ -1455,6 +1457,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 
@@ -1610,6 +1614,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
     stripInitiatorOnlySettingsFromQueryText(*new_query);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out into the query text too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*new_query, local_context->getSettingsRef());
 
     String new_query_str;
     {
@@ -1631,6 +1637,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 
