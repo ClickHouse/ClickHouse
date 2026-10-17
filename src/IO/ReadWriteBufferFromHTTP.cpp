@@ -70,6 +70,15 @@ bool isQueryTimeLimitReached()
     return false;
 }
 
+/// The credentials that `prepareRequest` puts into the headers of a request, see `requestCredentialSecrets`.
+Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
+{
+    Poco::Net::HTTPRequest request;
+    for (const auto & [header, value] : entries)
+        request.set(header, value);
+    return requestCredentialSecrets(request);
+}
+
 }
 
 namespace ErrorCodes
@@ -656,7 +665,8 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -664,7 +674,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 getOffset(),
                 read_range.end ? toString(*read_range.end) : "-",
                 toString(response.getStatus()),
-                response.getReason());
+                scrubRequestCredentials(response.getReason(), current_uri.toString(), headerCredentialSecrets(http_header_entries)));
         }
         if (read_range.end)
         {
@@ -784,7 +794,8 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
 
             copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);

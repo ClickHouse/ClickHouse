@@ -8,18 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-HTTP_PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
+# The server binds a free port itself and reports it in a file, so that no other test can take the port meanwhile.
+PORT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.port"
+rm -f "$PORT_FILE"
 
 # Answers like S3 answers a presigned URL whose signature does not match: the body echoes the access key id, the
 # signature as decoded from the query, and the canonical request, i.e. the query without the signature, with '&'
 # escaped as XML requires. Kept on one line so the client prints it on the line of the error.
-python3 - "$HTTP_PORT" <<'EOF' &
+python3 - "$PORT_FILE" <<'EOF' &
+import os
 import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,12 +44,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/ready":
             body = b"ready"
             self.send_response(200)
-        elif path == "/ranges/key.csv":
-            # Answers a range GET with 200 and the signature as its reason phrase. A plain GET is cut short, so that the
-            # read is resumed with a range.
+        elif path.startswith("/ranges/"):
+            # Answers a range GET with the status in the path, and the signature and the bearer token as its reason
+            # phrase. A plain GET is cut short, so that the read is resumed with a range.
             body = b"1\n" * 32
             if "Range" in self.headers:
-                self.send_response(200, params["X-Amz-Signature"])
+                token = self.headers["Authorization"].removeprefix("Bearer ")
+                self.send_response(int(path.split("/")[2]), f'{params["X-Amz-Signature"]} {token}')
             else:
                 self.send_response(200)
                 sent = body[:8]
@@ -95,11 +93,20 @@ class Server(ThreadingHTTPServer):
             super().handle_error(request, client_address)
 
 
-Server(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+server = Server(("127.0.0.1", 0), Handler)
+with open(sys.argv[1] + ".tmp", "w") as f:
+    f.write(str(server.server_address[1]))
+os.replace(sys.argv[1] + ".tmp", sys.argv[1])
+server.serve_forever()
 EOF
 HTTP_PID=$!
-trap 'kill $HTTP_PID 2>/dev/null' EXIT
+trap 'kill $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
+for _ in {1..100}; do
+    [ -s "$PORT_FILE" ] && break
+    sleep 0.1
+done
+HTTP_PORT=$(cat "$PORT_FILE")
 for _ in {1..100}; do
     [ "$(${CLICKHOUSE_CURL} -s "http://127.0.0.1:${HTTP_PORT}/ready")" = "ready" ] && break
     sleep 0.1
@@ -117,6 +124,7 @@ TOKEN_EXP="tokexp${U}"
 SIG_ENC="sigenc${U}"
 OVL="ovl${U}"
 SIG_RNG="sigrng${U}"
+TOK_RNG="tokrng${U}"
 BASE="http://127.0.0.1:${HTTP_PORT}/bucket/key.csv"
 URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4_SENT}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
 URL_V2="${BASE}?AWSAccessKeyId=${KEY_V2}&Expires=1792200000&Signature=${SIG_V2}%2Bp%2F2%3D"
@@ -127,7 +135,9 @@ URL_ALT="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-S3session-Token=${TOKEN_
 URL_DUP="${BASE}?$(printf 'Signature=D&%.0s' {1..18})Expires=1792200000"
 # The signature is a prefix of the token and comes first: scrubbing it first would leave the token's tail visible.
 URL_OVL="${BASE}?X-Amz-Signature=${OVL}&X-Amz-Security-Token=${OVL}tail&X-Amz-Date=20261016T000000Z"
-URL_RNG="http://127.0.0.1:${HTTP_PORT}/ranges/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
+URL_RNG="http://127.0.0.1:${HTTP_PORT}/ranges/200/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
+URL_RNG_201="http://127.0.0.1:${HTTP_PORT}/ranges/201/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
+HDR_RNG="headers('Authorization' = 'Bearer ${TOK_RNG}')"
 
 # OK only if no credential survives (-), and every expected text is present (+): the scrubbed shapes prove the body
 # was echoed and scrubbed rather than absent, and the non-secret parts prove it was not blanked wholesale.
@@ -154,11 +164,11 @@ ALT=(-"$TOKEN_EXP" -"$TOKEN_V2" -"$SIG_ENC" +"<SignatureProvided>[HIDDEN]</Signa
     +"X-Amz-S3session-Token=[HIDDEN]&amp;x-amz-security-token=[HIDDEN]&amp;X-Amz-%53ignature=[HIDDEN]</CanonicalRequest>")
 OV=(-"$OVL" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
     +"X-Amz-Security-Token=[HIDDEN]&amp;X-Amz-Date=20261016T000000Z")
-RNG=(-"$SIG_RNG" +"HTTP status code: 416 '[HIDDEN]'" +"reason: [HIDDEN]), will retry")
+RNG=(-"$SIG_RNG" -"$TOK_RNG" +"HTTP status code: 416 '[HIDDEN] [HIDDEN]'" +"reason: [HIDDEN] [HIDDEN]), will retry")
 
 # Grep the error line: the client also echoes the submitted query, which carries the URL as typed.
 error_line() {
-    ${CLICKHOUSE_CLIENT} --query "$1" 2>&1 | grep -F 'Received error from remote server'
+    ${CLICKHOUSE_CLIENT} --query "$1" 2>&1 | grep -F "${2:-Received error from remote server}"
 }
 
 body_of() {
@@ -172,11 +182,15 @@ check select_sigv2 "$(error_line "SELECT * FROM url('${URL_V2}', 'CSV', 'x UInt8
 check select_overlap "$(error_line "SELECT * FROM url('${URL_OVL}', 'CSV', 'x UInt8')")" "${OV[@]}"
 check select_name_spellings "$(body_of "$(error_line "SELECT * FROM url('${URL_ALT}', 'CSV', 'x UInt8')")")" "${ALT[@]}"
 # A range that the server does not serve, in a parallel read and in a sequential read resumed after the connection is cut.
-check select_parallel_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8')
+check select_parallel_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8', ${HDR_RNG})
     SETTINGS max_download_threads = 2, max_download_buffer_size = 1, http_max_tries = 1, http_make_head_request = 1,
         parallel_replicas_for_cluster_engines = 0")" "${RNG[@]}" +"readBigAt"
-check select_resumed_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8')
+check select_resumed_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8', ${HDR_RNG})
     SETTINGS max_download_threads = 1, max_read_buffer_size = 4, http_max_tries = 2")" "${RNG[@]}" +"range: [8, -]"
+# A status other than 200 is not retried and fails with a plain exception.
+check select_resumed_range_201 "$(error_line "SELECT * FROM url('${URL_RNG_201}', 'CSV', 'x UInt8', ${HDR_RNG})
+    SETTINGS max_download_threads = 1, max_read_buffer_size = 4, http_max_tries = 2" 'Cannot read with range')" \
+    -"$SIG_RNG" -"$TOK_RNG" -"will retry" +"range: [8, -]" +"reason: [HIDDEN] [HIDDEN])"
 # The server log can be sent along with the error, so the bound is per line.
 LINES=$(error_line "SELECT * FROM url('${URL_DUP}', 'CSV', 'x UInt8')")
 LONGEST=$(awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }' <<< "$LINES")
@@ -200,5 +214,6 @@ ${CLICKHOUSE_CLIENT} --query "
         OR exception LIKE '%' || 'AKIAV4' || '${U}%' OR exception LIKE '%' || 'AKIAV2' || '${U}%'
         OR exception LIKE '%' || 'tokv4' || '${U}%' OR exception LIKE '%' || 'ovl' || '${U}%'
         OR exception LIKE '%' || 'tokexp' || '${U}%' OR exception LIKE '%' || 'sigrng' || '${U}%'
+        OR exception LIKE '%' || 'tokrng' || '${U}%'
         OR position(exception, 'AKIA%564' || '${U}') > 0)
     FORMAT Vertical"

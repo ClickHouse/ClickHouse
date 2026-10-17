@@ -172,6 +172,20 @@ std::string scrubSecrets(std::string_view text, const Strings & secrets)
     return result;
 }
 
+Strings collectRequestCredentials(const std::string & uri, const Strings & request_secrets)
+{
+    Strings secrets = presignedURLCredentials(uri);
+    secrets.insert(secrets.end(), request_secrets.begin(), request_secrets.end());
+    std::ranges::sort(secrets);
+    secrets.erase(std::ranges::unique(secrets).begin(), secrets.end());
+    return secrets;
+}
+
+}
+
+std::string scrubRequestCredentials(std::string_view text, const std::string & uri, const Strings & request_secrets)
+{
+    return scrubSecrets(text, collectRequestCredentials(uri, request_secrets));
 }
 
 Exception HTTPException::makeExceptionMessage(
@@ -188,10 +202,7 @@ Exception HTTPException::makeExceptionMessage(
     /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
     /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
     /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
-    Strings secrets = presignedURLCredentials(uri);
-    secrets.insert(secrets.end(), response_secrets.begin(), response_secrets.end());
-    std::ranges::sort(secrets);
-    secrets.erase(std::ranges::unique(secrets).begin(), secrets.end());
+    const Strings secrets = collectRequestCredentials(uri, response_secrets);
 
     return Exception(code,
         "Received error from remote server {}. "
