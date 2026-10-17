@@ -62,7 +62,7 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
         auto tries = file_status->retries.fetch_add(1, std::memory_order_relaxed);
         LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_loading_retries);
 
-        if (tries + 1 < max_loading_retries)
+        if (tries + 1 <= max_loading_retries)
         {
             releaseProcessingGuard();
             return;
