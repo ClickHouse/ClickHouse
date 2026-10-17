@@ -116,7 +116,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyDocsAutogenerate" --ci --timestamp
 
   build_arm_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Build (arm_binary)"
     outputs:

@@ -153,7 +153,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "NightlySQLancer" --ci --timestamp
 
   build_arm_asan_ubsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "Build (arm_asan_ubsan)"
