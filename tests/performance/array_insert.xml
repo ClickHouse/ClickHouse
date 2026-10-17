@@ -1,0 +1,32 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE array_insert_perf
+        (
+            a Array(UInt64),
+            pos_signed Int64,
+            pos_unsigned UInt64,
+            value UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_insert_perf
+        SELECT
+            arrayMap(i -&gt; number + i, range(32)),
+            toInt64(number % 33 + 1),
+            number % 33 + 1,
+            number
+        FROM numbers(327680)
+    </fill_query>
+
+    <query>SELECT arrayInsert(a, 17, value) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayInsert(a, pos_signed, value) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayInsert(a, pos_unsigned, value) FROM array_insert_perf FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_insert_perf</drop_query>
+</test>
