@@ -560,9 +560,6 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     if (!label.empty())
         stats.table_name = label;
 
-    if (UInt64 seed = graph.context->effective_randomize_seed)
-        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
-
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
         node->step->getName(), dumpStatsForLogs(stats));
@@ -1531,6 +1528,15 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
+
+    if (UInt64 seed = query_graph_builder.context->effective_randomize_seed)
+    {
+        auto & relation_stats = query_graph_builder.relation_stats;
+        for (size_t i = 0; i < relation_stats.size(); ++i)
+            relation_stats[i] = getRandomizedStats(
+                seed, i, relation_stats[i].table_name, *query_graph_builder.inputs[i]->step->getOutputHeader());
+    }
+
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 
