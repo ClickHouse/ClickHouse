@@ -23,7 +23,7 @@ expect_after {
 
 # The progress bar is only drawn when the terminal has room for it.
 set stty_init "rows 25 cols 120"
-spawn clickhouse-local --progress --query "SELECT sum(number % 100000000 = 12345678 ? sleep(0.1) : 1) FROM numbers(1000000000)"
+spawn clickhouse-local --tmp --progress --query "SELECT sum(number % 100000000 = 12345678 ? sleep(0.1) : 1) FROM numbers(1000000000)"
 
 expect {
     "▏" { exit 0 }
