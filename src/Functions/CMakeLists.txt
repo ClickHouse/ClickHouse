@@ -13,6 +13,7 @@ set(DBMS_FUNCTIONS
     FunctionVariantAdaptor.cpp # IFunctionOverloadResolver::build, IExecutableFunction::execute... (For Variant type support)
     TypeMismatchStrictness.cpp # shouldThrowOnVariantTypeMismatch, shouldThrowOnDynamicTypeMismatch (Used by the Variant/Dynamic adaptors above)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
+    FunctionNamedArguments.cpp # FunctionNamedArguments::validate, bind (Used by FunctionFactory.cpp, resolveFunction.cpp)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)

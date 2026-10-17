@@ -78,6 +78,30 @@ const SecretArgumentsSpec * FunctionFactory::tryGetSecretArgumentsSpec(const std
     return it == secret_arguments.end() ? nullptr : &it->second;
 }
 
+void FunctionFactory::registerNamedArguments(
+    const std::string & name, FunctionNamedArguments named_arguments_, const FunctionDocumentation::Arguments & documented_arguments)
+{
+    named_arguments_.validate(name);
+    const auto & arguments = named_arguments_.arguments;
+    if (documented_arguments.size() != arguments.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Function {} documents {} arguments, but takes {} named arguments", name, documented_arguments.size(), arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (documented_arguments[i].name != arguments[i].name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Argument {} of function {} is documented as '{}', but named '{}'", i + 1, name, documented_arguments[i].name, arguments[i].name);
+    }
+    named_arguments.emplace(name, std::move(named_arguments_));
+}
+
+const FunctionNamedArguments * FunctionFactory::tryGetNamedArguments(const std::string & name) const
+{
+    auto it = named_arguments.find(getCanonicalNameIfAny(getAliasToOrName(name)));
+    return it == named_arguments.end() ? nullptr : &it->second;
+}
+
 bool FunctionFactory::hasArgumentSecretsIgnoringCase(const std::string & name) const
 {
     return std::ranges::any_of(secret_arguments, [&](const auto & entry)

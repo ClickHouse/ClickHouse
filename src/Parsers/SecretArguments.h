@@ -33,6 +33,7 @@ public:
         /// A `SETTINGS` clause among the arguments (`remote(..., SETTINGS ...)`): not a positional
         /// argument, and it hides its own secret values when formatted.
         virtual bool isSettings() const { return false; }
+        virtual bool isNamedArgument() const { return false; }
     };
     class Arguments
     {

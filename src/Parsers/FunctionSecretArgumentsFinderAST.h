@@ -4,6 +4,7 @@
 #include <Parsers/SecretArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNamedArgument.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -26,6 +27,7 @@ public:
         }
         bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
         bool isSettings() const override { return argument->as<ASTSetQuery>(); }
+        bool isNamedArgument() const override { return argument->as<ASTNamedArgument>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ASTLiteral>())
