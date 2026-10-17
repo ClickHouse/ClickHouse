@@ -18,13 +18,17 @@ namespace ErrorCodes
 void validateParameterizedViewSchema(
     const String & table_name,
     const NamesAndTypesList & actual_names_and_types,
-    const ColumnsDescription & declared_columns)
+    const ColumnsDescription & declared_columns,
+    const std::function<void()> & check_access_before_mismatch)
 {
     if (declared_columns.empty())
         return;
 
-    auto throw_schema_mismatch = [&table_name](const String &details)
+    auto throw_schema_mismatch = [&table_name, &check_access_before_mismatch](const String & details)
     {
+        if (check_access_before_mismatch)
+            check_access_before_mismatch();
+
         throw Exception(
             ErrorCodes::TYPE_MISMATCH,
             "After parameters substitution of parameterized view {} the actual schema does not match the defined one: {}",
