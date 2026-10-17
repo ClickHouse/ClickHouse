@@ -46,34 +46,19 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
 
     const auto & index_granularity = info.data_part_info->getIndexGranularity();
     MarkRanges result;
-    size_t dropped_marks = 0;
 
     for (const auto & range : ranges)
     {
         for (size_t mark = range.begin; mark < range.end; ++mark)
         {
             if (index_read_result->canSkipMark(mark, index_granularity))
-            {
-                ++dropped_marks;
                 continue;
-            }
 
             if (!result.empty() && result.back().end == mark)
                 result.back().end = mark + 1;
             else
                 result.emplace_back(mark, mark + 1);
         }
-    }
-
-    /// Marks dropped here never pass through MergeTreeIndexBuildContext::getPreparedIndexReadResult,
-    /// so account for them now; otherwise the cached per-part index result would never be released.
-    if (dropped_marks != 0)
-    {
-        auto & remaining_marks = index_build_context->part_remaining_marks.at(info.part_index_in_query).value;
-        bool part_fully_processed = remaining_marks.fetch_sub(dropped_marks, std::memory_order_acq_rel) == dropped_marks;
-
-        if (part_fully_processed)
-            index_build_context->index_reader_pool->clear(info.part_index_in_query);
     }
 
     return result;
