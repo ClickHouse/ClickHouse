@@ -5987,6 +5987,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     ? &old_metadata.secondary_indices.getByName(old_name) : nullptr;
                 check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
                 check(old_index ? old_index->expression_list_ast : nullptr, index.expression_list_ast, "INDEX " + index.name);
+                check(old_index ? old_index->arguments : nullptr, index.arguments, "INDEX " + index.name);
             }
 
             for (const auto & constraint : new_metadata.constraints.getConstraints())

@@ -1071,10 +1071,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
 
-        /// The expression of an index has the ALIAS columns it uses expanded.
+        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
         if (check_aliases)
+        {
             for (const auto & index : metadata.secondary_indices)
+            {
                 KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
+                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
+            }
+        }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
