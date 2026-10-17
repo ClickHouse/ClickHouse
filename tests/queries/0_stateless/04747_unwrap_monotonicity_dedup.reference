@@ -1,0 +1,14 @@
+negate Nullable ORDER BY	-9900,-9800,-9700,-9600,-9500	-9900,-9800,-9700,-9600,-9500
+negate LC(Nullable) ORDER BY	-9900,-9800,-9700,-9600,-9500	-9900,-9800,-9700,-9600,-9500
+negate LC still prunes	1
+negate LC answers	1	1
+toDayOfWeek LC(Date) prunes	1
+toDayOfWeek LC(Date) answers	72	72
+toDayOfWeek LC(Nullable(Date)) prunes	1
+toDayOfWeek LC(Nullable(Date)) answers	72	72
+toMonth LC(Date) prunes	1
+toMonth LC(Date) answers	29	29
+toMonth LC(Nullable(Date)) prunes	1
+toMonth LC(Nullable(Date)) answers	29	29
+toStartOfMonth LC(Date) prunes	1
+toStartOfMonth LC(Date) answers	29	29
