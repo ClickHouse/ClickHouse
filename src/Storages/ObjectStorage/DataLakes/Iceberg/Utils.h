@@ -149,6 +149,11 @@ void forEachAvroEntry(
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
+
+using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
+
+PartitionColumnValues getIdentityPartitionColumnValues(
+    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
 }
 
 #endif

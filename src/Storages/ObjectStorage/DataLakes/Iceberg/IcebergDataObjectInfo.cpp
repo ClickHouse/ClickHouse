@@ -53,7 +53,10 @@ String computePartitionId(const Row & partition_key_value)
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
-    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & resolved_storage_path_, Int32 schema_id_relevant_to_iterator_)
+    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_,
+    const String & resolved_storage_path_,
+    Int32 schema_id_relevant_to_iterator_,
+    std::vector<std::pair<String, Field>> identity_partition_columns_)
     : ObjectInfo(RelativePathWithMetadata(resolved_storage_path_))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
@@ -66,7 +69,8 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
-          data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
+          data_manifest_file_entry_->parsed_entry->file_size_in_bytes,
+          std::move(identity_partition_columns_)}
 {
 }
 
@@ -188,6 +192,15 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             writeVarUInt(0, out);
         }
     }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        writeVarUInt(identity_partition_columns.size(), out);
+        for (const auto & [name, value] : identity_partition_columns)
+        {
+            writeStringBinary(name, out);
+            writeFieldBinary(value, out);
+        }
+    }
 }
 
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
@@ -273,6 +286,19 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
         else
         {
             file_size_in_bytes = std::nullopt;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        size_t identity_partition_columns_size = 0;
+        readVarUInt(identity_partition_columns_size, in);
+        identity_partition_columns.clear();
+        identity_partition_columns.reserve(identity_partition_columns_size);
+        for (size_t i = 0; i < identity_partition_columns_size; ++i)
+        {
+            String name;
+            readStringBinary(name, in);
+            identity_partition_columns.emplace_back(std::move(name), readFieldBinary(in));
         }
     }
 }
