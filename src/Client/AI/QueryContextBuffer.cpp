@@ -28,22 +28,55 @@ String truncateForContext(const String & text, size_t max_bytes)
     return truncated + "…";
 }
 
+/// Keeps the first bytes of a line and stops the serialization once it has them, so that the
+/// sample of a huge value (a long `String`, an `Array` of millions of elements) costs no more than
+/// the sample itself: the line is never serialized beyond what is kept, nor copied as a whole.
+class LineSampleWriteBuffer final : public WriteBufferFromPointer
+{
+public:
+    /// Thrown out of the serialization when the buffer is full.
+    struct Full
+    {
+    };
+
+    LineSampleWriteBuffer() : WriteBufferFromPointer(data, sizeof(data)) {}
+
+    std::string_view sample() const { return full ? std::string_view(data, sizeof(data)) : std::string_view(data, offset()); }
+
+private:
+    void nextImpl() override
+    {
+        full = true;
+        throw Full{};
+    }
+
+    /// One byte over the limit, for the truncation to tell that the line goes on.
+    char data[QueryContextBuffer::max_line_bytes + 1]{};
+    bool full = false;
+};
+
 /// Format one row of a block as an escaped tab-separated line, capped in length.
 String formatRow(const Block & block, size_t row)
 {
     static const FormatSettings format_settings;
 
-    WriteBufferFromOwnString out;
-    for (size_t i = 0; i < block.columns(); ++i)
+    LineSampleWriteBuffer out;
+    try
     {
-        if (i)
-            writeChar('\t', out);
-        const auto & column_with_type = block.getByPosition(i);
-        column_with_type.type->getDefaultSerialization()->serializeTextEscaped(*column_with_type.column, row, out, format_settings);
-        if (out.count() > QueryContextBuffer::max_line_bytes)
-            break;
+        for (size_t i = 0; i < block.columns(); ++i)
+        {
+            if (i)
+                writeChar('\t', out);
+            const auto & column_with_type = block.getByPosition(i);
+            column_with_type.type->getDefaultSerialization()->serializeTextEscaped(*column_with_type.column, row, out, format_settings);
+        }
+        out.finalize();
     }
-    return truncateForContext(out.str(), QueryContextBuffer::max_line_bytes);
+    catch (const LineSampleWriteBuffer::Full &) // NOLINT(bugprone-empty-catch)
+    {
+        /// The line is longer than the sample: what the buffer holds is its beginning.
+    }
+    return truncateForContext(String(out.sample()), QueryContextBuffer::max_line_bytes);
 }
 
 }

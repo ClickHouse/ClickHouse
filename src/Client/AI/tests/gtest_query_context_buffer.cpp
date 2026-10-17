@@ -4,7 +4,11 @@
 #if USE_CLIENT_AI
 
 #include <Client/AI/QueryContextBuffer.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
@@ -229,6 +233,54 @@ TEST(QueryContextBuffer, TruncationKeepsValidUTF8)
         const String text = buffer.format(0, false);
         EXPECT_NE(text.find("…"), String::npos);
         EXPECT_TRUE(isValidUTF8(text)) << "extra = " << extra;
+    }
+}
+
+TEST(QueryContextBuffer, SampleOfAHugeValueIsBounded)
+{
+    /// One value of a million elements: the sample keeps the beginning of the line only, and the
+    /// rest of the value is not serialized at all.
+    auto nested = ColumnUInt64::create();
+    for (size_t i = 0; i < 1'000'000; ++i)
+        nested->insertValue(i);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(1'000'000);
+    auto array = ColumnArray::create(std::move(nested), std::move(offsets));
+    auto string = ColumnString::create();
+    string->insert(Field(String("after")));
+
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT range(1000000), 'after'", false);
+    buffer.addBlock(Block{
+        ColumnWithTypeAndName{std::move(array), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "a"},
+        ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+    buffer.finishQuery(0.1, false);
+
+    const String text = buffer.format(0, false);
+    const size_t line_start = text.find("\n[0,1,2,3,");
+    ASSERT_NE(line_start, String::npos);
+    const size_t line_end = text.find('\n', line_start + 1);
+    const String line = text.substr(line_start + 1, line_end == String::npos ? String::npos : line_end - line_start - 1);
+    EXPECT_EQ(line.size(), QueryContextBuffer::max_line_bytes + String("…").size());
+    EXPECT_TRUE(line.ends_with("…"));
+    EXPECT_EQ(text.find("after\n"), String::npos);
+}
+
+TEST(QueryContextBuffer, SampleOfALineAtTheLimitIsNotCut)
+{
+    for (size_t size : {QueryContextBuffer::max_line_bytes, QueryContextBuffer::max_line_bytes + 1})
+    {
+        auto string = ColumnString::create();
+        string->insert(Field(String(size, 'x')));
+
+        QueryContextBuffer buffer;
+        buffer.startQuery("SELECT x", false);
+        buffer.addBlock(Block{ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+        buffer.finishQuery(0.1, false);
+
+        const String text = buffer.format(0, false);
+        const String expected = String(QueryContextBuffer::max_line_bytes, 'x') + (size > QueryContextBuffer::max_line_bytes ? "…\n" : "\n");
+        EXPECT_NE(text.find("\n" + expected), String::npos) << "size = " << size;
     }
 }
 
