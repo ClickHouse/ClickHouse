@@ -38,10 +38,11 @@ public:
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTColumnsApplyTransformer>(*this);
+        res->children.clear();
         if (parameters)
-            res->parameters = parameters->clone();
+            res->set(res->parameters, parameters->clone());
         if (lambda)
-            res->lambda = lambda->clone();
+            res->set(res->lambda, lambda->clone());
         return res;
     }
     void appendColumnName(WriteBuffer & ostr) const override;
@@ -61,6 +62,13 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+    /// `parameters` and `lambda` are also held in `children`, so a visitor that replaces a child has to repair them.
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &parameters);
+        f(nullptr, &lambda);
+    }
 };
 
 class ASTColumnsExceptTransformer : public IASTColumnsTransformer

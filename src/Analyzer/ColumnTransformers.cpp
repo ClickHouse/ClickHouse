@@ -104,14 +104,14 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
     {
         auto & function_expression = expression_node->as<FunctionNode &>();
         ast_apply_transformer->func_name = function_expression.getFunctionName();
-        ast_apply_transformer->parameters = function_expression.getParametersNode()->toAST(options);
+        ast_apply_transformer->set(ast_apply_transformer->parameters, function_expression.getParametersNode()->toAST(options));
     }
     else
     {
         auto & lambda_expression = expression_node->as<LambdaNode &>();
         if (!lambda_expression.getArguments().getNames().empty())
             ast_apply_transformer->lambda_arg = lambda_expression.getArguments().getNames()[0];
-        ast_apply_transformer->lambda = lambda_expression.toAST(options);
+        ast_apply_transformer->set(ast_apply_transformer->lambda, lambda_expression.toAST(options));
     }
 
     ast_apply_transformer->column_name_prefix = column_name_prefix;

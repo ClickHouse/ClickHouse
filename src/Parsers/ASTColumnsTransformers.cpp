@@ -84,14 +84,6 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
-    /// `parameters` and `lambda` are not children, so `updateTreeHash` is needed to reach their own
-    /// subtrees; `updateTreeHashImpl` alone stops at the node itself, and the arguments of
-    /// `APPLY quantile(0.5)` live below it.
-    if (parameters)
-        parameters->updateTreeHash(hash_state, ignore_aliases);
-
-    if (lambda)
-        lambda->updateTreeHash(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
@@ -306,8 +298,8 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     /// `lambda->as<const ASTFunction &>()`). Restoring them through the generic child path
     /// would let a wrong node type reach those downcasts as an internal cast error instead of
     /// a user-facing `BAD_ARGUMENTS`.
-    parameters = r.readScreenedChildOfType<ASTExpressionList>("parameters");
-    lambda = r.readFunctionChildWithExpressionArguments("lambda");
+    set(parameters, r.readScreenedChildOfType<ASTExpressionList>("parameters"));
+    set(lambda, r.readFunctionChildWithExpressionArguments("lambda"));
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
 
