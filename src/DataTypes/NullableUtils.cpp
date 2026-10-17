@@ -196,13 +196,13 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
         /// that case, because the promoted result column is not the on-disk representation to deserialize
         /// into.
         if (canContainNull(*prev_type))
-            return SerializationNullableWithParentNullMap::create(prev_serialization);
+            return SerializationNullableWithParentNullMap::create(prev_serialization, nullptr, compact_null_map);
         if (prev_type->lowCardinality())
-            return SerializationNullableWithParentNullMap::create(prev_serialization, prev_type);
+            return SerializationNullableWithParentNullMap::create(prev_serialization, prev_type, compact_null_map);
         return prev_serialization;
     }
 
-    return SerializationNullable::create(prev_serialization);
+    return SerializationNullable::create(prev_serialization, /*use_default_null_map_=*/ false, compact_null_map);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
