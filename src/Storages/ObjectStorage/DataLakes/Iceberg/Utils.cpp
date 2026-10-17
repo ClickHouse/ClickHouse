@@ -420,6 +420,20 @@ VersionHintState readVersionHint(const DB::ObjectStoragePtr & object_storage, co
 
 }
 
+/// Whether `path` is known to be absent; a failed check proves nothing.
+static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+{
+    try
+    {
+        return !object_storage->exists(StoredObject(path));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+}
+
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
@@ -429,35 +443,44 @@ void takeBackVersionHintWithoutETag(
     bool no_concurrent_writer)
 {
     /// Remove the hint first and the files it references only after that. If the hint cannot be
-    /// removed - or the outcome of the request is unknown - it may still point at the metadata
-    /// file, so the files must stay: removing them would leave a published hint that resolves to
-    /// nothing. Returns whether everything was taken back.
-    auto take_back = [&]
+    /// removed it may still point at the metadata file, so the files must stay: removing them would
+    /// leave a published hint that resolves to nothing. A removal that throws may still have taken
+    /// effect before its response was lost, so a failed removal is followed by an existence check,
+    /// and only a file known to be absent counts as taken back.
+    enum class TakeBack
+    {
+        /// The hint and all the files are known to be gone.
+        Done,
+        /// The hint may still be there; the files were not touched.
+        HintKept,
+        /// The hint is gone, but some of the files may still be there.
+        Incomplete,
+    };
+
+    auto remove = [&](const std::string & path)
     {
         try
         {
-            object_storage->removeObjectIfExists(StoredObject(storage_version_hint_path));
+            object_storage->removeObjectIfExists(StoredObject(path));
+            return true;
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            return false;
         }
+        return isKnownAbsent(object_storage, path);
+    };
+
+    auto take_back = [&]
+    {
+        if (!remove(storage_version_hint_path))
+            return TakeBack::HintKept;
 
         bool all_removed = true;
         for (const auto & path : files_to_take_back)
-        {
-            try
-            {
-                object_storage->removeObjectIfExists(StoredObject(path));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (!remove(path))
                 all_removed = false;
-            }
-        }
-        return all_removed;
+        return all_removed ? TakeBack::Done : TakeBack::Incomplete;
     };
 
     /// A commit has already published its snapshot by the time it gets here: the metadata file and
@@ -516,9 +539,38 @@ void takeBackVersionHintWithoutETag(
     if (!hint.etag.empty())
         return;
 
-    if (!take_back() && !no_concurrent_writer)
+    const auto outcome = take_back();
+    if (outcome == TakeBack::HintKept && !no_concurrent_writer)
     {
-        keep_published_commit("removing the published files failed");
+        keep_published_commit("removing the hint failed");
+        return;
+    }
+
+    if (outcome == TakeBack::Incomplete && !no_concurrent_writer)
+    {
+        /// The hint is gone, but the metadata file it pointed at may still be there. Reporting the
+        /// commit as successful in this state would leave readers with `iceberg_use_version_hint = 1`
+        /// unable to open the table, and reporting it as failed would make the caller clean up the
+        /// files that metadata references while listing-based readers can still see it. Put the
+        /// hint back, so the publication is retained as a whole, as when the hint cannot be removed.
+        try
+        {
+            Iceberg::writeMessageToFile(
+                std::to_string(version), storage_version_hint_path, object_storage, context, /* write-if-none-match */ "*", "");
+        }
+        catch (...)
+        {
+            /// Nothing else can be done without risking the files the retained metadata may
+            /// reference: keep them and report the commit as published.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG_ERROR(
+                getLogger("IcebergVersionHint"),
+                "Could not restore {} after failing to take back the files of its commit. Readers with "
+                "`iceberg_use_version_hint = 1` cannot open the table until the hint is restored.",
+                storage_version_hint_path);
+            return;
+        }
+        keep_published_commit("removing the published files failed, the hint was restored");
         return;
     }
 
@@ -544,20 +596,6 @@ static bool isRefusedWrite(const Exception & e)
             || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
 #endif
     return false;
-}
-
-/// Whether `path` is known to be absent; a failed check proves nothing.
-static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
-{
-    try
-    {
-        return !object_storage->exists(StoredObject(path));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
 }
 
 bool writeMetadataFile(

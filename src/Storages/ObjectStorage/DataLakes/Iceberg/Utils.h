@@ -88,9 +88,11 @@ bool writeMetadataFileAndVersionHint(
 /// that has succeeded. Nothing is removed when the hint cannot be read back or no longer holds
 /// `version`, the one this operation wrote - unless `no_concurrent_writer` is set, in which case a
 /// failed read also takes the files back before the error propagates. Without `no_concurrent_writer`
-/// (a commit that has already published its snapshot), a failed read or a failed removal returns
-/// normally: the snapshot stays published, and an error would make the caller clean up the files it
-/// references.
+/// (a commit that has already published its snapshot), a failed read or a failed removal of the hint
+/// returns normally: the snapshot stays published, and an error would make the caller clean up the
+/// files it references. A removal that throws counts as done only if the object is then known to be
+/// absent. If the hint is gone but a file may remain, the hint is restored and the function returns
+/// normally, so the publication is retained as a whole.
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,

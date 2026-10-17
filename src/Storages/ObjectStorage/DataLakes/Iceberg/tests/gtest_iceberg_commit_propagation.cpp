@@ -223,12 +223,23 @@ public:
     {
     }
 
+    /// How a removal fails, as a transient network error would: either before the request takes
+    /// effect, or after that, when only its response is lost.
+    enum class RemovalFailure
+    {
+        None,
+        BeforeApplying,
+        AfterApplying,
+    };
+
     std::vector<Write> writes;
     std::vector<std::string> removed;
     /// Every read of the hint fails, as a transient network error would.
     bool read_fails = false;
-    /// Every removal of the hint fails, as a transient network error would.
-    bool remove_of_hint_fails = false;
+    /// How every removal of the hint fails.
+    RemovalFailure hint_removal_failure = RemovalFailure::None;
+    /// How every removal of the metadata file fails.
+    RemovalFailure metadata_removal_failure = RemovalFailure::None;
     /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
     /// this content before the commit reads it back.
     std::optional<std::string> advanced_by_another_writer_to;
@@ -261,17 +272,26 @@ public:
             throw Exception(ErrorCodes::NETWORK_ERROR, "Another writer created {} first", object.remote_path);
         }
 
-        if (object.remote_path.ends_with(metadata_file_name) && race == Race::AppearsAfterTheMetadataFileIsWritten)
-            hint_present = true;
+        if (object.remote_path.ends_with(metadata_file_name))
+        {
+            metadata_present = true;
+            if (race == Race::AppearsAfterTheMetadataFileIsWritten)
+                hint_present = true;
+        }
 
         return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
     }
 
-    /// The metadata file of the commit is new; the version hint is already there.
+    /// The metadata file of the commit is there once it is written; the version hint as `race` says.
     bool exists(const StoredObject & object) const override
     {
-        return object.remote_path.ends_with(version_hint_name) && hint_present;
+        if (object.remote_path.ends_with(version_hint_name))
+            return hint_present;
+        return object.remote_path.ends_with(metadata_file_name) && metadata_present;
     }
+
+    bool hintPresent() const { return hint_present; }
+    bool metadataPresent() const { return metadata_present; }
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -322,8 +342,14 @@ public:
     }
     void removeObjectIfExists(const StoredObject & object) override
     {
-        if (remove_of_hint_fails && object.remote_path.ends_with(version_hint_name))
+        const bool is_hint = object.remote_path.ends_with(version_hint_name);
+        const auto failure = is_hint ? hint_removal_failure : metadata_removal_failure;
+        if (failure == RemovalFailure::BeforeApplying)
             throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot remove {}", object.remote_path);
+
+        (is_hint ? hint_present : metadata_present) = false;
+        if (failure == RemovalFailure::AfterApplying)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Lost the response to the removal of {}", object.remote_path);
         removed.push_back(object.remote_path);
     }
     void removeObjectsIfExist(const StoredObjects &, StoredObjects *) override { unexpected("removeObjectsIfExist"); }
@@ -351,6 +377,7 @@ private:
     std::string head_etag;
     Race race;
     bool hint_present;
+    bool metadata_present = false;
     std::string hint_content = "1";
 };
 
@@ -585,7 +612,7 @@ TEST(IcebergCommitPropagation, CreatedVersionHintThatCannotBeRemovedKeepsItsMeta
     /// so the metadata file must stay, and the commit, whose snapshot remains published, succeeds -
     /// otherwise the caller would clean up the files that snapshot references.
     CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
-    commit.object_storage->remove_of_hint_fails = true;
+    commit.object_storage->hint_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
     EXPECT_TRUE(commit.run());
 
     const auto & writes = commit.writes();
@@ -594,12 +621,83 @@ TEST(IcebergCommitPropagation, CreatedVersionHintThatCannotBeRemovedKeepsItsMeta
     EXPECT_TRUE(commit.removed().empty());
 }
 
+TEST(IcebergCommitPropagation, CreatedVersionHintWhoseRemovalLostItsResponseTakesBothFilesBack)
+{
+    /// The removal of the created hint takes effect, but its response is lost. The hint is known to
+    /// be gone once it is checked, so the metadata file is taken back as well, and the commit fails
+    /// with nothing published.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->hint_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    EXPECT_EQ(commit.writes().size(), 2u);
+    EXPECT_FALSE(commit.object_storage->hintPresent());
+    EXPECT_FALSE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintIsRestoredWhenItsMetadataFileCannotBeRemoved)
+{
+    /// The created hint has no tag and is removed, but removing the metadata file fails before it
+    /// takes effect. The snapshot is still visible to listing-based readers, and the caller must not
+    /// clean up the files it references, so the commit has to succeed - and then readers with
+    /// `iceberg_use_version_hint = 1` need the hint, so it is put back.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
+    EXPECT_TRUE(commit.run());
+
+    /// The metadata file, the hint, and the hint again.
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 3u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[2].path, writes[1].path);
+    EXPECT_EQ(writes[2].write_if_none_match, "*");
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 1u);
+    EXPECT_EQ(removed[0], writes[1].path);
+
+    EXPECT_TRUE(commit.object_storage->hintPresent());
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWhoseMetadataFileRemovalLostItsResponseFailsTheCommit)
+{
+    /// The same, but the removal of the metadata file takes effect and only its response is lost.
+    /// Both files are known to be gone once checked, so nothing is published, and the commit fails
+    /// instead of acknowledging a snapshot that no longer exists.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    EXPECT_EQ(commit.writes().size(), 2u);
+    EXPECT_FALSE(commit.object_storage->hintPresent());
+    EXPECT_FALSE(commit.object_storage->metadataPresent());
+}
+
 TEST(IcebergCommitPropagation, CreatedVersionHintOfCreateThatCannotBeRemovedKeepsItsMetadataFile)
 {
     /// The same for the hint of `CREATE TABLE`: nothing references the first metadata file yet, so
     /// the refusal propagates, but the metadata file stays while the hint may still point at it.
     auto object_storage = std::make_shared<ExistingVersionHintObjectStorage>("");
-    object_storage->remove_of_hint_fails = true;
+    object_storage->hint_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
 
     try
     {
