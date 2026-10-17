@@ -116,3 +116,12 @@ SELECT formatDateTime(toDateTime('2021-01-04 00:30:00', 'UTC'), '%x-%v', 'Americ
 SELECT formatDateTime(toDate('2021-01-01'), '%x-%v') = formatDateTime(toDate('2021-01-01'), '%G-%V');
 SELECT countIf(formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%x-%v') != formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%G-%V')) FROM numbers(30);
 SELECT countIf(toUInt32(formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%x%v')) != toYearWeek(addDays(toDate('2020-12-20'), toInt32(number)), 3)) FROM numbers(30);
+
+-- At a year boundary, the ISO week-year can differ from the calendar year.
+SELECT formatDateTime(toDate('2021-01-01'), '%Y-%x-%v');
+SELECT formatDateTime(toDate('2021-01-04'), '%x'), formatDateTime(toDate('2021-01-04'), '%v');
+
+-- fromUnixTimestamp uses the same MySQL format parser for integer timestamps.
+SELECT fromUnixTimestamp(toUInt64(1609720200), '%x-%v', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(1609720200), '%x-%v', 'America/Los_Angeles');
+SELECT formatDateTime(toDate('2021-01-01'), 'ISO:%x-%v calendar:%Y');
