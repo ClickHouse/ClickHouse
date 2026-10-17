@@ -82,7 +82,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04651_topk_pr_write', '04651_plain_prime', '04651_plain_reuse', '04651_topk_pr_after_prime')
 ORDER BY event_time_microseconds;
 

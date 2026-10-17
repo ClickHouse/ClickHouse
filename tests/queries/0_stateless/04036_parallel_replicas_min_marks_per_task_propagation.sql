@@ -78,7 +78,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT throwIf(ProfileEvents['ParallelReplicasNumRequests'] < 100, 'Too few requests — min_marks_per_task may not be propagated to replicas')
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment = 'pr_task_prop_04036'
     AND type = 'QueryFinish'
 SETTINGS enable_parallel_replicas = 0

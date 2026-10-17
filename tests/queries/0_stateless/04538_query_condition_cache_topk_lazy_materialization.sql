@@ -65,7 +65,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04538_cold', '04538_reuse', '04538_difflimit')
 ORDER BY event_time_microseconds;
 

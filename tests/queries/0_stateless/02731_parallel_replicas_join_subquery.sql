@@ -65,7 +65,7 @@ WHERE
           SELECT query_id
           FROM system.query_log
           WHERE
-                current_database = currentDatabase()
+                current_database = currentDatabase() AND is_initial_query
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel inner query alone with analyzer%'
@@ -167,7 +167,7 @@ WHERE
           SELECT query_id
           FROM system.query_log
           WHERE
-                current_database = currentDatabase()
+                current_database = currentDatabase() AND is_initial_query
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Parallel full query with analyzer%'
