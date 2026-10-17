@@ -317,6 +317,8 @@ public:
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
 
+    virtual bool supportsDropTable() const { return false; }
+
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
     /// So the REST catalog is transactional.

@@ -1788,7 +1788,7 @@ void IcebergMetadata::drop(
         return false;
     };
 
-    auto remove_object = [&](const String & file, const char * kind, bool swallow, const char * inject_failpoint)
+    auto remove_object = [&](const String & file, const char * kind, bool after_catalog_drop, const char * inject_failpoint)
     {
         try
         {
@@ -1802,7 +1802,19 @@ void IcebergMetadata::drop(
         }
         catch (...)
         {
-            if (!swallow)
+            /// A delete can take effect and still throw.
+            if (policy == DropCleanupPolicy::Reattaching && !any_object_deleted)
+            {
+                try
+                {
+                    any_object_deleted = !object_storage->exists(StoredObject(file));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+            if (!should_swallow(after_catalog_drop))
                 throw;
             LOG_WARNING(
                 log,
@@ -1816,16 +1828,14 @@ void IcebergMetadata::drop(
     /// `listFiles` lists `path / prefix`, so an empty prefix lists the whole table.
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
 
-    /// Metadata files go last, after the catalog drop: a retried DROP reads the table from them.
+    /// Everything but the data files goes after the catalog drop: a retried DROP resolves the table from it.
     std::vector<String> metadata_files;
     for (const auto & file : files)
     {
-        if (file.ends_with(".metadata.json") || file.ends_with("metadata/version-hint.text"))
-        {
+        if (file.ends_with(".parquet") || file.ends_with(".orc"))
+            remove_object(file, "data", /* after_catalog_drop */ false, FailPoints::iceberg_drop_first_data_delete_fail);
+        else
             metadata_files.push_back(file);
-            continue;
-        }
-        remove_object(file, "data", should_swallow(/* after_catalog_drop */ false), FailPoints::iceberg_drop_first_data_delete_fail);
     }
 
     if (should_swallow(/* after_catalog_drop */ false))
@@ -1846,7 +1856,7 @@ void IcebergMetadata::drop(
         dropFromCatalog(context, catalog, storage_id);
 
     for (const auto & file : metadata_files)
-        remove_object(file, "metadata", should_swallow(/* after_catalog_drop */ true), FailPoints::iceberg_drop_metadata_anchor_fail);
+        remove_object(file, "metadata", /* after_catalog_drop */ true, FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const

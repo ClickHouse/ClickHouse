@@ -33,6 +33,12 @@ rm -rf "${TABLE_PATH}"
 # Failure on the first delete, nothing is deleted yet: the DROP fails and the table stays readable.
 drop_with_failpoint iceberg_drop_first_data_delete_fail
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB}.t"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB}.t"
+rm -rf "${TABLE_PATH}"
+
+# The first delete takes effect and then throws: ignored, the table is dropped.
+drop_with_failpoint local_object_storage_network_error_during_remove
+ls -A "${TABLE_PATH}" 2>/dev/null | wc -l
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB}"
 rm -rf "${TABLE_PATH}"
@@ -48,10 +54,10 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_ATOMIC} ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_drop_first_data_delete_fail"
 for _ in {1..120}; do
-    [ -z "$(find "${TABLE_PATH}" -type f ! -name '*.metadata.json' ! -name 'version-hint.text' 2>/dev/null)" ] && break
+    [ -z "$(find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}metadata/*" 2>/dev/null)" ] && break
     sleep 0.5
 done
-find "${TABLE_PATH}" -type f ! -name '*.metadata.json' ! -name 'version-hint.text' 2>/dev/null | wc -l
+find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}metadata/*" 2>/dev/null | wc -l
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
 for _ in {1..120}; do [ -z "$(find "${TABLE_PATH}" -type f 2>/dev/null)" ] && break; sleep 0.5; done
 find "${TABLE_PATH}" -type f 2>/dev/null | wc -l
