@@ -45,6 +45,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <IO/ReadHelpers.h>
@@ -75,6 +76,10 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char rest_catalog_create_namespace_http_error[];
+    extern const char rest_catalog_lose_request_response[];
+    extern const char rest_catalog_skip_namespace_existence_check[];
+    extern const char rest_catalog_update_schema_http_error[];
 }
 
 namespace ProfileEvents
@@ -1813,6 +1818,14 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
+DB::ReadSettings RestCatalog::getReadSettingsForRequest(const DB::ContextPtr & request_context, const String & method)
+{
+    auto read_settings = request_context->getReadSettings();
+    if (method != Poco::Net::HTTPRequest::HTTP_GET && method != Poco::Net::HTTPRequest::HTTP_HEAD)
+        read_settings.http_settings.max_tries = 1;
+    return read_settings;
+}
+
 String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -1835,6 +1848,13 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
         out_stream_callback = [body_str](DB::WriteBuffer & out)
         {
             DB::writeString(body_str, out);
+
+            /// The connection breaks after the catalog has received the request, but before the response arrives.
+            fiu_do_on(DB::FailPoints::rest_catalog_lose_request_response,
+            {
+                out.finalize();
+                throw Poco::Net::NetException("Injected connection failure after sending the REST catalog request");
+            });
         };
     }
 
@@ -1844,7 +1864,7 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(getReadSettingsForRequest(context, method))
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
@@ -1873,6 +1893,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
+        /// Lets a test reach the "create" request below for a namespace that is already there,
+        /// which is otherwise only possible by losing a race against a concurrent creator.
+        fiu_do_on(DB::FailPoints::rest_catalog_skip_namespace_existence_check,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                check_endpoint,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "Injecting fault when checking namespace existence",
+                "");
+        });
+
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
         return;
     }
@@ -1900,13 +1932,28 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
 
     try
     {
+        fiu_do_on(DB::FailPoints::rest_catalog_create_namespace_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when creating namespace",
+                "");
+        });
+
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & e)
     {
-        /// Lost the race to a concurrent creator.
+        /// `HTTP_CONFLICT` is how the REST catalog reports that the namespace is already there,
+        /// which is exactly the outcome this method asks for, so it is the only consumed error.
+        /// Any other failure means the namespace may not exist and must not be hidden behind
+        /// whatever the subsequent "create table" request happens to answer.
         if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             throw;
+
+        LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
     }
 }
 
@@ -2277,12 +2324,31 @@ bool RestCatalog::updateSchema(
 
     try
     {
+        fiu_do_on(DB::FailPoints::rest_catalog_update_schema_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when updating schema",
+                "");
+        });
+
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        /// 409 Conflict: the `assert-current-schema-id` requirement failed because of a concurrent
+        /// schema change, and the caller retries with the current schema.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "updateSchema conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        /// Anything else is not something a retry with the current schema can fix, so report it as is
+        /// instead of letting the caller retry until it gives up with an unrelated error.
+        LOG_ERROR(log, "updateSchema failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
+        throw;
     }
     return true;
 }
