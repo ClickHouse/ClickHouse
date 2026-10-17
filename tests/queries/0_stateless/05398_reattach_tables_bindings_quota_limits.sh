@@ -14,7 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # 1. An unqualified name on the right of `IN` is resolved as an expression first: a column of a source
 # table or a lambda argument takes it, so the same-named table is never read and must not be detached.
-# A qualified name can only be a table.
+# A qualified name can be a column of a table expression as well, so it is not detached either.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_in_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_in_rhs"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_in_src (a UInt64, t_reattach_in_rhs Array(UInt64)) ENGINE = MergeTree ORDER BY a"
@@ -24,7 +24,8 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_in_src VALUES (1, [1, 2])"
 check_if_not_detached "SELECT 1 IN t_reattach_in_rhs FROM t_reattach_in_src" "t_reattach_in_rhs"
 check_if_detached "SELECT 1 IN t_reattach_in_rhs FROM t_reattach_in_src" "t_reattach_in_src"
 check_if_not_detached "SELECT arrayMap(t_reattach_in_rhs -> 1 IN t_reattach_in_rhs, [[1, 2]])" "t_reattach_in_rhs"
-check_if_detached "SELECT 1 IN ${CLICKHOUSE_DATABASE}.t_reattach_in_rhs" "t_reattach_in_rhs"
+check_if_not_detached "SELECT 1 IN ${CLICKHOUSE_DATABASE}.t_reattach_in_rhs" "t_reattach_in_rhs"
+check_if_not_detached "SELECT 1 IN ${CLICKHOUSE_DATABASE}.t_reattach_in_rhs FROM t_reattach_in_src AS ${CLICKHOUSE_DATABASE}" "t_reattach_in_rhs"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_in_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_in_rhs"

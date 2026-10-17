@@ -33,10 +33,10 @@ check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reat
 # `IN table` / `GLOBAL IN table` keep the right-hand-side table as a bare identifier outside the FROM/JOIN
 # table expressions, but it is still a real table the query reads, so both the FROM table and the IN table
 # must be detached. (A subquery right-hand side is covered by the CTE/subquery cases below.) An unqualified
-# right-hand side may also be bound to a column or a lambda argument, which cannot be told apart from the
-# AST, so it is never detached; a qualified one can only name a table.
+# right-hand side may also be bound to a column or a lambda argument, and a qualified one to a column of a
+# table expression, which cannot be told apart from the AST, so it is never detached.
 check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN t_reattach_2" "t_reattach_1"
-check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN ${CLICKHOUSE_DATABASE}.t_reattach_2" "t_reattach_2"
+check_if_not_detached "SELECT * FROM t_reattach_1 WHERE a IN ${CLICKHOUSE_DATABASE}.t_reattach_2" "t_reattach_2"
 check_if_not_detached "SELECT * FROM t_reattach_1 WHERE a GLOBAL IN t_reattach_2" "t_reattach_2"
 
 check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_1"

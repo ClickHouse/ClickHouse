@@ -30,6 +30,9 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
 
+    /// Whether the inserted rows are also written to the backup files that are restored on `ATTACH` (the `persistent` setting).
+    bool isPersistent() const { return persistent; }
+
 protected:
     StorageSetOrJoinBase(
         DiskPtr disk_,

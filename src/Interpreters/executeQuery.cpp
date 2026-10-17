@@ -131,6 +131,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageSet.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -1395,6 +1396,10 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
+    /// The whole statement being walked. Used to find which CTE definitions are referenced (see
+    /// `collectReferencedNames`).
+    const IAST * root_query = nullptr;
+
     /// The database an unqualified table name is completed with while walking the children of a mutation
     /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
     /// `AddDefaultDatabaseVisitor` with the *target table's* database over the predicates and expressions,
@@ -2628,12 +2633,59 @@ String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
 /// children included.
 bool mutationQueryStopsBeforeSources(const IAST & ast, const ContextPtr & context)
 {
+    String database;
+    String table;
+    /// The same namespace the carrier's own interpreter resolves its target in, see `tryResolveMutationTarget`.
+    Context::StorageNamespace resolve_namespace = Context::ResolveOrdinary;
+
     if (const auto * delete_query = ast.as<ASTDeleteQuery>())
-        return deleteQueryStopsBeforeSources(*delete_query, context);
-    if (const auto * update_query = ast.as<ASTUpdateQuery>())
-        return updateQueryStopsBeforeSources(*update_query, context);
-    if (const auto * alter_query = ast.as<ASTAlterQuery>())
-        return alterQueryStopsBeforeSources(*alter_query, context);
+    {
+        if (deleteQueryStopsBeforeSources(*delete_query, context))
+            return true;
+        database = delete_query->getDatabase();
+        table = delete_query->getTable();
+    }
+    else if (const auto * update_query = ast.as<ASTUpdateQuery>())
+    {
+        if (updateQueryStopsBeforeSources(*update_query, context))
+            return true;
+        database = update_query->getDatabase();
+        table = update_query->getTable();
+    }
+    else if (const auto * alter_query = ast.as<ASTAlterQuery>())
+    {
+        if (alterQueryStopsBeforeSources(*alter_query, context))
+            return true;
+        if (alter_query->alter_object != ASTAlterQuery::AlterObjectType::TABLE || !alter_query->command_list)
+            return false;
+        database = alter_query->getDatabase();
+        table = alter_query->getTable();
+        resolve_namespace = Context::ResolveAll;
+    }
+    else
+    {
+        return false;
+    }
+
+    /// `InterpreterAlterQuery`, `InterpreterDeleteQuery` and `InterpreterUpdateQuery` call
+    /// `checkNoRowPolicyForSetOperands` with the target's database before they resolve the subqueries of
+    /// their predicates and expressions: an `IN` operand that is a `Set` table with an applicable row policy
+    /// rejects the statement with `ACCESS_DENIED` before any other table is read. The table-level access
+    /// preflight does not see row policies, so run the same check here. It is applied to the whole statement,
+    /// which can only make it reject more than the interpreter does, erring toward skipping randomization.
+    const auto target = tryResolveMutationTarget(database, table, resolve_namespace, context);
+    if (!target)
+        return true;
+
+    try
+    {
+        checkNoRowPolicyForSetOperands(ast.clone(), target->getStorageID().getDatabaseName(), context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
     return false;
 }
 
@@ -2762,6 +2814,26 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     return Context::ResolveAll;
 }
 
+/// Collects the names of all identifiers in `ast` except the subtree `skip`: the full name, the short name,
+/// and the first part, which is the one that names a CTE in a compound identifier. The result over-approximates
+/// the names a subtree can reference a CTE by, which is what the reachability of CTE definitions needs.
+void collectReferencedNames(const IAST & ast, const IAST * skip, std::unordered_set<String> & names)
+{
+    if (&ast == skip)
+        return;
+
+    if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
+    {
+        names.insert(identifier->name());
+        names.insert(identifier->shortName());
+        if (!identifier->name_parts.empty())
+            names.insert(identifier->name_parts.front());
+    }
+
+    for (const auto & child : ast.children)
+        collectReferencedNames(*child, skip, names);
+}
+
 /// Collect the expression aliases declared in one alias scope: the aliases an expression of the query level
 /// `ast` belongs to can resolve (`WITH expr AS name`, `SELECT expr AS name`, ...). Used to keep the
 /// bare-identifier right-hand side of `IN` from being mistaken for a table: unlike a `FROM` reference, an
@@ -2882,6 +2954,33 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 if (const auto * with_element = with_child->as<ASTWithElement>())
                     this_level_ctes.insert(with_element->name);
 
+            /// The analyzer resolves a CTE definition only when its name is used (`QueryAnalyzer::resolveQuery`
+            /// registers the definitions and drops the `WITH` section), so the tables of an unused definition are
+            /// never read: `WITH unused AS (SELECT * FROM src) SELECT 1` must not reattach `src`. A definition is
+            /// reachable when its name occurs anywhere in the statement outside this `WITH` clause, or in the body
+            /// of another reachable definition of this clause. Any identifier with that name counts, which errs
+            /// toward walking a definition, never toward missing the tables of a used one.
+            std::unordered_set<const IAST *> reachable_ctes;
+            if (data.root_query)
+            {
+                std::unordered_set<String> referenced_names;
+                collectReferencedNames(*data.root_query, with.get(), referenced_names);
+                bool changed = true;
+                while (changed)
+                {
+                    changed = false;
+                    for (const auto & with_child : with->children)
+                    {
+                        const auto * with_element = with_child->as<ASTWithElement>();
+                        if (!with_element || reachable_ctes.contains(with_child.get()) || !referenced_names.contains(with_element->name))
+                            continue;
+                        reachable_ctes.insert(with_child.get());
+                        collectReferencedNames(*with_child, nullptr, referenced_names);
+                        changed = true;
+                    }
+                }
+            }
+
             /// Walk each WITH child (CTE definitions and scalar aliases). The analyzer hides only the CTE
             /// currently being resolved, so a CTE body may still reference a real table with the same name:
             /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
@@ -2901,6 +3000,9 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
 
                 const auto * with_element = with_child->as<ASTWithElement>();
+
+                if (with_element && data.root_query && !reachable_ctes.contains(with_child.get()))
+                    continue;
 
                 if (!select->recursive_with || !with_element)
                 {
@@ -3115,8 +3217,9 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// to resolve the unqualified right-hand side as an expression first, so a column of a source table
         /// (`SELECT 1 IN rhs FROM src` with an array column `rhs`) or a lambda argument
         /// (`arrayMap(rhs -> 1 IN rhs, ...)`) takes it as well. Those bindings cannot be told apart from the
-        /// AST, so an unqualified right-hand side is never reattached: it still takes part in the preflights,
-        /// which only errs toward skipping randomization. A qualified `db.rhs` can only name a table.
+        /// AST, so the right-hand side is never reattached: it still takes part in the preflights, which only
+        /// errs toward skipping randomization. This holds for a qualified `t.rhs` too, because it can also name
+        /// the column `rhs` of the table expression `t` (`SELECT 1 IN t.rhs FROM src AS t`).
         if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
         {
             if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
@@ -3125,7 +3228,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                         data.addTableIfNotEmpty(
                             table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT,
                             /* existence_required */ true, ExpectedObjectKind::Any,
-                            /* reattach */ !table_id->getDatabaseName().empty());
+                            /* reattach */ false);
         }
     }
 
@@ -3174,6 +3277,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         return;
 
     CollectTablesData data(context);
+    data.root_query = query.get();
     /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
     /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because
     /// the walk stops at the query's own `ASTSelectQuery`, which opens its scope in `collectTablesInQuery`.
@@ -3242,15 +3346,32 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// still trigger a real `DETACH`/`ATTACH` cycle and only then get `ACCESS_DENIED`. Require, for every
     /// collected table, the access recorded at collection time; if any check fails, skip the hook for the
     /// whole query — the missing access may concern a different table than the one to be detached.
-    /// The preflight is scoped to what the AST-based collector sees: access enforced against objects that
-    /// materialize only during execution (e.g. inner tables of views) cannot be validated here, and the
-    /// table-level check is conservative with column-level grants (a user granted `SELECT` on a subset of
-    /// columns fails it) — in all those cases the preflight errs toward skipping randomization, never
-    /// toward producing side effects for a failing query.
+    /// The preflight is scoped to what the AST-based collector sees: the tables read by the body of a view
+    /// cannot be validated here, so the view preflight below skips the hook for queries referencing a view.
+    /// The table-level check is conservative with column-level grants (a user granted `SELECT` on a subset
+    /// of columns fails it), which errs toward skipping randomization, never toward producing side effects
+    /// for a failing query.
     auto access = context->getAccess();
     for (const auto & table : data.tables)
         if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
             return;
+
+    /// View preflight — the body of a view is expanded only when the query is analyzed, and the tables it
+    /// reads never appear in the AST walked above, so they escape both the existence and the access preflight:
+    /// an `SQL SECURITY INVOKER` view checks the caller's access to them, and any view fails on a missing one.
+    /// Like for SQL UDFs, skip the hook for the whole query when it references a view, instead of first
+    /// `DETACH`/`ATTACH`-ing its other tables. Only databases that support detaching tables are probed, for the
+    /// same reasons as in the reattach loop below, which also skips the references to dictionaries.
+    for (const auto & table : data.tables)
+    {
+        if (table.expected_kind == ExpectedObjectKind::Dictionary)
+            continue;
+        const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
+        if (!database || !database->supportsDetachingTables())
+            continue;
+        if (const auto storage = DatabaseCatalog::instance().tryGetTable(table.id, context); storage && storage->isView())
+            return;
+    }
 
     for (const auto & collected : data.tables)
     {
@@ -3302,6 +3423,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (!table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        /// `StorageSetOrJoinBase::storesDataOnDisk` is always true, but with `persistent = 0` a `Set` or `Join`
+        /// table keeps its rows only in memory and writes no backup files, while `ATTACH` restores only those.
+        /// Reattaching such a table would lose its rows.
+        if (const auto set_or_join = castStorage<const StorageSetOrJoinBase>(table, DeferredTable::Load);
+            set_or_join && !set_or_join->isPersistent())
             continue;
 
         /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
