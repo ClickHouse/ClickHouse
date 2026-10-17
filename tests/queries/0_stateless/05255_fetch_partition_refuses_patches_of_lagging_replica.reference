@@ -1,0 +1,6 @@
+r1 has the patch part	1
+the only active replica is r2	1	2
+r2 has no patch part	0
+the fetch of the partition is refused: 1
+and so is the fetch of the patched part: 1
+nothing was fetched	0
