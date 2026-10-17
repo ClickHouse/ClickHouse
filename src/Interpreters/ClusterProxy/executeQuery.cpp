@@ -1,10 +1,13 @@
 #include <Core/ProtocolDefines.h>
 #include <memory>
 #include <optional>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
@@ -14,7 +17,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -51,6 +53,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -1649,6 +1652,26 @@ static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
     removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
 }
 
+/// The replicas resolve a one-argument `merge` in their own default database. A `merge` that the analyzer left
+/// unresolved, like an argument of `remote`, is resolved by the server it is sent to and is not visited.
+static void bindDatabaseOfOneArgumentMerge(const QueryTreeNodePtr & query_tree, const String & database)
+{
+    std::vector<TableFunctionNode *> merges;
+    traverseQueryTree(query_tree, Everything{}, [&](const QueryTreeNodePtr & node)
+    {
+        auto * table_function = node->as<TableFunctionNode>();
+        if (table_function && typeid_cast<const StorageMerge *>(table_function->getStorage().get())
+            && table_function->getArguments().getNodes().size() == 1)
+            merges.push_back(table_function);
+    });
+
+    for (auto * table_function : merges)
+    {
+        auto & arguments = table_function->getArguments().getNodes();
+        arguments.insert(arguments.begin(), std::make_shared<ConstantNode>(database));
+    }
+}
+
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
@@ -1704,10 +1727,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
         auto query_tree = analyzer.getQueryTree()->clone();
         removeGroupingFunctionSpecializations(query_tree);
+        bindDatabaseOfOneArgumentMerge(query_tree, context->getCurrentDatabase());
         /// The analyzed tree has no `WITH` clause, so CTE references are written out with their definitions.
         auto select_ast = query_tree->toAST({.set_subquery_cte_name = false});
-        /// The replicas run the query in their own default database.
-        AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).substituteDatabaseInTableFunctions(*select_ast);
         deduplicateProjectionAliasesRecursive(select_ast);
 
         auto new_query_ast = query_ast.clone();

@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS mv_tgt;
 DROP TABLE IF EXISTS tv;
 DROP TABLE IF EXISTS v_limit;
+DROP TABLE IF EXISTS v_aggregate_nested;
+DROP TABLE IF EXISTS v_aggregate;
 DROP TABLE IF EXISTS v;
 DROP TABLE IF EXISTS dst_mem;
 DROP TABLE IF EXISTS dst SYNC;
@@ -30,6 +32,8 @@ CREATE TABLE dst (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{da
 CREATE TABLE dst_mem (x UInt64) ENGINE = Memory;
 CREATE VIEW v AS SELECT x FROM src;
 CREATE VIEW v_limit AS SELECT x FROM src ORDER BY x LIMIT 5;
+CREATE VIEW v_aggregate AS SELECT max(x) - min(x) AS x FROM src;
+CREATE VIEW v_aggregate_nested AS SELECT x FROM v_aggregate;
 CREATE TABLE tv AS view(SELECT x FROM {CLICKHOUSE_DATABASE:Identifier}.src);
 CREATE TABLE mv_tgt (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO mv_tgt SELECT 1000 + number FROM numbers(10);
@@ -77,6 +81,11 @@ SELECT '-- a view the replicas read in coordination is inserted by the replicas'
 INSERT INTO FUNCTION null('x UInt64') SELECT x FROM v SETTINGS log_comment = 'arm_view_over_mergetree', parallel_replicas_allow_view_over_mergetree = 1;
 INSERT INTO FUNCTION null('x UInt64') SELECT x FROM v_limit SETTINGS log_comment = 'arm_view_limit_over_mergetree', parallel_replicas_allow_view_over_mergetree = 1;
 
+SELECT '-- a view with an aggregation is inserted once';
+INSERT INTO FUNCTION null('x UInt64') SELECT x FROM v_aggregate SETTINGS log_comment = 'arm_view_aggregate_over_mergetree', parallel_replicas_allow_view_over_mergetree = 1;
+INSERT INTO FUNCTION null('x UInt64') SELECT x FROM v_aggregate_nested
+    SETTINGS log_comment = 'arm_view_aggregate_nested_over_mergetree', parallel_replicas_allow_view_over_mergetree = 1;
+
 SELECT '-- INSERT queries run by the replicas';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, countIf(is_initial_query = 0)
@@ -87,13 +96,13 @@ WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())
 GROUP BY log_comment
 ORDER BY log_comment;
 
-SELECT '-- rows written for the views read in coordination';
+SELECT '-- rows written for the views over MergeTree';
 SELECT log_comment, countIf(is_initial_query = 0), sum(written_rows)
 FROM system.query_log
 WHERE (current_database = currentDatabase() OR has(databases, currentDatabase()))
     AND event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish' AND query_kind = 'Insert'
-    AND log_comment IN ('arm_view_limit_over_mergetree', 'arm_view_over_mergetree')
+    AND log_comment IN ('arm_view_aggregate_nested_over_mergetree', 'arm_view_aggregate_over_mergetree', 'arm_view_limit_over_mergetree', 'arm_view_over_mergetree')
 GROUP BY log_comment
 ORDER BY log_comment;
 
@@ -101,6 +110,8 @@ DROP TABLE mv;
 DROP TABLE mv_tgt;
 DROP TABLE tv;
 DROP TABLE v_limit;
+DROP TABLE v_aggregate_nested;
+DROP TABLE v_aggregate;
 DROP TABLE v;
 DROP TABLE dst_mem;
 DROP TABLE dst SYNC;

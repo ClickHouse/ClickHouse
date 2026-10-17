@@ -9,6 +9,7 @@
 -- a materialized view is read through its target table, so the replicas insert it
 10	10045
 -- a view the replicas read in coordination is inserted by the replicas
+-- a view with an aggregation is inserted once
 -- INSERT queries run by the replicas
 arm_cte	2
 arm_cte_columns	2
@@ -22,11 +23,15 @@ arm_materialized_view	2
 arm_merge	2
 arm_recursive	2
 arm_view	0
+arm_view_aggregate_nested_over_mergetree	0
+arm_view_aggregate_over_mergetree	0
 arm_view_limit	0
 arm_view_limit_over_mergetree	0
 arm_view_named_over_mergetree	0
 arm_view_over_mergetree	2
 arm_view_proxy	0
--- rows written for the views read in coordination
+-- rows written for the views over MergeTree
+arm_view_aggregate_nested_over_mergetree	0	1
+arm_view_aggregate_over_mergetree	0	1
 arm_view_limit_over_mergetree	0	5
 arm_view_over_mergetree	2	100
