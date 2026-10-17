@@ -146,7 +146,7 @@ public:
     /// Example:
     /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
+    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 128;
 
 private:
     const MergeTreeData & data;
