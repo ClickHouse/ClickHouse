@@ -8,7 +8,6 @@
 
 namespace DB
 {
-class ASTCreateQuery;
 class ASTStorage;
 class SettingsChanges;
 struct TimeSeriesSettingsImpl;
@@ -53,31 +52,25 @@ struct TimeSeriesSettings
     /// Whether the setting was explicitly set, even if to its default value.
     bool isChanged(std::string_view name) const;
 
+    /// Whether the table has the "recent samples" target.
+    bool isRecentSamplesTargetEnabled() const;
+
+    /// Whether the table has the "time ranges" target.
+    bool isTimeRangesTargetEnabled() const;
+
+    /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
+    /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
+    bool hasMinTimeAndMaxTimeInTagsTable() const;
+
+    /// Whether the generated sorting key of the inner "tags" table contains `min_time` and `max_time`:
+    /// they are stored in that table but not aggregated.
+    bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
+
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;
 };
 
 /// Checks that the combination of settings is consistent.
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
-
-/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `recent_samples_ttl_seconds` in its SETTINGS clause.
-bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
-
-/// Returns the value of `recent_samples_ttl_seconds` from the SETTINGS clause of a
-/// CREATE TABLE ... ENGINE=TimeSeries query, or the setting's default value if the query
-/// doesn't specify it (the normalization pins an explicit value into every query except
-/// the initial CREATE query, so an absent setting means a new table getting the default).
-/// A non-zero result means the query enables the optional "recent samples" target table.
-UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
-
-/// The similar function for `version` is `getTimeSeriesSettingVersion` in Parsers/getTimeSeriesSettingVersion.h,
-/// because it's used while formatting a CREATE query.
-
-/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `version` in its SETTINGS clause.
-bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);
-
-/// Sets `version` in the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
-/// creating the SETTINGS clause if the query doesn't have one yet.
-void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version);
 
 }
