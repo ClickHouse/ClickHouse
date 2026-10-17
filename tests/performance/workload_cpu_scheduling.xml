@@ -23,7 +23,7 @@
     <fill_query>SELECT number % 100000 AS k, count() FROM remote('127.0.0.{{2,3}}', numbers_mt(80000000)) GROUP BY k SETTINGS async_socket_for_remote = 1, max_threads = 1, workload = 'perf_cpu_scheduling_wide', log_comment = 'perf_cpu_scheduling_probe' FORMAT Null</fill_query>
     <fill_query>SELECT count() FROM perf_cpu_scheduling_set WHERE NOT ignore(s) SETTINGS workload = 'perf_cpu_scheduling_mixed_io', max_threads = 1, max_local_read_bandwidth = 1000000, max_read_buffer_size_local_fs = 4096, local_filesystem_read_method = 'read', log_comment = 'perf_cpu_scheduling_probe'</fill_query>
     <fill_query>SYSTEM FLUSH LOGS</fill_query>
-    <fill_query>SELECT throwIf(uniqExact(query) &lt; 5 OR countIf(ProfileEvents['ConcurrencyControlParks'] = 0) > 0, 'workload_cpu_scheduling: an SQL item does not take its CPU slots from its workload or does not park') FROM system.query_log WHERE event_time > now() - INTERVAL 10 MINUTE AND type = 'QueryFinish' AND is_initial_query AND log_comment = 'perf_cpu_scheduling_probe'</fill_query>
+    <fill_query>SELECT throwIf(count() &lt; 5 OR countIf(parks = 0) > 0, 'workload_cpu_scheduling: an SQL item does not take its CPU slots from its workload or does not park'), throwIf(maxIf(peak, query LIKE '%sum(number)%perf_cpu_scheduling_narrow%') >= maxIf(peak, query LIKE '%sum(number)%perf_cpu_scheduling_wide%'), 'workload_cpu_scheduling: the narrow workload does not limit the threads of its query') FROM (SELECT query, argMax(ProfileEvents['ConcurrencyControlParks'], event_time_microseconds) AS parks, argMax(peak_threads_usage, event_time_microseconds) AS peak FROM system.query_log WHERE event_time > now() - INTERVAL 10 MINUTE AND type = 'QueryFinish' AND is_initial_query AND log_comment = 'perf_cpu_scheduling_probe' GROUP BY query)</fill_query>
 
     <substitutions>
         <substitution>
@@ -48,13 +48,14 @@
     <query type="shell"><![CDATA[
         W_ID="perf_cpu_scheduling_neighbour_$$_${RANDOM}"
         W_ERR="$(mktemp)"
+        C_ERR="$(mktemp)"
         W_PID=""
         cleanup() {
             if [ -n "$W_PID" ]; then
                 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$W_ID' SYNC" > /dev/null 2>&1 || true
                 wait "$W_PID" 2> /dev/null || true
             fi
-            rm -f "$W_ERR"
+            rm -f "$W_ERR" "$C_ERR"
         }
         trap cleanup EXIT
         $CLICKHOUSE_CLIENT --query_id "$W_ID" --query "SELECT count() FROM numbers(10000000000) WHERE cityHash64(number) NOT IN (SELECT cityHash64(s) FROM perf_cpu_scheduling_set) SETTINGS workload = 'perf_cpu_scheduling_mixed_io', max_threads = 1, max_local_read_bandwidth = 1000000, max_read_buffer_size_local_fs = 4096, local_filesystem_read_method = 'read'" > /dev/null 2> "$W_ERR" &
@@ -62,10 +63,11 @@
         until [ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$W_ID' AND read_rows > 18500")" = 1 ]; do
             kill -0 "$W_PID"
         done
-        $CLICKHOUSE_CLIENT --query "SELECT count() FROM numbers(400000000) WHERE cityHash64(number) % 3 = 0 SETTINGS workload = 'perf_cpu_scheduling_mixed_cpu', max_threads = 1" > /dev/null
+        $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 --query "SELECT count() FROM numbers(400000000) WHERE cityHash64(number) % 3 = 0 SETTINGS workload = 'perf_cpu_scheduling_mixed_cpu', max_threads = 1" > /dev/null 2> "$C_ERR" || { cat "$C_ERR" >&2; exit 1; }
         [ "$($CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$W_ID' SYNC FORMAT TSV" | wc -l)" = 1 ]
         if ! wait "$W_PID"; then grep -q QUERY_WAS_CANCELLED "$W_ERR"; fi
         W_PID=""
+        awk '/ ConcurrencyControlWaitMicroseconds: / { s += $(NF - 1) } END { exit !(s >= 20000) }' "$C_ERR" || { echo 'workload_cpu_scheduling: the CPU query did not wait for the slot it shares with the neighbour' >&2; exit 1; }
     ]]></query>
 
     <drop_query>SYSTEM START MERGES</drop_query>
