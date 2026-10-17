@@ -1,0 +1,17 @@
+SET exact_division_for_integers = 1;
+
+-- Every integer type pair, including constant folding and each execution shape.
+{% set types = ['UInt8', 'UInt16', 'UInt32', 'UInt64', 'UInt128', 'UInt256', 'Int8', 'Int16', 'Int32', 'Int64', 'Int128', 'Int256'] %}
+{% for left in types %}
+{% for right in types %}
+{% set a = 'to' ~ left ~ '(' ~ ('-7' if left.startswith('Int') else '7') ~ ')' %}
+{% set b = 'to' ~ right ~ '(' ~ ('-2' if right.startswith('Int') else '2') ~ ')' %}
+SELECT '{{ left }}/{{ right }}',
+    [{{ a }} / {{ b }},
+     divide(identity({{ a }}), identity({{ b }})),
+     divide(materialize({{ a }}), identity({{ b }})),
+     divide(identity({{ a }}), materialize({{ b }})),
+     divide(materialize({{ a }}), materialize({{ b }}))],
+    toTypeName({{ a }} / {{ b }});
+{% endfor %}
+{% endfor %}

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
 # add_minmax_index_for_numeric_columns=0: Changes the plan
