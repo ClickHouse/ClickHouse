@@ -95,4 +95,11 @@ CREATE FUNCTION alias_udf AS x -> (x * 1000 AS c9);
 CREATE HYPOTHETICAL INDEX h ON db.t2 alias_udf(c0) TYPE minmax;
 " 2>&1 | grep -c "Alias 'c9' is not allowed in INDEX"
 
+# The same for the `SET` assignments of a `TTL ... GROUP BY` rule, which are not children of the `TTL` element.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+CREATE FUNCTION alias_udf_ttl AS x -> (x * 1000 AS c9);
+CREATE TABLE db.t_ttl_udf (k UInt64, v UInt64, d DateTime) ENGINE = MergeTree ORDER BY k
+TTL d + INTERVAL 1 DAY GROUP BY k SET v = max(alias_udf_ttl(v));
+" 2>&1 | grep -c "Alias 'c9' is not allowed in TTL"
+
 rm -rf "${WORKING_DIR}"
