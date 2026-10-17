@@ -167,6 +167,15 @@ void HandshakeResponse::readPayloadImpl(ReadBuffer & payload)
     {
         readNullTerminated(auth_plugin_name, payload);
     }
+
+    if (capability_flags & CLIENT_CONNECT_ATTRS)
+    {
+        /// Read and skip connection attributes.
+        /// Connection attributes are a length-encoded string containing key-value pairs.
+        /// We don't use them but need to read them to consume the packet fully.
+        uint64_t attrs_length = readLengthEncodedNumber(payload);
+        payload.ignore(attrs_length);
+    }
 }
 
 void HandshakeResponse::writePayloadImpl(WriteBuffer & buffer) const
