@@ -602,6 +602,13 @@ struct Reader
     /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+
+    /// Statistics ranges of the key condition columns (by position in `extended_sample_block`) for every non-empty
+    /// row group, as `prefilterAndInitRowGroups` checked them. Complete only if every row group was checked by statistics alone.
+    std::vector<std::pair<size_t, std::vector<Range>>> key_condition_column_ranges;
+    bool key_condition_column_ranges_complete = false;
+    /// Whether `prefilterAndInitRowGroups` collects `key_condition_column_ranges`.
+    bool collect_key_condition_column_ranges = false;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
