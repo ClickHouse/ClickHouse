@@ -1,10 +1,16 @@
--- Tags: long
+-- Tags: long, no-msan
 -- `long` because the file builds four MergeTree tables of 300000-800000 rows and runs five timed
 -- guards, eight `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
 -- with the CI jemalloc profiler config armed
 -- (tests/config/config.d/jemalloc_enable_global_profiler.yaml), against a 60 s Fast test cap on a
--- runner shared with 24 workers. No sanitizer is excluded: the slowest single guarded query measured
--- 0.576 s server-side on that same build, so even a 20x sanitizer multiplier stays 10x under 120 s.
+-- runner shared with 24 workers. The slowest single guarded query measured 0.576 s server-side on that
+-- same build, so even a 20x sanitizer multiplier stays 10x under 120 s per guard.
+-- `no-msan` because the file as a whole is the tail of the MSan job: it averaged 164.6 s (max 401.9 s)
+-- over 163 runs of `Stateless tests (amd_msan, parallel, 3/3)` in the 14 days to 2026-10-13
+-- (`play.clickhouse.com`, table `checks`). The quadratic blowup it guards is an algorithmic property,
+-- not a memory-safety one, so the debug, ASan, TSan and UBSan runs keep the guard; MSan adds nothing
+-- here except wall time. Shrinking the tables instead would move the broken-path runtime below the
+-- `max_execution_time` limit and make the guards vacuous, see point 3 below.
 --
 -- Regression test for a quadratic blowup in aggregation in order and DISTINCT in order with a
 -- fixed-size GROUP BY key: a hashing state built per run of the sorting prefix batch-packed the whole

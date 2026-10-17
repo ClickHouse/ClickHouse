@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, long
+# Tags: no-s3-storage, long, no-msan
 # Tag no-s3-storage -- merge_tree_clear_old_temporary_directories_interval_seconds
 # is not supported for s3 storage.
 

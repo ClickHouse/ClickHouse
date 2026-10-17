@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: the test itself takes about a second, but it covers many scenarios (each with its
 -- own DDL and a fill), and the flaky check runs several instances of it in parallel against
 -- one debug server; the tag lifts the flaky-check run-time cap which such runners exceed.
