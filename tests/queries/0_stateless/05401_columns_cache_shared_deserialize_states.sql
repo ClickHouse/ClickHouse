@@ -27,14 +27,16 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granular
     object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'advanced',
     object_shared_data_buckets_for_wide_part = 1;
 
+-- The JSON values are cast from tuples, not parsed from text: parsing locks a mutex per value, and with the thread fuzzer
+-- of the flaky check the insert takes minutes.
 INSERT INTO t_shared_states
 SELECT
     number,
-    format('{{"a":"a{0}","b":"b{0}"}}', number)::JSON,
+    tuple(concat('a', toString(number)), concat('b', toString(number)))::Tuple(a String, b String)::JSON(max_dynamic_paths = 0),
     if(number % 3 = 0, concat('s', toString(number))::Dynamic, number::Dynamic)::Variant(String, UInt64),
     if(number % 3 = 0, concat('s', toString(number))::Dynamic, number::Dynamic),
     tuple(toString(number % 100), number % 7),
-    format('{{"p":"{0}","a":"a{1}"}}', toString(number % 100), number)::JSON
+    tuple(toString(number % 100), concat('a', toString(number)))::Tuple(p String, a String)::JSON(p LowCardinality(String), max_dynamic_paths = 0)
 FROM numbers(200000)
 SETTINGS max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000;
 
