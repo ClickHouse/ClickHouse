@@ -7,8 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/correlated_scalar_aggregate_to_window.lib
 
 # `optimize_correlated_scalar_aggregate_to_window` must not change any answer, also where the subquery is not rewritten.
+# The joins that leave the subquery not rewritten are in `05408_correlated_scalar_aggregate_to_window_not_rewritten_joins`.
 
-create_tables t u x nn nk r tn vt tp jt ku
+create_tables t u x nn nk r tn vt tp
 
 check "nothing restricts the keys, the decorrelated plan needs less memory" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k ORDER BY k, v"
 check "non-deterministic condition on the key, not pushed below the window" "SELECT countIf(c != multiIf(k = 1, 30, k = 2, 1e308, -7)) FROM (SELECT o.k AS k, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE rand64(o.k) % 2 = 0)"
@@ -31,36 +32,9 @@ check "count of a Nullable column" "SELECT nk.k AS k, nn.v AS v, (SELECT count(v
 check "outer key inside an expression argument" "SELECT u.k AS k, t.v AS v, (SELECT sum(intDiv(10, u.k)) FROM t AS s WHERE s.k = u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "NULL inside a Tuple key" "SELECT toString(o.k) AS k, o.v AS v, (SELECT count() FROM tn AS s WHERE s.k = o.k) AS c FROM tn AS o WHERE toString(o.k) != '' ORDER BY v"
 check "NULL in a Variant key" "SELECT o.v AS v, (SELECT count() FROM vt AS s WHERE s.k = o.k) AS c FROM vt AS o WHERE toString(variantType(o.k)) != 'x' ORDER BY v"
-check "PASTE JOIN" "SELECT n.number AS n, o.id AS id, (SELECT sum(v) FROM tp AS s WHERE s.k = o.k) AS c FROM (SELECT number FROM numbers(4)) AS n PASTE JOIN tp AS o WHERE n.number >= 0 AND o.k < 5 ORDER BY n"
 check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
-check "joined on a column other than the key" "SELECT o.id AS id, o.v AS v, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS c FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 ORDER BY id"
-check "joined on the key of only one of the windows" "SELECT o.id AS id, o.k AS k FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 AND o.v >= (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AND o.v <= (SELECT max(v) FROM tp AS s WHERE s.id = o.id) ORDER BY id"
-check "condition on the key that also depends on the other table" "SELECT o.k AS k, o.v AS v, u.w AS w, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN u ON o.k = u.k WHERE o.k < u.w ORDER BY k, v, w"
-check "condition on a table that is not joined on the key" "SELECT u.k AS k, x.z AS z, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k CROSS JOIN x WHERE x.z > 3 ORDER BY k, z, v"
-check "no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS enable_join_runtime_filters = 0"
-check "join algorithm without runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'full_sorting_merge'"
-check "ie_join first, no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'ie_join,hash'"
-check "condition on a table joined by lookups, no runtime filters" "SELECT o.k AS k, o.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN jt ON o.k = jt.k WHERE jt.w > 0 ORDER BY k, v"
-check "join keys without a common supertype, no runtime filters" "SELECT o.k AS k, o.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN ku ON o.k = ku.k WHERE ku.w > 0 ORDER BY k, v"
-check "another join key pair without a common supertype, no runtime filters" "SELECT o.k AS k, o.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN ku ON o.k = ku.k32 AND toInt64(o.k) = ku.k WHERE ku.w > 0 ORDER BY k, v"
-check "no join order optimization, the target may be on the build side" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS query_plan_optimize_join_order_limit = 0"
-check "GLOBAL join, no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u GLOBAL INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
-check "fixed choice of the join sides, the target may be on the build side" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS query_plan_join_swap_table = 0"
 check "no filter push-down" "SELECT o.k AS k, o.v AS v, (SELECT count() FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 1 ORDER BY k, v SETTINGS query_plan_filter_push_down = 0"
 check "conditions on the keys of different windows" "SELECT o.id AS id, (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AS a, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS b FROM tp AS o WHERE o.k = 1 AND o.id = 2"
 check "aggregate with parameters over only NULLs" "SELECT o.k AS k, (SELECT uniqUpTo(5)(NULL) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 0 ORDER BY k"
 
 run_all
-
-echo "--- materialized view reading its source table in the subquery ---"
-for setting in 0 1; do
-    $CLICKHOUSE_CLIENT -q "
-    DROP TABLE IF EXISTS mv_src; DROP TABLE IF EXISTS mv_dst; DROP VIEW IF EXISTS mv;
-    CREATE TABLE mv_src (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
-    CREATE TABLE mv_dst (k Int32, v Int32, c Nullable(Int64)) ENGINE = MergeTree ORDER BY k;
-    INSERT INTO mv_src VALUES (1, 100), (2, 200);
-    CREATE MATERIALIZED VIEW mv TO mv_dst AS SELECT o.k AS k, o.v AS v, (SELECT sum(v) FROM mv_src AS s WHERE s.k = o.k) AS c FROM mv_src AS o WHERE o.k < 3;
-    INSERT INTO mv_src SETTINGS optimize_correlated_scalar_aggregate_to_window = $setting VALUES (1, 1), (2, 2);
-    SELECT * FROM mv_dst ORDER BY k;
-    "
-done

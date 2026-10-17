@@ -52,11 +52,11 @@ function create_tables()
 SQ="(SELECT max(v) FROM t AS s WHERE s.k = u.k)"
 
 # Starting a client per query is too slow in sanitizer builds, so the cases are collected first and then sent
-# in two batches: the queries and their query trees, where the rewrite shows up as a window function.
-# A marker line separates the results of the cases.
+# in one batch. Each query is preceded by the check of its query tree, where the rewrite shows up as a window
+# function. The check returns exactly one row, which starts with a marker and separates the results of the cases.
 # The rewrite relies on runtime join filters and the automatic swap of the join sides (done by the join order
 # optimization), which are randomized.
-MARKER='--- next case ---'
+MARKER='--- rewritten: '
 ITEMS=()
 QUERIES=()
 
@@ -71,39 +71,31 @@ function section()
     ITEMS+=("echo:$1")
 }
 
-# Reads the output of a batch into the array named by $1, one element per case.
-function split_results()
-{
-    local -n results=$1
-    results=()
-    local line current=""
-    while IFS= read -r line; do
-        if [ "$line" = "$MARKER" ]; then
-            results+=("${current%$'\n'}")
-            current=""
-        else
-            current+="$line"$'\n'
-        fi
-    done
-    results+=("${current%$'\n'}")
-    # Drop the empty chunk before the first marker.
-    results=("${results[@]:1}")
-}
-
 function run_batch()
 {
-    local prefix="$1" suffix="$2"
+    local tree_check="SELECT '$MARKER' || toString(countIf(explain LIKE '%function_type: window%') > 0) FROM (EXPLAIN QUERY TREE"
     local query
     for query in "${QUERIES[@]}"; do
-        printf "SELECT '%s';\n%s%s%s;\n" "$MARKER" "$prefix" "$query" "$suffix"
+        printf "%s %s);\n%s;\n" "$tree_check" "$query" "$query"
     done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto --query_plan_optimize_join_order_limit=10
 }
 
 function run_all()
 {
-    local on fired
-    split_results on < <(run_batch "" "")
-    split_results fired < <(run_batch "SELECT countIf(explain LIKE '%function_type: window%') > 0 FROM (EXPLAIN QUERY TREE " ")")
+    # Whether the subquery of each case was rewritten, and the result of its query.
+    local fired=() on=() line current=""
+    while IFS= read -r line; do
+        if [[ "$line" == "$MARKER"* ]]; then
+            fired+=("${line#"$MARKER"}")
+            on+=("${current%$'\n'}")
+            current=""
+        else
+            current+="$line"$'\n'
+        fi
+    done < <(run_batch)
+    on+=("${current%$'\n'}")
+    # Drop the empty result before the first marker.
+    on=("${on[@]:1}")
 
     local item i=0
     for item in "${ITEMS[@]}"; do
