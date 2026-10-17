@@ -11,6 +11,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
@@ -130,6 +131,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int HAVE_DEPENDENT_OBJECTS;
     }
 namespace FailPoints
 {
@@ -2661,7 +2663,9 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 }
 
 /// Adds the inner tables of `table` that `dropInnerTableIfAny` enumerates, and their own inner tables, to `ids`.
-static void addInnerTableIds(const IStorage & table, const ContextPtr & context, bool add_not_attached, std::vector<StorageID> & ids)
+/// `new_table_dependencies` are the dependencies of the replacing table, which are not in `DatabaseCatalog` during the exchange.
+static void addInnerTableIds(
+    const IStorage & table, const ContextPtr & context, bool add_not_attached, const TableNamesSet & new_table_dependencies, std::vector<StorageID> & ids)
 {
     std::vector<StorageID> inner_ids;
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&table); view && view->hasInnerTable())
@@ -2691,7 +2695,9 @@ static void addInnerTableIds(const IStorage & table, const ContextPtr & context,
             bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(
                 ids.back(), check_ref_deps, !check_ref_deps && settings[Setting::check_table_dependencies]);
-            addInnerTableIds(*inner_table, context, add_not_attached, ids);
+            if (new_table_dependencies.contains(ids.back().getQualifiedName()))
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop {}, because the new table depends on it", ids.back());
+            addInnerTableIds(*inner_table, context, add_not_attached, new_table_dependencies, ids);
         }
         /// Not attached, e.g. after a failed `SYSTEM RESTART REPLICA`.
         else if (add_not_attached)
@@ -2720,7 +2726,19 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     /// While `SYSTEM RESTART REPLICA` runs, a table that is not attached may be attached back, so its node is kept.
     std::vector<StorageID> replaced_inner_tables;
     if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
-        addInnerTableIds(*getTable(to_table_name, local_context), local_context, tables_being_restarted.load() == 0, replaced_inner_tables);
+    {
+        const auto & settings = local_context->getSettingsRef();
+        QualifiedTableName new_table{getDatabaseName(), table_name};
+        auto new_table_query = getCreateTableQuery(table_name, local_context);
+        auto global_context = local_context->getGlobalContext();
+        TableNamesSet new_table_dependencies;
+        if (settings[Setting::check_referential_table_dependencies])
+            new_table_dependencies = getDependenciesFromCreateQuery(global_context, new_table, new_table_query, local_context->getCurrentDatabase()).dependencies;
+        else if (settings[Setting::check_table_dependencies])
+            new_table_dependencies = getLoadingDependenciesFromCreateQuery(global_context, new_table, new_table_query, local_context->getCurrentDatabase());
+        addInnerTableIds(
+            *getTable(to_table_name, local_context), local_context, tables_being_restarted.load() == 0, new_table_dependencies, replaced_inner_tables);
+    }
 
     std::lock_guard lock{metadata_mutex};
 
