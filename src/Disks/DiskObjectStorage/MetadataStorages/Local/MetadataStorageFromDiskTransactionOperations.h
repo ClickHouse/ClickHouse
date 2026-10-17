@@ -29,7 +29,7 @@ private:
     const Poco::Timestamp new_timestamp;
     IDisk & disk;
 
-    Poco::Timestamp old_timestamp;
+    std::optional<Poco::Timestamp> old_timestamp;
 };
 
 struct ChmodOperation final : public IMetadataOperation
@@ -44,7 +44,7 @@ private:
     const mode_t mode;
     IDisk & disk;
 
-    mode_t old_mode{};
+    std::optional<mode_t> old_mode;
 };
 
 struct WriteFileOperation final : public IMetadataOperation
@@ -60,12 +60,8 @@ private:
     IDisk & disk;
 
     std::optional<std::string> prev_data;
-
-    // True once execute() has confirmed the file exists on disk.
-    // Used by undo() to distinguish "file was created by this operation"
-    // (safe to delete on undo) from "file already existed, execute() failed
-    // before overwriting it" (must NOT delete — the file is unchanged).
-    bool file_existed = false;
+    /// Set before the write, so a write that stopped part way is undone too.
+    bool write_attempted = false;
 };
 
 struct UnlinkFileOperation final : public IMetadataOperation
@@ -101,6 +97,8 @@ struct CreateDirectoryOperation final : public IMetadataOperation
 private:
     const std::string path;
     IDisk & disk;
+
+    bool created = false;
 };
 
 struct CreateDirectoryRecursiveOperation final : public IMetadataOperation
@@ -170,6 +168,8 @@ private:
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
+    /// False when the destination existed, even as a link to the same file.
+    bool link_created = false;
 };
 
 struct MoveFileOperation final : public IMetadataOperation
@@ -183,6 +183,8 @@ private:
     const std::string path_from;
     const std::string path_to;
     IDisk & disk;
+
+    bool moved = false;
 };
 
 struct MoveDirectoryOperation final : public IMetadataOperation
@@ -196,6 +198,10 @@ private:
     const std::string path_from;
     const std::string path_to;
     IDisk & disk;
+
+    bool moved = false;
+    /// The rename replaced an empty directory at `path_to`.
+    bool replaced_destination = false;
 };
 
 struct ReplaceFileOperation final : public IMetadataOperation

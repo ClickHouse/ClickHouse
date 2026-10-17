@@ -490,7 +490,7 @@ void DiskLocal::removeDirectory(const String & path)
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (!existsDirectory(fs_path))
+    if (!existsDirectory(path))
         return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)

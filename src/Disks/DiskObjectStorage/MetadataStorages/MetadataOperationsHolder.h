@@ -23,12 +23,16 @@ class MetadataOperationsHolder
     std::optional<String> rollback(size_t until_pos) noexcept;
 
 public:
+    /// With `noexcept_rollback_`, an `undo` that throws terminates the server instead of leaving the transaction partially rolled back.
+    explicit MetadataOperationsHolder(bool noexcept_rollback_ = false) : noexcept_rollback(noexcept_rollback_) {}
+
     void prependOperation(MetadataOperationPtr && operation);
     void addOperation(MetadataOperationPtr && operation);
     void commit();
     void finalize() noexcept;
 
 private:
+    const bool noexcept_rollback;
     std::deque<MetadataOperationPtr> operations;
     MetadataStorageTransactionState state{MetadataStorageTransactionState::PREPARING};
 };
