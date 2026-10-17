@@ -132,7 +132,9 @@ static std::optional<StorageReplicatedMergeTree::RestoredReplicaParts> readConve
 
     if (!parsed)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot parse {}. Removing it cancels the conversion of the table to replicated", fullPath(disk, path));
+            "Cannot parse {}, which lists the parts to attach when the conversion of the table to replicated is resumed. "
+            "Repair it: the first line is `metadata version: <N>`, followed by one part name per line",
+            fullPath(disk, path));
     return parts;
 }
 
