@@ -110,7 +110,6 @@ struct ManyAggregatedData
     std::atomic<UInt32> num_finished = 0;
     std::shared_ptr<SharedKeptKeys> shared_kept_keys;
 
-    /// See `Aggregator::Params::stop_all_streams_on_overflow_any`.
     std::atomic<bool> stop_consuming = false;
 
     /// The number of producers that have to reach the finish barrier in

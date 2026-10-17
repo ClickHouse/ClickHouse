@@ -3471,9 +3471,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::ANY:
                 ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
-                /// Without aggregate functions, the rest of the input cannot change the result: every
-                /// later row either hits a key already in the table or is dropped. Stop like `BREAK`,
-                /// so that e.g. `GROUP BY ... LIMIT` does not read the whole input after it has found enough keys.
+                /// Without aggregate functions, the rest of the input cannot change the result.
                 if (params.aggregates_size == 0)
                     return false;
                 break;

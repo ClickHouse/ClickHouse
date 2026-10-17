@@ -1369,9 +1369,6 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::PortFull;
     }
 
-    /// See `Aggregator::Params::stop_all_streams_on_overflow_any`. A stream waiting for input sees the
-    /// flag only when its next chunk arrives: nothing re-prepares a processor without a port update, so
-    /// a stream behind a filter that drops all its rows keeps reading until the end of its input.
     if (!is_consume_finished && many_data->stop_consuming.load(std::memory_order_relaxed))
         is_consume_finished = true;
 

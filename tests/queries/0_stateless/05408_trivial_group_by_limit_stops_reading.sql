@@ -1,7 +1,5 @@
--- Without aggregate functions, `GROUP BY ... LIMIT n` stops reading its input once enough keys are
--- found (https://github.com/ClickHouse/ClickHouse/issues/8777). The infinite `system.numbers`
--- sources below would otherwise run into `max_rows_to_read`. The checked queries are top-level
--- queries, because the optimization applies only to them; their results are checked in `system.query_log`.
+-- Without aggregate functions, `GROUP BY ... LIMIT n` stops reading once enough keys are found
+-- (https://github.com/ClickHouse/ClickHouse/issues/8777); otherwise the infinite sources hit `max_rows_to_read`.
 
 SET optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0;
 SET max_rows_to_read = 100000000, read_overflow_mode = 'throw';
@@ -9,17 +7,14 @@ SET max_rows_to_read = 100000000, read_overflow_mode = 'throw';
 SELECT number FROM system.numbers GROUP BY number LIMIT 5
 SETTINGS max_threads = 1, log_comment = 'gbl_stop_single_thread' FORMAT Null;
 
--- One stream only ever sees the key `1` and would never reach the cap by itself: it has to stop
--- as soon as another stream has found enough keys.
+-- The second stream never reaches the cap by itself.
 SELECT k FROM (SELECT number AS k FROM system.numbers UNION ALL SELECT 1 AS k FROM system.numbers) GROUP BY k LIMIT 5
 SETTINGS max_threads = 2, log_comment = 'gbl_stop_stream_with_single_key' FORMAT Null;
 
 SELECT number FROM remote('127.0.0.{1,2}', system.numbers) GROUP BY number LIMIT 5
 SETTINGS log_comment = 'gbl_stop_distributed' FORMAT Null;
 
--- `max_rows_to_group_by` with `group_by_overflow_mode = 'any'` set by the user, without `LIMIT`:
--- the stream stops reading too, as the rest of the input cannot add keys any more. The first block
--- has all the 1000 keys.
+-- User-set `any` mode without `LIMIT`.
 SELECT number % 1000 FROM system.numbers GROUP BY number % 1000
 SETTINGS max_threads = 1, max_block_size = 65536, max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     log_comment = 'gbl_stop_user_overflow_mode_any' FORMAT Null;
@@ -32,7 +27,6 @@ INSERT INTO t_group_by_limit_stops_reading SELECT number FROM numbers(2000000);
 SELECT k FROM t_group_by_limit_stops_reading GROUP BY k LIMIT 5
 SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree' FORMAT Null;
 
--- With aggregate functions the whole table is read.
 SELECT k, count() FROM t_group_by_limit_stops_reading GROUP BY k LIMIT 5
 SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree_aggregate' FORMAT Null;
 

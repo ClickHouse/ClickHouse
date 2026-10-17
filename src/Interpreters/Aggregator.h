@@ -257,12 +257,8 @@ public:
         /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
         bool shared_kept_keys_for_overflow_any = false;
 
-        /// Without aggregate functions and with `group_by_overflow_mode = ANY`: once any stream
-        /// exceeds `max_rows_to_group_by`, every stream stops reading its input. The stream alone
-        /// already holds more than `max_rows_to_group_by` distinct keys, so this is sound only when
-        /// a `LIMIT` of at most `max_rows_to_group_by` rows without `ORDER BY` follows the
-        /// aggregation: any subset of the groups of that size is a valid result. Set by the trivial
-        /// `GROUP BY ... LIMIT` optimization (see `addAggregationStep` in the planner).
+        /// Once any stream exceeds `max_rows_to_group_by` in `ANY` mode without aggregate functions, all
+        /// streams stop. Sound only if a `LIMIT` of at most `max_rows_to_group_by` rows follows.
         bool stop_all_streams_on_overflow_any = false;
 
         /// Runtime arbitration between the kept-keys cutoff and external aggregation, shared by
