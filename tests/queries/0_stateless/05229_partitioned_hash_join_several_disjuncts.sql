@@ -1,7 +1,10 @@
+-- Tags: long
 -- Joins with several disjuncts (`ON a OR b`) on the partitioned hash join: one table per clause over one block store,
 -- a right row emitted once however many clauses reach it, used flags kept per right-table row.
 
 SET max_threads = 8;
+-- The non-joined rows of a FULL join come from several streams only with this setting.
+SET parallel_non_joined_rows_processing = 1;
 SET parallel_hash_join_threshold = 1;
 SET max_block_size = 8192;
 SET query_plan_join_swap_table = 0;

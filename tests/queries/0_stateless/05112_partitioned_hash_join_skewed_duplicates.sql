@@ -9,6 +9,9 @@ SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
 SET enable_parallel_replicas = 0;
+-- The planner's row estimate picks the build layout. A randomized join order or a reordering limit of 0 loses it.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t_ird_build;
 DROP TABLE IF EXISTS t_ird_probe;

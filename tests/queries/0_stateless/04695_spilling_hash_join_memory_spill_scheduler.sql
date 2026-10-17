@@ -1,4 +1,4 @@
--- Tags: no-asan, no-tsan
+-- Tags: no-asan, no-tsan, long
 -- The memory spill scheduler should be able to spill a `SpillingHashJoin`, not just a top-level `grace_hash`.
 create table spill_scheduler_04695_1 (`k` String, `x` String) Engine=Memory;
 create table spill_scheduler_04695_2 (`k` String, `x` String) Engine=Memory;

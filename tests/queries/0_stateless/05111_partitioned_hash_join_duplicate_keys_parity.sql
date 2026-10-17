@@ -1,3 +1,4 @@
+-- Tags: long
 -- Results of the partitioned hash join over a duplicate-heavy build. Keys carry 1, 2, 3, 7, 8, 9
 -- and 300 rows each, spread over blocks. Every duplicate layout of the shared hash table is produced
 -- and read back: inline, pair, run, and run list. Coverage includes join kinds and strictnesses, key
@@ -14,6 +15,9 @@ SET max_bytes_in_join = 0;
 -- The ProfileEvents assertions below read this server's query_log; with parallel replicas the join builds
 -- (and their events) can land on other replicas.
 SET enable_parallel_replicas = 0;
+-- The planner's row estimate picks the build layout. A randomized join order or a reordering limit of 0 loses it.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 -- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
 SET max_threads = 4;
 

@@ -1,3 +1,4 @@
+-- Tags: long
 -- The probe of a join with several disjuncts (`ON a OR b`) on the partitioned hash join stops at
 -- `max_joined_block_size_rows` and hands the rest of the left block back, as `hash` does, so a result much
 -- larger than its input is not built in one block.
