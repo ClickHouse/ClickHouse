@@ -943,7 +943,6 @@ bool SerializationNullable::tryDeserializeNullJSON(DB::ReadBuffer & istr)
 template<typename ReturnType>
 ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
 {
-    auto check_for_null = [](ReadBuffer & buf){ return checkStringByFirstCharacterAndAssertTheRest("null", buf); };
     auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
     {
         if constexpr (std::is_same_v<ReturnType, bool>)
@@ -951,7 +950,84 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
         nested->deserializeTextJSON(nested_column, buf, settings);
     };
 
-    return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+    if (istr.eof() || *istr.position() != 'n')
+    {
+        /// This is not null, surely.
+        return deserializeImpl<ReturnType>(column, istr, [](ReadBuffer &){ return false; }, deserialize_nested, is_null);
+    }
+
+    /// Check if we have enough data in the current buffer chunk to check for "null".
+    if (istr.available() >= 4)
+    {
+        const auto check_for_null = [](ReadBuffer & buf)
+        {
+            auto * pos = buf.position();
+            if (checkString("null", buf)) /// null or new ISODate
+                return true;
+            buf.position() = pos;
+            return false;
+        };
+        return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+    }
+
+    /// We don't have enough data in the buffer to check if it's "null" (it may be split across
+    /// a buffer boundary, e.g. "nu" | "ll"). Use PeekableReadBuffer to make a checkpoint before
+    /// checking and roll back to it if the check failed, without consuming any bytes on mismatch.
+    PeekableReadBuffer peekable_buf(istr, true);
+    const auto check_for_null = [](ReadBuffer & buf_)
+    {
+        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
+        buf.setCheckpoint();
+        SCOPE_EXIT(buf.dropCheckpoint());
+        if (checkString("null", buf)) /// null or new ISODate
+            return true;
+        buf.rollbackToCheckpoint();
+        return false;
+    };
+
+    auto deserialize_nested_with_check = [&deserialize_nested, &nested, &settings, &istr](IColumn & nested_column, ReadBuffer & buf_)
+    {
+        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
+        auto * pos = buf.position();
+        if constexpr (std::is_same_v<ReturnType, bool>)
+        {
+            if (!deserialize_nested(nested_column, buf))
+                return ReturnType(false);
+        }
+        else
+        {
+            deserialize_nested(nested_column, buf);
+        }
+
+        /// Check that we don't have any unread data in PeekableReadBuffer own memory.
+        if (likely(!buf.hasUnreadData()))
+            return ReturnType(true);
+
+        /// We have some unread data in PeekableReadBuffer own memory.
+        /// It can happen only if there is a token starting with 'n' but not equal to "null"
+        /// (e.g. "nan" for Nullable(Float64)) and the nested parser stopped before consuming
+        /// all the bytes that were pulled into the peekable buffer's own memory while probing for "null".
+        /// We also should delete incorrectly deserialized value from nested column.
+        if constexpr (!std::is_same_v<ReturnType, void>)
+        {
+            nested_column.popBack(1);
+            return ReturnType(false);
+        }
+
+        WriteBufferFromOwnString parsed_value;
+        nested->serializeTextJSON(nested_column, nested_column.size() - 1, parsed_value, settings);
+        nested_column.popBack(1);
+        throw DB::Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Error while parsing \"{}{}\" as Nullable"
+                " at position {}: got \"{}\", which was deserialized as \"{}\". "
+                "It seems that input data is ill-formatted.",
+                std::string(pos, buf.buffer().end()),
+                std::string(istr.position(), std::min(size_t(10), istr.available())),
+                istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
+    };
+
+    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);
 }
 
 void SerializationNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
