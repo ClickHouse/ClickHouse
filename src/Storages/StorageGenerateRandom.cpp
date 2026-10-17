@@ -67,7 +67,6 @@
 #include <algorithm>
 #include <cmath>
 #include <base/arithmeticOverflow.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -1298,10 +1297,7 @@ size_t estimateValueSize(
     }
 }
 
-/// The recursive worker behind the entry point below. The attribute belongs here rather than only
-/// on that wrapper: this is the function that generates the values, and Date32 in particular is
-/// produced by wrapping a day number below the epoch offset into the negative range.
-ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const GenerateRandomContext & ctx)
+ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const GenerateRandomContext & ctx)
 {
     pcg64 & rng = ctx.rng;
     const UInt64 max_array_length = ctx.options.max_array_length;
@@ -1469,7 +1465,7 @@ ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(const DataTypeP
                 fillBufferWithRandomNumbers<UInt32>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
             else
                 for (size_t i = 0; i < limit; ++i)
-                    column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
+                    column->getData()[i] = static_cast<Int32>(static_cast<Int64>(rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH);
 
             return column;
         }
@@ -1847,7 +1843,7 @@ Block prepareBlockToFill(const Block & block)
 
 }
 
-ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(
+ColumnPtr fillColumnWithRandomData(
     DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy)
 {
     GenerateRandomOptions options;

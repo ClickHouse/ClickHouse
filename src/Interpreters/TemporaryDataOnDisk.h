@@ -17,7 +17,6 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <base/sanitizer_defs.h>
 
 class FileCacheTest_TemporaryDataReadBufferSize_Test;
 
@@ -121,7 +120,6 @@ public:
 protected:
     friend class TemporaryDataBuffer;
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
@@ -245,7 +243,6 @@ public:
 
 private:
     void updateAllocAndCheck();
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void freeAlloc();
 
     std::shared_ptr<TemporaryDataOnDiskScope> parent;

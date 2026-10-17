@@ -68,7 +68,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace CurrentMetrics
@@ -2194,21 +2193,21 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
-NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks)
 {
     size_t marks = 1;
 
-    if (rows_setting + rows_granularity <= rows_setting) /// overflow
+    /// The granularity is zero, or `rows_setting + rows_granularity` would overflow.
+    if (rows_granularity == 0 || rows_setting > std::numeric_limits<size_t>::max() - rows_granularity)
         marks = max_marks;
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;
 
     if (bytes_granularity)
     {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+        /// `bytes_setting + bytes_granularity` would overflow.
+        if (bytes_setting > std::numeric_limits<size_t>::max() - bytes_granularity)
             marks = max_marks;
         else if (bytes_setting)
             marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);

@@ -13,7 +13,6 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include <expected>
-#include <base/sanitizer_defs.h>
 
 struct PreformattedMessage;
 
@@ -194,7 +193,6 @@ public:
         size_t bytes_granularity);
 
     /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static size_t minMarksForConcurrentRead(
         size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
