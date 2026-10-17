@@ -5957,7 +5957,8 @@ public:
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_)
+            , CastType cast_type_
+            , bool nulls_from_source_only_)
         : settings(settings_)
         , cast_name(cast_name_)
         , monotonicity_for_range(std::move(monotonicity_for_range_))
@@ -5965,6 +5966,7 @@ public:
         , return_type(return_type_)
         , diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
+        , nulls_from_source_only(nulls_from_source_only_)
     {
     }
 
@@ -5975,7 +5977,11 @@ public:
 
     String getName() const override { return cast_name; }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    void updateHash(SipHash & hash) const override
+    {
+        settings.updateHash(hash);
+        hash.update(nulls_from_source_only);
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -6007,6 +6013,7 @@ private:
 
     std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
+    bool nulls_from_source_only;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -6158,9 +6165,9 @@ private:
         };
     }
 
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type, bool result_nulls_from_source_only = false) const;
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
+    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool result_nulls_from_source_only) const;
 
     /// 'from_type' and 'to_type' are nested types in case of Nullable.
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
@@ -6181,6 +6188,7 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
+    CastType cast_type,
+    bool nulls_from_source_only);
 
 }

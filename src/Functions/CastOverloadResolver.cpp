@@ -86,7 +86,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
+    CastType cast_type,
+    bool nulls_from_source_only);
 
 /// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
 /// without an explicit time zone, return a copy of it with the given time zone substituted.
@@ -223,7 +224,8 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context_)
+        ContextPtr context_,
+        bool nulls_from_source_only)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -237,7 +239,7 @@ public:
 
         return createFunctionBaseCast(
             createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate),
-            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
+            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, nulls_from_source_only);
     }
 
 protected:
@@ -249,7 +251,8 @@ protected:
             arguments,
             return_type,
             diagnostic,
-            cast_type);
+            cast_type,
+            /*nulls_from_source_only=*/ false);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -319,9 +322,16 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(
+    ColumnWithTypeAndName from,
+    DataTypePtr to,
+    CastType cast_type,
+    std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context,
+    bool nulls_from_source_only)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, nulls_from_source_only);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
