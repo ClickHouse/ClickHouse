@@ -26,6 +26,7 @@
 #include <IO/copyData.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
@@ -745,9 +746,19 @@ namespace
     /// shared by a Nested group are a single stream after `Nested::collect`.
     std::optional<String> findStreamFileNameCollision(const ColumnsDescription & columns)
     {
+        auto physical_columns = columns.getAllPhysical();
+        auto columns_to_check = Nested::collect(physical_columns);
+
+        /// `Nested::collect` drops a non-flattened Nested whose name prefix is a flattened Nested group,
+        /// but its streams are still stored.
+        auto collected_names = columns_to_check.getNameSet();
+        for (const auto & column : physical_columns)
+            if (isNested(column.type) && !collected_names.contains(column.name))
+                columns_to_check.push_back(column);
+
         std::unordered_map<String, NameAndTypePair> file_name_to_column;
 
-        for (const auto & column : Nested::collect(columns.getAllPhysical()))
+        for (const auto & column : columns_to_check)
         {
             std::vector<String> column_file_names;
             std::unordered_set<String> column_file_names_set;
