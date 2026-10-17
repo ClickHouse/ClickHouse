@@ -1,4 +1,3 @@
-#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -277,33 +276,35 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 Int64 index = indices_col.getInt(j);
                 UInt64 length = lengths_col.getUInt(j);
 
-                /// Keep the same as in arraySlice
+                /// Keep the same as in arraySlice: the range is clipped to the array.
+                /// The bounds are compared with the remaining size instead of being added to the user-controlled
+                /// `index` and `length`, which could wrap around.
+                const size_t size = end - begin;
 
                 if (index > 0)
                 {
-                    local_begin = index - 1;
-                    /// Compare against the remaining size instead of adding, as `length` is user-controlled
-                    /// and `local_begin + length` can wrap around.
-                    if (local_begin < end - begin && length < end - begin - local_begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    const UInt64 offset = static_cast<UInt64>(index) - 1;
+                    if (offset < size)
+                    {
+                        local_begin = offset;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                 }
                 else if (index < 0)
                 {
-                    const UInt64 offset_from_end = common::negateIgnoreOverflow(static_cast<UInt64>(index));
-                    const size_t size = end - begin;
-
-                    /// An index pointing before the array start selects an empty range, the same as
-                    /// `arraySlice` does: `arraySlice([1, 2, 3], -5, 2)` is `[]`.  Both bounds stay
-                    /// at zero in that case.
+                    /// Written this way to not overflow for the minimum `Int64`.
+                    const UInt64 offset_from_end = static_cast<UInt64>(-(index + 1)) + 1;
                     if (offset_from_end <= size)
                     {
                         local_begin = size - offset_from_end;
-                        if (length < size - local_begin)
-                            local_end = local_begin + length;
-                        else
-                            local_end = size;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
+                    else
+                    {
+                        /// The range starts before the array: skip the part of it that is before the start.
+                        const UInt64 before_start = offset_from_end - size;
+                        if (length > before_start)
+                            local_end = std::min<UInt64>(length - before_start, size);
                     }
                 }
             }
