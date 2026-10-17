@@ -18,6 +18,7 @@ SET enable_join_transitive_predicates = 1;
 SET materialize_statistics_on_insert = 1;
 
 -- Dim_A: small dimension (10 rows), unique key
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE Dim_A (
     a_key UInt32,
     a_name String

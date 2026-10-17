@@ -15,6 +15,10 @@
 -- creates the unfinished window). Correctness must hold with the feature on: a partial or racily
 -- read set would prune granules for not-yet-merged keys and undercount.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_fact;
 DROP TABLE IF EXISTS rf_dim;
 
@@ -47,6 +51,9 @@ SET query_plan_join_swap_table = 0;
 -- the threshold, in which case no runtime filter is built at all.
 SET query_plan_optimize_join_order_randomize = 0;
 SET join_runtime_filter_min_probe_rows = 0;
+-- Pin (randomized in CI): the exact set turns into a bloom filter past either limit (4000 keys,
+-- about 32 KiB), and then the exact IN-set pruning checked below is never engaged.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 -- Correctness: with index analysis on, every one of the 4000 matching rows must survive. A partial
 -- or racily read exact set would prune probe granules for not-yet-merged keys and undercount.

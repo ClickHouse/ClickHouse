@@ -4,6 +4,8 @@
 SET enable_analyzer = 1;
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;
+-- the test observes the fusion itself, so it cannot run with the optimization randomized off
+SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_fuse_edge;
 CREATE TABLE t_fuse_edge (id UInt64, arr Array(String)) ENGINE = MergeTree ORDER BY id;

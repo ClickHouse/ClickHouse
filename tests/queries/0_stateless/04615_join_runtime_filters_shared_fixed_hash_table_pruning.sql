@@ -9,6 +9,10 @@
 -- than fail the query. Whichever filter ends up published, results must be exact and granule
 -- pruning must still engage.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_shared_fact;
 DROP TABLE IF EXISTS rf_shared_dim;
 
@@ -35,6 +39,8 @@ SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET join_runtime_filter_from_fixed_hash_table = 1;
+-- Pin (randomized in CI): the shared filter is only published when the build side converts to a `FixedHashMap`.
+SET enable_join_fixed_hash_table_conversion = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';

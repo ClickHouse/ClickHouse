@@ -11,6 +11,8 @@ SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_for_disjunctions = 1;
 SET allow_key_condition_coalesce_rewrite = 1;
+-- Pin off: folding partition constants changes the granule counts this test asserts on (rows unchanged).
+SET use_constant_folding_in_index_analysis = 0;
 
 DROP TABLE IF EXISTS tab;
 

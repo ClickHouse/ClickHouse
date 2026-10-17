@@ -6,6 +6,10 @@
 -- yield an exact atom. A layout that the key expression result type re-packs by itself is left exactly
 -- as it was, and the last two arms hold that line.
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS t_str;
 DROP TABLE IF EXISTS t_float;
 DROP TABLE IF EXISTS t_null;

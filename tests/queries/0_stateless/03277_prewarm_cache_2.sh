@@ -16,6 +16,7 @@ $CLICKHOUSE_CLIENT --query "
         index_granularity = 100,
         min_bytes_for_wide_part = 0,
         use_primary_key_cache = 1,
+        primary_key_lazy_load = 1,
         prewarm_primary_key_cache = 1,
         prewarm_mark_cache = 1,
         max_cleanup_delay_period = 1,

@@ -3,6 +3,8 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;
+-- without fusion the WHERE becomes a separate Filter step, changing the plan shape
+SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_nested;
 CREATE TABLE t_nested (`n.a` Array(Int64), `n.b` Array(Int64), `n.c` Array(Int64)) ENGINE = MergeTree ORDER BY tuple();

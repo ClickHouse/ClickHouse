@@ -11,6 +11,12 @@ SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET use_statistics = 0;
+-- The master switch, default 1: with it off no row store is ever built and every row below
+-- reads 0, so the per-query min_rows_ratio pins would decide nothing.
+SET enable_hash_join_row_store = 1;
+-- Right-table reranging and the row store are mutually exclusive: `initRowStore` disables the
+-- row store whenever reranging is merely enabled, without consulting its row thresholds.
+SET allow_join_right_table_sorting = 0;
 SET collect_hash_table_stats_during_joins = 1;
 SET param__internal_join_table_stat_hints = '{}';
 

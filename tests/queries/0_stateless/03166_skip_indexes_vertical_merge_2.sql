@@ -17,6 +17,9 @@ ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,
     index_granularity_bytes = 0,
+    -- The thresholds below only choose when to go vertical; this is the master switch,
+    -- and a horizontal merge gathers no columns at all.
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0,

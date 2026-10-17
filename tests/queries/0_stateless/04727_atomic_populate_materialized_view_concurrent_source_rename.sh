@@ -29,7 +29,10 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT atomic_populate_pause_before_subscription"
 
+# The fail point only exists on the atomic path, so the `SYSTEM WAIT FAILPOINT ... PAUSE` below would
+# never be reached if the setting were randomized off.
 $CLICKHOUSE_CLIENT -q "
+    SET materialized_views_populate_atomically = 1;
     CREATE MATERIALIZED VIEW mv_04727 ENGINE = MergeTree ORDER BY n POPULATE AS SELECT n FROM src_04727
 " &
 CREATE_PID=$!
@@ -85,7 +88,10 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT atomic_populate_pause_before_subscription"
 
+# The fail point only exists on the atomic path, so the `SYSTEM WAIT FAILPOINT ... PAUSE` below would
+# never be reached if the setting were randomized off.
 $CLICKHOUSE_CLIENT -q "
+    SET materialized_views_populate_atomically = 1;
     CREATE MATERIALIZED VIEW mv_04727 ENGINE = MergeTree ORDER BY n POPULATE AS SELECT n FROM src_04727
 " &
 CREATE_PID=$!

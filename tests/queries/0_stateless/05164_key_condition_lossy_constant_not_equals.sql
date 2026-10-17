@@ -3,6 +3,10 @@
 -- `notEquals` then excluded that point - dropping a row whose stored value really differs from the
 -- constant. Such an atom must stay relaxed: the key point has more than one preimage.
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the key analysis
+-- by the `NOT IN` sets below does not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS t_lossy_const_key;
 
 CREATE TABLE t_lossy_const_key (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY toString(d);
