@@ -97,6 +97,14 @@ public:
     /// `expected_num_docs` (header cardinality) and `available_bytes` fail-close every declared size.
     static Directory readDirectory(ReadBuffer & in, UInt64 blob_offset, UInt64 expected_num_docs, size_t available_bytes);
 
+    /// `decodeBlock` in two steps, so that ranks of one parsed block can be emitted several times.
+    static void readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch);
+    static void emitRanks(
+        const DecodeScratch & scratch,
+        std::span<const UInt32> local_ranks,
+        PaddedPODArray<UInt32> & offsets,
+        PaddedPODArray<UInt32> & positions);
+
     /// Decodes block `block_idx` (stream at dir.block_offsets[block_idx]); appends each requested
     /// local rank's positions to `positions` and its end offset to `offsets`.
     static void decodeBlock(

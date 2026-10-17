@@ -795,80 +795,15 @@ PostingsApplyWindow PostingListCursor::linearDecoded(UInt8 * data, size_t row_of
 namespace
 {
 
-/// Leapfrog intersection led by the sparsest cursor (`cursors` are sorted by ascending cardinality).
-/// The other cursors are advanced to the lead's doc_id in order, and the first one that overshoots moves the lead
-/// to its doc_id. So a denser cursor only advances to the doc_ids that all the sparser cursors contain.
-/// `num_cursors` is the number of cursors when it is fixed at compile time, which unrolls the loops over them, or 0.
-template <size_t num_cursors>
-bool intersectLeapfrogImpl(UInt8 * out, const std::vector<PostingListCursor *> & cursor_ptrs, size_t row_offset, size_t effective_end)
-{
-    static_assert(num_cursors <= 8);
-    const size_t n = num_cursors ? num_cursors : cursor_ptrs.size();
-    chassert(cursor_ptrs.size() == n);
-
-    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
-    using CursorsType = std::conditional_t<num_cursors != 0,
-        std::array<PostingListCursor *, num_cursors>,
-        std::vector<PostingListCursor *>>;
-
-    CursorsType cursors{};
-    if constexpr (num_cursors == 0)
-        cursors = cursor_ptrs;
-    else
-        std::copy_n(cursor_ptrs.begin(), num_cursors, cursors.begin());
-
-    PostingListCursor & lead = *cursors[0];
-    bool found = false;
-
-    while (lead.valid() && lead.value() < effective_end)
-    {
-        const uint32_t doc = lead.value();
-        size_t i = 1;
-
-        for (; i < n; ++i)
-        {
-            PostingListCursor & cursor = *cursors[i];
-
-            if (cursor.valid() && cursor.value() < doc)
-                cursor.advance(doc);
-
-            if (!cursor.valid())
-                return found;
-
-            if (cursor.value() > doc)
-                break;
-        }
-
-        if (i == n)
-        {
-            out[doc - row_offset] = 1;
-            found = true;
-
-            for (size_t j = 0; j < n; ++j)
-                cursors[j]->next();
-        }
-        else
-        {
-            lead.advance(cursors[i]->value());
-        }
-    }
-
-    return found;
-}
-
 bool intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
-    switch (cursors.size())
+    bool found = false;
+    leapfrogIntersect(cursors, effective_end, [&](uint32_t doc)
     {
-        case 2: return intersectLeapfrogImpl<2>(out, cursors, row_offset, effective_end);
-        case 3: return intersectLeapfrogImpl<3>(out, cursors, row_offset, effective_end);
-        case 4: return intersectLeapfrogImpl<4>(out, cursors, row_offset, effective_end);
-        case 5: return intersectLeapfrogImpl<5>(out, cursors, row_offset, effective_end);
-        case 6: return intersectLeapfrogImpl<6>(out, cursors, row_offset, effective_end);
-        case 7: return intersectLeapfrogImpl<7>(out, cursors, row_offset, effective_end);
-        case 8: return intersectLeapfrogImpl<8>(out, cursors, row_offset, effective_end);
-        default: return intersectLeapfrogImpl<0>(out, cursors, row_offset, effective_end);
-    }
+        out[doc - row_offset] = 1;
+        found = true;
+    });
+    return found;
 }
 
 /// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.

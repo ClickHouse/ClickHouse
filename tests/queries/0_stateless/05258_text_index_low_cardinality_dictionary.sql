@@ -15,7 +15,7 @@ CREATE TABLE tab
     INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = 104857600, allow_experimental_text_index_phrase_search = 1;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 104857600, allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor';
 
 SELECT '300 values with a token repeated within a value, and NULLs';
 
@@ -62,7 +62,7 @@ CREATE TABLE tab_array
     INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = 104857600, allow_experimental_text_index_phrase_search = 1;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 104857600, allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor';
 
 INSERT INTO tab_array SELECT number, v, v
 FROM (SELECT number, if(number % 10 = 0, [], arrayMap(k -> multiIf(k = 0, NULL, k = 1, '', concat('e', toString((number + k) % 13), ' f')), [0, 1, 2, 3, 3])) AS v FROM numbers(1000));
