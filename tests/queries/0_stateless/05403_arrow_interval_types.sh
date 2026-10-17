@@ -2,7 +2,8 @@
 # Tags: no-fasttest
 # Arrow interval types: `YEAR_MONTH` is read as `IntervalMonth`, `DAY_TIME` as `Tuple(days IntervalDay, milliseconds
 # IntervalMillisecond)` and `MONTH_DAY_NANO` as `Tuple(months IntervalMonth, days IntervalDay, nanoseconds
-# IntervalNanosecond)`, so the values can be added to dates. Each column has a null row.
+# IntervalNanosecond)`, so the values can be added to dates. Each column has a null row. The tuples are wrapped in
+# `Nullable` unless `enable_nullable_tuple_type` is disabled, in which case a null row reads as zero intervals.
 # The files were written with nanoarrow and pyarrow (pyarrow cannot build the first two types from Python).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -21,5 +22,5 @@ for FILE in "$CURDIR/data_arrow/interval_types.arrow" "$CURDIR/data_arrow/interv
         FROM file('$FILE', $FMT) ORDER BY id;
     "
     # A separate process, so that the schema is not taken from the cache of the inference above.
-    $CLICKHOUSE_LOCAL -q "SELECT mdn, toTypeName(mdn) FROM file('$FILE', $FMT) ORDER BY id SETTINGS enable_nullable_tuple_type = 1"
+    $CLICKHOUSE_LOCAL -q "SELECT mdn, toTypeName(mdn) FROM file('$FILE', $FMT) ORDER BY id SETTINGS enable_nullable_tuple_type = 0"
 done
