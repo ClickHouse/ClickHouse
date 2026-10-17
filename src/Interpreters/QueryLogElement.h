@@ -130,6 +130,14 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
+    /// The query's plan as JSON text, parsed into the `JSON` column when the row is appended. On a
+    /// row for a query that threw, this is the plan it had built by then, which it may never have run.
+    /// Only filled when `log_query_plans` is enabled.
+    String query_plan;
+
+    /// Hash of the shape of the executed plan, see `hashQueryPlanShape`. 0 when it was not computed.
+    UInt64 query_plan_hash = 0;
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();
