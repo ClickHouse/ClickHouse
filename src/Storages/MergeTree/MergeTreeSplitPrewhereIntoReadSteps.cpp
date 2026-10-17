@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
@@ -23,20 +22,19 @@ namespace
 struct NodeInfo
 {
     NameSet required_columns;
-    /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-    /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
-    NameSet required_storage_columns;
+    /// The required columns read from the table, that is, not filled by an index reader.
+    NameSet required_table_columns;
     /// Names of the indexes whose readers fill the virtual columns required to compute this node.
-    /// Used for grouping like `required_storage_columns`: one reader fills all virtual columns of an index.
+    /// One reader fills all virtual columns of an index, so they count as one.
     NameSet required_indexes;
     /// True if computing this node may throw an exception, so it must not be evaluated on rows
     /// that a preceding condition rejects.
     bool may_throw = false;
 
-    /// True if both nodes read the same storage columns and indexes, so their conditions may share a step.
+    /// True if both nodes read the same columns and indexes, so their conditions may share a step.
     bool readsSameColumns(const NodeInfo & other) const
     {
-        return required_storage_columns == other.required_storage_columns && required_indexes == other.required_indexes;
+        return required_table_columns == other.required_table_columns && required_indexes == other.required_indexes;
     }
 };
 
@@ -52,10 +50,8 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
-/// Fills the info of an input column.
-/// A virtual column of an index is resolved to the name of the index whose reader fills it.
-/// A subcolumn like `map.key_k0` is resolved to its storage (physical) column `map`, a regular column to itself.
-void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const ColumnsDescription * columns, const IndexReadTasks * index_read_tasks)
+/// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
+void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
 {
     node_info.required_columns.insert(column_name);
 
@@ -71,23 +67,13 @@ void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const Col
         }
     }
 
-    if (columns)
-    {
-        if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-        {
-            node_info.required_storage_columns.insert(col->getNameInStorage());
-            return;
-        }
-    }
-
-    node_info.required_storage_columns.insert(column_name);
+    node_info.required_table_columns.insert(column_name);
 }
 
 /// Fills the list of required columns for a node in the DAG.
 void fillRequiredColumns(
     const ActionsDAG::Node * node,
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const ColumnsDescription * columns,
     const IndexReadTasks * index_read_tasks)
 {
     if (nodes_info.contains(node))
@@ -97,16 +83,16 @@ void fillRequiredColumns(
 
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        resolveNodeInfo(node_info, node->result_name, columns, index_read_tasks);
+        resolveNodeInfo(node_info, node->result_name, index_read_tasks);
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, columns, index_read_tasks);
+        fillRequiredColumns(child, nodes_info, index_read_tasks);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
-        node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
+        node_info.required_table_columns.insert(child_info.required_table_columns.begin(), child_info.required_table_columns.end());
         node_info.required_indexes.insert(child_info.required_indexes.begin(), child_info.required_indexes.end());
         node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
@@ -284,7 +270,6 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns,
     bool read_ahead_columns,
     const IndexReadTasks * index_read_tasks)
 {
@@ -324,31 +309,31 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, columns, index_read_tasks);
+        fillRequiredColumns(node, nodes_info, index_read_tasks);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read from the same set of physical storage columns and indexes into a single step.
-    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`), or on virtual columns of the same
-    /// index, are placed into one group when they appear next to each other in the condition list.
+    /// 4. Group adjacent conditions that read the same set of columns and indexes into a single step.
+    /// A subcolumn is a separate column here, so a condition on a subcolumn and a condition on
+    /// the whole column get separate steps, while conditions on virtual columns of one index share one.
     ///
     /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
     /// rather than a single opaque one. The flattening keeps the original left to right order, for the
     /// same evaluation order reason spelled out below.
     ///
     /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
-    /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
+    /// Non-adjacent conditions on the same columns are kept in separate steps even though this
     /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
     /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
     /// Adjacency alone is not enough: all conditions of one step are evaluated on the same unfiltered
     /// block, so a condition that may throw must never share a step with a preceding condition.
-    /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
-    /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
-    /// what keeps the guard effective.
+    /// `MergeTreeWhereOptimizer` groups conditions by the columns they read, which makes a guard and
+    /// a throwing predicate over the same column adjacent, so the may_throw check below is what keeps
+    /// the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     /// Indices of groups whose first condition may throw. Steps are not required to materialize their
     /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
@@ -356,9 +341,9 @@ bool tryBuildPrewhereSteps(
     /// two steps read, because a step never filters the block it hands over on its own.
     std::unordered_set<size_t> groups_requiring_filtered_input;
     /// For every group, the index of the group whose step reads its columns. A group that was split
-    /// from the previous one only because it may throw reads the same storage columns, so with
+    /// from the previous one only because it may throw reads the same columns, so with
     /// `read_ahead_columns` its columns are read by the first step of that run and only the evaluation
-    /// waits for the filter. Otherwise every such step would deserialize the same storage column again
+    /// waits for the filter. Otherwise every such step would deserialize the same columns again
     /// (for example a whole `Map` for each of its keys). Reading is safe only when the reader does not
     /// convert the column or fill it from a default expression, because that runs on the whole block
     /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
@@ -372,9 +357,9 @@ bool tryBuildPrewhereSteps(
         if (is_first_unattributed)
             num_attributed_steps = condition_groups.size();
 
-        const bool same_storage_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
+        const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
 
-        if (same_storage_columns && !node_info.may_throw && !is_first_unattributed)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -383,7 +368,7 @@ bool tryBuildPrewhereSteps(
         if (!condition_groups.empty() && node_info.may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
-        group_read_step.push_back(same_storage_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
+        group_read_step.push_back(same_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
         condition_groups.push_back({node});
     }
 
