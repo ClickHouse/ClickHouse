@@ -53,6 +53,8 @@ public:
 
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
 
+    void checkDirectCommitIsAllowed(const std::string & schema_name, const std::string & table_name, const DB::UUID & table_uuid) const override;
+
     std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
         const std::string & table_name) const override;
