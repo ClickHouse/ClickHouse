@@ -24,8 +24,7 @@ public:
     static constexpr auto name = "timeSeriesTagsToGroup";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context); }
-    /// The creation context can be gone when the function executes, so the collector is captured here.
-    /// Without a query context the function can still be created to read its signature.
+    /// The creation context may expire before execution; without a query context only the signature is usable.
     explicit FunctionTimeSeriesTagsToGroup(const ContextPtr & context)
         : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
     {
