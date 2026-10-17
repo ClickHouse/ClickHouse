@@ -657,6 +657,35 @@ static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNod
     return false;
 }
 
+/// Returns the `LATERAL JOIN` of the join tree `root` whose right side contains `target`, if any.
+static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeNode * root, const IQueryTreeNode * target)
+{
+    if (!root)
+        return nullptr;
+
+    if (const auto * join = root->as<JoinNode>())
+    {
+        if (join->isLateral() && joinSubtreeContains(join->getRightTableExpressionNode().get(), target))
+            return join;
+        if (const auto * result = findLateralJoinWithRightSideContaining(join->getLeftTableExpressionNode().get(), target))
+            return result;
+        return findLateralJoinWithRightSideContaining(join->getRightTableExpressionNode().get(), target);
+    }
+
+    if (const auto * cross_join = root->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join->getTableExpressions())
+            if (const auto * result = findLateralJoinWithRightSideContaining(table_expression.get(), target))
+                return result;
+        return nullptr;
+    }
+
+    if (const auto * array_join = root->as<ArrayJoinNode>())
+        return findLateralJoinWithRightSideContaining(array_join->getTableExpressionNode().get(), target);
+
+    return nullptr;
+}
+
 /** SQL says an alias replaces the name of the table it stands for, so `t.x` does not refer to `t AS c`.
   * ClickHouse accepts both spellings, which is harmless while the name means nothing else in the query.
   * Inside a subquery it is not: an enclosing query that selects from `t` gives `t.x` a second reading,
@@ -690,7 +719,9 @@ static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNod
   * the table expressions under that `JOIN` count, because the `ON` expression cannot read the others. A subquery
   * that sits in a `FROM` or `JOIN` of that query cannot read a column of its siblings - `validateFromClause` rejects such
   * a correlated column with `Lateral joins are not supported` - so there is no second reading to choose
-  * from there, and the qualifier keeps addressing the aliased table expression. This also keeps the
+  * from there, and the qualifier keeps addressing the aliased table expression. The exception is the right
+  * side of a `LATERAL JOIN`, which does read the left side of that `JOIN` (and only it), so the table
+  * expressions under the left side count there. This also keeps the
   * decision independent of the order of the enclosing `FROM`: `table_expression_node_to_data` is filled
   * one sibling at a time, so a query whose join tree is still being resolved carries only the part of the
   * name set that happens to precede the subquery.
@@ -728,7 +759,9 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
     if (identifier_column_qualifier_parts == 1 && identifier.getParts().front() == table_expression_node->getAlias())
         return false;
 
-    for (const auto * outer_scope = scope.parent_scope; outer_scope; outer_scope = outer_scope->parent_scope)
+    /// The scope directly below `outer_scope` in the chain, to locate the subquery in its join tree.
+    const IdentifierResolveScope * inner_scope = &scope;
+    for (const auto * outer_scope = scope.parent_scope; outer_scope; inner_scope = outer_scope, outer_scope = outer_scope->parent_scope)
     {
         /** The join tree of this query is still being resolved, so we are inside one of its table
           * expressions and cannot read a column of the others. Its name set is also only half filled at
@@ -750,10 +783,26 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
               * that subtree must not hide anything.
               */
             const auto * outer_query_node = outer_scope->scope_node->as<QueryNode>();
-            if (!outer_scope->resolving_join_on_expression || !outer_query_node
-                || !joinSubtreeContains(outer_query_node->getJoinTreeNode().get(), outer_scope->resolving_join_on_expression))
+            if (!outer_query_node)
                 continue;
-            visible_join_subtree = outer_scope->resolving_join_on_expression;
+
+            const auto * outer_join_tree = outer_query_node->getJoinTreeNode().get();
+            if (outer_scope->resolving_join_on_expression
+                && joinSubtreeContains(outer_join_tree, outer_scope->resolving_join_on_expression))
+            {
+                visible_join_subtree = outer_scope->resolving_join_on_expression;
+            }
+            else if (const auto * lateral_join = findLateralJoinWithRightSideContaining(outer_join_tree, inner_scope->scope_node.get()))
+            {
+                /** The right side of a `LATERAL JOIN` is resolved after its left side and reads the columns of
+                  * that left side, but not of the other table expressions of this query.
+                  */
+                visible_join_subtree = lateral_join->getLeftTableExpressionNode().get();
+            }
+            else
+            {
+                continue;
+            }
         }
 
         for (const auto & [outer_table_expression_node, outer_table_expression_data] : outer_scope->table_expression_node_to_data)
