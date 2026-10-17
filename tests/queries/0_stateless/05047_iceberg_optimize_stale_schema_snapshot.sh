@@ -24,6 +24,7 @@ IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options 
 
 table="t_${CLICKHOUSE_DATABASE}"
 stale="stale_${CLICKHOUSE_DATABASE}"
+avro="avro_${CLICKHOUSE_DATABASE}"
 table_path="${USER_FILES_PATH}/${table}/"
 
 count_position_deletes()
@@ -60,6 +61,17 @@ done
 
 pd_before=$(count_position_deletes)
 
+# Only the Parquet reader resolves columns by field id, so after the swap a rewrite into Avro must be
+# refused before it writes anything: its files would be read back by the pre-swap names.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${avro} ENGINE = IcebergLocal('${table_path}', 'Avro')"
+avro_err=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --allow_insert_into_iceberg=1 \
+    --use_iceberg_metadata_files_cache=0 --query "OPTIMIZE TABLE ${avro}" 2>&1)
+if [[ "${IS_CLOUD}" = "1" || "${avro_err}" == *NOT_IMPLEMENTED* ]]; then
+    echo "OPTIMIZE into Avro refused"
+else
+    echo "FAIL: OPTIMIZE into Avro was not refused: ${avro_err}"
+fi
+
 # The metadata files cache is bypassed so that compaction reads the post-swap metadata: served from
 # the cache it would read the same schema the stale object has, and nothing would be remapped.
 optimize_err=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --allow_insert_into_iceberg=1 \
@@ -85,6 +97,7 @@ fi
 
 ${CLICKHOUSE_CLIENT} --query "SELECT id, x, y FROM ${table} ORDER BY id"
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${avro} SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${stale} SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table} SYNC"
 rm -rf "${table_path}" 2>/dev/null

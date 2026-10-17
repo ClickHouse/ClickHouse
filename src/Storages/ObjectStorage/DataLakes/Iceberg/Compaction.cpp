@@ -37,6 +37,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -498,7 +499,28 @@ static Plan getPlan(
     /// Check only when files will actually be rewritten, so a no-op OPTIMIZE on an evolved table
     /// stays a no-op. `need_optimize` is known only after the manifest scan above.
     if (plan.need_optimize)
+    {
         checkCompactionSupportsSchemaEvolution(initial_metadata_object);
+
+        /// A rewritten file stays listed under its source file's schema-id, and only the Parquet
+        /// reader maps columns to that schema by field id; the others match by name.
+        if (Poco::toLower(write_format) != "parquet")
+        {
+            for (const auto & path_and_plan : plan.path_to_data_file)
+            {
+                Int32 file_schema_id = path_and_plan.second->data_object_info->info.underlying_format_read_schema_id;
+                if (file_schema_id != current_schema_id)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg compaction (OPTIMIZE) after schema evolution is supported only for the Parquet format, but "
+                        "the table writes {}: a data file written under schema-id {} would be rewritten with the columns of "
+                        "the current schema-id {} and then read back by the names of its own schema.",
+                        write_format,
+                        file_schema_id,
+                        current_schema_id);
+            }
+        }
+    }
 
     return plan;
 }
