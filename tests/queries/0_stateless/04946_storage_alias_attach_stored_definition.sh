@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel: while a self-referential Alias exists the server-wide dependency graph is cyclic, and
-#              `checkTableCanBeAddedWithNoCyclicDependencies` tests that graph as a whole, so any
-#              concurrent CREATE fails with INFINITE_LOOP. Server-global poisoning, same class as
-#              02391_recursive_buffer.
+# no-parallel: the test re-attaches a self-referential Alias (the load path tolerates it), and while
+#              it exists any concurrent query that walks the tables of all databases, e.g.
+#              `system.constraints` without a `database` filter, fails with TOO_DEEP_RECURSION.
+#              Server-global poisoning, same class as 02391_recursive_buffer.
 # An Alias whose target does not exist yet is accepted, so the target can later become an Alias
 # itself. Loading such stored metadata must succeed: on that path a rejection fails the whole
 # metadata load, not the one table.
@@ -62,8 +62,10 @@ DROP TABLE inner_alias;
 DROP TABLE base_table;
 "
 
-# RENAME DATABASE moves tables without rewriting stored ENGINE arguments and has no referential
-# preflight, so it is a second way to store a definition the constructor once refused.
+# `RENAME DATABASE` now refuses to leave an `Alias` of the database pointing back into it, but the
+# check can only see attached tables: a detached table is not in the dependency graph, so its stored
+# definition can still be moved into its own target namespace and re-attached afterwards. Loading
+# that must stay tolerated - a rejection on the load path fails the whole metadata load.
 
 $CLICKHOUSE_CLIENT -q "
 DROP DATABASE IF EXISTS \`${CLICKHOUSE_DATABASE_1}\`;
@@ -73,14 +75,18 @@ CREATE DATABASE \`${CLICKHOUSE_DATABASE_1}\`;
 # The renamed-to database is absent, so this names a table that does not exist yet.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE \`${CLICKHOUSE_DATABASE_1}\`.renamed ENGINE = Alias(\`${CLICKHOUSE_DATABASE_2}\`, renamed);
+"
+
+echo '-- RENAME DATABASE refuses to make an attached Alias self-referential'
+$CLICKHOUSE_CLIENT -q "RENAME DATABASE \`${CLICKHOUSE_DATABASE_1}\` TO \`${CLICKHOUSE_DATABASE_2}\`;" 2>&1 | grep -m 1 -o -F 'INFINITE_LOOP'
+
+$CLICKHOUSE_CLIENT -q "
+DETACH TABLE \`${CLICKHOUSE_DATABASE_1}\`.renamed;
 RENAME DATABASE \`${CLICKHOUSE_DATABASE_1}\` TO \`${CLICKHOUSE_DATABASE_2}\`;
 "
 
 echo '-- a stored self-referential definition loads'
-$CLICKHOUSE_CLIENT -q "
-DETACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
-ATTACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
-"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;"
 
 echo '-- and reading it is bounded'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
@@ -88,8 +94,6 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1
 echo '-- and describing it is bounded too'
 $CLICKHOUSE_CLIENT -q "DESCRIBE TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
 
-# Drop it immediately: nothing after this point needs the alias, and every statement it stays
-# alive for is one another session can trip over (see the no-parallel note above).
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
 DROP DATABASE \`${CLICKHOUSE_DATABASE_2}\`;
