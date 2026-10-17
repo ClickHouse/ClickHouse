@@ -41,6 +41,14 @@
 
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+        <!-- Experimental audit log: a dedicated file with authentication events and SQL statements.
+             It also requires `allow_experimental_audit_log` to be enabled.
+             `auditlog_types` is a comma-separated list of USER, DDL, DML, DCL, MISC, or ALL;
+             an empty value means DDL. See https://clickhouse.com/docs/operations/audit-log
+          -->
+        <!-- <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog> -->
+        <!-- <auditlog_types>USER,DDL,DCL</auditlog_types> -->
         <!-- Rotation policy
              See https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/FileChannel.h#L54-L85
           -->

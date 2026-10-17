@@ -1,0 +1,10 @@
+<clickhouse>
+    <allow_experimental_audit_log>true</allow_experimental_audit_log>
+    <logger>
+        <level>warning</level>
+        <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>
+        <auditlog_types>USER</auditlog_types>
+    </logger>
+    <mysql_port>9004</mysql_port>
+    <mysql_require_secure_transport>true</mysql_require_secure_transport>
+</clickhouse>

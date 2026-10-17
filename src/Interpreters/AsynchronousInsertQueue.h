@@ -118,6 +118,11 @@ public:
         String authenticated_user;
         /// Client quota key, so `KEYED BY client_key` quotas bill separate buckets per key.
         String quota_key;
+        /// Whether the flush writes its own audit record. Decided once, from the audit policy in effect when
+        /// the insert is queued, like the audit decision of any other statement (see `decideAuditLog`), so a
+        /// `SYSTEM RELOAD CONFIG` between enqueue and flush neither drops nor adds the record of the flush.
+        /// Part of the batching key so inserts with different decisions are never coalesced.
+        bool audit_flush = false;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -134,6 +139,7 @@ public:
             const String & initial_user_,
             const String & authenticated_user_,
             const String & quota_key_,
+            bool audit_flush_,
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
@@ -145,7 +151,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, audit_flush, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -263,6 +269,8 @@ private:
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
         std::atomic<size_t> * in_flight_flushes = nullptr;
+        /// Set by the flush once a failure of it is written to the audit log by the regular query logging.
+        bool flush_outcome_audited = false;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -383,6 +391,9 @@ private:
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
+
+    /// Writes the audit record of a flush that failed before its query logging was set up.
+    static void auditFlushFailureBeforeStartSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context) noexcept;
 
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 

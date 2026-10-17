@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool wait_for_async_insert;
 }
 
 namespace ErrorCodes
@@ -143,6 +144,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & initial_user_,
     const String & authenticated_user_,
     const String & quota_key_,
+    bool audit_flush_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
@@ -156,6 +158,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
     , quota_key(quota_key_)
+    , audit_flush(audit_flush_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -203,6 +206,10 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field);
     }
 
+    /// Not audited (the common case) contributes nothing, so it does not change the hash of existing keys.
+    if (audit_flush)
+        siphash.update(audit_flush);
+
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
@@ -234,6 +241,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     quota_key = other.quota_key;
+    audit_flush = other.audit_flush;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -256,6 +264,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         quota_key = other.quota_key;
+        audit_flush = other.audit_flush;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -716,6 +725,13 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         entry->query_parameters = query_context->getQueryParameters();
     }
 
+    /// The flush is internal, so normally it is not audited: with `wait_for_async_insert = 1` the
+    /// original `INSERT` waits for the flush and its own audit record carries the outcome. With
+    /// `wait_for_async_insert = 0` the original `INSERT` is audited as soon as the data is queued, so
+    /// the flush is audited by itself to record whether the rows were actually written.
+    const bool audit_flush = !settings[Setting::wait_for_async_insert]
+        && decideAuditLog(query_context, query, /*internal=*/ true, /*audit_internal=*/ true);
+
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
         query,
@@ -728,6 +744,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         client_info.initial_user,
         client_info.authenticated_user,
         client_info.quota_key,
+        audit_flush,
         settings,
         data_kind};
     InsertDataPtr data_to_process;
@@ -1368,6 +1385,9 @@ try
         insert_context->setInsertionTable(insert_query.table_id);
     }
 
+    /// From here on every failure is written to the audit log by `logExceptionBeforeStart` or `logQueryException`.
+    data->flush_outcome_audited = true;
+
     std::unique_ptr<DB::IInterpreter> interpreter;
     QueryPipeline pipeline;
     QueryLogElement query_log_elem;
@@ -1475,7 +1495,16 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
+        logExceptionBeforeStart(
+            query_for_logging,
+            normalized_query_hash,
+            insert_context,
+            key.query,
+            query_span,
+            start_watch.elapsedMilliseconds(),
+            internal,
+            /*log_as_internal=*/ internal,
+            key.audit_flush);
 
         if (async_insert_log)
         {
@@ -1501,7 +1530,17 @@ try
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
+        logQueryFinish(
+            query_log_elem,
+            insert_context,
+            key.query,
+            std::move(pileline_),
+            /*pulling_pipeline=*/ false,
+            query_span,
+            QueryResultCacheUsage::None,
+            internal,
+            /*log_as_internal=*/ internal,
+            key.audit_flush);
 
         /// Finish entries (and notify waiting clients) after logging,
         /// so that SYSTEM FLUSH LOGS issued right after the async insert
@@ -1552,7 +1591,16 @@ try
     catch (...)
     {
         bool log_error = true;
-        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
+        logQueryException(
+            query_log_elem,
+            insert_context,
+            start_watch,
+            key.query,
+            query_span,
+            internal,
+            /*log_as_internal=*/ internal,
+            log_error,
+            key.audit_flush);
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
@@ -1564,19 +1612,52 @@ try
 }
 catch (const Exception & e)
 {
+    auditFlushFailureBeforeStartSafe(key, *data, global_context);
     finishWithException(key.query, data->entries, e);
 }
 catch (const Poco::Exception & e)
 {
+    auditFlushFailureBeforeStartSafe(key, *data, global_context);
     finishWithException(key.query, data->entries, e);
 }
 catch (const std::exception & e)
 {
+    auditFlushFailureBeforeStartSafe(key, *data, global_context);
     finishWithException(key.query, data->entries, Exception(Exception::CreateFromSTDTag{}, e));
 }
 catch (...)
 {
+    auditFlushFailureBeforeStartSafe(key, *data, global_context);
     finishWithException(key.query, data->entries, Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+}
+
+void AsynchronousInsertQueue::auditFlushFailureBeforeStartSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context) noexcept
+{
+    /// A flush can fail before its context is ready to be logged by `logExceptionBeforeStart`: on shutdown, when
+    /// the authentication method of the submitting user has expired, or when the user can no longer be restored.
+    /// The queued `INSERT` was already audited as successful, so record the failure of the flush here.
+    if (!key.audit_flush || data.flush_outcome_audited)
+        return;
+
+    try
+    {
+        const auto now = std::chrono::system_clock::now();
+        QueryLogElement elem;
+        elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
+        elem.event_time = timeInSeconds(now);
+        elem.event_time_microseconds = timeInMicroseconds(now);
+        elem.query = serializeQuery(*key.query, (*key.settings)[Setting::log_queries_cut_to_length]);
+        elem.query_kind = key.query->getQueryKind();
+        elem.exception_code = getCurrentExceptionCode();
+        elem.client_info.current_user = key.current_user;
+        elem.client_info.initial_user = key.initial_user;
+        elem.client_info.authenticated_user = key.authenticated_user;
+        auditLog(elem, global_context, key.query);
+    }
+    catch (...)
+    {
+        tryLogCurrentException("AsynchronousInsertQueue", "Failed to write the audit record of a failed flush");
+    }
 }
 
 template <typename LogFunc>
