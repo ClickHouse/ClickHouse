@@ -1,0 +1,54 @@
+<test>
+    <create_query>CREATE TABLE perf_has_const_u64 (id UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE perf_has_const_long (id UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE perf_has_const_nullable (id UInt64, a Array(Nullable(Int32))) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE perf_has_const_decimal (id UInt64, a Array(Decimal64(2))) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+    <create_query>CREATE TABLE perf_has_const_u16 (id UInt64, a Array(UInt16)) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+
+    <fill_query>
+        INSERT INTO perf_has_const_u64
+        SELECT number, arrayMap(x -> cityHash64(number, x) % 100000, range(number % 10))
+        FROM numbers(10000000) SETTINGS max_insert_threads = 1
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_has_const_long
+        SELECT number, arrayMap(x -> cityHash64(number, x) % 1000, range(number % 50))
+        FROM numbers(4000000) SETTINGS max_insert_threads = 1
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_has_const_nullable
+        SELECT number, arrayMap(x -> if(cityHash64(number, x) % 10 = 0, NULL, toInt32(cityHash64(number, x) % 100000)), range(number % 10))
+        FROM numbers(10000000) SETTINGS max_insert_threads = 1
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_has_const_decimal
+        SELECT number, arrayMap(x -> toDecimal64(cityHash64(number, x) % 100000, 2), range(number % 10))
+        FROM numbers(10000000) SETTINGS max_insert_threads = 1
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_has_const_u16
+        SELECT number, arrayMap(x -> toUInt16(cityHash64(number, x) % 60000), range(number % 20))
+        FROM numbers(10000000) SETTINGS max_insert_threads = 1
+    </fill_query>
+
+    <!-- A list of 600 numbers, as in https://github.com/ClickHouse/ClickHouse/issues/18843 -->
+    <query>SELECT count() FROM perf_has_const_u64 WHERE hasAny(a, arrayMap(x -> x * 97, range(600)))</query>
+    <query>SELECT count() FROM perf_has_const_u64 WHERE hasAny(arrayMap(x -> x * 97, range(600)), a)</query>
+    <query>SELECT count() FROM perf_has_const_u64 WHERE hasAll(range(1000), a)</query>
+    <query>SELECT count() FROM perf_has_const_long WHERE hasAny(a, arrayMap(x -> x * 1009, range(600)))</query>
+    <query>SELECT count() FROM perf_has_const_long WHERE hasAll(range(1000), a)</query>
+    <query>SELECT count() FROM perf_has_const_long WHERE hasAll(a, range(32))</query>
+    <query>SELECT count() FROM perf_has_const_nullable WHERE hasAny(a, arrayMap(x -> toInt32(x * 97), range(600)))</query>
+    <query>SELECT count() FROM perf_has_const_nullable WHERE hasAll(arrayPushBack(arrayMap(x -> toInt32(x), range(1000)), NULL), a)</query>
+    <query>SELECT count() FROM perf_has_const_decimal WHERE hasAny(a, arrayMap(x -> toDecimal64(x * 97, 2), range(100)))</query>
+    <query>SELECT count() FROM perf_has_const_u16 WHERE hasAny(a, arrayMap(x -> toUInt16(x * 97), range(100)))</query>
+    <!-- Short constant arrays keep the search with vectors. -->
+    <query>SELECT count() FROM perf_has_const_u64 WHERE hasAny(a, range(8))</query>
+    <query>SELECT count() FROM perf_has_const_long WHERE hasAny(range(16), a)</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_long</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_decimal</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_u16</drop_query>
+</test>
