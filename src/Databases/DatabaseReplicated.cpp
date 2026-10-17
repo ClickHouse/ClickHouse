@@ -40,6 +40,7 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -1510,6 +1511,26 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     checkTableEngine(*create, *inner_table_engine, query_context);
             }
         }
+    }
+
+    if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            String from_database = elem.from.database ? elem.from.getDatabase() : query_context->getCurrentDatabase();
+            String to_database = elem.to.database ? elem.to.getDatabase() : query_context->getCurrentDatabase();
+            if (from_database != getDatabaseName())
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+            if (to_database != getDatabaseName())
+            {
+                DatabaseCatalog::instance().assertDatabaseExists(to_database);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+            }
+        }
+
+        /// Replicas of older versions read the database of a refreshable materialized view's rename.
+        if (!query_context->getParentTable())
+            rename->resetDatabases();
     }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
