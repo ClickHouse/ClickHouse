@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -14,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <Functions/IFunction.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -43,6 +46,102 @@ struct SortingProperty
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
 };
+
+/// Whether `step` is a join that emits the rows of its probe side (`children.front()`) in their
+/// original order, with the same conditions as `findReadingStep` in `optimizeReadInOrder`.
+static bool isOrderPreservingJoinStep(const IQueryPlanStep & step)
+{
+    const IJoin * join = nullptr;
+    if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
+        join = join_step->getJoin().get();
+    else if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(&step))
+        join = filled_join_step->getJoin().get();
+
+    if (!join)
+        return false;
+
+    const auto & table_join = join->getTableJoin();
+    auto strictness = table_join.strictness();
+    return (strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(table_join.kind())
+        && !join->hasDelayedBlocks() && join->preservesLeftBlockOrder();
+}
+
+/// Marks the reading step below `node` as preferring multiple streams, so that per-stream work
+/// installed above it (the pre-distinct transforms of distinct-in-order, the per-stream `LIMIT BY`
+/// pre-filter of `pushLimitByIntoSort`) is not collapsed into a single stream and serialized by
+/// `PrefetchingConcatProcessor`.
+///
+/// Distinct-in-order can be installed either here (from plan sorting properties) or by
+/// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
+/// `ReadFromMergeTree` itself. When distinct order is applied from sorting properties instead, the
+/// reading step does not get that signal, so we propagate it here by descending through
+/// order-preserving steps (into every branch of a `UnionStep`, and into the probe side of an
+/// order-preserving join) to the reading steps.
+void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        IQueryPlanStep * step = node->step.get();
+
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+        {
+            reading->setPreferMultipleStreams();
+            return;
+        }
+
+        /// A `Merge` table hides the actual reads inside child plans - forward the opt-out to them.
+        if (auto * merge = typeid_cast<ReadFromMerge *>(step))
+        {
+            merge->setPreferMultipleStreams();
+            return;
+        }
+
+        if (node->children.empty())
+            return;
+
+        /// A set-building step keeps the main pipeline in `children.front()` and adds one more child
+        /// per set subquery, so it usually has several children. Follow only the main child, the same
+        /// way `findReadingStep` in `optimizeReadInOrder` does.
+        if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        {
+            node = node->children.front();
+            continue;
+        }
+
+        /// Each branch of a `UnionStep` has its own reading step, and `optimizeReadInOrder` reads every
+        /// branch in order, so each of them may choose `PrefetchingConcatProcessor` - forward the opt-out
+        /// to all branches.
+        if (typeid_cast<UnionStep *>(step))
+        {
+            for (auto * child : node->children)
+                preferMultipleStreamsForReadingBelow(child);
+            return;
+        }
+
+        /// A `JoinStep` or a `FilledJoinStep` that keeps the order of its probe side runs one
+        /// `JoiningTransform` per probe-side stream, and `optimizeReadInOrder` reads the probe side in
+        /// order through it (see `findReadingStep`), so the per-stream work above the join depends on
+        /// the probe-side read staying parallel. Follow the probe side, which is `children.front()`.
+        if (isOrderPreservingJoinStep(*step))
+        {
+            node = node->children.front();
+            continue;
+        }
+
+        if (node->children.size() != 1)
+            return;
+
+        /// Only descend through steps that keep a single underlying reading pipeline
+        /// and preserve its per-stream order, mirroring `findReadingStep` in `optimizeReadInOrder`.
+        if (!typeid_cast<ExpressionStep *>(step)
+            && !typeid_cast<FilterStep *>(step)
+            && !typeid_cast<ArrayJoinStep *>(step)
+            && !typeid_cast<DistinctStep *>(step))
+            return;
+
+        node = node->children.front();
+    }
+}
 
 /// A full sorting merge join emits its result in the order of one of its sorted inputs: `MergeJoinAlgorithm`
 /// walks both inputs with cursors that only move forward, so for an INNER or LEFT join the output rows follow
@@ -187,6 +286,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         {
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
                 properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
+
+            /// Only preliminary distinct performs per-stream deduplication. A final distinct merges
+            /// its input into one stream, so keeping the read parallel would only disable the
+            /// `PrefetchingConcatProcessor` fast path without preserving parallel work.
+            if (distinct_step->isPreliminary())
+                preferMultipleStreamsForReadingBelow(parent);
         }
 
         /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
