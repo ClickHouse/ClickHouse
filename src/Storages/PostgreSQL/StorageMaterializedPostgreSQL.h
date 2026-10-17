@@ -75,6 +75,7 @@ public:
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
         LoadingStrictnessLevel mode,
+        bool is_fresh_definition,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,

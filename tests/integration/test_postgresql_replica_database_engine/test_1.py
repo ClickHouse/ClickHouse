@@ -1194,7 +1194,9 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
     # `getTableAllowedColumns` looks a relation up by the quoted spelling `fetchRequiredTables` writes
     # into `materialized_postgresql_tables_list`, and that spelling has to be in place on every path out
     # of it, including the early return taken on attach when the existing publication publishes a
-    # different set of tables than the setting lists. Reached with the setting's own spelling instead,
+    # different set of tables than the setting lists. The attach refuses a publication that lost one of
+    # the listed tables (its changes could not be recovered), so the difference here is a table added to
+    # the publication on the PostgreSQL side. Reached with the setting's own spelling instead,
     # the lookup misses and the requested column subset is dropped: the nested table covers columns the
     # publication does not publish, the consumer refuses a table whose attributes no longer match it,
     # and the row inserted below never arrives.
@@ -1205,10 +1207,12 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
 
     restricted = "attach_mismatch_cols"
     unpublished = "attach_mismatch_other"
+    extra = "attach_mismatch_extra"
 
     try:
         cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
         cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+        cursor.execute(f"DROP TABLE IF EXISTS {extra}")
         cursor.execute(
             f"CREATE TABLE {restricted} "
             "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
@@ -1222,6 +1226,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         cursor.execute(
             f"INSERT INTO {unpublished} SELECT i, 200 + i FROM generate_series(0, 2) AS i"
         )
+        cursor.execute(f"CREATE TABLE {extra} (key integer PRIMARY KEY, val integer)")
 
         pg_manager.create_materialized_db(
             ip=ip,
@@ -1237,7 +1242,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"]
 
         # The publication and the setting disagree from here on, which is reachable with a plain
-        # `ALTER PUBLICATION` on the PostgreSQL side (or by dropping a listed table there).
+        # `ALTER PUBLICATION` on the PostgreSQL side.
         cursor.execute("SELECT pubname FROM pg_publication")
         publications = [row[0] for row in cursor.fetchall()]
         assert (
@@ -1246,7 +1251,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         publication = publications[0]
 
         instance.stop_clickhouse()
-        cursor.execute(f"ALTER PUBLICATION {publication} DROP TABLE {unpublished}")
+        cursor.execute(f"ALTER PUBLICATION {publication} ADD TABLE {extra}")
         # Written while the server is down, so it can only arrive through ongoing replication after
         # the restart: the snapshot is not reloaded while the replication slot is intact.
         cursor.execute(f"INSERT INTO {restricted} VALUES (5, 105, 905)")
@@ -1261,6 +1266,7 @@ def test_materialized_postgresql_attach_with_mismatched_publication_keeps_column
         pg_manager.drop_materialized_db()
         cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
         cursor.execute(f"DROP TABLE IF EXISTS {unpublished}")
+        cursor.execute(f"DROP TABLE IF EXISTS {extra}")
 
 
 def test_materialized_postgresql_tables_list_with_schema_keeps_columns(started_cluster):
@@ -1429,23 +1435,20 @@ def test_materialized_postgresql_legacy_replication_slot_sql_injection(started_c
         cursor.execute("SELECT slot_name FROM pg_replication_slots")
         assert not cursor.fetchall(), "a replication slot survived, so the lookup is not reached"
 
-        # Written while the server is down, so these rows can only arrive if the attach gets past the
-        # legacy lookup and resumes replication.
-        cursor.execute(
-            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(50, 54) AS i"
-        )
+        refusal = "would silently leave the replica stale"
+        refusals_before = int(instance.count_in_log(refusal))
         instance.start_clickhouse()
 
+        # The attach then refuses to resume, because the replica already holds data and a re-snapshot
+        # would leave it stale. That check runs after the legacy lookup, so its message proves the lookup
+        # was reached.
         deadline = time.monotonic() + 180
-        keys = None
+        reached = False
         while time.monotonic() < deadline:
             if marker_count() != 0:
                 break
-            try:
-                keys = instance.query(f"SELECT uniqExact(key) FROM {ch_table}").strip()
-            except Exception as e:
-                keys = str(e)
-            if keys == "55":
+            if int(instance.count_in_log(refusal)) > refusals_before:
+                reached = True
                 break
             time.sleep(1)
 
@@ -1453,9 +1456,9 @@ def test_materialized_postgresql_legacy_replication_slot_sql_injection(started_c
             "the remote table name was executed as SQL by PostgreSQL: the legacy replication slot "
             "name was looked up as a raw string literal"
         )
-        assert keys == "55", (
-            "replication did not resume after the attach, so the legacy replication slot lookup was "
-            f"never reached and the assertion above could not have seen an injection: {keys}"
+        assert reached, (
+            "the attach did not get past the legacy replication slot lookup, so the assertion above "
+            "could not have seen an injection"
         )
 
         # The lookup also has to be observable, otherwise the assertions above would hold just as well
