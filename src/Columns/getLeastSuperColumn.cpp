@@ -7,6 +7,8 @@
 #include <Core/Field.h>
 #include <DataTypes/getLeastSupertype.h>
 
+#include <bit>
+
 
 namespace DB
 {
@@ -26,6 +28,43 @@ static bool containsAggregateStateColumn(const IColumn & column)
     return found;
 }
 
+/// Field::operator== compares Float64 values via FloatCompareHelper, which treats -0.0
+/// as equal to 0.0 and any two NaN payloads as equal. A constant UNION output column
+/// carries one branch's stored bits for every row, so constness may only be kept when
+/// the constants are bit-identical.
+static bool sameConstantFields(const Field & lhs, const Field & rhs);
+
+template <typename FieldVectorT>
+static bool sameConstantFieldVectors(const FieldVectorT & lhs, const FieldVectorT & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        if (!sameConstantFields(lhs[i], rhs[i]))
+            return false;
+    return true;
+}
+
+static bool sameConstantFields(const Field & lhs, const Field & rhs)
+{
+    if (lhs.getType() != rhs.getType())
+        return false;
+
+    switch (lhs.getType())
+    {
+        case Field::Types::Float64:
+            return std::bit_cast<UInt64>(lhs.get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
+        case Field::Types::Array:
+            return sameConstantFieldVectors(lhs.get<Array>(), rhs.get<Array>());
+        case Field::Types::Tuple:
+            return sameConstantFieldVectors(lhs.get<Tuple>(), rhs.get<Tuple>());
+        case Field::Types::Map:
+            return sameConstantFieldVectors(lhs.get<Map>(), rhs.get<Map>());
+        default:
+            return lhs == rhs;
+    }
+}
+
 static bool sameConstants(const IColumn & a, const IColumn & b)
 {
     /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
@@ -35,7 +74,7 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
     if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(a).getDataColumn()))
         return false;
 
-    return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
+    return sameConstantFields(assert_cast<const ColumnConst &>(a).getField(), assert_cast<const ColumnConst &>(b).getField());
 }
 
 ColumnsWithTypeAndName reconcileConstness(
@@ -65,7 +104,7 @@ ColumnsWithTypeAndName reconcileConstness(
         {
             const auto * branch = lookup(sibling, col, common[col].name);
             if (!branch || !branch->column || !isColumnConst(*branch->column)
-                || assert_cast<const ColumnConst &>(*branch->column).getField() != value)
+                || !sameConstantFields(assert_cast<const ColumnConst &>(*branch->column).getField(), value))
             {
                 keep_const = false;
                 break;
