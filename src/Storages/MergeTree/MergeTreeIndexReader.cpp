@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
@@ -173,6 +174,19 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         {
             for (const auto & stream : stream_holders)
                 stream->seekToMark(mark);
+        }
+
+        /// A granule of a partial index starts with a flag; a granule without indexed rows is returned as null.
+        if (index->index.where_expression)
+        {
+            UInt8 has_rows = 0;
+            readBinary(has_rows, *streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer());
+            if (!has_rows)
+            {
+                res = nullptr;
+                stream_mark = mark + 1;
+                return;
+            }
         }
 
         if (!res)

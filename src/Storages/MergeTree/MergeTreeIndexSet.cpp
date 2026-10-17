@@ -116,7 +116,11 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
     {
-        block.clear();
+        /// An overflowed set is stored as no rows. Keep the columns: the granule object is reused for the next
+        /// granule, which reads its values into them.
+        for (auto & elem : block)
+            elem.column = elem.column->cloneEmpty();
+        set_hyperrectangle.clear();
         return;
     }
 

@@ -1619,7 +1619,7 @@ private:
         add_key_columns(metadata_snapshot->getColumnsRequiredForPartitionKey());
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
-            add_key_columns(index.expression->getRequiredColumns());
+            add_key_columns(index.getRequiredColumns());
     }
 
     void enterImpl(const ColumnNode & column_node)

@@ -1,3 +1,10 @@
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
+#include <IO/NullWriteBuffer.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Common/DateLUT.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
@@ -25,6 +32,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_legacy_to_time;
+}
+
 
 namespace ErrorCodes
 {
@@ -83,12 +96,19 @@ String IMergeTreeIndex::getFileName() const
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
-    return index.expression->getRequiredColumns();
+    return index.getRequiredColumns();
 }
 
-const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
+NamesAndTypesList IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
-    return index.expression->getRequiredColumnsWithTypes();
+    auto columns = index.expression->getRequiredColumnsWithTypes();
+    if (index.where_expression)
+    {
+        for (const auto & column : index.where_expression->getRequiredColumnsWithTypes())
+            if (!columns.contains(column.name))
+                columns.push_back(column);
+    }
+    return columns;
 }
 
 NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
@@ -318,6 +338,13 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
     const auto & part_columns = part.getColumns();
 
+    /// The predicate's value is stored in the granule (has_rows), so a column it reads is an
+    /// expression dependency even when the indexed expression is a bare column.
+    NameSet where_columns;
+    if (skip_index.index.where_expression)
+        for (const auto & name : skip_index.index.where_expression->getRequiredColumns())
+            where_columns.insert(name);
+
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
         auto part_column = part.tryGetColumn(column);
@@ -375,7 +402,7 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
         /// Date column but UInt32 once that column becomes UInt16. Recovering the expression's
         /// part-side result type would mean running the analyzer per part on the query path, so a
         /// non-trivial expression is refused on any type difference.
-        if (!skip_index.index.isSimpleSingleColumnIndex())
+        if (!skip_index.index.isSimpleSingleColumnIndex() || where_columns.contains(column))
             return false;
 
         if (!isRepresentationPreservingConversion(part_type.get(), metadata_type.get()))
@@ -406,6 +433,21 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     if (!isPartTypeCompatibleImpl(skip_index, part))
         return {0 /*unknown*/, {}};
 
+    /// The granules of a partial index describe one particular condition evaluated in one particular
+    /// environment; the marker written with them must be the one the current definition expects.
+    if (skip_index.index.where_expression)
+    {
+        const auto marker_name = IMergeTreeDataPart::getStreamNameOrHash(
+            relative_path_prefix, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, getChecksums(part));
+        if (!marker_name)
+            return {0 /*unknown*/, {}};
+
+        const auto it = getChecksums(part).files.find(*marker_name + IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
+        const auto expected = IMergeTreeIndex::getPartialIndexMarkerChecksum(skip_index.getPartialIndexSignature());
+        if (it == getChecksums(part).files.end() || it->second.file_size != expected.file_size || it->second.file_hash != expected.file_hash)
+            return {0 /*unknown*/, {}};
+    }
+
     return format;
 }
 
@@ -432,11 +474,42 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeData
     return getDeserializedFormatImpl(*this, part, relative_path_prefix);
 }
 
+String IMergeTreeIndex::getPartialIndexSignature(const IndexDescription & index_description)
+{
+    SipHash hash;
+    hash.update(index_description.where_identity);
+    /// The condition is evaluated by whichever query or background job writes the part, and the session time
+    /// zone it runs with is not part of the metadata, so it must be recorded to be compared later.
+    hash.update(DateLUT::instance().getTimeZone());
+    /// `toTime` is built from the settings of the thread's query, which for a part is the query that writes it.
+    if (const auto query_context = CurrentThread::tryGetQueryContext())
+        hash.update(query_context->getSettingsRef()[Setting::use_legacy_to_time].value);
+    const UInt128 value = hash.get128();
+    return String(reinterpret_cast<const char *>(&value), sizeof(value));
+}
+
+MergeTreeDataPartChecksum IMergeTreeIndex::getPartialIndexMarkerChecksum(const String & signature)
+{
+    NullWriteBuffer null;
+    HashingWriteBuffer hashing(null);
+    hashing.write(signature.data(), signature.size());
+    hashing.finalize();
+    return MergeTreeDataPartChecksum(hashing.count(), hashing.getHash());
+}
+
+MergeTreeIndexSubstreams IMergeTreeIndex::withPartialIndexMarker(MergeTreeIndexSubstreams substreams) const
+{
+    if (index.where_expression)
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", PARTIAL_INDEX_MARKER_EXTENSION});
+    return substreams;
+}
+
 MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(
     const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+    const char * extension = index.where_expression ? ".idxp" : ".idx";
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, extension, &storage))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", extension}}};
 
     return {0 /*unknown*/, {}};
 }
@@ -562,6 +635,32 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
         for (const auto & elem : index.sample_block)
             if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+
+        if (index.where_expression)
+        {
+            if (index.where_expression->hasArrayJoin())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "WHERE of secondary index '{}' cannot contain array joins", index.name);
+
+            for (const auto & node : index.where_expression->getActionsDAG().getNodes())
+                if (typeid_cast<const FunctionCapture *>(node.function_base.get()))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "WHERE of secondary index '{}' cannot contain lambda functions, they cannot be matched against a query filter",
+                        index.name);
+
+            try
+            {
+                index.where_expression->assertDeterministic();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("for WHERE of secondary index '{}'", index.name));
+                throw;
+            }
+
+            const auto & where_column = index.where_expression->getSampleBlock().getByPosition(0).column;
+            if (where_column && isColumnConst(*where_column))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "WHERE of secondary index '{}' cannot be constant", index.name);
+        }
     }
 
     auto it = validators.find(index.type);
