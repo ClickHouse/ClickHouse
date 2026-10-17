@@ -1,8 +1,8 @@
 # docker build -t clickhouse/performance-comparison .
 
 ARG CCTOOLS_TAG
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 ARG FROM_TAG=latest
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/test-base:$FROM_TAG
 
 # Remove problematic Kitware repository

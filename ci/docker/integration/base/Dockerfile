@@ -1,8 +1,8 @@
 # rebuild in #33610
 # docker build -t clickhouse/integration-test .
 ARG CCTOOLS_TAG
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 ARG FROM_TAG=latest
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/test-base:$FROM_TAG
 
 SHELL ["/bin/bash", "-c"]
