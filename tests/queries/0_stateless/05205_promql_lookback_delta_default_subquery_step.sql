@@ -65,6 +65,21 @@ SELECT * FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTINGS p
 SELECT * FROM prometheusQuery(ts, 'm', 1000740) SETTINGS promql_lookback_delta = -0.0000009; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = -0.0000009; -- { serverError BAD_ARGUMENTS }
 
+SELECT 'a table created from prometheusQuery uses the settings of the query reading it:';
+CREATE TABLE pq AS prometheusQuery(ts, 'm', 1000740);
+CREATE TABLE pq_subquery AS prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620);
+SET promql_lookback_delta = 60;
+CREATE TABLE pq_created_with_60 AS prometheusQuery(ts, 'm', 1000740);
+SET promql_lookback_delta = 300;
+SELECT count() FROM pq;
+SELECT count() FROM pq SETTINGS promql_lookback_delta = 60;
+SELECT count() FROM pq_created_with_60;
+SELECT value FROM pq_subquery;
+SELECT value FROM pq_subquery SETTINGS promql_default_subquery_step = 60;
+DROP TABLE pq;
+DROP TABLE pq_subquery;
+DROP TABLE pq_created_with_60;
+
 SELECT 'the promql dialect:';
 SET promql_table = 'ts';
 SET dialect = 'promql';

@@ -34,6 +34,12 @@ below 1 microsecond means the default:
 1
 20
 negative values are rejected:
+a table created from prometheusQuery uses the settings of the query reading it:
+1
+0
+1
+20
+5
 the promql dialect:
 [('__name__','m'),('l','a')]	1970-01-12 13:59:00.000	1
 [('l','a')]	1970-01-12 13:57:00.000	5

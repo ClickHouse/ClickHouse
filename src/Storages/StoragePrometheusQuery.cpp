@@ -163,12 +163,6 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
-    /// Zero means the default, as in Prometheus.
-    const auto & settings = context->getSettingsRef();
-    evaluation_settings.instant_selector_window = convertSecondsSettingToTimeSeriesDuration(
-        "promql_lookback_delta", settings[Setting::promql_lookback_delta], time_scale);
-    evaluation_settings.default_subquery_step = convertSecondsSettingToTimeSeriesDuration(
-        "promql_default_subquery_step", settings[Setting::promql_default_subquery_step], time_scale);
     return config;
 }
 
@@ -210,6 +204,12 @@ void StoragePrometheusQuery::readImpl(
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
+    /// Taken from the reading query, so a table created from prometheusQuery follows them too. Zero means the default.
+    const auto & settings = context->getSettingsRef();
+    evaluation_settings.instant_selector_window = convertSecondsSettingToTimeSeriesDuration(
+        "promql_lookback_delta", settings[Setting::promql_lookback_delta], evaluation_settings.time_scale);
+    evaluation_settings.default_subquery_step = convertSecondsSettingToTimeSeriesDuration(
+        "promql_default_subquery_step", settings[Setting::promql_default_subquery_step], evaluation_settings.time_scale);
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();
 
