@@ -152,8 +152,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 if (uk_txn.getTransaction())
                 {
-                    /// Rows stay in place: read below every commit, each source kill is a late kill at the same offset.
-                    const ReadSnapshot nothing_dead(storage.uniqueKeyTxnManager().deleteBitmapStore(), Tx::MaxReservedCSN);
+                    /// Rows stay in place: read below every version, each source kill is a late kill at the same offset.
+                    const ReadSnapshot nothing_dead(storage.uniqueKeyTxnManager().deleteBitmapStore(), Tx::UnknownCSN);
                     const MergedPartOffsets rows_in_place(1, MergedPartOffsets::MappingMode::Disabled);
 
                     UniqueKeyTxnCommit::merge(
