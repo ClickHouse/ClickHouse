@@ -274,6 +274,10 @@ private:
     std::mutex exclusive_processing_paths_mutex;
     std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
+    /// Node paths owned by executions currently running in this process;
+    /// cleanupPersistentProcessingNodes never removes them.
+    const ObjectStorageQueueLocalActiveNodesPtr local_active_nodes = std::make_shared<ObjectStorageQueueLocalActiveNodes>();
+
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().
     NameSet active_servers;
