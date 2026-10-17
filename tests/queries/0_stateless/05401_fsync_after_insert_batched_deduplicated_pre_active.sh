@@ -12,11 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_DATABASE/t_fsync_dedup_pre_active"
+ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_pre_active"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_fsync_dedup_pre_active (k UInt64, s String)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r1') ORDER BY k
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_pre_active', 'r1') ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 0,
         sleep_before_commit_local_part_in_replicated_table_ms = 5000"
 
