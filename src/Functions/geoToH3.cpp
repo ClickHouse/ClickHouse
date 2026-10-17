@@ -55,20 +55,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
-            ? FunctionArgumentDescriptors{
-                {"longitude", &isFloat, nullptr, "Float64"},
-                {"latitude", &isFloat, nullptr, "Float64"},
-                {"resolution", &isUInt8, nullptr, "UInt8"}}
-            : FunctionArgumentDescriptors{
-                {"latitude", &isFloat, nullptr, "Float64"},
-                {"longitude", &isFloat, nullptr, "Float64"},
-                {"resolution", &isUInt8, nullptr, "UInt8"}};
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(Float, Float, UInt8) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
