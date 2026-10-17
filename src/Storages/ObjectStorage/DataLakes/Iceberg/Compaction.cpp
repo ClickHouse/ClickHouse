@@ -562,6 +562,7 @@ static void writeDataFiles(
         const bool schema_changed = file_schema_id != current_schema_id;
 
         SharedHeader reader_header = sample_block;
+        ColumnMapperPtr reader_column_mapper = column_mapper;
         std::shared_ptr<ExpressionActions> schema_transform;
         if (schema_changed)
         {
@@ -570,6 +571,8 @@ static void writeDataFiles(
             for (const auto & [name, type] : *initial_schema)
                 old_header.insert({type->createColumn(), type, name});
             reader_header = std::make_shared<const Block>(std::move(old_header));
+            /// The file's field ids must resolve to the names `reader_header` requests.
+            reader_column_mapper = schema_processor->getColumnMapperById(file_schema_id);
 
             if (auto transform_dag = schema_processor->getSchemaTransformationDagByIds(file_schema_id, current_schema_id))
                 schema_transform = std::make_shared<ExpressionActions>(transform_dag->clone());
@@ -613,7 +616,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, reader_column_mapper, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
