@@ -123,13 +123,13 @@ private:
     const uint8_t * data;
 
     size_t start_size;
-    size_t keys_size;
+    size_t keys_size = 0;
 
     AutoPtr<Poco::XML::Document> xml_document;
     AutoPtr<Poco::XML::Element> algo;
     AutoPtr<Poco::Util::XMLConfiguration> conf;
 
-    uint8_t first_byte;
+    uint8_t first_byte = 0;
 
     bool error;
 };

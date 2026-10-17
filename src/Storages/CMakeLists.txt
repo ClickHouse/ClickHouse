@@ -8,6 +8,6 @@ if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif ()
 
-if (ENABLE_FUZZING)
+if (ENABLE_FUZZER_TARGETS)
     add_subdirectory(fuzzers)
 endif()

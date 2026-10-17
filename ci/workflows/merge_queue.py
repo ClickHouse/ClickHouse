@@ -18,6 +18,10 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
+        # The merge group state is a tree no PR run has seen; the tidy shards link nothing,
+        # so they are the cheapest check that it still compiles everywhere `all` reaches
+        # (unit tests, examples, utils, fuzzers), beyond the single `amd_binary` link.
+        *JobConfigs.tidy_build_arm_jobs,
         # Reruns the PR's new/changed stateless tests against the merge group
         # state, catching semantic conflicts with `master` changes that landed
         # after the PR's last CI run (e.g. a new randomized setting in

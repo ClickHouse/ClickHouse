@@ -15,6 +15,7 @@
 
 
 #include <csignal>
+#include <cstdlib>
 #include <ctime>
 #include <pthread.h>
 #include <sanitizer/common_interface_defs.h>
@@ -236,7 +237,7 @@ static inline void signal_safe_sleep_ms(int ms)
 /// continues to intercept later periodic alarms.
 static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
-    struct timespec ts;
+    struct timespec ts{};
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     int64_t elapsed_sec = ts.tv_sec - iteration_start_sec.load(std::memory_order_acquire);
 
@@ -315,7 +316,7 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
                 ignore = true;
             else if (flag == "-timeout" && flag.size() < arg.size())
             {
-                int64_t t = std::atoi(arg.data() + flag.size() + 1);
+                int64_t t = std::strtoll(arg.data() + flag.size() + 1, nullptr, 10);
                 if (t > 0)
                     unit_timeout_sec.store(t, std::memory_order_release);
             }
@@ -356,7 +357,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     /// wrapper still fires on a real timeout in this iteration even if an
     /// earlier iteration's late `SIGALRM` already consumed it.
     {
-        struct timespec ts;
+        struct timespec ts{};
         (void)clock_gettime(CLOCK_MONOTONIC, &ts);
         iteration_start_sec.store(ts.tv_sec, std::memory_order_release);
         dump_started.store(false, std::memory_order_release);

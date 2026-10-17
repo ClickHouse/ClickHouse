@@ -7,5 +7,8 @@ target_link_libraries(select_parser_fuzzer PRIVATE clickhouse_parsers clickhouse
 clickhouse_add_executable(create_parser_fuzzer create_parser_fuzzer.cpp ${SRCS})
 target_link_libraries(create_parser_fuzzer PRIVATE clickhouse_parsers clickhouse_functions dbms)
 
-add_subdirectory(codegen_fuzzer)
+# Needs libprotobuf-mutator and links libFuzzer into protoc, and its main source is generated.
+if (ENABLE_FUZZING)
+    add_subdirectory(codegen_fuzzer)
+endif()
 

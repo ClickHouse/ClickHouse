@@ -1,0 +1,4 @@
+InheritParentConfig: true
+
+# A fuzzer swallows every exception by design and runs its option parsing single-threaded.
+Checks: '-bugprone-empty-catch,-concurrency-mt-unsafe'
