@@ -112,11 +112,12 @@ static void writeConvertToReplicatedParts(
     disk->replaceFile(path + ".tmp", path);
 }
 
-static StorageReplicatedMergeTree::RestoredReplicaParts readConvertToReplicatedParts(const DiskPtr & disk, const String & path)
+static std::optional<StorageReplicatedMergeTree::RestoredReplicaParts> readConvertToReplicatedParts(const DiskPtr & disk, const String & path)
 {
-    StorageReplicatedMergeTree::RestoredReplicaParts parts;
     if (!disk->existsFile(path))
-        return parts;
+        return std::nullopt;
+
+    StorageReplicatedMergeTree::RestoredReplicaParts parts;
 
     const String content = readMetadataFile(disk, path);
     ReadBufferFromString in(content);
@@ -903,7 +904,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
 
     StorageReplicatedMergeTree::RestoreReplicaJournal journal{
-        .moved_by_interrupted_restore = readConvertToReplicatedParts(checking_disk, convert_to_replicated_parts_path),
+        .interrupted_restore = readConvertToReplicatedParts(checking_disk, convert_to_replicated_parts_path),
         .before_moving_parts = [&](const StorageReplicatedMergeTree::RestoredReplicaParts & parts)
         {
             writeConvertToReplicatedParts(

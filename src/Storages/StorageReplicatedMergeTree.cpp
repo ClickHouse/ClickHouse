@@ -271,6 +271,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
+    extern const char rmt_restore_replica_pause_after_detaching_active_part[];
     extern const char rmt_restore_replica_pause_after_detaching_parts[];
     extern const char rmt_restore_replica_pause_after_creating_table[];
     extern const char check_table_inject_retryable_zk_error[];
@@ -7656,22 +7657,22 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 
     Strings parts_to_attach = active_parts_names;
+    if (journal && journal->interrupted_restore)
+    {
+        /// Any other active part was outdated when the journal was written, e.g. a merge source whose result is already moved.
+        parts_to_attach = journal->interrupted_restore->part_names;
+        max_parts_metadata_version = journal->interrupted_restore->max_metadata_version;
+    }
+    const std::unordered_set<String> parts_to_attach_set(parts_to_attach.begin(), parts_to_attach.end());
+
     if (journal)
     {
-        /// Sorted, so that the parts of a partition get new block numbers in their original order.
-        std::map<MergeTreePartInfo, String> sorted_parts;
-        for (const auto & part_name : active_parts_names)
-            sorted_parts.emplace(MergeTreePartInfo::fromPartName(part_name, format_version), part_name);
-        for (const auto & part_name : journal->moved_by_interrupted_restore.part_names)
-            sorted_parts.emplace(MergeTreePartInfo::fromPartName(part_name, format_version), part_name);
-
-        parts_to_attach.clear();
-        for (const auto & [_, part_name] : sorted_parts)
-            parts_to_attach.push_back(part_name);
-        max_parts_metadata_version = std::max(max_parts_metadata_version, journal->moved_by_interrupted_restore.max_metadata_version);
+        Strings active_parts_to_attach;
+        std::ranges::copy_if(active_parts_names, std::back_inserter(active_parts_to_attach),
+            [&](const String & part_name) { return parts_to_attach_set.contains(part_name); });
 
         /// Otherwise a part would be moved to `detached/<name>_tryN`, and `detached/<name>` attached instead.
-        checkDetachedPartDirectories(active_parts_names, 0);
+        checkDetachedPartDirectories(active_parts_to_attach, 0);
         journal->before_moving_parts({parts_to_attach, max_parts_metadata_version});
     }
 
@@ -7680,9 +7681,10 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     /// potentially encounter a situation that a part we want to attach already exists.
     for (const auto & part : all_parts)
     {
-        if (part->getState() == DataPartState::Active)
+        if (part->getState() == DataPartState::Active && parts_to_attach_set.contains(part->name))
         {
             forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_after_detaching_active_part);
         }
         else
         {

@@ -333,8 +333,8 @@ public:
     /// Lets the caller persist the progress of `restoreMetadataInZooKeeper`.
     struct RestoreReplicaJournal
     {
-        /// Parts that an interrupted restore moved to detached/ and did not attach.
-        RestoredReplicaParts moved_by_interrupted_restore;
+        /// The parts to attach recorded by an interrupted restore, which replace the active ones.
+        std::optional<RestoredReplicaParts> interrupted_restore;
         /// Called with all parts to attach, before any part is moved.
         std::function<void(const RestoredReplicaParts &)> before_moving_parts;
         /// Called once the metadata is created in ZooKeeper, before the parts are attached.
@@ -344,7 +344,7 @@ public:
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    /// With a journal, the parts in `moved_by_interrupted_restore` are attached too, and the table must not exist yet.
+    /// With a journal, the table must not exist yet. Active parts not in `interrupted_restore` are moved like outdated ones.
     void restoreMetadataInZooKeeper(
         const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach, const RestoreReplicaJournal * journal = nullptr);
 

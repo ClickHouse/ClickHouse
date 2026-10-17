@@ -242,6 +242,43 @@ def test_modify_engine_on_restart_resumes_after_kill(started_cluster):
     ch1.query(f"DROP DATABASE {database} SYNC")
 
 
+def test_modify_engine_on_restart_resumes_after_kill_before_merge_sources_are_moved(
+    started_cluster,
+):
+    database = "modify_engine_resume_merged"
+    ch1.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    ch1.query(f"CREATE DATABASE {database}")
+    ch1.query(
+        f"CREATE TABLE {database}.mt ( A Int64 ) ENGINE = MergeTree ORDER BY A SETTINGS old_parts_lifetime = 3600"
+    )
+    ch1.query(f"INSERT INTO {database}.mt SELECT number FROM numbers(100)")
+    ch1.query(f"INSERT INTO {database}.mt SELECT number FROM numbers(100)")
+    ch1.query(f"OPTIMIZE TABLE {database}.mt FINAL")
+    set_convert_flags(ch1, database, ["mt"])
+    table_path = get_table_path(ch1, "mt", database)
+
+    # The server dies after the merged part is moved to detached/, while its source all_2_2_0 is still in place,
+    # so all_2_2_0 is active again on the next start.
+    pause_at(ch1, "rmt_restore_replica_pause_after_detaching_active_part")
+    kill_paused(ch1)
+    assert "all_2_2_0" in ls(ch1, table_path)
+    assert sorted(ls(ch1, f"{table_path}detached")) == ["all_1_2_1", "ignored_all_1_1_0"]
+
+    ch1.start_clickhouse()
+    assert (
+        ch1.query(
+            f"SELECT engine FROM system.tables WHERE database = '{database}' AND name = 'mt'"
+        ).strip()
+        == "ReplicatedMergeTree"
+    )
+    assert ch1.query(f"SELECT count() FROM {database}.mt").strip() == "200"
+    ch1.query(f"INSERT INTO {database}.mt SELECT number FROM numbers(100)")
+    assert ch1.query(f"SELECT count() FROM {database}.mt").strip() == "300"
+    check_flags_deleted(ch1, database, ["mt"])
+
+    ch1.query(f"DROP DATABASE {database} SYNC")
+
+
 def test_modify_engine_on_restart_refuses_after_table_created(started_cluster):
     database = "modify_engine_refuse"
     zk = cluster.get_kazoo_client("zoo1")
