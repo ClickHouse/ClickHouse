@@ -200,15 +200,8 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::SINGLE_SCALAR:
         case StoreMethod::SCALAR_GRID:
         {
-            /// For const scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
-            ///
-            /// For single scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
-            ///
-            /// For scalar grid:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, values
-            /// FROM <scalar_grid>
+            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, <scalar_value> | value) AS values
+            /// (for scalar grid: values is taken as-is) FROM <subquery>
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
@@ -264,6 +257,7 @@ SQLQueryPiece applyLabelManipulationFunction(
         }
 
         case StoreMethod::VECTOR_GRID:
+        case StoreMethod::HISTOGRAM_GRID:
         {
             /// Step 1:
             /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
@@ -273,6 +267,9 @@ SQLQueryPiece applyLabelManipulationFunction(
             ///
             /// Series which get the same `new_group` are merged step by step; an exception is thrown only if two of them
             /// have values at the same step, that's how Prometheus evaluates it.
+
+            /// A histogram grid keeps any(values), any(histogram_values), any(sample_kinds)
+            /// and the check per series: HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -291,8 +288,20 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.push_back(std::move(group_function));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                else
+                    builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
+
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
+                    builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+                    builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+                }
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
@@ -300,16 +309,23 @@ SQLQueryPiece applyLabelManipulationFunction(
 
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-                builder.having = makeNoDuplicateSeriesPerStepCheck(
-                    make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}),
-                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                    builder.having = makeASTFunction(
+                        "equals",
+                        makeASTFunction(
+                            "timeSeriesThrowDuplicateSeriesIf",
+                            makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
+                            make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
+                        make_intrusive<ASTLiteral>(0u));
+                else
+                    builder.having = makeNoDuplicateSeriesPerStepCheck(
+                        make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}),
+                        make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
                 label_replacing_query = builder.getSelectQuery();
             }
 
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
+            /// Step 2: SELECT new_group AS group, values [, histogram_values, sample_kinds] FROM step1
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
@@ -318,6 +334,12 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
+                }
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
@@ -336,6 +358,7 @@ SQLQueryPiece applyLabelManipulationFunction(
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).
