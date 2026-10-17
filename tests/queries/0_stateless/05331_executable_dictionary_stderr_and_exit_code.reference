@@ -1,0 +1,27 @@
+--- stderr of a source
+error: UNSUPPORTED_METHOD
+1
+1	Value 1
+2	Value 2
+3	Value 3
+--- the exit code of a source
+error: CHILD_WAS_NOT_EXITED_NORMALLY
+FAILED	1
+1	Value 1
+2	Value 2
+3	Value 3
+--- a source that lingers after its output
+1	Value 1
+2	Value 2
+3	Value 3
+1	Value 1
+2	Value 2
+3	Value 3
+--- stderr of a pooled source
+error: UNSUPPORTED_METHOD
+Key 1
+1
+--- a pooled source that lingers after its output
+error: TIMEOUT_EXCEEDED
+Key 1
+1

@@ -36,6 +36,7 @@ static struct InitFiu
     ONCE(replicated_queue_fail_next_entry) \
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
+    ONCE(executable_udf_fail_handback_measurement) \
     REGULAR(executing_graph_add_node_fail) \
     REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \

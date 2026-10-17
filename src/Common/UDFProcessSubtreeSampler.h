@@ -33,7 +33,9 @@ namespace DB
   *   recordPoolWaitDone      -- `tryBorrowObject` returned (success OR timeout)
   *   recordPidAcquired       -- `buildCommand` returned; pid known (success only)
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
-  *   recordReleased          -- ShellCommandSource cleanup, before returnObject
+  *   recordReleased          -- before anything that ends the worker: the teardown that
+  *                              discards one calls it first, and `ShellCommandSource` cleanup
+  *                              calls it for every borrow (idempotent)
   *
   * Executable path (non-pool): a fresh child is spawned per invocation via
   * `vfork`+`exec`. Peak RSS is measured by sampling `/proc/<pid>/VmHWM` across
@@ -70,6 +72,14 @@ public:
     void recordPidAcquired(pid_t root_pid);
     void recordInputBytes(size_t bytes) noexcept;
     void recordOutputBytes(size_t bytes) noexcept;
+    /// Pool path: stamps `elapsed_us` and reads the borrow's CPU and peak `VmHWM` out of
+    /// `/proc` for the worker and its descendants.
+    ///
+    /// Must be called while the worker is still there. Closing its stdin makes it exit, and a
+    /// zombie has no `mm` - its `VmHWM` is gone the moment it does - while reaping the pid takes
+    /// `/proc/<pid>` away altogether. A teardown that discards a worker does both, so it calls this
+    /// before either; idempotent, so the ordinary call at the end of the borrow is then a no-op
+    /// rather than a second walk that would find nothing and zero out what was already measured.
     void recordReleased();
 
     /// Executable (non-pool) path: store the child pid for subtree sampling.
@@ -170,6 +180,7 @@ private:
     pid_t root_pid = -1;
     bool pool_wait_done = false;
     bool borrow_acquired = false;
+    bool released_recorded = false;
     bool executable_finished = false;
     bool executable_rusage_recorded = false;
 
