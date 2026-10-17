@@ -43,12 +43,18 @@ FORMAT JSONCompactEachRow")
 if [ "$(echo "${RESPONSE}" | grep -c '"packet":"preview"')" -ge 1 ]; then echo "has previews"; else echo "no previews: ${RESPONSE}"; fi
 echo "${RESPONSE}" | grep '"packet":"data"'
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "
-SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['ExternalAggregationWritePart'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND event_date >= yesterday()
-    AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'
-    AND type = 'QueryFinish'
-"
+# The `query_log` entry is written after the HTTP response is sent, so retry until it appears.
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    RESULT=$($CLICKHOUSE_CLIENT -q "
+    SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['ExternalAggregationWritePart'] > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+        AND event_date >= yesterday()
+        AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'
+        AND type = 'QueryFinish'
+    ")
+    [ -n "$RESULT" ] && break
+    sleep 0.5
+done
+echo "$RESULT"
