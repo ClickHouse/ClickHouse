@@ -949,6 +949,11 @@ void AlterCommand::apply(
     {
         if (skip_absent_column_or_fail("modify"))
             return;
+
+        /// Whether this command redefines what an `ALIAS` column reads (the column is an alias before
+        /// or after it). Nothing rewrites the existing parts then, so the implicit indices of other
+        /// expression aliases built over this column go stale too, see below.
+        bool alias_redefined = false;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (to_remove == RemoveProperty::DEFAULT
@@ -974,6 +979,7 @@ void AlterCommand::apply(
                 /// the index eligibility unchanged, so no refresh is needed there.
                 if (to_remove == RemoveProperty::ALIAS)
                 {
+                    alias_redefined = true;
                     metadata.dropImplicitIndicesForColumn(column_name);
                     if (!was_expression_alias)
                         metadata.addImplicitIndicesForColumn(column, context);
@@ -1041,7 +1047,8 @@ void AlterCommand::apply(
                 /// reference): the implicit index of such a column is built over the alias
                 /// expression rather than over the column's own values. Must be checked before
                 /// the default is replaced below.
-                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                bool was_alias = column.default_desc.kind == ColumnDefaultKind::Alias;
+                bool was_expression_alias = was_alias
                     && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
 
                 /// Restating the type is not a default decision, so the column keeps the default it
@@ -1062,6 +1069,8 @@ void AlterCommand::apply(
                         && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
 
                     metadata.dropImplicitIndicesForColumn(column_name);
+                    if (was_alias || column.default_desc.kind == ColumnDefaultKind::Alias)
+                        alias_redefined = true;
 
                     /// An implicit index over an alias expression indexes something else than the
                     /// column's own values, so a transition into or out of an expression alias
@@ -1075,6 +1084,17 @@ void AlterCommand::apply(
                 }
             }
         });
+
+        /// The implicit index of an expression alias is built over its expanded expression, so for
+        /// `c ALIAS b + 1` redefining the alias `b` changes what the index of `c` would contain while
+        /// the existing parts keep the old index files. Drop the indices of all expression aliases
+        /// that reach the redefined column, directly or through other aliases, and do not re-create
+        /// them, the same way as the index of the redefined column itself.
+        if (alias_redefined)
+        {
+            for (const auto & dependent : metadata.getExpressionAliasesDependingOn({column_name}))
+                metadata.dropImplicitIndicesForColumn(dependent);
+        }
 
     }
     else if (type == MODIFY_ORDER_BY)

@@ -656,6 +656,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     };
 
     std::unordered_set<String> stale_implicit_index_columns;
+    NameSet redefined_alias_columns;
     for (const auto & column : new_metadata.columns)
     {
         if (!old_metadata.columns.has(column.name))
@@ -670,6 +671,16 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         const bool redefined = !old_column.type->equals(*column.type) || !(old_column.default_desc == column.default_desc);
         if (redefined && (is_expression_alias(old_column) || is_expression_alias(column)))
             stale_implicit_index_columns.insert(column.name);
+        if (redefined && (old_column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Alias))
+            redefined_alias_columns.insert(column.name);
+    }
+
+    /// The implicit index of an expression alias is built over its expanded expression, so the
+    /// redefinition of an alias it reaches (`b` for `c ALIAS b + 1`) leaves its files stale as well.
+    if (!redefined_alias_columns.empty())
+    {
+        for (const auto & dependent : new_metadata.getExpressionAliasesDependingOn(redefined_alias_columns))
+            stale_implicit_index_columns.insert(dependent);
     }
 
     /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
