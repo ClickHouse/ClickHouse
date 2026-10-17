@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 CREATE TABLE runner (query String, database String, settings Map(String, String)) ENGINE = QueryRunner SETTINGS mode = 'synchronous';
 
 CREATE TABLE bad (q String) ENGINE = QueryRunner; -- { serverError BAD_ARGUMENTS }
