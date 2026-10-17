@@ -126,6 +126,7 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
     bool enable_hash_join_row_store;
     Float64 min_rows_ratio_for_hash_join_row_store;
+    UInt64 min_string_column_bytes_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;

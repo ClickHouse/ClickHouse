@@ -1,9 +1,14 @@
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Interpreters/RowDataStore.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/TableJoin.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 #include <base/getL2CacheSize.h>
 #include <Common/CacheLine.h>
 #include <Common/Exception.h>
@@ -11,6 +16,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -54,12 +60,73 @@ void gatherNullableField(char * __restrict dst, const char * __restrict null_src
     }
 }
 
-void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst)
+/// Only values longer than 15 bytes take room in the overflow buffer, shorter ones live inside the ref.
+size_t computeOverflowBytes(const ColumnPtr & column, size_t start, size_t length)
+{
+    size_t bytes = 0;
+    const ColumnString & string_column = assert_cast<const ColumnString &>(*removeNullable(column));
+    const ColumnString::Offsets & offsets = string_column.getOffsets();
+    for (size_t row = start; row < start + length; ++row)
+    {
+        const size_t value_size = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
+        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+            bytes += value_size;
+    }
+
+    return bytes;
+}
+
+template <bool is_nullable>
+void gatherStringField(char * __restrict dst, const char * __restrict null_src, const ColumnString & column, size_t row_length, size_t offset, size_t start, size_t length, char *& overflow_cursor)
+{
+    const ColumnString::Offsets & offsets = column.getOffsets();
+    const char * chars = reinterpret_cast<const char *>(column.getChars().data());
+    for (size_t row = 0; row < length; ++row)
+    {
+        char * row_dst = dst + row * row_length + offset;
+        if constexpr (is_nullable)
+        {
+            row_dst[0] = null_src[row];
+            ++row_dst;
+        }
+
+        const size_t source_row = start + row;
+        const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+        const size_t value_size = offsets[source_row] - begin;
+        const char * value = chars + begin;
+        /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
+        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+        {
+            memcpy(overflow_cursor, value, value_size);
+            value = overflow_cursor;
+            overflow_cursor += value_size;
+        }
+
+        unalignedStore<UnhashedPackedStringRef>(row_dst, UnhashedPackedStringRef::build(value, value_size));
+    }
+}
+
+void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
 {
     for (size_t i = 0; i < layout.size(); ++i)
     {
         const auto & field_layout = layout[i];
-        if (field_layout.is_nullable)
+        if (field_layout.is_string)
+        {
+            if (field_layout.is_nullable)
+            {
+                const auto & nullable_column = assert_cast<const ColumnNullable &>(*columns[i]);
+                const char * null_src = nullable_column.getNullMapColumn().getDataAt(start).data();
+                const auto & strings = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
+                gatherStringField<true>(dst, null_src, strings, row_length, field_layout.offset, start, length, overflow_cursor);
+            }
+            else
+            {
+                const auto & strings = assert_cast<const ColumnString &>(*columns[i]);
+                gatherStringField<false>(dst, nullptr, strings, row_length, field_layout.offset, start, length, overflow_cursor);
+            }
+        }
+        else if (field_layout.is_nullable)
         {
             const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
             const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
@@ -140,18 +207,21 @@ RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, 
         const auto & column = columns[i];
 
         bool is_nullable = false;
+        size_t field_size = 0;
         const IColumn * check_col = column.get();
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(check_col))
         {
             check_col = &nullable->getNestedColumn();
             is_nullable = true;
+            field_size = 1;
         }
 
-        if (!check_col->isFixedAndContiguous())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous columns, but got {}.", column->getFamilyName());
+        const bool is_string = typeid_cast<const ColumnString *>(check_col) != nullptr;
+        if (!check_col->isFixedAndContiguous() && !is_string)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous or String columns, but got {}.", column->getFamilyName());
 
-        size_t field_size = column->sizeOfValueIfFixed();
-        layout.push_back(FieldLayout{types[i], offset, field_size, is_nullable});
+        field_size += is_string ? sizeof(UnhashedPackedStringRef) : check_col->sizeOfValueIfFixed();
+        layout.push_back(FieldLayout{types[i], offset, field_size, is_nullable, is_string});
         offset += field_size;
     }
     return std::make_shared<const RowLayout>(std::move(layout));
@@ -161,7 +231,8 @@ size_t RowDataStore::cacheMissReduction(const RowLayout & layout)
 {
     size_t columnar_cache_lines = 0;
     for (const auto & field : layout)
-        columnar_cache_lines += field.is_nullable ? 2 : 1;
+        /// A columnar string touches both its offsets and its chars.
+        columnar_cache_lines += (field.is_string ? 2 : 1) + (field.is_nullable ? 1 : 0);
     const size_t row_store_cache_lines = (rowLengthOf(layout) + CH_CACHE_LINE_SIZE - 1) / CH_CACHE_LINE_SIZE;
     return columnar_cache_lines - row_store_cache_lines;
 }
@@ -170,6 +241,32 @@ RowDataStore::RowDataStore(RowLayoutPtr layout_)
     : layout(std::move(layout_))
     , row_length(rowLengthOf(*layout))
 {
+}
+
+size_t RowDataStore::allocatedBytes() const
+{
+    size_t bytes = chars.empty() ? 0 : chars.allocated_bytes();
+    if (!overflow.empty())
+        bytes += overflow.allocated_bytes();
+    return bytes;
+}
+
+size_t RowDataStore::byteSizeAt(size_t index) const
+{
+    if (overflow.empty())
+        return row_length;
+
+    size_t bytes = row_length;
+    const char * row = getRowAt(index);
+    for (const auto & field : *layout)
+    {
+        if (!field.is_string)
+            continue;
+        const auto value = unalignedLoad<UnhashedPackedStringRef>(row + field.offset + field.is_nullable);
+        if (value.isLarge())
+            bytes += value.getLargeSize();
+    }
+    return bytes;
 }
 
 std::shared_ptr<RowDataStore> RowDataStore::create(const RowLayoutPtr & layout, const Columns & columns)
@@ -201,6 +298,14 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     if (length == 0)
         return;
 
+    /// A store is gathered only once, so the overflow buffer is sized exactly here and never moves.
+    size_t overflow_bytes = 0;
+    for (size_t i = 0; i < layout->size(); ++i)
+        if ((*layout)[i].is_string)
+            overflow_bytes += computeOverflowBytes(columns[i], start, length);
+    overflow.resize_exact(overflow_bytes);
+    char * overflow_cursor = overflow.data();
+
     size_t data_size = chars.size();
     chars.resize_exact(data_size + length * row_length);
     char * dst = chars.data() + data_size;
@@ -209,7 +314,7 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     for (size_t batch_start = 0; batch_start < length; batch_start += batch_size)
     {
         const size_t remaining_batch_size = std::min(batch_size, length - batch_start);
-        doGatherRows(*layout, row_length, columns, start + batch_start, remaining_batch_size, dst + batch_start * row_length);
+        doGatherRows(*layout, row_length, columns, start + batch_start, remaining_batch_size, dst + batch_start * row_length, overflow_cursor);
     }
 }
 
@@ -245,12 +350,30 @@ size_t rowStoreBatchSize(size_t row_length)
     return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, CH_CACHE_LINE_SIZE));
 }
 
-bool isRowStorageUseful(const ColumnPtr & column)
+NameSet computeRowStoreCandidateColumns(
+    const TableJoin & table_join, const Block & right_sample_block, UInt64 right_rows, UInt64 min_string_column_bytes)
 {
-    const IColumn * check_col = column.get();
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-        check_col = column_nullable->getNestedColumnPtr().get();
+    /// ANY joins materialize eagerly and don't run the batched fill the row store accelerates.
+    if (table_join.kind() == JoinKind::Cross || table_join.strictness() == JoinStrictness::Any
+        || table_join.getClauses().empty() || table_join.getMixedJoinExpression())
+        return {};
 
-    return check_col->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 32;
+    NameSet columns;
+    for (const auto & column : right_sample_block)
+    {
+        const auto sample = column.type->createColumn();
+        const auto nested = removeNullable(column.type)->createColumn();
+        if (typeid_cast<const ColumnString *>(nested.get()))
+        {
+            /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
+            const Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
+            if (avg_value_bytes > 0 && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
+                && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
+                columns.insert(column.name);
+        }
+        else if (nested->isFixedAndContiguous() && sample->sizeOfValueIfFixed() <= 32)
+            columns.insert(column.name);
+    }
+    return columns;
 }
 }

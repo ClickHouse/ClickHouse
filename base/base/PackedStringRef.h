@@ -42,17 +42,18 @@
 ///   - isSmall()  : !isLarge() && SMALL length nibble != 0
 ///   - isMedium() : !isLarge() && !isSmall() && high != 0
 ///   - isEmpty()  : high == 0
-struct PackedStringRef
+///
+/// ------------------------------------------------------------
+/// `UnhashedPackedStringRef` uses the same tag byte and large encoding but stores
+/// no hash and has no medium encoding: the small payload starts at byte 0 and
+/// holds up to 15 bytes.
+struct PackedStringRefBase
 {
     uint64_t low;
     uint64_t high;
 
-    static constexpr size_t HASH_SIZE_BYTES = 4;
-    static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
-    static constexpr size_t MEDIUM_LENGTH_OFFSET = HASH_SIZE_BYTES;
     static constexpr size_t TAG_BYTE_OFFSET = 15;
     static constexpr size_t PACKED_POINTER_BYTES = 7;
-    static constexpr uint64_t MAX_SMALL_LEN = 11;
 
     /// Tag byte bit layout.
     static constexpr uint8_t LARGE_TAG_BYTE = 0x80;
@@ -66,7 +67,7 @@ struct PackedStringRef
     /// truncation lossy; the setters assert the invariant in debug builds.
     static constexpr uint64_t POINTER_MASK = (uint64_t(1) << (PACKED_POINTER_BYTES * 8)) - 1;
 
-private:
+protected:
     ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
     ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
 
@@ -107,6 +108,21 @@ private:
         return value;
     }
 
+    ALWAYS_INLINE void buildLarge(const char * ptr, size_t len)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            low = len;
+            high = (reinterpret_cast<uintptr_t>(ptr) & POINTER_MASK) | (uint64_t(LARGE_TAG_BYTE) << 56);
+        }
+        else
+        {
+            storeLE(rawBytes(), len, sizeof(uint64_t));
+            storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+            rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
+        }
+    }
+
 public:
     ALWAYS_INLINE bool isLarge() const
     {
@@ -118,11 +134,6 @@ public:
         return high == 0;
     }
 
-    ALWAYS_INLINE bool isMedium() const
-    {
-        return !isLarge() && getSmallSize() == 0 && !isEmpty();
-    }
-
     ALWAYS_INLINE bool isSmall() const
     {
         return !isLarge() && getSmallSize() != 0;
@@ -131,6 +142,29 @@ public:
     ALWAYS_INLINE uint8_t getSmallSize() const
     {
         return static_cast<uint8_t>((getTagByte() & SMALL_LEN_NIBBLE_MASK) >> SMALL_LEN_SHIFT_IN_BYTE);
+    }
+
+    ALWAYS_INLINE uint64_t getLargeSize() const
+    {
+        return loadLE(rawBytes(), sizeof(uint64_t));
+    }
+
+    ALWAYS_INLINE const char * getLargePtr() const
+    {
+        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), sizeof(uint64_t)) & POINTER_MASK);
+    }
+};
+
+struct PackedStringRef : PackedStringRefBase
+{
+    static constexpr size_t HASH_SIZE_BYTES = 4;
+    static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
+    static constexpr size_t MEDIUM_LENGTH_OFFSET = HASH_SIZE_BYTES;
+    static constexpr uint64_t MAX_SMALL_LEN = 11;
+
+    ALWAYS_INLINE bool isMedium() const
+    {
+        return !isLarge() && getSmallSize() == 0 && !isEmpty();
     }
 
     ALWAYS_INLINE const char * getSmallPtr() const
@@ -146,16 +180,6 @@ public:
     }
 
     ALWAYS_INLINE const char * getMediumPtr() const
-    {
-        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
-    }
-
-    ALWAYS_INLINE uint64_t getLargeSize() const
-    {
-        return loadLE(rawBytes(), sizeof(uint64_t));
-    }
-
-    ALWAYS_INLINE const char * getLargePtr() const
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
@@ -275,18 +299,60 @@ public:
             return r;
         }
 
-        /// Large string.
-        if constexpr (std::endian::native == std::endian::little)
+        r.buildLarge(ptr, len);
+        return r;
+    }
+};
+
+struct UnhashedPackedStringRef : PackedStringRefBase
+{
+    static constexpr uint64_t MAX_SMALL_LEN = 15;
+
+    ALWAYS_INLINE const char * getSmallPtr() const
+    {
+        return reinterpret_cast<const char *>(rawBytes());
+    }
+
+    ALWAYS_INLINE size_t size() const
+    {
+        return isLarge() ? getLargeSize() : getSmallSize();
+    }
+
+    static ALWAYS_INLINE UnhashedPackedStringRef build(const char * ptr, size_t len)
+    {
+        UnhashedPackedStringRef r{};
+
+        if (len == 0)
+            return r;
+
+        if (len <= MAX_SMALL_LEN)
         {
-            r.low = len;
-            r.high = (reinterpret_cast<uintptr_t>(ptr) & POINTER_MASK) | (uint64_t(LARGE_TAG_BYTE) << 56);
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                uint64_t w0 = 0;
+                std::memcpy(&w0, ptr, sizeof(w0));
+                uint64_t w1 = 0;
+                if (len <= sizeof(w0))
+                {
+                    w0 &= ~uint64_t(0) >> ((sizeof(w0) - len) * 8);
+                }
+                else
+                {
+                    std::memcpy(&w1, ptr + sizeof(w0), sizeof(w1));
+                    w1 &= ~uint64_t(0) >> ((2 * sizeof(w0) - len) * 8);
+                }
+                r.low = w0;
+                r.high = w1 | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
+            }
+            else
+            {
+                std::memcpy(r.rawBytes(), ptr, len);
+                r.rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
+            }
+            return r;
         }
-        else
-        {
-            storeLE(r.rawBytes(), len, sizeof(uint64_t));
-            storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
-            r.rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
-        }
+
+        r.buildLarge(ptr, len);
         return r;
     }
 };

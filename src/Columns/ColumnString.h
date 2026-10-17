@@ -221,6 +221,8 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
+    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     /// Feeds `value` into `hash` as `updateHashWithValue` feeds a row that holds this value.
     static void updateHashWithStringValue(std::string_view value, SipHash & hash);
