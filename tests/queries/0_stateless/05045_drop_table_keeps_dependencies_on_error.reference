@@ -1,0 +1,6 @@
+tables after the failed drop	1
+tables after the successful drop	0
+source protected while the dictionary is alive
+dictionaries after the failed drop	1
+source still protected after the failed drop
+source droppable after the successful drop	0
