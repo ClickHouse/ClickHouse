@@ -166,7 +166,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> tupleElement(SQ, 1) = 0 OR x = tupleElement(SQ, 2)
+     *  = ALL --> tupleElement(SQ, 1) = 0 OR x IN tupleElement(SQ, 2)
      *             where SQ = (SELECT (count(*), singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
      * <, <=, >, >= ANY / ALL --> comparison with (SELECT min(*) / max(*) FROM subquery);
@@ -269,7 +269,10 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// exactly once - even if it is non-deterministic, both `tupleElement` calls observe the same evaluation.
     ///
     /// For `= ALL` this replaces the former `IN (SELECT singleValueOrNull(*) FROM subquery)` carrier with a
-    /// scalar subquery, the same carrier that `<`, `<=`, `>`, `>= ALL` have always used. The emptiness check
+    /// scalar subquery, the same carrier that `<`, `<=`, `>`, `>= ALL` have always used. The comparison itself
+    /// stays the one-element `in` (the operator was already renamed above), not `equals`: when the subquery
+    /// returns several distinct values or a NULL, `singleValueOrNull` gives NULL, and `x IN NULL` is FALSE
+    /// (under the default `transform_null_in = 0`) exactly as before, while `x = NULL` would be NULL. The emptiness check
     /// and the compared value must come from one evaluation, and an `IN` set cannot carry the emptiness
     /// flag. As a consequence the right-hand side is evaluated once on the initiator, so the result of a
     /// distributed query no longer depends on `distributed_product_mode = 'local'` or the `IN`-specific
