@@ -139,7 +139,7 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_,
-    bool is_initial_insert_)
+    bool is_initial_insert_, bool positional_arguments_already_resolved_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -148,6 +148,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_destination(no_destination_)
     , async_insert(async_insert_)
     , is_initial_insert(is_initial_insert_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -176,7 +177,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
+                .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
             auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
@@ -774,7 +776,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 
     QueryPipelineBuilder pipeline = [&]()
     {
-        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
+            .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
         InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
         return interpreter_select_analyzer.buildQueryPipeline();
     }();
@@ -855,8 +858,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         return {};
 
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.
-    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
-    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
 
@@ -1668,7 +1670,8 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             /* no_squash */false,
             /* no_destination */false,
             /* async_insert */false,
-            is_initial_insert);
+            is_initial_insert,
+            args.options.positional_arguments_already_resolved);
     };
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }
