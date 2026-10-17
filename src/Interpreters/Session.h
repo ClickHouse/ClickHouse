@@ -74,6 +74,9 @@ public:
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
 
+    /// Returns the ID of the authenticated user, or `std::nullopt` before the authentication.
+    std::optional<UUID> getUserID() const { return user_id; }
+
     /// Modify the session's ClientInfo.
     void setClientInfo(const ClientInfo & client_info);
     void setClientName(const String & client_name);
