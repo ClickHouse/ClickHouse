@@ -1,0 +1,18 @@
+The column is written as vortex.date, so inference gives Date32:
+n	UInt64
+d	Date32
+Date header, range (pushed, whole splits are dropped):
+100000
+1	0	1
+Date header, equality on a string literal (pushed):
+100000
+1	0	1
+Date32 header over the same file column (pushed):
+100000
+1	0	1
+Date header under date_time_overflow_behavior = 'saturate' (dropped):
+100000
+0	1	0
+The pushdown does not change the answers:
+100000	2020-04-10	2020-04-10
+100000	2020-04-10	2020-04-10

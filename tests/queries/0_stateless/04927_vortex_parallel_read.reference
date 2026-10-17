@@ -1,0 +1,28 @@
+Aggregates do not depend on the number of threads or on the order:
+1000000	499999500000	0	999999	5888890	100
+1000000	499999500000	0	999999	5888890	100
+1000000	499999500000	0	999999	5888890	100
+1000000	499999500000	0	999999	5888890	100
+1000000	499999500000	0	999999	5888890	100
+1000000	499999500000	0	999999	5888890	100
+Rows come in file order with input_format_vortex_preserve_order:
+0
+The pipeline is not fanned out while the order is preserved:
+(Expression)
+ExpressionTransform
+  (ReadFromFile)
+  File 0 → 1
+and is fanned out without it:
+(Expression)
+ExpressionTransform × 2
+  (ReadFromFile)
+  Resize 1 → 2
+    File 0 → 1
+Filter pushdown with several threads:
+10
+10
+9999	4999569993
+Stopping early does not hang or leave a driver behind:
+5
+A file with a single split needs no extra drivers:
+45

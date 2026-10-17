@@ -1,0 +1,21 @@
+Date header, d >= '2020-01-01' (pushed, still throws):
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1	0
+Date header, d = '2020-01-10' (pushed, still throws):
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1	0
+Date header, d IN ('2020-01-10', '2020-01-20') (pushed, still throws):
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1	0
+Date header, d NOT IN ('2020-01-10') (pushed, still throws):
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1	0
+Date header without the pushdown (throws):
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+0	0
+Date32 header (pushed, the day fits):
+99
+1	0
+Date header under date_time_overflow_behavior = 'saturate' (dropped, the day is clamped):
+99
+0	1
