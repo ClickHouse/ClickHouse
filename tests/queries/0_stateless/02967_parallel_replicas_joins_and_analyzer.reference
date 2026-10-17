@@ -172,20 +172,23 @@ Expression
       Expression
         Join
           Expression
-            Union
-              Expression
-                Expression
+            Expression
+              Sorting
+                Union
                   Expression
-                    Join
+                    Sorting
                       Expression
                         Expression
-                          Expression
-                            ReadFromMergeTree
-                      Expression
-                        Expression
-                          ReadFromMemoryStorage
-              Expression
-                ReadFromRemoteParallelReplicas
+                          Join
+                            Expression
+                              Expression
+                                Expression
+                                  ReadFromMergeTree
+                            Expression
+                              Expression
+                                ReadFromMemoryStorage
+                  Expression
+                    ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
@@ -233,13 +236,16 @@ Expression
               Expression
                 Join
                   Expression
-                    Union
-                      Expression
-                        Expression
+                    Expression
+                      Sorting
+                        Union
                           Expression
-                            ReadFromMergeTree
-                      Expression
-                        ReadFromRemoteParallelReplicas
+                            Sorting
+                              Expression
+                                Expression
+                                  ReadFromMergeTree
+                          Expression
+                            ReadFromRemoteParallelReplicas
                   Expression
                     Union
                       Expression
@@ -653,21 +659,24 @@ Expression
       Expression
         Join
           Expression
-            Union
-              Expression
-                Expression
+            Expression
+              Sorting
+                Union
                   Expression
-                    Join
+                    Sorting
                       Expression
                         Expression
-                          Expression
-                            ReadFromMergeTree
-                      Expression
-                        Expression
-                          Expression
-                            ReadFromMergeTree
-              Expression
-                ReadFromRemoteParallelReplicas
+                          Join
+                            Expression
+                              Expression
+                                Expression
+                                  ReadFromMergeTree
+                            Expression
+                              Expression
+                                Expression
+                                  ReadFromMergeTree
+                  Expression
+                    ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
@@ -715,13 +724,16 @@ Expression
               Expression
                 Join
                   Expression
-                    Union
-                      Expression
-                        Expression
+                    Expression
+                      Sorting
+                        Union
                           Expression
-                            ReadFromMergeTree
-                      Expression
-                        ReadFromRemoteParallelReplicas
+                            Sorting
+                              Expression
+                                Expression
+                                  ReadFromMergeTree
+                          Expression
+                            ReadFromRemoteParallelReplicas
                   Expression
                     Union
                       Expression
