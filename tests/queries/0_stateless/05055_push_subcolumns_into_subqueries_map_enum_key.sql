@@ -26,7 +26,7 @@ SELECT trimLeft(explain) FROM
 ) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Header:%';
 SELECT x['a'] FROM (SELECT m AS x FROM t_push_subcolumns_enum_map) ORDER BY 1;
 
-SELECT 'indexing by the numeric value of the enum is not rewritten (as in the direct read)';
+SELECT 'indexing by the numeric value of the enum is rewritten (as in the direct read)';
 SELECT trimLeft(explain) FROM
 (
     EXPLAIN actions = 1, header = 1 SELECT x[2] FROM (SELECT m AS x FROM t_push_subcolumns_enum_map)

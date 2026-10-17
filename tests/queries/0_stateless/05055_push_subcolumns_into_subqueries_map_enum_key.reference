@@ -4,9 +4,9 @@ Header: m.key_a UInt32
 0
 10
 30
-indexing by the numeric value of the enum is not rewritten (as in the direct read)
+indexing by the numeric value of the enum is rewritten (as in the direct read)
 ReadFromMergeTree (default.t_push_subcolumns_enum_map)
-Header: m Map(Enum8(\'a\' = 1, \'b\' = 2), UInt32)
+Header: m.key_b UInt32
 0
 20
 40

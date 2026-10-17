@@ -17,7 +17,9 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
@@ -438,9 +440,14 @@ std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & functi
     if (!column_source || !isQueryOrUnionNode(column_source))
         return {};
 
-    String array_subcolumn_path{JSON_ARRAY_SUBCOLUMN};
+    /// `tupleElement` over a JSON value reads the combined subcolumn `@path` holding the literal at
+    /// the path or, if there is none, the sub-object at it. A chain of such accesses is the combined
+    /// subcolumn of the joined path, while the plain path would read only the literal and lose an
+    /// object-valued field.
+    String field_path;
     for (auto it = field_names.rbegin(); it != field_names.rend(); ++it)
-        array_subcolumn_path += "." + *it;
+        field_path += (field_path.empty() ? "" : ".") + *it;
+    String array_subcolumn_path = String(JSON_ARRAY_SUBCOLUMN) + "." + DataTypeObject::getCombinedSubcolumnName(field_path);
 
     const auto & column_type = column_node->getColumnType();
     String subcolumn_path;
@@ -604,18 +611,29 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         if (!function_node.getResultType()->equals(*map_type.getValueType()))
             return {};
 
-        auto key_column = key_type->createColumn();
-        if (!key_column->tryInsert(constant_node->getValue()))
+        Field key_value = constant_node->getValue();
+        if (isEnum(key_type))
         {
-            /// A map with Enum keys can also be indexed by the name of the enum value,
-            /// so convert the name to the numeric value of the enum.
-            if (!isEnum(key_type) || constant_node->getValue().getType() != Field::Types::String)
-                return {};
-
-            Field enum_value = tryConvertFieldToType(constant_node->getValue(), *key_type);
-            if (enum_value.isNull() || !key_column->tryInsert(enum_value))
+            /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
+            /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
+            /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
+            /// the default value for it.
+            key_value = tryConvertFieldToType(key_value, *key_type);
+            if (key_value.isNull())
                 return {};
         }
+
+        /// `arrayElement` compares a string key with a `FixedString` map key including its length,
+        /// while inserting a shorter string into a `FixedString` column pads it with zero bytes,
+        /// so a missing-key lookup would turn into a match.
+        if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeLowCardinality(key_type).get());
+            fixed_string_type && key_value.getType() == Field::Types::String
+            && key_value.safeGet<String>().size() != fixed_string_type->getN())
+            return {};
+
+        auto key_column = key_type->createColumn();
+        if (!key_column->tryInsert(key_value))
+            return {};
 
         WriteBufferFromOwnString buffer;
         key_type->getDefaultSerialization()->serializeText(*key_column, 0, buffer, FormatSettings());
@@ -1198,6 +1216,37 @@ void collectCandidates(
         collectCandidates(child, clause_kind, inside_aggregate_function, state, chained_carrier);
 }
 
+bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs);
+
+/// Subcolumn names are flat, so reading the subcolumn `prefix.suffix` of a value is not always the
+/// same as reading the subcolumn `suffix` of its subcolumn `prefix`: in ``Tuple(`a.b` UInt32, a Tuple(b UInt32))``
+/// the name `a.b` is the sibling element `a.b`, and for a JSON path `a` the subcolumn `Int64` of its
+/// `Dynamic` value is a type of the value while `a.Int64` is another JSON path. Check that the flat
+/// name resolves to the same substreams and type as the structured extraction.
+bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, const String & prefix, const String & suffix)
+{
+    /// The nested JSON-array subcolumn (`:`Array(JSON)`.@`b``) of a `Dynamic` value exists only as a
+    /// subcolumn of the JSON column owning the path, so it can only be read through the composed name.
+    /// The type hint cannot be claimed by a sibling path, and the subcolumn resolved by the storage
+    /// is validated to descend from the column when the projection is built.
+    if (suffix.starts_with(JSON_ARRAY_SUBCOLUMN))
+        return true;
+
+    auto prefix_info = argument_type->tryGetSubcolumnInfo(prefix);
+    auto composed_info = argument_type->tryGetSubcolumnInfo(prefix + "." + suffix);
+    if (!prefix_info || !composed_info || !prefix_info->data.type)
+        return false;
+
+    auto suffix_info = prefix_info->data.type->tryGetSubcolumnInfo(suffix);
+    if (!suffix_info || !suffix_info->data.type || !composed_info->data.type
+        || !composed_info->data.type->equals(*suffix_info->data.type))
+        return false;
+
+    ISerialization::SubstreamPath expected_path = prefix_info->substreams_path;
+    expected_path.insert(expected_path.end(), suffix_info->substreams_path.begin(), suffix_info->substreams_path.end());
+    return std::ranges::equal(composed_info->substreams_path, expected_path, isSameSubstream);
+}
+
 /// Build the expression that reads the subcolumn inside the subquery, or nullptr if it cannot be built.
 /// For a column read from a table, it is a direct reference to the subcolumn. For a column exported
 /// by a deeper subquery, it is a `getSubcolumn` function that is pushed down further when that
@@ -1232,6 +1281,10 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(
 
         auto path_prefix = std::move(match->subcolumn_path);
         if (path_prefix.empty())
+            return nullptr;
+
+        const auto & argument_node = function_node->getArguments().getNodes()[0];
+        if (!subcolumn_path.empty() && !composedSubcolumnPreservesStructure(argument_node->getResultType(), path_prefix, subcolumn_path))
             return nullptr;
 
         subcolumn_path = subcolumn_path.empty() ? path_prefix : path_prefix + "." + subcolumn_path;
@@ -1763,6 +1816,47 @@ std::vector<std::unordered_map<String, CanonicalColumn>> collectCanonicalExports
     return result;
 }
 
+/// Whether the subtree reads a column of `source` that strictly contains the column `name`.
+bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * source, const String & name)
+{
+    if (!node)
+        return false;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        const auto & column_name = column_node->getColumnName();
+        if (column_source.get() == source && column_name != name && isSameOrAncestorColumn(column_name, name))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (readsContainingColumn(child.get(), source, name))
+            return true;
+
+    return false;
+}
+
+/// Whether the leaf query reads, outside of its projection, a column that contains the column
+/// `name` of `source`. Such a use keeps reading the containing column after the pushdown, which
+/// would then read the subcolumn a second time instead of extracting it from the value already read.
+/// The projection slots are covered by the liveness of the exports in the parent queries.
+bool leafReadsContainingColumnOutsideProjection(const QueryNode & leaf, const IQueryTreeNode * source, const String & name)
+{
+    for (const auto * clause : {
+             leaf.getJoinTreeNode().get(), leaf.getPrewhere().get(), leaf.getWhere().get(), leaf.getWithNode().get(),
+             leaf.getGroupByNode().get(), leaf.getHaving().get(), leaf.getWindowNode().get(), leaf.getQualify().get(),
+             leaf.getOrderByNode().get(), leaf.getInterpolate().get(), leaf.getLimitByNode().get(), leaf.getLimitByLimit().get(),
+             leaf.getLimitByOffset().get(), leaf.getLimitAfter().get(), leaf.getLimitUntil().get(), leaf.getLimit().get(),
+             leaf.getOffset().get()})
+    {
+        if (readsContainingColumn(clause, source, name))
+            return true;
+    }
+
+    return false;
+}
+
 /// Build the expression that replaces a matched occurrence with a read of the subcolumn that the
 /// target subquery now exports. Its result type is equal to the result type of the original
 /// function by construction: `matchCandidate` accepts a carrier only when its result type is the
@@ -2077,6 +2171,24 @@ void processQuery(
                 return &other_group != &group && other_group.applicable && other_group.source == group.source
                     && has_plain_occurrences(other_group) && pushes_ancestor_of_guarded_value(other_group);
             }))
+            continue;
+
+        /// A use of a column containing the pushed subcolumn inside the target itself, such as
+        /// `WHERE cityHash64(tup) > 0`, keeps that column read regardless of the parent queries.
+        std::vector<const QueryNode *> leaves;
+        collectLeafQueries(group.source.get(), leaves);
+        bool read_in_target = false;
+        for (size_t i = 0; i < leaves.size() && i < canonical_exports_per_leaf.size() && !read_in_target; ++i)
+        {
+            auto export_it = canonical_exports_per_leaf[i].find(group.column_name);
+            if (export_it == canonical_exports_per_leaf[i].end())
+                continue;
+            const auto & [canonical_source, canonical_name] = export_it->second;
+            read_in_target = leafReadsContainingColumnOutsideProjection(
+                *leaves[i], canonical_source, canonical_name + "." + group.subcolumn_path);
+        }
+
+        if (read_in_target)
             continue;
 
         size_t references = 0;
