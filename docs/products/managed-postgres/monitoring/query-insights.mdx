@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Postgres query insights'
 description: 'Per-statement telemetry for ClickHouse Managed Postgres: every query pattern your database runs, ranked by impact, with the diagnostic counters that explain why each one is slow'
-keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal', 'wait events', 'lock waits', 'blocked sessions']
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal']
 doc_type: 'guide'
 ---
 
@@ -17,7 +17,7 @@ Query Insights captures per-statement telemetry from your
 pattern by impact, so you can go from "p99 is creeping up" to "this pattern
 is spilling to disk" without leaving the cloud console.
 
-Per-statement data comes from [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
+The data comes from [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
 the open-source Postgres extension that streams per-statement counters into
 ClickHouse Cloud. Telemetry is normalized inside Postgres before it leaves
 the database — literals are stripped and replaced with placeholders, so the
@@ -26,7 +26,7 @@ exact values you query never enter the telemetry stream.
 ## Open query insights {#open}
 
 Open your ClickHouse Managed Postgres instance in the cloud console and click
-**Query insights** in the left sidebar. The page is divided into five
+**Query insights** in the left sidebar. The page is divided into four
 surfaces, in the order you'd actually use them:
 
 - An **Overview** that fits a database health check on one screen.
@@ -34,8 +34,6 @@ surfaces, in the order you'd actually use them:
   has run, sorted by whatever you suspect.
 - A **Recent queries** panel that lists individual executions in reverse
   chronological order.
-- A **Waits** table that ranks the wait events active sessions spent
-  time in.
 - A **Detail flyout** that aggregates every counter for a single pattern.
 
 Use the **Time period** selector at the top to switch between the last 15
@@ -46,8 +44,7 @@ charts stay responsive.
 
 ## Overview {#overview}
 
-The overview is a 3×3 grid of nine panels. The first two rows cover
-query activity:
+The overview is a 3×2 grid of six panels:
 
 | Panel | What it shows |
 |---|---|
@@ -64,23 +61,6 @@ moving with application traffic, error rate flat or zero, and percentile
 latencies tracking each other closely.
 
 <Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Query Insights overview showing the six stats cards: queries per second, query latency percentiles, operations breakdown donut, rows returned area chart, buffer hit ratio donut at 95.2 percent, and an errors column chart" size="lg" border/>
-
-### Wait charts {#wait-charts}
-
-The third row shows what active sessions on the primary were waiting
-on, from [samples taken every 30 seconds](#how-waits):
-
-| Panel | What it shows |
-|---|---|
-| **Active sessions by wait type** | Average active sessions, stacked by wait type. **CPU** means active with no wait event. Hover over a bar to see the wait events behind each type. |
-| **Lock wait time** | The p50, p95, and max elapsed lock wait time across blocked sessions sampled in each interval. |
-| **Blocked sessions** | Average sessions blocked on a lock. |
-
-Look for **Blocked sessions** staying above zero while **Lock wait
-time** rises: this can indicate sustained lock contention. Click any
-wait chart to open the [Waits](#waits) table.
-
-<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Wait charts showing active sessions stacked by wait type, lock wait time at p50, p95, and max, and blocked sessions over time" size="lg" border/>
 
 ## Slow patterns {#slow-patterns}
 
@@ -148,23 +128,6 @@ CPU time.
 Click any row to open the same detail flyout as the patterns table,
 scoped to that single execution's pattern.
 
-## Waits {#waits}
-
-Expand **Waits**, or click a [wait chart](#wait-charts), to see wait
-events ranked by average active sessions over the selected time period.
-
-<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Waits table showing wait events ranked by average active sessions, with Wait event, Wait type, Avg active sessions, and Share of load columns" size="lg" border/>
-
-| Column | What it shows |
-|---|---|
-| **Wait event** | The wait event as `type:event`, for example `Lock:relation` or `IO:WalSync`. **CPU** means active with no wait event. |
-| **Wait type** | The type of the wait event, matching the colors in **Active sessions by wait type**. |
-| **Avg active sessions** | The average number of sessions in this wait event over the selected time period. |
-| **Share of load** | This wait event's share of all average active sessions, including **CPU**. |
-
-For descriptions of individual events, see the
-[Postgres wait events reference](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE).
-
 ## Detail flyout {#detail}
 
 Click any row in the patterns or recent queries table and the **Query
@@ -210,7 +173,7 @@ screen.
 
 ## Query insights API {#api}
 
-Per-statement telemetry is also available through the
+The same telemetry is available programmatically through the
 [ClickHouse Cloud OpenAPI](/products/managed-postgres/openapi#query-insights).
 The [Slow patterns](#slow-patterns) table maps to the
 [list slow query patterns](/products/cloud/api-reference/postgres/slow-query-patterns-get-list)
@@ -236,18 +199,11 @@ uses a non-blocking try-lock on a shared-memory ring buffer. Under
 pressure, the extension drops events with a counter rather than
 back-pressuring Postgres.
 
-### Waits are sampled {#how-waits}
-
-The [wait charts](#wait-charts) and [Waits](#waits) table use samples
-collected every 30 seconds on the primary. Short waits can occur
-entirely between samples and may not appear, so these views are most
-useful for identifying sustained waits and lock contention.
-
 ### Raw events, not aggregates {#how-raw-events}
 
 `pg_stat_ch` emits one raw event per executed statement (top-level and
-nested), subject to sampling. Query percentiles, rankings, and
-breakdowns are computed in ClickHouse from this event stream.
+nested), subject to sampling. Every percentile, ranking, and breakdown
+in the UI is a ClickHouse query against the same event stream.
 
 ### Same engine our customers use {#how-engine}
 

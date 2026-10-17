@@ -22,7 +22,6 @@ ExpressionTransform::ExpressionTransform(
     , input_positions(expression->getInputPositions(*header_))
     , updater(std::move(updater_))
 {
-    set_spillables.add(expression->getActionsDAG());
 }
 
 ExpressionTransform::ExpressionTransform(
@@ -35,29 +34,17 @@ ExpressionTransform::ExpressionTransform(
     , input_positions(expression->getInputPositions(*input_header_))
     , updater(std::move(updater_))
 {
-    set_spillables.add(expression->getActionsDAG());
 }
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
 
-    if (isCancelled())
-    {
-        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-        return;
-    }
-
     /// The statistics updater needs the full output Block, so fall back to the block-based path when it is set.
     if (updater)
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        expression->execute(block, num_rows, false, false, &getCancellationFlag());
-        if (isCancelled())
-        {
-            block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
-            num_rows = 0;
-        }
+        expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
         chunk.setColumns(block.getColumns(), num_rows);
         updater->recordOutputChunk(chunk, block);
         return;
@@ -65,13 +52,8 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     /// Fast path: run positionally against the fixed input header, avoiding per-chunk Block name-index work.
     auto columns = expression->executeOnColumns(
-        chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, &getCancellationFlag());
+        chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, [this]() { return isCancelled(); });
 
-    if (isCancelled())
-    {
-        columns = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns()).getColumns();
-        num_rows = 0;
-    }
     chunk.setColumns(std::move(columns), num_rows);
 }
 
@@ -90,40 +72,15 @@ ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActions
     : ExceptionKeepingTransform(header_, std::make_shared<const Block>(ExpressionTransform::transformHeader(*header_, expression_->getActionsDAG())))
     , expression(std::move(expression_))
 {
-    set_spillables.add(expression->getActionsDAG());
-}
-
-void ConvertingTransform::onCancel() noexcept
-{
-    ExceptionKeepingTransform::onCancel();
-    const auto & nodes = expression->getNodes();
-    for (const auto & node : nodes)
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-            node.function->cancelExecution();
-    }
 }
 
 void ConvertingTransform::onConsume(Chunk chunk)
 {
     size_t num_rows = chunk.getNumRows();
-
-    if (isCancelled())
-    {
-        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-        cur_chunk = std::move(chunk);
-        return;
-    }
-
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows, false, false, &getCancellationFlag());
+    expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
-    if (isCancelled())
-    {
-        block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
-        num_rows = 0;
-    }
     chunk.setColumns(block.getColumns(), num_rows);
     cur_chunk = std::move(chunk);
 }

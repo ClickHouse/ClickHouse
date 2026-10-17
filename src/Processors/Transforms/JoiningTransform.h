@@ -7,7 +7,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -83,7 +82,6 @@ public:
     ~JoiningTransform() override;
 
     String getName() const override { return "JoiningTransform"; }
-    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     const JoinPtr & getJoin() const { return join; }
 
@@ -108,7 +106,6 @@ private:
     bool is_last_drained = false;
 
     JoinPtr join;
-    SetSpillables set_spillables;
     bool on_totals;
     /// Whether this transform emits non-joined rows itself once all probe streams have drained.
     /// False when separate `NonJoinedBlocksTransform` processors own the emission.
@@ -131,66 +128,31 @@ private:
     Block readExecute(Chunk & chunk);
 };
 
-class RuntimeFilter;
-using RuntimeFilterConstPtr = std::shared_ptr<const RuntimeFilter>;
-
-/// Attached to the "seal" chunk emitted through the optional seal port of
-/// FillingRightJoinSideTransform when the build side of a JOIN is complete. The seal itself is
-/// a pure completion signal; the runtime filter is an optional payload for pruning the gated
-/// probe-side read (see SealGatedReadTransform).
-struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
-{
-    RuntimeFilterSealInfo() = default;
-    RuntimeFilterSealInfo(const RuntimeFilterSealInfo & other) = default;
-
-    RuntimeFilterConstPtr filter;
-};
-
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
 
-    /// An optional payload for the seal: the completed runtime filter built from this join's
-    /// build side, if there is one.
-    using SealPayloadGetter = std::function<RuntimeFilterConstPtr()>;
-
-    /// Adds an extra output port emitting a single "seal" chunk when the whole build side is
-    /// complete (the hash table is ready to be probed). Only the transform which completes
-    /// the build emits, the seal ports of the concurrent others just finish, so resizing all
-    /// of them to one stream yields exactly one seal. Called by the join pipeline wiring.
-    OutputPort * addSealPort(SealPayloadGetter seal_payload_getter_);
-
     Status prepare() override;
     void work() override;
 
-    std::span<ISpillable * const> getSpillables() override { return {&spillable, spillable ? 1uz : 0uz}; }
+    ProcessorMemoryStats getMemoryStats() override;
+    bool spillOnSize(size_t bytes) override;
 
 private:
-    /// Emit the seal (if this transform completed the build and emit is allowed) and finish
-    /// the seal port.
-    void finishSealPort(bool emit);
-
     JoinPtr join;
-    ISpillable * const spillable = join->getSpillable();
     FinishCounterPtr finish_counter;
-    const JoinBuildContext build_context;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
     bool post_build_phase = false;
-
-    OutputPort * seal_port = nullptr;
-    SealPayloadGetter seal_payload_getter;
-    bool seal_done = false;
-    bool completed_the_build = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
@@ -218,14 +180,12 @@ public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
 
     String getName() const override { return "DelayedJoinedBlocksTransform"; }
-    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
     void work() override;
 
 private:
     JoinPtr join;
-    SetSpillables set_spillables;
 
     IBlocksStreamPtr delayed_blocks = nullptr;
     bool finished = false;

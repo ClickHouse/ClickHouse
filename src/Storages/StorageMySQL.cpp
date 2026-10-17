@@ -157,39 +157,35 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    const auto local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
-        rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
+        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
-        /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote table
-        /// (its value is written there on `INSERT` and read back from there), so a predicate over it is pushed
-        /// down like one over an ordinary column.
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            storage_snapshot->metadata->getColumns().getAllPhysical(),
+            storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::BackticksMySQL,
             LiteralEscapingStyle::Regular,
             remote_database_name,
             remote_table_or_query.getTableName(),
-            getStorageID(),
-            context_,
-            {},
-            {},
-            local_only_columns);
+            context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+
+        WhichDataType which(column_data.type);
+        /// Convert enum to string.
+        if (which.isEnum())
+            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -212,8 +208,7 @@ public:
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
-        const size_t & mysql_max_rows_to_insert,
-        bool auto_close_)
+        const size_t & mysql_max_rows_to_insert)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{std::move(storage_)}
         , metadata_snapshot{metadata_snapshot_}
@@ -221,17 +216,10 @@ public:
         , remote_table_name{remote_table_name_}
         , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
-        , auto_close{auto_close_}
     {
     }
 
     String getName() const override { return "StorageMySQLSink"; }
-
-    void onFinish() override
-    {
-        if (auto_close)
-            entry.disconnect();
-    }
 
     void consume(Chunk & chunk) override
     {
@@ -328,7 +316,6 @@ private:
     std::string remote_table_name;
     mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
-    bool auto_close;
 };
 
 
@@ -343,8 +330,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         remote_database_name,
         remote_table_or_query.getTableName(),
         pool->get(),
-        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert],
-        (*mysql_settings)[MySQLSetting::connection_auto_close]);
+        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
 mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
@@ -572,8 +558,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
-            IdentifierQuotingRule::Always);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -662,7 +647,6 @@ void registerStorageMySQL(StorageFactory & factory)
             args.getContext(),
             mysql_settings);
     },
-    mysqlPostgreSQLSecretArguments(4),
     {
         .supports_settings = true,
         .supports_schema_inference = true,
@@ -717,7 +701,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
-The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
+The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -752,14 +736,6 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
-```
-
-Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
-
-With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
-
-```sql
-CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.

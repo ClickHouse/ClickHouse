@@ -9,119 +9,67 @@ doc_type: 'reference'
 يمكن تقسيم الاستعلامات في ClickHouse إلى عدة أنواع:
 
 1. استعلامات قراءة البيانات: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2. استعلامات كتابة البيانات: `INSERT`, `OPTIMIZE`, [`DELETE`](/ar/reference/statements/delete), [`UPDATE`](/ar/reference/statements/update), `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`.
+2. استعلامات كتابة البيانات: `INSERT`, `OPTIMIZE`.
 3. استعلامات تغيير الإعدادات: `SET`, `USE`.
-4. استعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `TRUNCATE`.
-5. استعلامات إدارة الوصول: [`GRANT`](/ar/reference/statements/grant), [`REVOKE`](/ar/reference/statements/revoke), و`CREATE` و`ALTER` و`DROP` للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات. راجع [التحكم في الوصول وإدارة الحسابات](/ar/concepts/features/security/access-rights).
-6. `KILL QUERY`.
-
-يُغيّر كل من `ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE` البيانات نفسها لا البيانات الوصفية للجدول، ولذلك أُدرجا أعلاه ضمن استعلامات كتابة البيانات. وهما يتطلبان امتيازَي `ALTER DELETE` و`ALTER UPDATE`، وهما الامتيازان نفسهما اللذان تتطلبهما عبارتا `DELETE` و`UPDATE` المستقلتان. وتنتمي هذه الامتيازات إلى مجموعة امتيازات `ALTER TABLE`، لذا فإن `allow_ddl = 0` يرفض العبارات الأربع جميعها على أي جدول دائم.
+4. استعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
 
 تنظّم الإعدادات التالية أذونات المستخدم وفقًا لنوع الاستعلام:
 
-## readonly {#readonly}
+<div id="readonly">
+  ## readonly
+</div>
 
-يقيّد الاستعلامات التي يمكن للجلسة تنفيذها. قيم هذا الإعداد وقيمته الافتراضية والإعدادات التي تتيح كل قيمة تغييرها موصوفة في
-[مرجع الإعدادات](/ar/reference/settings/session-settings/other#readonly)؛ ويصف هذا القسم فئات الاستعلامات التي تسمح بها كل قيمة.
+يفرض قيودًا على أذونات استعلامات قراءة البيانات وكتابة البيانات وتغيير الإعدادات.
 
-عند ضبطه على 1، يسمح باستعلامات مثل:
+عند ضبطه على 1، يسمح بما يلي:
 
-* استعلامات القراءة (مثل `SELECT` والاستعلامات المكافئة لها).
-* الاستعلامات التي تعدّل سياق الجلسة فقط (مثل `USE`).
+* جميع أنواع استعلامات القراءة (مثل SELECT والاستعلامات المكافئة لها).
+* الاستعلامات التي لا تعدّل إلا سياق الجلسة (مثل USE).
 
-وعند ضبطه على 2، يسمح بما سبق إضافة إلى `SET` و`CREATE TEMPORARY TABLE` و`RESTORE`. وبما أن `RESTORE` يمكنه إنشاء جدول وتحميل البيانات إليه، فإن `readonly = 2` لا يمنع بحد ذاته الجلسة من
-الكتابة، بينما يرفضها `readonly = 1`.
+عند ضبطه على 2، يسمح بما سبق بالإضافة إلى:
 
-أما `BACKUP` فلا يقيّده `readonly` عند أي قيمة: فالجلسة التي تملك امتيازات النسخ الاحتياطي لجدول ما يمكنها كتابة نسخة احتياطية حتى عند `readonly = 1`. لذا لا تعتمد على `readonly` لمنع النسخ الاحتياطي.
+* SET وCREATE TEMPORARY TABLE
 
-تحتاج معظم دوال الجداول إلى امتياز `CREATE TEMPORARY TABLE`، لذا يُرفض استعلام `SELECT` الذي يقرأ من إحداها عند `readonly = 1` دون `readonly = 2`. وبعضها، مثل `numbers`، مسموح به في وضع
-القراءة فقط.
-
-عند أي قيمة أكبر من 0، لا يُسمح بأي مما يلي على جدول دائم: استعلامات كتابة البيانات
-(`INSERT` و`OPTIMIZE` و`DELETE` و`UPDATE` و`ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE`) أو استعلامات DDL
-(`CREATE` و`ALTER TABLE` و`ALTER VIEW` و`RENAME` و`EXCHANGE` و`ATTACH` و`DETACH` و`DROP`
-و`TRUNCATE TABLE`). كما لا يُسمح بعبارات `SYSTEM` التي تتطلب امتيازًا من مجموعة `SYSTEM`، ولا بعمليات `CREATE` و`ALTER`
-و`DROP` للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات. وتُستثنى من ذلك إدارة المجموعات المسماة، إذ لا يقيّد `readonly`
-`CREATE NAMED COLLECTION` ولا `ALTER NAMED COLLECTION` ولا `DROP NAMED COLLECTION`.
-
-كذلك يُرفض منح امتياز باستخدام `GRANT`، لكن لا ينطبق ذلك على كل عبارات إدارة الوصول: فعبارتا `REVOKE` المحلية و`GRANT CURRENT GRANTS` غير خاضعتين لـ `readonly`، لذا يمكن لجلسة للقراءة فقط أن تسحب
-امتيازًا تملكها مع خيار المنح وأن تنقل صلاحياتها إلى مستخدم آخر.
-أما سحب امتياز باستخدام `ON CLUSTER` فيُرفض.
-
-الجداول المؤقتة مستثناة من كلا الإعدادين: فالجلسة التي يمكنها إنشاء جدول مؤقت يمكنها أيضًا تنفيذ `ALTER` عليه،
-والإدراج فيه وحذفه.
-
-<Note>
-  عبر [واجهة HTTP](/ar/concepts/features/interfaces/http)، يُنفَّذ الطلب الذي لا تكون طريقته `POST` بقيمة
-  `readonly = 2` إذا كانت القيمة الفعّالة ستكون 0 لولا ذلك. ويُحتفظ بأي قيمة أكثر صرامة سبق ضبطها عبر
-  إعدادات المستخدم أو عبر ملف تعريف إعدادات. وتُستثنى `PUT` و`DELETE` عندما تصل إلى
-  [معالج](/ar/reference/statements/create/handler) معرّف بلغة SQL يقبلها، فيمكن لمثل هذا الطلب أن
-  يعدّل البيانات عندما تكون قيمة `readonly` الفعّالة 0؛ وإلا فاستخدم طريقة `POST` لتعديل البيانات.
-
-  وفي الطلب الذي رُفعت قيمته بهذه الطريقة، يُرفض تمرير معامل `readonly` في سلسلة الاستعلام برسالة
-  `Cannot modify 'readonly' setting in readonly mode` ما لم يحدد القيمة التي يحملها الطلب أصلًا.
-
-  توجد طريقة لمنع المستخدم من تغيير إعدادات محددة فقط، وطريقة للسماح بتغيير
-  إعدادات محددة فقط ضمن قيود `readonly = 1`. لمزيد من التفاصيل راجع
-  [القيود على الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings)، التي
-  تنصح كذلك بعدم جعل إعداد `readonly` نفسه
-  [قابلًا للتغيير في وضع القراءة فقط](/ar/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
-</Note>
-
-## allow_ddl {#allow_ddl}
-
-يسمح باستعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language) أو يمنعها على قواعد البيانات،
-والجداول، وطرق العرض، والقواميس، والدوال المعرّفة من قبل المستخدم، وأحمال العمل، والموارد، والمعالجات المعرّفة بلغة SQL.
+<Tip>
+  الاستعلامات مثل EXISTS وDESCRIBE وEXPLAIN وSHOW PROCESSLIST وغيرها تُعد مكافئة لـ SELECT، لأنها تقتصر على تنفيذ SELECT من جداول النظام.
+</Tip>
 
 القيم الممكنة:
 
-* 0 — يُحظر تنفيذ أي استعلام على كائن دائم يحتاج إلى أي من الامتيازات التالية:
-  `CREATE DATABASE`، `DROP DATABASE`، `CREATE TABLE`، `CREATE VIEW`، `ALTER TABLE`،
-  `ALTER VIEW`، `DROP TABLE`، `DROP VIEW`، `TRUNCATE`، `CREATE DICTIONARY`، `DROP DICTIONARY`،
-  `CREATE FUNCTION`، `DROP FUNCTION`، `CREATE WORKLOAD`، `DROP WORKLOAD`، `CREATE RESOURCE`،
-  `DROP RESOURCE`، `CREATE HANDLER`، `ALTER HANDLER`، `DROP HANDLER`. وتحتاج `RENAME` و`EXCHANGE`
-  و`ATTACH` و`DETACH` إلى هذه الامتيازات أيضًا، لذا فهي محظورة كذلك، باستثناء
-  `ALTER TABLE ... ATTACH PARTITION` و`ATTACH PART` اللتين تحتاجان إلى `INSERT` فقط ولا يحظرهما
-  هذا الإعداد، وإن كان `readonly` يحظرهما على الجدول الدائم.
-  أما `ATTACH PARTITION ... FROM` فتحتاج إلى `ALTER DELETE` أيضًا، ولذلك فهي محظورة. ولا يشمل الحظر
-  منح هذه الامتيازات أو سحبها.
-* 1 — لا يحظر هذا الإعداد شيئًا.
+* 0 — يُسمح باستعلامات القراءة والكتابة وتغيير الإعدادات.
+* 1 — يُسمح فقط باستعلامات قراءة البيانات.
+* 2 — يُسمح باستعلامات قراءة البيانات وتغيير الإعدادات.
+
+القيمة الافتراضية: 0
+
+<Note>
+  بعد ضبط `readonly = 1`، لا يمكن للمستخدم تغيير الإعدادين `readonly` و`allow_ddl` في الجلسة الحالية.
+
+  عند استخدام الطريقة `GET` في [واجهة HTTP](/ar/concepts/features/interfaces/http)، يتم ضبط `readonly = 1` تلقائيًا. لتعديل البيانات، استخدم الطريقة `POST`.
+
+  يمنع ضبط `readonly = 1` المستخدم من تغيير الإعدادات. ومع ذلك، توجد طريقة لمنع المستخدم من تغيير إعدادات محددة فقط. كما توجد طريقة للسماح بتغيير إعدادات محددة فقط ضمن قيود `readonly = 1`. لمزيد من التفاصيل، راجع [القيود على الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings).
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+يسمح باستعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language) أو يحظرها.
+
+القيم الممكنة:
+
+* 0 — استعلامات DDL غير مسموح بها.
+* 1 — استعلامات DDL مسموح بها.
 
 القيمة الافتراضية: 1
 
 <Note>
-  لا يمكنك تنفيذ `SET allow_ddl = 1` إذا كانت `allow_ddl = 0` في الجلسة الحالية.
-
-  لا يقيّد `allow_ddl` استعلامات إدارة الوصول: فـ `GRANT` و`REVOKE` و`CREATE` و`ALTER` و`DROP`
-  للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات لا تتأثر
-  به. كما لا تتأثر `CREATE TEMPORARY TABLE` وإدارة المجموعات المسمّاة، وكذلك
-  `ALTER DATABASE ... MODIFY SETTING` و`ALTER DATABASE ... MODIFY COMMENT` و`UNDROP TABLE`، وهي
-  غير مقيّدة بـ `readonly` أيضًا. وداخل `CREATE` أو `ALTER` لمستخدم أو دور أو ملف تعريف إعدادات،
-  تُرفض جملة `SETTINGS allow_ddl = 1` ما دامت الجلسة الحالية لديها `allow_ddl = 0`،
-  بينما تُقبل جملة `SETTINGS allow_ddl = 0`. ويجري التحقق من الإعداد المضمّن وفق قيود إعدادات
-  الجلسة نفسها، وهذا أيضًا سبب رفض `SET allow_ddl = 1`.
+  لا يمكنك تنفيذ `SET allow_ddl = 1` إذا كانت قيمة `allow_ddl = 0` في الجلسة الحالية.
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  لا يتطلب إنهاء استعلاماتك الخاصة امتياز `KILL QUERY`، لذا فهو يعمل مع أي مزيج
-  من `readonly` و`allow_ddl`، لكنه يتطلب `SELECT` على `system.processes`، باستثناء
-  `KILL QUERY WHERE query_id = '<id>'`، الذي يلغي استعلامك الخاص الذي يحمل هذا المعرّف دون قراءة ذلك
-  الجدول. أما إنهاء استعلام يخص مستخدمًا آخر، وأي `KILL QUERY ... ON CLUSTER`، فيتطلب
-  امتياز `KILL QUERY`، وهو ما يرفضه `readonly = 1` و`readonly = 2`.
+  يمكن تنفيذ `KILL QUERY` مع أي تركيبة من إعدادات readonly و allow&#95;ddl.
 </Info>
-
-## إعدادات أخرى ذات صلة {#other-relevant-settings}
-
-* [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions)
-  هو الإعداد الثالث الذي يشارك في قرار الصلاحية نفسه، إلى جانب `readonly` و
-  `allow_ddl`. فعند تعطيله، يُحظر تنفيذ دوال introspection، بينما لا يُحظر منح صلاحية
-  `INTROSPECTION`.
-* [`allow_non_metadata_alters`](/ar/reference/settings/session-settings/allow#allow_non_metadata_alters)
-  ليس إعداد صلاحيات، لكنه يفرض قيودًا إضافية على `ALTER TABLE`: فعند تعطيله، يُرفض أي أمر
-  يغيّر تعريف الجدول في جداول عائلة `MergeTree` إذا كان تطبيقه سيؤدي إلى
-  إعادة كتابة البيانات على القرص (`DROP COLUMN`، `RENAME COLUMN`، تغيير النوع عبر `MODIFY COLUMN`، `MODIFY TTL`).
-  كما تُرفض `CLEAR COLUMN` و`CLEAR INDEX` و`CLEAR PROJECTION`، رغم أنها تترك
-  التعريف دون تغيير. أما العبارات التي تُعدّ بحد ذاتها mutations، مثل `ALTER TABLE ... DELETE`
-  و`ALTER TABLE ... UPDATE` و`ALTER TABLE ... MATERIALIZE INDEX`، فلا تتأثر.

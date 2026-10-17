@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## use_skip_indexes {#use_skip_indexes}
+<div id="use_skip_indexes">
+  ## use_skip_indexes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,7 +26,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用。
 * 1 — 启用。
 
-## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
+<div id="use_skip_indexes_for_disjunctions">
+  ## use_skip_indexes_for_disjunctions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,7 +42,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
+<div id="use_skip_indexes_for_top_k">
+  ## use_skip_indexes_for_top_k
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +59,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+<div id="use_skip_indexes_if_final">
+  ## use_skip_indexes_if_final
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -68,7 +76,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用。
 * 1 — 启用。
 
-## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
+<div id="use_skip_indexes_if_final_exact_mode">
+  ## use_skip_indexes_if_final_exact_mode
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -83,11 +93,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
+<div id="use_skip_indexes_on_data_read">
+  ## use_skip_indexes_on_data_read
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "默认启用"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "文本索引现已 GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "默认启用"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新设置"}]}]} />
 
 启用在读取数据时使用数据跳过索引。
 

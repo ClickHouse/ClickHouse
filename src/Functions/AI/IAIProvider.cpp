@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-String sanitize(std::string_view input)
+String sanitizeForLog(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -45,7 +45,7 @@ String formatProviderError(int status_code, const String & response_body)
                 String msg = err->optValue<String>("message", "");
                 String type = err->optValue<String>("type", "");
                 if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitize(type), sanitize(msg));
+                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitizeForLog(type), sanitizeForLog(msg));
             }
         }
     }
@@ -55,7 +55,7 @@ String formatProviderError(int status_code, const String & response_body)
 
     constexpr size_t max_len = 256;
     const std::string_view snippet = std::string_view(response_body).substr(0, max_len);
-    return fmt::format("HTTP {}: {}", status_code, sanitize(snippet));
+    return fmt::format("HTTP {}: {}", status_code, sanitizeForLog(snippet));
 }
 
 AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg)
@@ -84,7 +84,7 @@ AIProviderPtr createAIProvider(
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();
-    context->getHTTPHeaderFilter().checkHeaders(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
     return provider;
 }
 

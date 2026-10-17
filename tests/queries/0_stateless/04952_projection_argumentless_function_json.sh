@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: a DDL entry is executed with the `dialect` of the session, so `clickhouse_json` fails to parse the SQL text, https://github.com/ClickHouse/ClickHouse/issues/123323
 # Malformed JSON AST: a function without an `arguments` list inside a projection expression slot
-# (`query` for a SELECT projection, `index` for an INDEX projection) must be rejected with BAD_ARGUMENTS.
+# (`query` for a SELECT projection, `index` for an INDEX projection) must not crash the server:
+# `count` accepts no arguments, `plus` fails with NUMBER_OF_ARGUMENTS_DOESNT_MATCH.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,8 +36,7 @@ print(json.dumps(ast))
 ' "$2")
 
     OUT=$(${CLICKHOUSE_CLIENT} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON_BAD" 2>&1 || true)
-    echo "$OUT" | grep -oE 'BAD_ARGUMENTS' | head -1
-    echo "$OUT" | grep -oE "has no 'arguments' list" | head -1
+    echo "$OUT" | grep -oE 'NUMBER_OF_ARGUMENTS_DOESNT_MATCH' | head -1
 
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_04952 SYNC"
 }

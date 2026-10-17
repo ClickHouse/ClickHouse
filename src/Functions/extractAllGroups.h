@@ -75,12 +75,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// The regexp must be a constant: `executeImpl` reads it via
-        /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,
-        /// so a non-const second argument would only fail at execution.
-        return "(StringOrFixedString, const StringOrFixedString) -> Array(Array(String))";
+        FunctionArgumentDescriptors args{
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
+            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        /// Two-dimensional array of strings, each `row` of top array represents matching groups.
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -95,7 +99,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false, false>(needle);
+        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false>(needle);
         const auto & regexp = holder.getRE2();
 
         if (!regexp)

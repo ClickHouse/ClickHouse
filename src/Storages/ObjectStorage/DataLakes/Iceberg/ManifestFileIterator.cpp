@@ -102,6 +102,14 @@ namespace
         return DB::Range(*left, true, *right, true);
     }
 
+    bool isColumnPresenceKnown(const ParsedManifestFileEntry & parsed_entry)
+    {
+        for (const auto & [field_id, column_info] : parsed_entry.columns_infos)
+            if (column_info.bytes_size.has_value())
+                return true;
+        return false;
+    }
+
     void addRowLineageHyperrectangles(
         std::unordered_map<Int32, DB::Range> & hyperrectangles,
         const ProcessedManifestFileEntry & entry,
@@ -118,6 +126,7 @@ namespace
         if (common::addOverflow<UInt64>(
                 *entry.first_row_id, static_cast<UInt64>(parsed_entry.record_count) - 1, last_inherited_row_id))
             return;
+        const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
         const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
 
         for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
@@ -125,16 +134,23 @@ namespace
             const bool is_row_id = field_id == row_id_field_id;
             if (is_row_id && !row_ids_are_readable)
                 continue;
+            const UInt64 inherited_lower_bound = is_row_id ? *entry.first_row_id : inherited_sequence_number;
             const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
 
-            if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
+            if (!parsed_entry.columns_infos.contains(field_id))
+            {
+                if (column_presence_is_known)
+                {
+                    hyperrectangles.emplace(field_id, DB::Range(inherited_lower_bound, true, inherited_upper_bound, true));
+                    continue;
+                }
+            }
+            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
             {
                 hyperrectangles.emplace(field_id, *range);
                 continue;
             }
 
-            /// A missing statistic says nothing about the column, and a materialized value always predates this file, so only the
-            /// upper end of the inherited block bounds every value the file can hold.
             hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
         }
     }
@@ -414,9 +430,7 @@ ManifestFileIterator::ManifestFileIterator(
             return;
 
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
-        /// Every live data file with a null first_row_id inherits one, EXISTING ones included. A DELETED entry
-        /// takes no ids: writers reserve only the added and existing rows of a manifest.
-        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status == ManifestEntryStatus::DELETED
+        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
             || parsed_entry->parsed_first_row_id.has_value())
             continue;
 
@@ -521,12 +535,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
-    /// Decode the partition values once, against the schema of the manifest that wrote them, so that
-    /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
-    /// see the same value regardless of how this particular manifest encoded it.
-    entry->normalized_partition_key_value = normalizePartitionKeyValue(
-        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
-
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;
     else if (!entry_first_row_ids.empty())
@@ -560,22 +568,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     || type_id == DB::TypeIndex::Variant)
                     continue;
 
-                if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
-                {
-                    if (auto point = deserializeUUIDPointFromBinaryRepr(left_str, right_str))
-                        hyperrectangles.emplace(column_id, DB::Range(*point));
-                    continue;
-                }
-
                 auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// A bound that does not decode is wider than the storage of its type, a decimal
-                    /// bound beyond the precision of its type on the inner side of the range, or
-                    /// narrower than the column is now, which is what Iceberg leaves behind for a
-                    /// promoted column. The last is well formed, so this stays out of the warning
-                    /// log.
+                    /// A bound that does not decode is wider than the storage of its type, or a decimal
+                    /// bound beyond the precision of its type on the inner side of the range. Pruning is
+                    /// skipped either way, so this stays out of the warning log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "

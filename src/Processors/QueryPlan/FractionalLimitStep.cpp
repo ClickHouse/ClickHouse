@@ -90,7 +90,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)

@@ -19,6 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -43,9 +44,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Float64, Float64, Float64, Float64) -> Float64";
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        {
+            const auto * arg = arguments[i].get();
+            if (!WhichDataType(arg).isFloat64())
+                throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}. Must be Float64",
+                        arg->getName(), i + 1, getName());
+        }
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

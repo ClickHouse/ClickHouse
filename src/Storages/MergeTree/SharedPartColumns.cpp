@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/TypeTree.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -134,7 +133,8 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
             const auto * custom = type.getCustomSerialization();
             writeStringBinary(custom ? custom->getCustomSerializationIdentity() : "", out);
         };
-        forEachInTypeTree(*column.type, describe_custom_serialization);
+        describe_custom_serialization(*column.type);
+        column.type->forEachChild(describe_custom_serialization);
     }
     return out.str();
 }
@@ -146,19 +146,6 @@ SerializationByName PartSerializations::toSerializationByName() const
     for (const auto & [name, slot] : *name_to_slot)
         result.emplace(name, groups[slot.first]->serializations[slot.second]);
     return result;
-}
-
-SerializationPtr PartSerializations::tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const
-{
-    auto column_it = name_to_slot->find(column_name);
-    if (column_it == name_to_slot->end() || column_it->second.second != 0)
-        return nullptr;
-
-    auto it = name_to_slot->find(Nested::concatenateName(column_name, subcolumn_name));
-    if (it == name_to_slot->end() || it->second.first != column_it->second.first)
-        return nullptr;
-
-    return groups[it->second.first]->serializations[it->second.second];
 }
 
 const PartSerializations::NameToSlotPtr & PartSerializations::getEmptyNameToSlot()
@@ -211,8 +198,6 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
     group->serializations.push_back(serialization);
     group->names.push_back(column.name);
 
-    /// The serialization of a subcolumn can depend on the enclosing types, so the enumeration needs the type:
-    /// without it these differ from the ones `getSubcolumnSerialization` builds, which always has it.
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto full_name = Nested::concatenateName(column.name, subname);
@@ -222,7 +207,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
         }
-    }, ISerialization::SubstreamData(serialization).withType(column.type));
+    }, ISerialization::SubstreamData(serialization));
 
     /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
     group->serializations.shrink_to_fit();
@@ -271,7 +256,7 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
 
 size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const SerializationGroupKey & key) const noexcept
 {
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     XXH_INLINE_XXH3_64bits_update(&state, &key.column_position, sizeof(key.column_position));
@@ -294,7 +279,7 @@ size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const Serializa
     /// The settings go through their `updateHash` so that new fields are picked up automatically;
     /// a stale hash could only miss sharing between equal keys, never share between unequal ones
     /// (equality compares the full key).
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     SipHash settings_hash;
@@ -384,7 +369,7 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
     /// Assemble the name lookup map from the names stored in the groups (no subcolumn
     /// enumeration). The map is a pure function of the name sequence, so the sequence hash is its
     /// interning key, verified by full content comparison on a hit.
-    XXH_INLINE_XXH3_state_t name_sequence_hash;
+    XXH3_state_t name_sequence_hash;
     XXH_INLINE_XXH3_128bits_reset(&name_sequence_hash);
     size_t total_names = 0;
     for (const auto & group : groups)
