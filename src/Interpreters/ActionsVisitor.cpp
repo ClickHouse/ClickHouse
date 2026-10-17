@@ -62,6 +62,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Formats/FormatFactory.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
@@ -81,7 +82,6 @@ namespace Setting
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -110,6 +110,25 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
+/// Convert each element of a literal `array` to the common supertype of the elements. An element
+/// rendered to `String` this way must get the text `CAST` produces, so the query's format settings are
+/// passed. Out of line, so that the large `FormatSettings` stays off the frames of the recursive visitor.
+NO_INLINE MutableColumnPtr convertArrayElementsToSupertype(
+    const Columns & element_columns, const DataTypes & element_types, const DataTypePtr & nested_type, const ContextPtr & context)
+{
+    const FormatSettings format_settings = getFormatSettings(context);
+
+    auto data = nested_type->createColumn();
+    data->reserve(element_columns.size());
+    for (size_t i = 0; i < element_columns.size(); ++i)
+    {
+        /// Every element is convertible to the common supertype, so this never fails.
+        ColumnPtr converted = convertColumnToTypeOrThrow(*element_columns[i], element_types[i], nested_type, format_settings);
+        data->insertRangeFrom(*converted, 0, 1);
+    }
+    return data;
+}
+
 /// Build the constant right-hand side of `IN` as a single-row column plus its exact type, without
 /// materializing a `Field`. Each `tuple`/`array` element is evaluated individually
 /// (`evaluateConstantExpressionAsColumn` fast-paths literals) and assembled column-natively, because
@@ -165,14 +184,7 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
         else
             nested_type = getLeastSupertype(element_types);
 
-        auto data = nested_type->createColumn();
-        data->reserve(element_columns.size());
-        for (size_t i = 0; i < element_columns.size(); ++i)
-        {
-            /// Every element is convertible to the common supertype, so this never fails.
-            ColumnPtr converted = convertColumnToTypeOrThrow(*element_columns[i], element_types[i], nested_type);
-            data->insertRangeFrom(*converted, 0, 1);
-        }
+        auto data = convertArrayElementsToSupertype(element_columns, element_types, nested_type, context);
 
         auto offsets = ColumnArray::ColumnOffsets::create();
         offsets->insertValue(element_columns.size());
@@ -203,13 +215,8 @@ ColumnsWithTypeAndName createBlockForSet(
     const auto & right_arg_column = right_value.getColumn();
     const auto & right_arg_type = right_value.getType();
 
-    GetSetElementParams params{
-        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
-        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
-    };
-
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, context);
 }
 
 /** Create a block for set from literal.
@@ -221,15 +228,10 @@ ColumnsWithTypeAndName createBlockForSet(
     const boost::intrusive_ptr<ASTFunction> & right_arg,
     ContextPtr context)
 {
-    GetSetElementParams params{
-        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
-        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
-    };
-
     auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, context);
 }
 
 bool hasIdentifiers(const ASTPtr & ast)

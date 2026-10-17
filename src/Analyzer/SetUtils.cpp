@@ -1,6 +1,7 @@
 #include <Analyzer/SetUtils.h>
 
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -11,6 +12,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertColumnToType.h>
@@ -19,6 +22,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_operators;
+}
 
 namespace ErrorCodes
 {
@@ -99,11 +108,15 @@ using SetMembers = std::vector<SetMember>;
 ///     or an unknown enum literal when `forbid_unknown_enum_values` is false;
 ///   - otherwise a size-1 column of `to_type` (which may hold NULL for a genuine NULL member).
 std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
-    const IColumn & member, const DataTypePtr & from_type, const DataTypePtr & to_type, bool forbid_unknown_enum_values)
+    const IColumn & member,
+    const DataTypePtr & from_type,
+    const DataTypePtr & to_type,
+    const FormatSettings & format_settings,
+    bool forbid_unknown_enum_values)
 {
     try
     {
-        ColumnPtr result = convertColumnToTypeOrNull(member, from_type, to_type, {}, /*strict=*/true);
+        ColumnPtr result = convertColumnToTypeOrNull(member, from_type, to_type, format_settings, /*strict=*/true);
         if (!result)
             return std::nullopt;
         return result;
@@ -193,7 +206,7 @@ const ColumnTuple & getMemberTuple(const ColumnPtr & member_column, ColumnPtr & 
 /// - single-key: [1], [2], [3] (each member a scalar), or Tuple members for a `Nullable(Tuple)` LHS;
 /// - multi-key: each member a Tuple that is unpacked into `lhs_unpacked_types.size()` columns.
 ColumnsWithTypeAndName createBlockFromCollection(
-    const SetMembers & members, const DataTypes & lhs_unpacked_types, GetSetElementParams params)
+    const SetMembers & members, const DataTypes & lhs_unpacked_types, const GetSetElementParams & params)
 {
     size_t num_elements = lhs_unpacked_types.size();
 
@@ -254,6 +267,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         *member_tuple.getColumnPtr(i),
                         rhs_tuple_element_types[i],
                         lhs_tuple_element_types[i],
+                        params.format_settings,
                         params.forbid_unknown_enum_values);
 
                     if (!converted)
@@ -307,7 +321,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
         column->reserve(members.size());
         for (const auto & member : members)
         {
-            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
+            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.format_settings, params.forbid_unknown_enum_values);
 
             bool need_insert_null = params.transform_null_in && column->isNullable();
             if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
@@ -353,7 +367,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
         for (; i < num_elements; ++i)
         {
             auto converted = convertColumnToTypeCheckEnum(
-                *member_tuple.getColumnPtr(i), rhs_element_unpacked_types[i], lhs_unpacked_types[i], params.forbid_unknown_enum_values);
+                *member_tuple.getColumnPtr(i),
+                rhs_element_unpacked_types[i],
+                lhs_unpacked_types[i],
+                params.format_settings,
+                params.forbid_unknown_enum_values);
             if (!converted)
                 break;
 
@@ -503,7 +521,7 @@ ColumnsWithTypeAndName buildNativeKeysBatch(
 /// outer `Nullable`) and the RHS shape lines up.
 std::optional<ColumnsWithTypeAndName> tryBuildFromNativeArray(
     const ColumnPtr & rhs_column, const DataTypePtr & nested_type, const DataTypes & lhs_unpacked_types,
-    GetSetElementParams params)
+    const GetSetElementParams & params)
 {
     const size_t k = lhs_unpacked_types.size();
 
@@ -651,7 +669,7 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
-    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
+    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, const GetSetElementParams & params)
 {
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
@@ -851,6 +869,18 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         "Unsupported types for IN. First argument type {}. Second argument type {}",
         lhs_expression_type->getName(),
         rhs_type->getName());
+}
+
+NO_INLINE ColumnsWithTypeAndName getSetElementsForConstantValue(
+    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    GetSetElementParams params{
+        .transform_null_in = settings[Setting::transform_null_in],
+        .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+        .format_settings = getFormatSettings(context),
+    };
+    return getSetElementsForConstantValue(lhs_expression_type, rhs_column, rhs_type, params);
 }
 
 }
