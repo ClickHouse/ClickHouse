@@ -30,15 +30,15 @@ ClickHouse Connect — это основной драйвер для подкл�
 
 ## Требования и совместимость {#requirements-and-compatibility}
 
-| Компонент  | Поддерживаемые версии                                                                                                      |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Python     | От 3.10 до 3.14. Сборки без GIL, такие как 3.14t, поддерживаются в экспериментальном режиме.                               |
-| ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на последних LTS- и стабильных релизах сервера. |
-| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.       |
-| Pandas     | 2.x и 3.x                                                                                                                  |
-| Polars     | 1.0 или новее                                                                                                              |
-| aiohttp    | 3.9 или новее                                                                                                              |
-| Платформы  | Linux, macOS и Windows на архитектурах wheel-пакетов, опубликованных для каждой версии Python                              |
+| Компонент  | Поддерживаемые версии                                                                                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python     | От 3.10 до 3.14. Сборки без GIL, такие как 3.14t, поддерживаются в экспериментальном режиме.                                                                                                                                        |
+| ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на [сериях LTS- и стабильных релизов, перечисленных здесь](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
+| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.                                                                                                                |
+| Pandas     | 2.x и 3.x                                                                                                                                                                                                                           |
+| Polars     | 1.0 или новее                                                                                                                                                                                                                       |
+| aiohttp    | 3.9 или новее                                                                                                                                                                                                                       |
+| Платформы  | Linux, macOS и Windows на архитектурах wheel-пакетов, опубликованных для каждой версии Python                                                                                                                                       |
 
 Пакет включает скомпилированные wheel-пакеты там, где они доступны, и использует реализацию на чистом Python, если расширения Cython не удаётся собрать. PyArrow поддерживается для Python 3.10–3.14. Для Python 3.14 требуется PyArrow 22 или новее.
 
@@ -61,7 +61,7 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 

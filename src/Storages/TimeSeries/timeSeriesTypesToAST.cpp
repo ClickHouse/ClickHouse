@@ -83,6 +83,12 @@ ASTPtr timeSeriesScalarToAST(Float64 value)
 }
 
 
+ASTPtr timeSeriesNoTagsGroupToAST()
+{
+    return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
+}
+
+
 ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type)
 {
     WhichDataType which_data_type{timestamp_data_type};

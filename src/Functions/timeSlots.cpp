@@ -235,6 +235,31 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
+    /// Documentation-only — there are two call shapes:
+    ///   `timeSlots(DateTime, UInt32 [, UInt])`     -> `Array(DateTime)`
+    ///   `timeSlots(DateTime64(s), Decimal64(d) [, Decimal64])` -> `Array(DateTime64(max(s, d)))`
+    /// The DateTime64 result's scale is `max(start_scale, duration_scale)`,
+    /// not derivable from the DSL — the override below is authoritative.
+    String getSignatureString() const override
+    {
+        return "(DateTime, UInt32, [const UInt]) -> Array(DateTime)"
+               " OR (DateTime64, Decimal64, [const Decimal64]) -> Array(DateTime64)";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateNumberOfFunctionArguments(*this, arguments, 2, 3);

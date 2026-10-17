@@ -1,0 +1,12 @@
+--- numeric with the scale covering all 76 digits
+Decimal(76, 76)	1
+Array(Decimal(76, 76))	1
+--- one digit more is still too precise
+error 2F000
+--- a cancelled COPY TO STDOUT
+error 57014
+42
+--- the catalog refresh does not inherit the session limits
+pg_1
+pg_2
+1

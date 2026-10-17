@@ -160,6 +160,8 @@ selectorWithOffset
 
 function_
     : FUNCTION LEFT_PAREN (parameter (COMMA parameter)*)? RIGHT_PAREN
+    | START LEFT_PAREN RIGHT_PAREN
+    | END LEFT_PAREN RIGHT_PAREN
     ;
 
 parameter

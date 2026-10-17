@@ -40,6 +40,36 @@ SELECT k, s FROM (
     SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS w FROM numbers(4))
 ) ORDER BY k;
 
+-- `ASTWindowDefinition::frame_begin_offset`, a child of the definition an inline `OVER` clause
+-- holds by pointer.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+) ORDER BY k;
+
+-- `ASTWindowDefinition::frame_end_offset`, another child of that definition. A pair that varies the
+-- frame kind instead is already distinguished by the definition's own scalars.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 2 FOLLOWING) AS w FROM numbers(4))
+) ORDER BY k;
+
+-- `ASTWindowDefinition::partition_by`, another child of that definition.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (PARTITION BY number % 2 ORDER BY number) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (PARTITION BY number % 3 ORDER BY number) AS w FROM numbers(4))
+) ORDER BY k;
+
+-- `ASTWindowDefinition::order_by`, another child of that definition.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY -number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+) ORDER BY k;
+
 -- The parameters of `ASTColumnsApplyTransformer`, which are not children of it either.
 SELECT * FROM (
     SELECT 1 AS k, * FROM view(SELECT COLUMNS('x') APPLY(quantile(0.1)) FROM (SELECT number AS x FROM numbers(11)))
@@ -54,3 +84,19 @@ DROP TABLE IF EXISTS t_04836;
 CREATE TABLE t_04836 (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree;
 SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 't_04836';
 DROP TABLE t_04836;
+
+-- `ASTTableExpression::sample_size` and `ASTTableExpression::sample_offset`.
+DROP TABLE IF EXISTS t_04836_sample;
+CREATE TABLE t_04836_sample (x UInt64) ENGINE = MergeTree ORDER BY cityHash64(x) SAMPLE BY cityHash64(x);
+INSERT INTO t_04836_sample SELECT number FROM numbers(1024);
+SELECT k, s FROM (
+    SELECT 1 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/8)
+    UNION ALL
+    SELECT 2 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample)
+) ORDER BY k;
+SELECT k, s FROM (
+    SELECT 1 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/4 OFFSET 0/4)
+    UNION ALL
+    SELECT 2 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/4 OFFSET 2/4)
+) ORDER BY k;
+DROP TABLE t_04836_sample;
