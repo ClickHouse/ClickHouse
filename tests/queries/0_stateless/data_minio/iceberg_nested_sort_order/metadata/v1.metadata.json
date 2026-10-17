@@ -1,0 +1,72 @@
+{
+  "format-version": 2,
+  "table-uuid": "5f5f61a1-2d7b-4a2c-9a1f-0f1a5f4ce001",
+  "location": "iceberg_nested_sort_order",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1787809224765,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "t",
+          "required": true,
+          "type": {
+            "type": "struct",
+            "fields": [
+              {
+                "id": 3,
+                "name": "x",
+                "required": true,
+                "type": "long"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": [
+        {
+          "transform": "identity",
+          "source-id": 3,
+          "direction": "asc",
+          "null-order": "nulls-first"
+        }
+      ]
+    }
+  ],
+  "current-snapshot-id": -1,
+  "refs": {
+    "main": {
+      "snapshot-id": -1,
+      "type": "branch"
+    }
+  },
+  "snapshots": [],
+  "snapshot-log": [],
+  "metadata-log": [],
+  "statistics": []
+}
