@@ -394,6 +394,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+
+            if (ParserKeyword{Keyword::LIKE}.ignore(pos, expected))
+            {
+                ASTPtr pattern_ast;
+                if (!ParserStringLiteral{}.parse(pos, pattern_ast, expected))
+                    return false;
+                res->has_like_pattern = true;
+                res->queue_path = pattern_ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         {
             ASTPtr ast;
@@ -2115,6 +2130,20 @@ Blocks until the given file has been processed or permanently failed by the give
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
 
+## SYSTEM DROP S3QUEUE FAILED FILES {#drop-s3queue-failed-files}
+
+Removes the tracking entries of terminally failed files from Keeper for the given [S3Queue](/reference/engines/table-engines/integrations/s3queue) or [AzureQueue](/reference/engines/table-engines/integrations/azure-queue) table, so that these files become eligible for processing again (for example, after the producer re-uploads a fixed file under the same key).
+
+```sql
+SYSTEM DROP S3QUEUE FAILED FILES [db.]table_name [ON CLUSTER cluster_name] [LIKE 'pattern']
+```
+
+Without `LIKE`, all terminal failed entries are removed. With `LIKE`, only the entries whose file path matches the pattern are removed; the pattern is matched against any part of the path (substring semantics, as in SQL `LIKE`), and an explicitly empty pattern matches nothing. `LIKE` is not supported when `partitioning_mode = 'hive'`.
+
+Entries of files that are still being retried (`.retriable` nodes holding the retry counter) are preserved. In ordered mode the command only removes failure entries and does not rewind the processed-file pointer, so a file behind that pointer is not necessarily picked up again.
+
+The command requires the `SYSTEM FLUSH OBJECT STORAGE QUEUE` privilege on the table.
+
 ## SYSTEM RESET FILELOG {#reset-filelog}
 
 Changes where a [FileLog](/reference/engines/table-engines/special/filelog) table continues reading, without recreating the table.
@@ -2165,6 +2194,7 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM DROP S3QUEUE FAILED FILES [db.]name [LIKE 'pattern']
 SYSTEM RESET FILELOG [db.]name [FILE 'file_name' [OFFSET n | TO END]]
 SYSTEM ENABLE | DISABLE FAILPOINT name
 SYSTEM DISABLE ALL FAILPOINTS
