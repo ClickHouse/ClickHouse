@@ -1,0 +1,9 @@
+--- max_execution_time ---
+Timeout exceeded
+stopped early
+--- KILL QUERY ---
+QUERY_WAS_CANCELLED
+stopped early
+--- not cancelled: timeout still fires at the configured budget ---
+source seems unavailable
+waited the configured budget
