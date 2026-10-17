@@ -1550,9 +1550,6 @@ public:
         return res;
     }
 
-    /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value) { reinsert(buf, grower, *it.getPtr(), hash_value); }
-
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
