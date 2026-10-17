@@ -1,5 +1,6 @@
 #include <config.h>
 
+#include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
@@ -27,6 +28,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
+    extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
 
@@ -56,6 +58,17 @@ namespace
         if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
+
+    bool parseParallelInsertsJson(const Poco::JSON::Object::Ptr & json)
+    {
+        const Poco::Dynamic::Var value = json->get("parallel_inserts");
+        if (!value.isBoolean())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "ObjectStorageQueue metadata field `parallel_inserts` must be a boolean, got {}",
+                value.toString());
+        return value.convert<bool>();
+    }
 }
 
 
@@ -76,6 +89,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
+    , parallel_inserts(engine_settings[ObjectStorageQueueSetting::parallel_inserts])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
@@ -85,6 +99,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
         processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
+
+    parallel_inserts_is_known = true;
+    parallel_inserts_present_in_keeper = true;
 
     // Validate regex partitioning configuration
     if (partitioning_mode == "regex")
@@ -112,6 +129,8 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
     json.set("processing_threads_num", processing_threads_num.load());
+    if (parallel_inserts_present_in_keeper)
+        json.set("parallel_inserts", parallel_inserts.load());
     json.set("buckets", buckets.load());
     json.set("format_name", format_name);
     json.set("columns", columns);
@@ -209,11 +228,19 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
+    , parallel_inserts(false)
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
+
+    if (json->has("parallel_inserts"))
+    {
+        parallel_inserts = parseParallelInsertsJson(json);
+        parallel_inserts_is_known = true;
+        parallel_inserts_present_in_keeper = true;
+    }
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
@@ -239,6 +266,13 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
 
         processing_threads_num = from_zk.processing_threads_num.load();
     }
+}
+
+void ObjectStorageQueueTableMetadata::applyParallelInsertsKeeperPresence(const ObjectStorageQueueTableMetadata & from_zk)
+{
+    parallel_inserts_present_in_keeper = from_zk.parallel_inserts_present_in_keeper;
+    if (from_zk.parallel_inserts_is_known)
+        parallel_inserts = from_zk.parallel_inserts.load();
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const
@@ -311,6 +345,15 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.tracked_files_ttl_sec.load(),
             tracked_files_ttl_sec.load());
+
+    if (parallel_inserts_is_known && from_zk.parallel_inserts_is_known
+        && parallel_inserts.load() != from_zk.parallel_inserts.load())
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in `parallel_inserts`. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.parallel_inserts.load(),
+            parallel_inserts.load());
 
     if (format_name != from_zk.format_name)
         throw Exception(
