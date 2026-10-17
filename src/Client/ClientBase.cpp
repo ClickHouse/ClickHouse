@@ -1545,13 +1545,22 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 void ClientBase::initKeystrokeInterceptor()
 {
     const bool supports_progress_toggle = need_render_progress_table && progress_table_toggle_enabled;
-    if (is_interactive && (supports_progress_toggle || supportsQueryDetachment()))
+#if USE_REPLXX
+    /// replxx reads these terminals with getline, so it would lose the keys taken while a query runs.
+    const char * term_env = getenv("TERM"); // NOLINT(concurrency-mt-unsafe)
+    const std::string_view term = term_env ? term_env : "";
+    const bool replays_typed_keys = !boost::iequals(term, "dumb") && !boost::iequals(term, "cons25") && !boost::iequals(term, "emacs");
+#else
+    const bool replays_typed_keys = false;
+#endif
+    const bool supports_detachment = supportsQueryDetachment() && replays_typed_keys;
+    if (is_interactive && (supports_progress_toggle || supports_detachment))
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
         if (supports_progress_toggle)
             keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
 
-        if (supportsQueryDetachment())
+        if (supports_detachment)
             keystroke_interceptor->registerCallback('\x02', [this]() { requestQueryDetachment(); });
 
         if (isEmbeeddedClient())
