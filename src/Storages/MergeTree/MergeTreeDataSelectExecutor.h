@@ -258,6 +258,15 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// True if part statistics prove that no row of `parts` satisfies the read's filter. Unlike part pruning it does
+    /// not depend on `use_statistics_for_part_pruning` and also holds for FINAL of ReplacingMergeTree, which only picks rows.
+    static bool statisticsExcludeAllParts(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;

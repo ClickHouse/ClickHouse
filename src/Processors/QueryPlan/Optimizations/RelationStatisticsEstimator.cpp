@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -246,6 +247,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
+                /// A statistics estimate of 0 is only an estimate; the statistics of every part can prove it.
+                stats.proven_empty = relation_profile.rows == 0 && analyzed_result
+                    && MergeTreeDataSelectExecutor::statisticsExcludeAllParts(
+                        analyzed_result->parts_with_ranges, reading->getStorageMetadata(), reading->getQueryInfo(),
+                        reading->getMutationsSnapshot(), reading->getContext());
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
