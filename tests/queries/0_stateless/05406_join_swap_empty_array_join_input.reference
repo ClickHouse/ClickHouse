@@ -1,0 +1,10 @@
+arrayJoin function	1	0
+lowered arrayJoin, LEFT JOIN	1	0
+LEFT ARRAY JOIN	1	0
+non-empty input, arrayJoin function	0	1
+non-empty input, lowered arrayJoin	0	1
+aggregation estimated at 0 rows	1	0
+arrayJoin over that aggregation	0	1
+0
+1000
+1000

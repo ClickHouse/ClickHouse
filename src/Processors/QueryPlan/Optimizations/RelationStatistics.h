@@ -25,6 +25,10 @@ struct RelationStats
     /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
     /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
     RowEstimateSource source = RowEstimateSource::NoSource;
+
+    /// No row can come out of the relation; an `estimated_rows` of 0 alone does not mean that.
+    /// Only steps that cannot add rows may pass it through from their input.
+    bool proven_empty = false;
 };
 
 namespace QueryPlanOptimizations

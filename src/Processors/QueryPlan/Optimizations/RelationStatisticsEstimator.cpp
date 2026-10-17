@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -174,7 +175,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// analysis results can be placeholders for deferred work, so only propagate zero
         /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
-            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name, .proven_empty = true};
 
         /// `STREAM` defers range analysis until execution. Its placeholder result has zero
         /// selected rows but does not mean that the relation is empty.
@@ -312,8 +313,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-        expression_step && !expression_step->getExpression().hasArrayJoin())
+    /// An array join multiplies each row by its array size, which is not estimated,
+    /// so its output is known only when its input is proven empty.
+    const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+    if (typeid_cast<const ArrayJoinStep *>(step) || (expression_step && expression_step->getExpression().hasArrayJoin()))
+    {
+        auto input = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        if (!input.proven_empty)
+            return {};
+        return RelationStats{.estimated_rows = 0, .table_name = input.table_name, .proven_empty = true};
+    }
+
+    if (expression_step)
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
