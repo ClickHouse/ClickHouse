@@ -10,6 +10,8 @@ SELECT intDiv(length(arrayResize([], -500000000)), 0) SETTINGS max_execution_tim
 SELECT intDiv(length(arrayResize([], 8000, repeat('x', 16384))), 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 -- So do many rows that each extend an array by 60000 elements.
 SELECT intDiv(length(arrayMap(x -> arrayResize(CAST([] AS Array(UInt8)), 60000 - x % 2), range(5000))), 0) SETTINGS max_execution_time = 0.1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+-- And a large tuple copied many times among small ones, which the average size of the column underestimates.
+SELECT intDiv(length(arrayMap(x -> arrayResize(CAST([] AS Array(Tuple(String))), if(x = 0, 8000, 1), tuple(if(x = 0, repeat('x', 16384), ''))), range(1000))), 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 
 -- The edit distance of two 20000-character strings is a constant that takes longer than the deadline to evaluate.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), intDiv(1, 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
