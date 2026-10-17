@@ -124,6 +124,8 @@ void CSVRowInputFormat::resetReadBuffer()
 void CSVFormatReader::skipRow()
 {
     bool quotes = false;
+    /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
+    bool at_field_start = true;
     ReadBuffer & istr = *buf;
 
     while (!istr.eof())
@@ -143,22 +145,38 @@ void CSVFormatReader::skipRow()
                 if (!istr.eof() && *istr.position() == '"')
                     ++istr.position();
                 else
+                {
                     quotes = false;
+                    at_field_start = false;
+                }
             }
         }
         else
         {
+            const char * span_start = istr.position();
             auto * pos = find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
             if (pos > istr.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+
+            /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
+            for (const char * p = pos; p > span_start; --p)
+            {
+                char c = *(p - 1);
+                if (c != format_settings.csv.delimiter && format_settings.csv.trim_whitespaces && (c == ' ' || c == '\t'))
+                    continue;
+                at_field_start = (c == format_settings.csv.delimiter);
+                break;
+            }
+
             if (pos == istr.buffer().end())
                 continue;
 
             if (*pos == '"')
             {
-                quotes = true;
+                quotes = at_field_start;
+                at_field_start = false;
                 ++istr.position();
                 continue;
             }
@@ -827,6 +845,8 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
 {
     char * pos = in.position();
     bool quotes = false;
+    /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
+    bool at_field_start = true;
     bool need_more_data = true;
     size_t number_of_rows = 0;
 
@@ -848,20 +868,36 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 if (loadAtPosition(in, memory, pos) && *pos == '"')
                     ++pos;
                 else
+                {
                     quotes = false;
+                    at_field_start = false;
+                }
             }
         }
         else
         {
+            const char * span_start = pos;
             pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+
+            /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
+            for (const char * p = pos; p > span_start; --p)
+            {
+                char c = *(p - 1);
+                if (c != settings.csv.delimiter && settings.csv.trim_whitespaces && (c == ' ' || c == '\t'))
+                    continue;
+                at_field_start = (c == settings.csv.delimiter);
+                break;
+            }
+
             if (pos == in.buffer().end())
                 continue;
 
             if (*pos == '"')
             {
-                quotes = true;
+                quotes = at_field_start;
+                at_field_start = false;
                 ++pos;
                 continue;
             }
@@ -875,6 +911,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             else if (*pos == '\r')
             {
                 ++pos;
+                at_field_start = settings.csv.allow_cr_end_of_line;
                 if (settings.csv.allow_cr_end_of_line)
                     continue;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
@@ -883,6 +920,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                     continue;
             }
 
+            at_field_start = true;
             ++number_of_rows;
             if ((number_of_rows >= min_rows)
                 && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
