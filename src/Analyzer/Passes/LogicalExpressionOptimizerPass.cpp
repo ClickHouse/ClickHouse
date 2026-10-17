@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -888,6 +889,14 @@ static AddComparisonFilterResult addComparisonFilter(
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
+
+    /// A converted constant is not an exact orderable point for a `Variant` expression, so it must not
+    /// drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
+    if (anyInTypeTree(*expr_type, [](const IDataType & type) { return isVariant(type); }))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
