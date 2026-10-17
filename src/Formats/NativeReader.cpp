@@ -229,7 +229,10 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
+            {
                 info->deserializeFromKindsBinary(istr, allowed_kinds);
+                info->checkKindStackForType(*column.type);
+            }
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);

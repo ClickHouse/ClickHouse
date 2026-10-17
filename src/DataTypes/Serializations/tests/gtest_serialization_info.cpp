@@ -298,6 +298,29 @@ TEST(SerializationInfoByNameJSON, RejectsInvalidMissingColumnType)
     EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
 }
 
+TEST(SerializationInfoByNameJSON, LowCardinalityKindOnlyForStringOrFixedString)
+{
+    constexpr auto * json = R"({"columns":[{"kind":"LowCardinality","name":"value","num_defaults":0,"num_rows":1}],"version":0})";
+
+    NamesAndTypesList string_columns{{"value", std::make_shared<DataTypeString>()}};
+    auto restored = SerializationInfoByName::readJSONFromString(string_columns, json);
+    ASSERT_NE(restored.tryGet("value"), nullptr);
+    EXPECT_TRUE(ISerialization::hasKind(restored.tryGet("value")->getKindStack(), ISerialization::Kind::LOW_CARDINALITY));
+
+    NamesAndTypesList number_columns{{"value", std::make_shared<DataTypeUInt64>()}};
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString(number_columns, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, LowCardinalityKindRejectedForNonStringTupleElement)
+{
+    constexpr auto * json = R"({"columns":[{"kind":"Default","name":"t","num_defaults":0,"num_rows":1,"subcolumns":[)"
+        R"({"kind":"Default","num_defaults":0,"num_rows":1},{"kind":"LowCardinality","num_defaults":0,"num_rows":1}]}],"version":0})";
+
+    NamesAndTypesList columns{{"t", std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()}, Strings{"a", "b"})}};
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString(columns, json), DB::Exception);
+}
+
 TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
 {
     SerializationInfoSettings with_types;

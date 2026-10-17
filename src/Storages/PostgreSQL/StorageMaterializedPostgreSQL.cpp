@@ -346,6 +346,20 @@ bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
     return false;
 }
 
+std::optional<SerializationInfoByName> StorageMaterializedPostgreSQL::tryGetSerializationHints() const
+{
+    if (auto nested = tryGetNested())
+        return nested->tryGetSerializationHints();
+    return std::nullopt;
+}
+
+bool StorageMaterializedPostgreSQL::hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const
+{
+    if (auto nested = tryGetNested())
+        return nested->hasAutomaticLowCardinalitySerialization(column_name, storage_snapshot);
+    return false;
+}
+
 
 IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 {

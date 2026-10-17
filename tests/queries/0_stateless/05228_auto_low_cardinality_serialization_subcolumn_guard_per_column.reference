@@ -1,0 +1,28 @@
+feature enabled, column without a cardinality statistic: rewrite fires
+1
+feature enabled, column with a cardinality statistic: rewrite is skipped
+0
+kinds of the columns
+body	Default
+lc	LowCardinality
+correctness
+16890	2000	6000	2000
+feature disabled, column without a cardinality statistic: rewrite fires
+1
+feature disabled, encoded column: rewrite is skipped
+0
+correctness
+16890	2000	6000	2000
+feature disabled, encoding dropped: kinds of the columns
+body	Default
+lc	Default
+feature disabled, encoding dropped: rewrite fires for both
+1
+1
+correctness
+16890	2000	6000	2000
+implicit cardinality statistic: rewrite is skipped
+0
+implicit cardinality statistic: kind, correctness
+LowCardinality
+6000	2000
