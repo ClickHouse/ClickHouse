@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 
 from ci.jobs.scripts.log_cluster import LogCluster
-from ci.praktika import Secret
+from ci.praktika import Secret, SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
 
@@ -110,11 +110,25 @@ def create_config(config_dir, host, password, users_dir=""):
         )
     )
     if users_dir:
-        return Shell.check(
+        Shell.check(
             f"mkdir -p {users_dir} && cp {CI_LOGS_SENDER_USER_CONFIG} {users_dir}/",
             verbose=True,
+            strict=True,
         )
-    return True
+
+
+def configure(config_dir, users_dir=""):
+    """Write the CI Logs cluster config; return `(host, password)`, or `None`
+    with a workflow warning when the secret fetch failed and the export is
+    skipped. A failed write raises."""
+    try:
+        host, password = get_credentials()
+    except SecretFetchFailed as e:
+        print(f"WARNING: Failed to configure log export: {e}")
+        Info().add_workflow_warning(f"Failed to configure log export: {e}")
+        return None
+    create_config(config_dir, host, password, users_dir=users_dir)
+    return host, password
 
 
 def _set_server_port(port):

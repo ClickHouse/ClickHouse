@@ -108,18 +108,12 @@ class ClickHouseBinary:
         return True
 
     def create_log_export_config(self):
-        # Write the remote cluster definition into the server's own `config.d`
-        # so the `Distributed` engine used by the log senders can resolve the
-        # central CI logs cluster. Must run before the server is started. This
-        # job does not install the standard test configs, so the
-        # `ci_logs_sender` user is copied in as well.
-        self.log_export_host, self.log_export_password = log_export.get_credentials()
-        return log_export.create_config(
-            self.config_path,
-            self.log_export_host,
-            self.log_export_password,
-            users_dir=f"{self.config_path}/users.d",
+        # Raises on a failed write; an unfetched secret leaves the credentials `None`, so nothing is exported.
+        credentials = log_export.configure(
+            self.config_path, users_dir=f"{self.config_path}/users.d"
         )
+        if credentials:
+            self.log_export_host, self.log_export_password = credentials
 
     def start_log_exports(self, check_start_time):
         # Create the remote `system.*_log` tables and the materialized views
