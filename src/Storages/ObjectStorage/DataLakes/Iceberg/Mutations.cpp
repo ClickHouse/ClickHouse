@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -616,6 +617,7 @@ namespace
 /// the `mutate` retry loop so validation is bound to the exact metadata version
 /// that will be written, closing the TOCTOU gap where a concurrent writer commits
 /// incompatible files after a pre-check. See issue #102508 and the PR #105893 review.
+/// A data file with a legacy truncate partition value is refused too: a delete file would not be paired with it.
 void validateSnapshotForMutation(
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
@@ -664,6 +666,31 @@ void validateSnapshotForMutation(
                     "but data file `{}` has format `{}`",
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
+
+            const auto & partition_value = file_entry->normalized_partition_key_value;
+            for (const auto & partition_field : *file_entry->common_partition_specification)
+            {
+                if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
+                    continue;
+
+                const auto source = persistent_table_components.schema_processor->tryGetFieldCharacteristics(
+                    file_entry->resolved_schema_id, partition_field.source_id);
+                if (!source)
+                    continue;
+
+                const auto width = getIntegerTruncateWidth(partition_field, source->type);
+                const auto & value = partition_value[partition_field.tuple_index];
+                if (width && isLegacyTruncateValue(value, *width))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
+                        "which is not a multiple of the truncate width {} (written by ClickHouse before 26.9). "
+                        "Rewrite the table to mutate it",
+                        file_entry->parsed_entry->file_path_key.serialize(),
+                        partition_field.partition_name,
+                        value.safeGet<Int64>(),
+                        *width);
+            }
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))

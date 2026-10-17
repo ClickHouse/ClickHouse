@@ -44,6 +44,23 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const IcebergSchemaProcessor & schema_processor,
     DB::ContextPtr context);
 
+/// ClickHouse before 26.9 wrote `truncate[W]` of a negative integer as a value that is not a multiple of `W`;
+/// the rows of such a partition have the spec values on both sides of it.
+struct IntegerTruncateField
+{
+    size_t tuple_index;
+    Int64 width;
+};
+
+std::optional<Int64> getIntegerTruncateWidth(const PartitionSpecsEntry & partition_field, const DB::DataTypePtr & key_type);
+
+std::vector<IntegerTruncateField> getIntegerTruncateFields(
+    const PartitionSpecification & partition_specification, const DB::DataTypes & partition_key_types);
+
+/// An old value that is not a multiple of `W` is negative, while a spec value that is not a multiple
+/// (the subtraction wrapping near `INT64_MIN`) is positive.
+bool isLegacyTruncateValue(const DB::Field & value, Int64 width);
+
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and
 /// renames columns to their original numeric ID's in iceberg.
@@ -64,6 +81,7 @@ private:
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
+    std::vector<IntegerTruncateField> integer_truncate_fields;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
