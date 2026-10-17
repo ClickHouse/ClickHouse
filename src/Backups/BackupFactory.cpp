@@ -161,6 +161,7 @@ void registerBackupEngineMemory(BackupFactory &);
 void registerBackupEngineNull(BackupFactory &);
 void registerBackupEngineS3(BackupFactory &);
 void registerBackupEngineAzureBlobStorage(BackupFactory &);
+void registerBackupEngineURL(BackupFactory &);
 
 void registerBackupEngines(BackupFactory & factory);
 
@@ -171,6 +172,7 @@ void registerBackupEngines(BackupFactory & factory)
     registerBackupEngineNull(factory);
     registerBackupEngineS3(factory);
     registerBackupEngineAzureBlobStorage(factory);
+    registerBackupEngineURL(factory);
 }
 
 BackupFactory::BackupFactory()
