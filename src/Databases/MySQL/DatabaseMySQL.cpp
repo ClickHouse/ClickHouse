@@ -854,8 +854,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
-        /// Not on `RESTORE`: it creates the database with its definition from the backup and rejects a database whose
-        /// definition differs from it, so the session value is neither stored nor applied, as on server startup.
+        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
+        /// setting and make the `RESTORE` fail.
         if (!args.is_restore_from_backup)
             mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
