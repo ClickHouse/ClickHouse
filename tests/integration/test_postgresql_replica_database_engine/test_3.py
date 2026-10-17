@@ -3352,6 +3352,46 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_cluster):
+    # A user-managed replication slot has a single fixed name, so it cannot be combined with
+    # `materialized_postgresql_use_unique_replication_consumer_identifier`. The combination is rejected
+    # for a freshly supplied definition, before anything is persisted.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    settings = """SETTINGS materialized_postgresql_replication_slot = 'user_managed_slot',
+                 materialized_postgresql_snapshot = '00000003-00000002-1',
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1"""
+    message = "cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`"
+
+    database_engine = f"ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', 'postgres', '{pg_pass}') {settings}"
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_user_slot_db {database_engine}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    error = instance.query_and_get_error(
+        f"ATTACH DATABASE test_user_slot_db UUID '{uuid.uuid4()}' {database_engine}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    assert "0" == instance.query(
+        "SELECT count() FROM system.databases WHERE name = 'test_user_slot_db'"
+    ).strip()
+
+    table_definition = f"""(key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', 'user_slot_table', 'postgres', '{pg_pass}')
+        ORDER BY key {settings}"""
+    error = instance.query_and_get_error(
+        f"CREATE TABLE test_user_slot_table {table_definition}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    error = instance.query_and_get_error(
+        f"ATTACH TABLE test_user_slot_table UUID '{uuid.uuid4()}' {table_definition}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    assert "0" == instance.query(
+        "SELECT count() FROM system.tables WHERE database = 'default' AND name = 'test_user_slot_table'"
+    ).strip()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

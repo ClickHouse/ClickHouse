@@ -130,6 +130,7 @@ public:
     /// The list must outlive the analyzer.
     explicit QueryAnalyzer(
         bool only_analyze_,
+        bool positional_arguments_already_resolved_ = false,
         std::optional<Names> identifier_typo_hint_columns_ = {},
         const NamesAndTypesList * typo_correction_columns_ = nullptr);
     ~QueryAnalyzer();
@@ -386,6 +387,9 @@ private:
 
     /// @sa the constructor.
     const NamesAndTypesList * const typo_correction_columns;
+
+    /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
+    const bool positional_arguments_already_resolved;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

@@ -274,7 +274,8 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    QueryAnalyzer analyzer(/* only_analyze */ true, identifier_typo_hint_columns, typo_correction_columns);
+    QueryAnalyzer analyzer(
+        /* only_analyze */ true, /* positional_arguments_already_resolved */ false, identifier_typo_hint_columns, typo_correction_columns);
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
