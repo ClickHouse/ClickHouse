@@ -104,6 +104,8 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    /// The port to the right side was closed before the right side was filled, see `prepare`.
+    bool right_abandoned = false;
     bool is_drained = false;
     bool is_last_drained = false;
 

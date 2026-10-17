@@ -48,6 +48,11 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
     if (join.strictness == JoinStrictness::Any && join_step->getJoinSettings().join_any_take_last_row)
         return false;
 
+    /// A set operation stops reading its right side once the left one turns out empty, which only a left join can do.
+    /// The non-Cascades reordering does not swap it either.
+    if (join_step->isSetOperation())
+        return false;
+
     return
         join.kind == JoinKind::Cross ||
         join.strictness == JoinStrictness::Semi ||
