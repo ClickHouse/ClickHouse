@@ -241,14 +241,9 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
     loader.loadMarks();
 }
 
-void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) const
+void MergeTreeDataPartCompact::forEachMarksFile(const std::function<void(const String & marks_file)> & func) const
 {
-    if (!mark_cache)
-        return;
-
-    auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
-    auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
-    mark_cache->remove(key);
+    func(index_granularity_info.getMarksFilePath(DATA_FILE_NAME));
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const

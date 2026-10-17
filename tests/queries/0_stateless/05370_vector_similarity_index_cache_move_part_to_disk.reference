@@ -1,0 +1,13 @@
+1	[1,0]	0
+1	[1,0]	0
+t_disabled	s3_disk
+t_enabled	s3_disk
+1	[1,0]	0
+1	[1,0]	0
+default
+1	[1,0]	0
+disabled_to_remote	0	1
+disabled_warm	0	1
+enabled_to_local	1	0
+enabled_to_remote	1	0
+enabled_warm	0	1

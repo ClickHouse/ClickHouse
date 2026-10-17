@@ -46,7 +46,7 @@ public:
     std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-    void removeMarksFromCache(MarkCache * mark_cache) const override;
+    void forEachMarksFile(const std::function<void(const String & marks_file)> & func) const override;
 
     ~MergeTreeDataPartCompact() override;
 

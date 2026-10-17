@@ -102,6 +102,66 @@ TEST(SLRUCache, removeFromProtected)
     ASSERT_TRUE(value == nullptr);
 }
 
+TEST(SLRUCache, take)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    auto slru_cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/10, /*max_count=*/0, /*size_ratio*/0.5);
+    auto mapped = std::make_shared<int>(2);
+    slru_cache.set(1, mapped);
+    slru_cache.set(2, std::make_shared<int>(3));
+
+    /// The entry is removed and returned as it is, without counting a hit or a miss.
+    auto value = slru_cache.take(1);
+    ASSERT_EQ(value, mapped);
+    ASSERT_EQ(slru_cache.sizeInBytes(), 1);
+    ASSERT_EQ(slru_cache.count(), 1);
+    ASSERT_FALSE(slru_cache.contains(1));
+    ASSERT_TRUE(slru_cache.take(1) == nullptr);
+
+    size_t hits = 0;
+    size_t misses = 0;
+    slru_cache.getStats(hits, misses);
+    ASSERT_EQ(hits, 0);
+    ASSERT_EQ(misses, 0);
+
+    /// It can be put back under another key.
+    slru_cache.set(3, value);
+    ASSERT_EQ(slru_cache.get(3), mapped);
+    ASSERT_EQ(slru_cache.count(), 2);
+}
+
+TEST(SLRUCache, takeFromProtected)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    auto slru_cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/2, /*max_count=*/0, /*size_ratio*/0.5);
+
+    /// The second `set` moves the entry to the protected queue.
+    slru_cache.set(1, std::make_shared<int>(2));
+    slru_cache.set(1, std::make_shared<int>(3));
+
+    auto value = slru_cache.take(1);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 3);
+    ASSERT_EQ(slru_cache.sizeInBytes(), 0);
+    ASSERT_EQ(slru_cache.count(), 0);
+
+    /// The protected queue is empty again, so the same sequence as in `removeFromProtected` keeps the same entries.
+    slru_cache.set(1, std::make_shared<int>(4));
+    slru_cache.set(1, std::make_shared<int>(5));
+    slru_cache.set(2, std::make_shared<int>(6));
+    slru_cache.set(3, std::make_shared<int>(7));
+
+    value = slru_cache.get(1);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 5);
+
+    value = slru_cache.get(3);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 7);
+
+    ASSERT_TRUE(slru_cache.get(2) == nullptr);
+}
+
 TEST(SLRUCache, clear)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;

@@ -42,7 +42,7 @@ public:
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-    void removeMarksFromCache(MarkCache * mark_cache) const override;
+    void forEachMarksFile(const std::function<void(const String & marks_file)> & func) const override;
 
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,

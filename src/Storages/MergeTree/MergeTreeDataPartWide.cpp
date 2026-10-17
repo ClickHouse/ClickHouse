@@ -402,11 +402,8 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
         loader->loadMarks();
 }
 
-void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
+void MergeTreeDataPartWide::forEachMarksFile(const std::function<void(const String & marks_file)> & func) const
 {
-    if (!mark_cache)
-        return;
-
     getSerializations().forEach([&](const String & column_name, const SerializationPtr & serialization)
     {
         serialization->enumerateStreams([&](const auto & subpath)
@@ -415,9 +412,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             if (!stream_name)
                 return;
 
-            auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
-            mark_cache->remove(key);
+            func(index_granularity_info.getMarksFilePath(*stream_name));
         });
     });
 }

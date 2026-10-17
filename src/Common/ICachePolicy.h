@@ -62,6 +62,10 @@ public:
     virtual void remove(const Key & key) = 0;
     virtual void remove(std::function<bool(const Key & key, const MappedPtr & mapped)> predicate) = 0;
 
+    /// Removes the entry under `key` and returns its value, or nullptr if there is none.
+    /// Like `remove(key)`, but the value is not destroyed and the key is looked up once.
+    virtual MappedPtr take(const Key & key) = 0;
+
     virtual void clear() = 0;
     virtual std::vector<KeyMapped> dump() const = 0;
 

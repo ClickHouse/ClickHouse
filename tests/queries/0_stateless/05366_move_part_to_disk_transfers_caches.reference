@@ -1,0 +1,36 @@
+7140000
+7140000
+7140000
+23212500
+7140000
+t_compact	Compact	s3_disk
+t_disabled	Wide	s3_disk
+t_projection	Wide	s3_disk
+t_rmt	Wide	s3_disk
+t_wide	Wide	s3_disk
+7140000
+7140000
+7140000
+23212500
+7140000
+t_projection	Wide	default
+t_rmt	Wide	default
+t_wide	Wide	default
+7140000
+7140000
+23212500
+compact_to_remote	0	0
+disabled_to_remote	1	1
+projection_to_local	0	0
+projection_to_remote	0	0
+rmt_to_local	0	0
+rmt_to_remote	0	0
+wide_to_local	0	0
+wide_to_remote	0	0
+compact_to_remote	1	1
+projection_to_local	1	1
+projection_to_remote	1	1
+rmt_to_local	1	1
+rmt_to_remote	1	1
+wide_to_local	1	1
+wide_to_remote	1	1

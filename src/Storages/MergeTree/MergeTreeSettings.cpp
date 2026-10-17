@@ -2739,6 +2739,19 @@ Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache
 for new parts
 )", 0, \
         {"24.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, transfer_caches_on_disk_move, true, R"(
+When a part is moved to another disk or volume (`ALTER TABLE ... MOVE PART|PARTITION
+... TO DISK|VOLUME`, or a background move by the storage policy or a move TTL),
+take its entries out of the mark cache, the index mark cache, the primary index
+cache and the vector similarity index cache and put them back under the keys of
+the moved part. The keys of these caches contain the disk and the path of the
+part, so without this the moved part starts with cold caches and its first reads
+load the marks and the primary index again from the new disk. The primary index a
+part keeps in memory (without `use_primary_key_cache`) is handed over to the moved
+part as well, when `primary_key_lazy_load` is enabled; otherwise the moved part
+loads it during the move. This applies to projection parts too.
+)", 0, \
+        {"26.11", false, true, "New setting"}) \
     /** Projection settings. */ \
     DECLARE(UInt64, max_projections, 25, R"(
 The maximum number of merge tree projections.
