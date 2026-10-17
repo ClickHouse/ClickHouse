@@ -24,6 +24,8 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
 
 /// Deletes one file from S3.
+/// A non-empty `etag_to_match` pins the delete to one generation via `If-Match`; a refusal (`412`/`409`) is
+/// reported as `FILE_CHANGED_DURING_READ`, not swallowed by `if_exists`. Endpoints ignoring `If-Match` delete by key.
 void deleteFileFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
@@ -32,9 +34,14 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const String & local_path_for_blob_storage_log = {},
     size_t file_size_for_blob_storage_log = 0,
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
+    const String & etag_to_match = {},
+    /// Deletes exactly this version instead of the key as a whole (no delete marker). Versioned buckets only.
+    const String & version_id = {});
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
+/// `etags_to_match`, if not empty, is parallel to `keys` and pins each delete to one generation (see `deleteFileFromS3`);
+/// refused objects are reported with `FILE_CHANGED_DURING_READ` only after all others are deleted.
 void deleteFilesFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
@@ -46,7 +53,8 @@ void deleteFilesFromS3(
     const Strings & local_paths_for_blob_storage_log = {},
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log = {},
     std::optional<ProfileEvents::Event> profile_event = std::nullopt,
-    Strings * successful_keys = nullptr);
+    Strings * successful_keys = nullptr,
+    const Strings & etags_to_match = {});
 
 }
 

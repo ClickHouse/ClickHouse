@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/S3/Client.h>
@@ -20,6 +21,30 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FILE_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// The endpoint refused a pinned delete: `412 Precondition Failed`, or `409 Conflict` after a concurrent
+/// write or delete of the key. Neither means the key is absent.
+bool isRefusedPrecondition(const Aws::Client::AWSError<Aws::S3::S3Errors> & error)
+{
+    const auto code = error.GetResponseCode();
+    return code == Aws::Http::HttpResponseCode::PRECONDITION_FAILED || code == Aws::Http::HttpResponseCode::CONFLICT;
+}
+
+/// The per-object error codes a `DeleteObjects` response uses for the same two refusals.
+bool isRefusedPreconditionCode(const Aws::String & code)
+{
+    return code == "PreconditionFailed" || code == "ConditionalRequestConflict";
+}
+
+}
+
 void deleteFileFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
@@ -28,11 +53,18 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log,
     const String & local_path_for_blob_storage_log,
     size_t file_size_for_blob_storage_log,
-    std::optional<ProfileEvents::Event> profile_event)
+    std::optional<ProfileEvents::Event> profile_event,
+    const String & etag_to_match,
+    const String & version_id)
 {
     S3::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(key);
+    if (!etag_to_match.empty())
+        request.SetIfMatch(etag_to_match);
+    /// A named version is already one generation, so it needs no `If-Match` of its own.
+    if (!version_id.empty())
+        request.SetVersionId(version_id);
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
@@ -62,6 +94,15 @@ void deleteFileFromS3(
     {
         LOG_DEBUG(log, "Object with path {} was removed from S3", key);
     }
+    else if (!etag_to_match.empty() && isRefusedPrecondition(outcome.GetError()))
+    {
+        /// The object is a different generation, which is not "does not exist" and must not be swallowed by
+        /// `if_exists`. Mapped from the raw response code, because `S3Exception` keeps no HTTP status.
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_DURING_READ,
+            "Object {} was not deleted: it changed after it was selected (its `ETag` is no longer {})",
+            key, etag_to_match);
+    }
     else if (if_exists && S3::isNotFoundError(outcome.GetError().GetErrorType()))
     {
         /// In this case even if absence of key may be ok for us, the log will be polluted with error messages from aws sdk.
@@ -88,10 +129,13 @@ void deleteFilesFromS3(
     const Strings & local_paths_for_blob_storage_log,
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event,
-    Strings * successful_keys)
+    Strings * successful_keys,
+    const Strings & etags_to_match)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
     chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
+    chassert(etags_to_match.empty() || (etags_to_match.size() == keys.size()));
+
 
     if (keys.empty())
        return; /// Nothing to delete.
@@ -110,6 +154,11 @@ void deleteFilesFromS3(
 
     auto log = getLogger("deleteFileFromS3");
     const String empty_string;
+    const auto etag_to_match_of = [&](size_t i) -> const String & { return i < etags_to_match.size() ? etags_to_match[i] : empty_string; };
+
+    /// A refused pinned delete is reported only after the other objects are deleted, so one overwritten
+    /// object does not leave the rest in place.
+    std::exception_ptr changed_generation_error;
 
     if (try_batch_delete)
     {
@@ -125,6 +174,8 @@ void deleteFilesFromS3(
             {
                 Aws::S3::Model::ObjectIdentifier obj;
                 obj.SetKey(keys[current_position]);
+                if (const String & etag_to_match = etag_to_match_of(current_position); !etag_to_match.empty())
+                    obj.SetETag(etag_to_match);
                 current_chunk.push_back(obj);
 
                 if (!comma_separated_keys.empty())
@@ -212,6 +263,11 @@ void deleteFilesFromS3(
                         non_existing_keys.insert(chunk.GetKey());
                     }
 
+                    UnorderedSetWithMemoryTracking<std::string_view> pinned_keys;
+                    for (size_t i = first_position; i < current_position; ++i)
+                        if (!etag_to_match_of(i).empty())
+                            pinned_keys.insert(keys[i]);
+
                     for (const auto & err : errors)
                     {
                         removed_keys.erase(err.GetKey());
@@ -222,6 +278,18 @@ void deleteFilesFromS3(
                             if (not_found_keys.empty())
                                 not_found_keys += ", ";
                             not_found_keys += err.GetKey();
+                        }
+                        else if (pinned_keys.contains(err.GetKey()) && isRefusedPreconditionCode(err.GetCode()))
+                        {
+                            /// The object stayed in place (neither removed nor absent); it is reported
+                            /// after the other chunks are deleted.
+                            non_existing_keys.erase(err.GetKey());
+
+                            if (!changed_generation_error)
+                                changed_generation_error = std::make_exception_ptr(Exception(
+                                    ErrorCodes::FILE_CHANGED_DURING_READ,
+                                    "Object {} was not deleted: it changed after it was selected (its `ETag` is no longer the one named for it)",
+                                    err.GetKey()));
                         }
                         else
                         {
@@ -260,7 +328,12 @@ void deleteFilesFromS3(
                     }
 
                     if (other_error)
+                    {
+                        /// A changed object must not look like an ordinary failure, which the caller may skip.
+                        if (changed_generation_error)
+                            std::rethrow_exception(changed_generation_error);
                         std::rethrow_exception(other_error);
+                    }
                 }
             }
             else
@@ -286,6 +359,8 @@ void deleteFilesFromS3(
                 }
                 else
                 {
+                    if (changed_generation_error)
+                        std::rethrow_exception(changed_generation_error);
                     throw S3Exception(err.GetErrorType(), "{} (Code: {}) while removing objects with paths [{}] from S3",
                                       err.GetMessage(), static_cast<size_t>(err.GetErrorType()), comma_separated_keys);
                 }
@@ -293,7 +368,11 @@ void deleteFilesFromS3(
         }
 
         if (!need_retry_with_plain_delete_object)
+        {
+            if (changed_generation_error)
+                std::rethrow_exception(changed_generation_error);
             return;
+        }
     }
 
     /// Batch delete (DeleteObjects) isn't supported so we'll delete all the files sequentially.
@@ -302,13 +381,33 @@ void deleteFilesFromS3(
         const String & local_path_for_blob_storage_log = (i < local_paths_for_blob_storage_log.size()) ? local_paths_for_blob_storage_log[i] : empty_string;
         size_t file_size_for_blob_storage_log = (i < file_sizes_for_blob_storage_log.size()) ? file_sizes_for_blob_storage_log[i] : 0;
 
-        deleteFileFromS3(s3_client, bucket, keys[i], if_exists,
-                         blob_storage_log, local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                         profile_event);
+        try
+        {
+            deleteFileFromS3(s3_client, bucket, keys[i], if_exists,
+                             blob_storage_log, local_path_for_blob_storage_log, file_size_for_blob_storage_log,
+                             profile_event, etag_to_match_of(i));
+        }
+        catch (const Exception & e)
+        {
+            /// The same rule as for a batch: the other objects are deleted first, and the one that
+            /// was written over is reported once.
+            if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+            {
+                if (changed_generation_error)
+                    std::rethrow_exception(changed_generation_error);
+                throw;
+            }
+            if (!changed_generation_error)
+                changed_generation_error = std::current_exception();
+            continue;
+        }
 
         if (successful_keys)
             successful_keys->emplace_back(keys[i]);
     }
+
+    if (changed_generation_error)
+        std::rethrow_exception(changed_generation_error);
 }
 
 }

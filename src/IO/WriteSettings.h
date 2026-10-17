@@ -43,6 +43,18 @@ struct WriteSettings
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
 
+    /// Pins a guarded copy to the source generation the caller inspected (its ETag): the copy fails
+    /// instead of silently carrying a newer one. Empty means no pin.
+    std::string object_storage_copy_source_if_match;
+
+    /// The source version the caller inspected. Two generations of one key can share an `ETag`, so
+    /// only this names the one the copy must read. Empty lets the copy resolve the key itself.
+    std::string object_storage_copy_source_version_id;
+
+    /// Whether a guarded copy restates the source object's tags, which needs permission to read them.
+    /// When false the copy keeps the pre-guard permission set and does not carry the tags over.
+    bool object_storage_copy_preserve_source_tags = true;
+
     /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
     /// 0 disables. Honored only by metadata storages that support inline data.
     size_t inline_file_max_bytes = 0;

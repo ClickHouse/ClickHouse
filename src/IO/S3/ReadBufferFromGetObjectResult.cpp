@@ -38,6 +38,7 @@ ReadBufferFromGetObjectResult::ReadBufferFromGetObjectResult(Aws::S3::Model::Get
     metadata.size_bytes = result->GetContentLength();
     metadata.last_modified = Poco::Timestamp::fromEpochTime(result->GetLastModified().Seconds());
     metadata.etag = result->GetETag();
+    metadata.version_id = result->GetVersionId();
     metadata.attributes = result->GetMetadata();
 
     /// An empty response has nothing to read at all.

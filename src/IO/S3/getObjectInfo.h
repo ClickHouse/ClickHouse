@@ -10,6 +10,18 @@
 namespace DB::S3
 {
 
+/// Headers to restate when a guarded copy uses a read-write upload.
+struct ObjectHeaders
+{
+    String content_type;
+    String content_encoding;
+    String content_language;
+    String content_disposition;
+    String cache_control;
+    Aws::Utils::DateTime expires;
+    String website_redirect_location;
+};
+
 struct ObjectInfo
 {
     size_t size = 0;
@@ -17,8 +29,11 @@ struct ObjectInfo
     bool is_size_known = true;
     time_t last_modification_time = 0;
     String etag;
+    /// Set only on buckets with versioning enabled; empty otherwise.
+    String version_id;
     ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
     ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
+    ObjectHeaders headers; /// Always read from the HEAD response; empty for whatever the object does not set.
 };
 
 /// Ignore if object does not exist
