@@ -1,0 +1,6 @@
+parsed in tokyo then utc	[0,32400]
+parsed in utc then tokyo	[0,32400]
+declared zone	[28800,28800]
+values	0
+query parameter	0
+query parameter inferred	0
