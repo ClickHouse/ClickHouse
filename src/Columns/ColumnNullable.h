@@ -110,6 +110,8 @@ public:
         }
     }
 
+    void insertManyDefaults(size_t length) override;
+
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
