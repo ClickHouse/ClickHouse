@@ -395,6 +395,14 @@ Average block bytes output by parquet reader
     DECLARE(Bool, input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference, false, R"(
 Skip fields with unsupported types while schema inference for format Protobuf
 )", 0) \
+    DECLARE(NonZeroUInt64, input_format_pcap_max_block_size, DEFAULT_BLOCK_SIZE, R"(
+The maximum number of packets (rows) in one block produced by the `PCAP` input format.
+)", 0, \
+        {"26.11", DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_SIZE, "New setting: the maximum number of packets in one block produced by the `PCAP` input format."}) \
+    DECLARE(UInt64, input_format_pcap_prefer_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
+The `PCAP` input format stops filling a block once the packet bytes it stores reach this amount, even if the block has fewer than `input_format_pcap_max_block_size` rows. The count includes the captured bytes of every packet when the `raw` column is read and the payload bytes copied into the `payload` column when it is read, so it bounds the string data of one block for captures with large packets. Reads of other columns only are not limited by bytes. 0 means no byte limit.
+)", 0, \
+        {"26.11", DEFAULT_BLOCK_SIZE * 256, DEFAULT_BLOCK_SIZE * 256, "New setting: the `PCAP` input format stops filling a block once the packet bytes it stores (`raw` and the copied `payload`) reach this amount."}) \
     DECLARE(Bool, input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format CapnProto
 )", 0) \
