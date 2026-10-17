@@ -93,8 +93,7 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
-/// The graph stores 2 * M neighbour slots per indexed vector, so M (and ef_construction, which sizes the
-/// per-thread candidate lists) must be bounded. Same limits as Lucene.
+/// Each indexed vector holds 2 * M neighbour slots and ef_construction sizes the candidate lists. Limits as in Lucene.
 constexpr UInt64 max_hnsw_max_connections_per_layer = 512;
 constexpr UInt64 max_hnsw_candidate_list_size_for_construction = 3200;
 
@@ -753,7 +752,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach,
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
 
-        /// Not on ATTACH: a table created before this check must still load, so that its index can be dropped.
+        /// Not on ATTACH: an existing table with larger values must still load, so that its index can be dropped.
         if (!attach)
         {
             if (connectivity > max_hnsw_max_connections_per_layer)
