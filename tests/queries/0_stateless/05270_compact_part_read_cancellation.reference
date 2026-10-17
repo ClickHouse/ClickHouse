@@ -1,0 +1,10 @@
+part type	Compact
+timeout observed inside the part read
+kill observed inside the part read
+active parts	1
+detached parts	0
+part checks	0
+text part type	Compact
+text index used	1
+text kill observed inside the part read
+text index reader ran	1	0
