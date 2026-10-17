@@ -72,7 +72,9 @@ private:
     std::string prepareEntry(const std::string & path)
     {
         std::string entry = path;
-        reserved.reserve(reserved.size() + 1);
+        /// Grow geometrically: an insert can reserve many keys, and growing by one each time is quadratic.
+        if (reserved.size() == reserved.capacity())
+            reserved.reserve(std::max<size_t>(8, reserved.capacity() * 2));
         return entry;
     }
 
