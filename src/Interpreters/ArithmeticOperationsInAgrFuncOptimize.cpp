@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_TYPE_OF_FIELD;
-}
-
 namespace
 {
 
@@ -92,7 +87,7 @@ ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction
     return res;
 }
 
-Field zeroField(const Field & value)
+std::optional<Field> zeroField(const Field & value)
 {
     switch (value.getType())
     {
@@ -104,10 +99,8 @@ Field zeroField(const Field & value)
         case Field::Types::UInt256: return static_cast<UInt256>(0);
         case Field::Types::Int256: return static_cast<Int256>(0);
         default:
-            break;
+            return {};
     }
-
-    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
 ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & tables)
@@ -157,8 +150,14 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
         if (!getNonDecimalColumnType(child_func_args[1], tables))
             return {};
 
-        bool need_reverse
-            = (child_func->name == "multiply" && first_literal->value < zeroField(first_literal->value)) || child_func->name == "minus";
+        bool need_reverse = child_func->name == "minus";
+        if (child_func->name == "multiply")
+        {
+            const auto zero = zeroField(first_literal->value);
+            if (!zero)
+                return {};
+            need_reverse = first_literal->value < *zero;
+        }
         if (need_reverse)
             lower_name = get_reverse_aggregate_function_name(lower_name);
 
@@ -175,9 +174,14 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
             && second_literal->value.getType() != Field::Types::Float64)
             return {};
 
-        bool need_reverse
-            = (child_func->name == "multiply" || child_func->name == "divide" || child_func->name == "divideExact")
-            && second_literal->value < zeroField(second_literal->value);
+        bool need_reverse = false;
+        if (child_func->name == "multiply" || child_func->name == "divide" || child_func->name == "divideExact")
+        {
+            const auto zero = zeroField(second_literal->value);
+            if (!zero)
+                return {};
+            need_reverse = second_literal->value < *zero;
+        }
         if (need_reverse)
             lower_name = get_reverse_aggregate_function_name(lower_name);
 
