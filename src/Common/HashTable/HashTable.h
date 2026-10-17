@@ -919,19 +919,14 @@ protected:
     {
         size_t place_value = grower.place(hash_value);
 
-        /// If the element is in its place.
-        if (&x == &buf[place_value])
-            return;
+        /// The keys are unique, so comparing addresses is same as comparing keys.
+        while (&buf[place_value] != &x && !buf[place_value].isZero(*this))
+            place_value = grower.next(place_value);
 
-        /// Compute a new location, taking into account the collision resolution chain.
-        place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
-
-        /// If the item remains in its place in the old collision resolution chain.
-        if (!buf[place_value].isZero(*this))
+        if (&buf[place_value] == &x)
             return;
 
         /// Copy to a new location and zero the old one.
-        x.setHash(hash_value);
         memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
     }
