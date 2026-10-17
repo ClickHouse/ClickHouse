@@ -350,6 +350,39 @@ void ColumnTuple::insertDefault()
     ++column_length;
 }
 
+void ColumnTuple::insertManyDefaults(size_t length)
+{
+    if (length == 0)
+        return;
+
+    if (columns.empty())
+    {
+        column_length += length;
+        return;
+    }
+
+    const size_t old_size = size();
+    try
+    {
+        for (auto & column : columns)
+            column->insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        /// A nested bulk insert may have appended only part of the requested range
+        /// before throwing. Restore every child to the common tuple size.
+        for (auto & column : columns)
+        {
+            const size_t current_size = column->size();
+            if (current_size > old_size)
+                column->popBack(current_size - old_size);
+        }
+        throw;
+    }
+
+    column_length += length;
+}
+
 void ColumnTuple::popBack(size_t n)
 {
     if (n > size())
