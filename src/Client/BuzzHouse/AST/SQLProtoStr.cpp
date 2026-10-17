@@ -1173,11 +1173,21 @@ CONV_FN(ExprLike, elike)
 {
     ExprToString(ret, elike.expr1());
     ret += " ";
-    if (elike.not_() && elike.keyword() != ExprLike_PossibleKeywords::ExprLike_PossibleKeywords_REGEXP)
+    const bool is_regexp = elike.keyword() == ExprLike_PossibleKeywords::ExprLike_PossibleKeywords_REGEXP;
+
+    if (elike.not_() && !is_regexp)
         ret += "NOT ";
-    ret += ExprLike_PossibleKeywords_Name(elike.keyword());
+    if (elike.keyword() == ExprLike_PossibleKeywords::ExprLike_PossibleKeywords_SIMILAR_TO)
+        ret += "SIMILAR TO";
+    else
+        ret += ExprLike_PossibleKeywords_Name(elike.keyword());
     ret += " ";
     ExprToString(ret, elike.expr2());
+    if (elike.has_escape() && !is_regexp)
+    {
+        ret += " ESCAPE ";
+        ret += elike.escape();
+    }
 }
 
 CONV_FN(CondExpr, econd)
@@ -1802,6 +1812,12 @@ CONV_FN(JoinCore, jcc)
         ret += JoinConst_Name(jcc.join_const()).substr(2);
     }
     ret += " JOIN ";
+    /// `LATERAL` is only parsed before a subquery (`(VALUES ...)` included) and never with `CROSS JOIN`
+    if (jcc.lateral() && jcc.join_op() != JoinType::J_CROSS && jcc.tos().has_joined_table()
+        && (jcc.tos().joined_table().tof().has_select() || jcc.tos().joined_table().tof().has_values_standard()))
+    {
+        ret += "LATERAL ";
+    }
     TableOrSubqueryToString(ret, jcc.tos());
     if (!no_clause)
     {
@@ -5604,6 +5620,20 @@ CONV_FN(BackupRestoreElement, backup)
                 ret += ", ";
             }
             ExprSchemaTableToString(ret, backup.except_tables(i));
+        }
+    }
+    if (backup.except_data_tables_size())
+    {
+        ret += " EXCEPT DATA FROM TABLE";
+        ret += backup.except_data_plural() ? "S" : "";
+        ret += " ";
+        for (int i = 0; i < backup.except_data_tables_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprSchemaTableToString(ret, backup.except_data_tables(i));
         }
     }
 }

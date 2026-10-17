@@ -473,13 +473,22 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
         {
             const uint32_t nopt = rg.nextSmallNumber();
 
-            if (nopt < 4)
+            if (nopt < 3)
             {
                 buf += "%";
             }
-            else if (nopt < 7)
+            else if (nopt < 5)
             {
                 buf += "_";
+            }
+            else if (nopt < 7)
+            {
+                /// `SIMILAR TO` metacharacters, plus characters it keeps literal
+                static const std::vector<String> similarMeta
+                    = {"|", "*", "+", "?", "{2}", "{1,3}", "{2,}", "(", ")", "(a|b)", "[a-z]", "[^0-9]", "[[:alpha:]]", "[]",
+                       "\\%", "\\_", "\\", "#%", ".", "^", "$"};
+
+                buf += rg.pickRandomly(similarMeta);
             }
             else
             {
@@ -492,6 +501,15 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
     {
         this->generateExpression(rg, expr);
     }
+}
+
+String StatementGenerator::generateLikeEscape(RandomGenerator & rg)
+{
+    /// Quoted `ESCAPE` literals, a few of them invalid (empty, multi-char, non-ASCII)
+    static const std::vector<String> escapes
+        = {"'#'", "'!'", "'\\\\'", "'%'", "'_'", "'|'", "'['", "''''", "'$'", "'a'", "''", "'ab'", "'é'"};
+
+    return rg.pickRandomly(escapes);
 }
 
 Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const
@@ -748,6 +766,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
             elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(like_range(rg.generator)));
             elike->set_not_(rg.nextBool());
+            if (rg.nextSmallNumber() < 3)
+            {
+                elike->set_escape(generateLikeEscape(rg));
+            }
             this->depth++;
             this->generateExpression(rg, elike->mutable_expr1());
             this->width++;

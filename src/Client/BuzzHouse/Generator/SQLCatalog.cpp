@@ -58,6 +58,26 @@ bool SQLDatabase::isDataLakeCatalogDatabase() const
     return deng == DatabaseEngineValues::DDataLakeCatalog;
 }
 
+bool SQLDatabase::isClusterDatabase() const
+{
+    return deng == DatabaseEngineValues::DCluster;
+}
+
+bool SQLDatabase::isRemoteDatabase() const
+{
+    return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
+}
+
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
+bool SQLDatabase::isProxyDatabase() const
+{
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
+}
+
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
 {
     return isReplicatedDatabase() || isSharedDatabase();
