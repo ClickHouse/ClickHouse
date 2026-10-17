@@ -1,0 +1,11 @@
+<clickhouse>
+    <http_handlers>
+        <rule_promql_range_timestamp_cache>
+            <url_prefix>/prometheus/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+                <table>default.promql_range_timestamp_cache</table>
+            </handler>
+        </rule_promql_range_timestamp_cache>
+    </http_handlers>
+</clickhouse>
