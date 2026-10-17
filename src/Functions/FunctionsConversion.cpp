@@ -2899,7 +2899,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
             else
             {
                 FieldType converted_value;
-                if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
+                if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value)
+                    || (failures && !accurate::equalsOp(in_data[i], converted_value)))
                 {
                     if (!failures)
                         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
