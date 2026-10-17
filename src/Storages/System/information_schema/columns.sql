@@ -69,7 +69,7 @@ AS SELECT
     name AS column_name,
     position AS ordinal_position,
     default_expression AS column_default,
-    type LIKE 'Nullable(%)' AS is_nullable,
+    is_nullable,
     type AS data_type,
     character_octet_length AS character_maximum_length,
     character_octet_length,
