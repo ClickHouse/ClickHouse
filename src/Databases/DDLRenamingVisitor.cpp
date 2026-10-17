@@ -322,6 +322,13 @@ namespace
         {
             replaceTableNameInArgument(function, data, 0);
         }
+        else if (auto dictionary_name_position = getDictionaryNameArgumentPosition(function.name))
+        {
+            /// Only a literal is a dictionary name here, an identifier is an expression.
+            if (function.arguments && *dictionary_name_position < function.arguments->children.size()
+                && function.arguments->children[*dictionary_name_position]->as<ASTLiteral>())
+                replaceTableNameInArgument(function, data, *dictionary_name_position);
+        }
         else if (Poco::toLower(function.name) == "in")
         {
             replaceTableNameInArgument(function, data, 1);

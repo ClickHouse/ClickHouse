@@ -2154,6 +2154,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.targets)
         create.targets->setCurrentDatabase(current_database);
 
+    const bool is_new_definition = !isReplayedTableDefinition(mode, create, getContext());
+
     if (create.select && create.isView())
     {
         /// Query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
@@ -2188,6 +2190,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
                 : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.setIsNewDefinition(is_new_definition);
         visitor.visit(*create.select);
     }
 
@@ -2200,6 +2203,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.columns_list)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.setIsNewDefinition(is_new_definition);
         visitor.visit(*create.columns_list);
     }
 
@@ -2211,6 +2215,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// them in the query's current database without revisiting scalar aliases generated during
     /// query normalization.
     AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+    visitor.setIsNewDefinition(is_new_definition);
     if (create.select && create.isView())
         visitor.visitTableExpressions(*create.select);
     if (create.columns_list)
