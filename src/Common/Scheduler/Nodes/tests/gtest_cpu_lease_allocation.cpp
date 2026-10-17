@@ -256,3 +256,66 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
     worker2_slot.reset();
     scheduler.stop();
 }
+
+/// `max_threads_soft_limit = 1`: the master request of query A is free (not scheduled), so A already holds one
+/// slot when it asks for a worker slot, and that request is demoted. It is promoted once A's own slot expires,
+/// so A does not lose all its slots waiting behind every other query. After the promotion A is served before
+/// query C, which asks later.
+TEST(SchedulerCPULeaseAllocation, ThreadsSoftLimitPromotesWhenSlotsExpire)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto queue = std::make_shared<RequestQueue>(
+        scheduler.event_queue, SchedulerNodeInfo{}, SchedulerAlgorithm::Fifo, CostUnit::CPUNanosecond,
+        std::numeric_limits<Int64>::max(), /*threads_soft_limit=*/ 1);
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    constexpr ResourceCost quantum_ns = 10'000'000;
+    CPULeaseSettings settings;
+    settings.quantum_ns = quantum_ns;
+    settings.report_ns = quantum_ns / 10;
+    ResourceLink link;
+    link.queue = queue.get();
+
+    // Query X takes the only slot
+    auto x = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 1; }));
+
+    // Query A holds its free master slot and waits for a worker slot: demoted
+    auto a = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, ResourceLink{}, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 1; }));
+    EXPECT_EQ(queue->getDemotedLength(), 1u);
+
+    // The master thread of A consumes its quantum, so A holds no slots anymore
+    auto master_slot = a->acquire();
+    auto * master = dynamic_cast<ISlotLease *>(master_slot.get());
+    auto master_thread = std::async(std::launch::async, [&]
+    {
+        master->startConsumption();
+        burnCPU(quantum_ns);
+        return master->renew();
+    });
+    bool renewed = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!renewed)
+        a->free(); // Wakes the master thread, so the test fails instead of hanging
+    ASSERT_TRUE(renewed);
+    EXPECT_TRUE(master_thread.get());
+    EXPECT_EQ(queue->getDemotedLength(), 0u) << "the request of a query below the soft limit stays demoted";
+    EXPECT_EQ(queue->getQueueLengthAndCost().first, 1u);
+
+    // Query C asks after the promotion, so A is served first. Once granted, A takes its free master slot again
+    // and asks for one more worker slot. Holding two slots, that request is demoted.
+    auto c = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 2; }));
+    x->free();
+    EXPECT_TRUE(waitUntil([&] { return queue->getDemotedLength() == 1; })) << "the promoted request is not served first";
+    EXPECT_TRUE(c->isRequesting());
+
+    master_slot.reset();
+    c->free();
+    a->free();
+    scheduler.stop();
+}

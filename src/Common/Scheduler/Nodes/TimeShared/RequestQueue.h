@@ -525,22 +525,32 @@ private:
  * hierarchy nor invalidates the `ResourceLink` cached by classifiers, and loses no pending requests.
  * Moving requests (switch, eviction, purge) never allocates: these paths run on the scheduler thread
  * in response to SQL and must not fail halfway.
+ *
+ * The `max_threads_soft_limit` (workload default, optionally overridden per query) demotes a request
+ * whose query already holds at least that many slots (`scheduling.held_slots`): it waits in the
+ * `overflow` FIFO, which is served only when the active algorithm has nothing to serve. Demoted
+ * requests are never pushed into the active algorithm, so nothing has to be rolled back when one is
+ * promoted back, which happens as soon as it no longer exceeds the limit (see `updateHeldSlots`).
  */
 class RequestQueue final : public ISchedulerQueue
 {
     static constexpr Int64 default_max_queued = std::numeric_limits<Int64>::max();
 
 public:
+    static constexpr Int64 no_threads_soft_limit = std::numeric_limits<Int64>::max();
+
     explicit RequestQueue(
         EventQueue & event_queue_,
         const SchedulerNodeInfo & info_ = {},
         SchedulerAlgorithm algorithm_ = SchedulerAlgorithm::Fifo,
         CostUnit unit_ = CostUnit::IOByte,
-        Int64 max_queued_ = default_max_queued)
+        Int64 max_queued_ = default_max_queued,
+        Int64 threads_soft_limit_ = no_threads_soft_limit)
         : ISchedulerQueue(event_queue_, info_)
         , fair_algorithm(unit_)
         , las_algorithm(unit_)
         , max_queued(max_queued_)
+        , threads_soft_limit(normalizeThreadsSoftLimit(threads_soft_limit_))
         , algorithm(algorithm_)
         , algo(&algorithmFor(algorithm_))
     {
@@ -569,7 +579,10 @@ public:
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
 
-        algo->push(request);
+        if (exceedsThreadsSoftLimit(*request))
+            overflow.push_back(*request);
+        else
+            algo->push(request);
         queue_cost += request->cost;
         bool was_empty = total_requests == 0;
         total_requests++;
@@ -582,6 +595,8 @@ public:
     {
         std::lock_guard lock(mutex);
         ResourceRequest * request = algo->pop();
+        if (!request)
+            request = popOverflow();
         if (!request)
         {
             flushThroughputOnDeactivation();
@@ -609,7 +624,9 @@ public:
         std::lock_guard lock(mutex);
         if (is_not_usable)
             return false; // Any request should already be failed or executed
-        if (!algo->erase(request))
+        if (request->isDemoted())
+            overflow.erase(overflow.iterator_to(*request));
+        else if (!algo->erase(request))
             return false;
         queue_cost -= request->cost;
         chassert(total_requests > 0);
@@ -633,6 +650,8 @@ public:
             std::lock_guard lock(mutex);
             is_not_usable = true;
             algo->pullAll(requests_to_fail);
+            while (ResourceRequest * request = popOverflow())
+                requests_to_fail.push_back(*request);
             queue_cost = 0;
             total_requests = 0;
             cancelActivation();
@@ -659,7 +678,10 @@ public:
             max_queued = value;
             while (total_requests > static_cast<size_t>(max_queued))
             {
-                ResourceRequest * request = algo->popWorst();
+                // Demoted requests are served last, so they are the worst ones
+                ResourceRequest * request = popWorstOverflow();
+                if (!request)
+                    request = algo->popWorst();
                 chassert(request);
                 queue_cost -= request->cost;
                 total_requests--;
@@ -682,6 +704,7 @@ public:
 
     /// Switch the algorithm in place, moving all pending requests to the new one. Called when the
     /// workload `scheduler` setting changes; keeps the node, its `ResourceLink` and activation state.
+    /// Demoted requests stay in `overflow`, which is FIFO under every algorithm.
     void setScheduler(SchedulerAlgorithm new_algorithm) noexcept
     {
         std::lock_guard lock(mutex);
@@ -709,6 +732,54 @@ public:
     {
         std::lock_guard lock(mutex);
         return algorithm;
+    }
+
+    /// Set the workload default of the `max_threads_soft_limit` (`0` or `no_threads_soft_limit`
+    /// disables it). Called when the workload setting changes. Demoted requests
+    /// that no longer exceed the limit are promoted; requests already in the active algorithm stay.
+    void setThreadsSoftLimit(Int64 value) noexcept
+    {
+        std::lock_guard lock(mutex);
+        threads_soft_limit = normalizeThreadsSoftLimit(value);
+        for (auto it = overflow.begin(); it != overflow.end();)
+        {
+            ResourceRequest & request = *it;
+            if (exceedsThreadsSoftLimit(request))
+            {
+                ++it;
+                continue;
+            }
+            it = overflow.erase(it);
+            algo->push(&request);
+        }
+    }
+
+    Int64 getThreadsSoftLimit() const
+    {
+        std::lock_guard lock(mutex);
+        return threads_soft_limit;
+    }
+
+    /// For introspection: number of waiting requests demoted by the `max_threads_soft_limit`
+    /// (included in `getQueueLengthAndCost`).
+    size_t getDemotedLength() const
+    {
+        std::lock_guard lock(mutex);
+        return overflow.size();
+    }
+
+    void updateHeldSlots(ResourceRequest * request, Int64 held_slots) override
+    {
+        std::lock_guard lock(mutex);
+        // A request that is not demoted is either in the active algorithm or already dequeued;
+        // neither depends on `held_slots` anymore.
+        if (!request->isDemoted())
+            return;
+        request->scheduling.held_slots = held_slots;
+        if (exceedsThreadsSoftLimit(*request))
+            return;
+        overflow.erase(overflow.iterator_to(*request));
+        algo->push(request);
     }
 
     bool isActive() override
@@ -752,6 +823,42 @@ private:
         UNREACHABLE();
     }
 
+    static Int64 normalizeThreadsSoftLimit(Int64 value) noexcept
+    {
+        chassert(value >= 0);
+        return value == 0 ? no_threads_soft_limit : value;
+    }
+
+    /// The single place that decides demotion: the query's override of the `max_threads_soft_limit`
+    /// (from its scheduling context) if set, else the workload default kept by this leaf.
+    bool exceedsThreadsSoftLimit(const ResourceRequest & request) const noexcept
+    {
+        Int64 limit = threads_soft_limit;
+        if (request.scheduling.context && request.scheduling.context->max_threads_soft_limit)
+            limit = *request.scheduling.context->max_threads_soft_limit;
+        return request.scheduling.held_slots >= limit;
+    }
+
+    /// The oldest demoted request, or null if there is none
+    ResourceRequest * popOverflow() noexcept
+    {
+        if (overflow.empty())
+            return nullptr;
+        ResourceRequest * request = &overflow.front();
+        overflow.pop_front();
+        return request;
+    }
+
+    /// The newest demoted request (served last of all), or null if there is none
+    ResourceRequest * popWorstOverflow() noexcept
+    {
+        if (overflow.empty())
+            return nullptr;
+        ResourceRequest * request = &overflow.back();
+        overflow.pop_back();
+        return request;
+    }
+
     /// Unlink each request, then fail it: its owner may destroy it in `failed`. If building the
     /// exception throws, that error fails the requests instead, so none is left pending.
     template <typename MakeException>
@@ -782,7 +889,11 @@ private:
     FairAlgorithm fair_algorithm;
     LasAlgorithm las_algorithm;
     PriorityAlgorithm priority_algorithm;
+    /// Demoted requests (over the `max_threads_soft_limit`) in arrival order, served only when `algo` is empty.
+    /// Linked through `overflow_hook`, so membership is `ResourceRequest::isDemoted`.
+    ResourceRequest::OverflowList overflow;
     Int64 max_queued;
+    Int64 threads_soft_limit; /// Workload default of the `max_threads_soft_limit`
     SchedulerAlgorithm algorithm;
     ISchedulingAlgorithm * algo;
     ResourceCost queue_cost = 0;

@@ -47,6 +47,11 @@ struct WorkloadSettings
     /// Limits total number of query threads
     Int64 max_concurrent_threads = unlimited;
 
+    /// Per-query soft limit on CPU slots: once a query holds this many, its further slot requests are
+    /// served only after all other requests of the workload. A query may override it with the query
+    /// setting of the same name. `unlimited` means disabled.
+    Int64 max_threads_soft_limit = unlimited;
+
     /// Limits total number of queries
     Int64 max_concurrent_queries = unlimited;
 
@@ -74,6 +79,9 @@ struct WorkloadSettings
     // Queue (both time-shared and space-shared resources)
     bool hasQueueLimit(CostUnit unit) const;
     Int64 getQueueLimit(CostUnit unit) const;
+
+    // Per-query soft limit on held slots (time-shared CPU resource only); `unlimited` = disabled
+    Int64 getThreadsSoftLimit(CostUnit unit) const;
 
     // Allocation Limit (space-shared resource)
     bool hasAllocationLimit(CostUnit unit) const;

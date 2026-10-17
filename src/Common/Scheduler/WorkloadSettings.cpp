@@ -110,6 +110,18 @@ Int64 WorkloadSettings::getQueueLimit(CostUnit unit) const
     }
 }
 
+Int64 WorkloadSettings::getThreadsSoftLimit(CostUnit unit) const
+{
+    switch (unit)
+    {
+        case CostUnit::CPUNanosecond: return max_threads_soft_limit;
+        case CostUnit::IOByte:
+        case CostUnit::QuerySlot:
+        case CostUnit::MemoryByte:
+            return unlimited;
+    }
+}
+
 bool WorkloadSettings::hasAllocationLimit(CostUnit unit) const
 {
     switch (unit)
@@ -168,6 +180,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Int64> max_bytes_inflight;
         std::optional<Int64> max_concurrent_threads;
         std::optional<Float64> max_concurrent_threads_ratio_to_cores;
+        std::optional<Int64> max_threads_soft_limit;
         std::optional<Int64> max_concurrent_queries;
         std::optional<Int64> max_waiting_queries;
         std::optional<Int64> max_memory;
@@ -287,6 +300,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 max_concurrent_threads = getNotNegativeInt64(name, value);
             else if (name == "max_concurrent_threads_ratio_to_cores")
                 max_concurrent_threads_ratio_to_cores = getNotNegativeFloat64(name, value);
+            else if (name == "max_threads_soft_limit")
+                max_threads_soft_limit = getNotNegativeInt64(name, value);
             else if (name == "max_concurrent_queries")
                 max_concurrent_queries = getNotNegativeInt64(name, value);
             else if (name == "max_waiting_queries")
@@ -414,6 +429,9 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         }
         max_concurrent_threads = limit;
     }
+
+    // Per-query soft limit on CPU slots. Zero setting value means unlimited (disabled).
+    max_threads_soft_limit = get_value(specific.max_threads_soft_limit, regular.max_threads_soft_limit, max_threads_soft_limit, unlimited);
 
     // Concurrent queries limit
     max_concurrent_queries = get_value(specific.max_concurrent_queries, regular.max_concurrent_queries, max_concurrent_queries, unlimited);

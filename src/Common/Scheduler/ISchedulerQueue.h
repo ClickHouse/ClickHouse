@@ -58,6 +58,13 @@ public:
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual bool cancelRequest(ResourceRequest * request) = 0;
 
+    /// Report that the query owning a previously enqueued request now holds `held_slots` slots
+    /// (see `ResourceRequest::scheduling.held_slots`). A request demoted by the `max_threads_soft_limit`
+    /// returns to the normal order once it no longer exceeds the limit.
+    /// Does nothing given unknown or already dequeued request.
+    /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
+    virtual void updateHeldSlots(ResourceRequest * request, Int64 held_slots) = 0;
+
     /// Fails all the resource requests in queue and marks this queue as not usable.
     /// Afterwards any new request will be failed on `enqueueRequest()`.
     /// NOTE: This is done for queues that are about to be destructed.

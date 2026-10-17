@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <functional>
+#include <optional>
 
 namespace DB
 {
@@ -29,6 +30,9 @@ struct ClassifierSettings
     Float64 weight_lowering_cpu_seconds = 0.0;
     Float64 weight_lowering_io_bytes = 0.0;
     Priority priority;
+    /// Query override of the workload `max_threads_soft_limit` (`WorkloadSettings::unlimited` = disabled
+    /// for this query); unset defers to the workload.
+    std::optional<Int64> max_threads_soft_limit;
 };
 
 /*
