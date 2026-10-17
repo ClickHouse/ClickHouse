@@ -159,7 +159,10 @@ mkdir tmp_stress_output
 # are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
 # default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
 # coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+# 05082 is skipped: on the previous release its `KILL PART_MOVE_TO_SHARD ... ON CLUSTER` can fail with a
+# Keeper error on every retry, and the DDL worker never moves past it, so the `ON CLUSTER` queries queued
+# behind it would run only on the upgraded server, after their initiators are gone.
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --skip-func-tests="--skip 05082_kill_and_system_on_cluster_access_types" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
