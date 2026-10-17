@@ -1338,39 +1338,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 processed_files.back().last_modified = object_metadata->last_modified.epochTime();
             }
 
-            /// A listing does not always report a usable `ETag`: `ListBlobs` may omit it, and
-            /// `StorageObjectStorageSource::createReader` only fetches the metadata when the
-            /// iterator left it missing, not when the iterator filled it in without a tag. A
-            /// per-object request on the same file can still answer with a strong one, so refresh
-            /// the metadata here, once per file, and only when a deduplication token is actually
-            /// going to be built from it. This keeps the fail-close path in
-            /// `makeDeduplicationToken` to the files the object storage really cannot identify.
-            /// Must run after emplace_back, for the same reason as the tag fetch below.
-            if (add_deduplication_info && !hasStrongETag(reader.getObjectInfo()->getObjectMetadata()))
-            {
-                if (const auto & object_info_for_etag = reader.getObjectInfo())
-                {
-                    /// Fetch the tags in the same request when they are needed anyway.
-                    const bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
-                    try
-                    {
-                        object_info_for_etag->setObjectMetadata(
-                            object_storage->getObjectMetadata(object_info_for_etag->getPath(), with_tags));
-                    }
-                    catch (...)
-                    {
-                        /// A read-path failure of an already-claimed file, exactly like the tag
-                        /// fetch below: only the label changes, not how the failure is handled.
-                        processed_files.back().state = FileState::ErrorOnRead;
-                        processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
-                        processed_files.back().exception_during_read_code = getCurrentExceptionCode();
-                        throw;
-                    }
-                }
-            }
-
-            /// Check the precondition of `makeDeduplicationToken` before the first pull. A file
-            /// that still has no strong tag can never be read with deduplication, so this is a
+            /// Check the precondition of `makeDeduplicationToken` before the first pull. The token
+            /// must be built from the same metadata the reader was constructed with: the read buffer
+            /// takes the size and the `ETag` of the object from it (see `createReadBuffer`), so a
+            /// refresh of the metadata at this point would no longer pin the reader to the generation
+            /// the token names, and a concurrent overwrite could be read under the token of the
+            /// previous generation. `StorageObjectStorageSource::createReader` already fetches the
+            /// metadata with a per-object request when the iterator left it out. A file that has no
+            /// strong tag can never be read with deduplication, so this is a
             /// read-path failure of this file like the fetches around it, which burns its retry
             /// budget, not an insert failure, which would send the whole batch down the
             /// reset-for-retry path again and again.

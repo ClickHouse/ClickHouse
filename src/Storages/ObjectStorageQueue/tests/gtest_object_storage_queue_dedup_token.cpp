@@ -94,16 +94,15 @@ TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
     EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "1700000000_1024:0");
 }
 
-/// `hasStrongETag` is the predicate the source asks before it reaches for a token: a listing that
-/// came back without a usable tag makes it refresh the metadata with a per-object request, so an
-/// endpoint that omits `ETag` in the listing but reports it on `GetProperties` is not refused.
+/// `hasStrongETag` is the predicate the source asks before the first pull of a file: a file whose
+/// metadata has no usable tag fails as a read error instead of being read without a token.
 /// It has to agree with `makeDeduplicationToken` on what "usable" means, tag by tag.
-TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheRefresh)
+TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheReadCheck)
 {
     EXPECT_TRUE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("\"abc\"", 1024, 1700000000000000)));
     EXPECT_TRUE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("abc", 1024, 1700000000000000)));
 
-    /// No tag at all, and a tag of nothing but the quotes, both need the refresh.
+    /// No tag at all, and a tag of nothing but the quotes, both fail the check.
     EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("", 1024, 1700000000000000)));
     EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("\"\"", 1024, 1700000000000000)));
 
@@ -112,7 +111,7 @@ TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheRefresh)
     weak.etag_is_strong = false;
     EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(weak));
 
-    /// No metadata at all - the iterator left it out - needs the refresh too.
+    /// No metadata at all - the iterator left it out - fails the check too.
     EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(std::nullopt));
 
     /// Exactly the tags a token can be built from, and no others.
