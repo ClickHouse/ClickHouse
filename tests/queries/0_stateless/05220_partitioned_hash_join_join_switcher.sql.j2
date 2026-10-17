@@ -29,7 +29,7 @@ SELECT '-- auto stays in memory';
     ('RIGHT', 'a.k, a.v, b.x'),
     ('FULL', 'a.k, a.v, b.x'),
     ('ANY LEFT', 'a.k, a.v, b.k'),
-    ('ANY INNER', 'a.k, a.v, b.k'),
+    ('ANY INNER', 'a.k, b.k'),
     ('SEMI LEFT', 'a.k, a.v'),
     ('ANTI LEFT', 'a.k, a.v'),
     ('SEMI RIGHT', 'b.k, b.x'),
@@ -40,6 +40,7 @@ SELECT '{{ join_type }} | auto,partitioned_hash', h.1, h = pa FROM (SELECT
 SETTINGS log_comment = '05220 auto in memory';
 {% endfor -%}
 
+-- `ANY INNER` keeps one left row per matched key, and which one depends on the probe order, so its projection omits `a.v`.
 -- The switched results are compared with `auto` starting from `HashJoin`, which drains onto the same `MergeJoin`:
 -- `MergeJoin` emits one row per left row for ANY INNER where the hash joins emit one per matched key.
 SELECT '-- auto switches to MergeJoin at max_rows_in_join';
@@ -49,7 +50,7 @@ SELECT '-- auto switches to MergeJoin at max_rows_in_join';
     ('RIGHT', 'a.k, a.v, b.x'),
     ('FULL', 'a.k, a.v, b.x'),
     ('ANY LEFT', 'a.k, a.v, b.k'),
-    ('ANY INNER', 'a.k, a.v, b.k'),
+    ('ANY INNER', 'a.k, b.k'),
     ('SEMI LEFT', 'a.k, a.v')] -%}
 SELECT '{{ join_type }} | auto,partitioned_hash | max_rows_in_join', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto', max_rows_in_join = 100) AS h,
