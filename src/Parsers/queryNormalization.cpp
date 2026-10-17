@@ -3,9 +3,82 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
+#include <utility>
+
 
 namespace DB
 {
+
+namespace
+{
+
+/// a token that can only end an operand
+bool endsOperand(const Token & token)
+{
+    switch (token.type)
+    {
+        case TokenType::Number:
+        case TokenType::StringLiteral:
+        case TokenType::HereDoc:
+        case TokenType::QuotedIdentifier:
+        case TokenType::ClosingRoundBracket:
+        case TokenType::ClosingSquareBracket:
+        case TokenType::ClosingCurlyBrace:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// a sign after these tokens cannot be binary
+bool canPrecedeUnarySign(const Token & prev, const Token & before_prev)
+{
+    switch (prev.type)
+    {
+        case TokenType::Whitespace: /// no previous token
+        case TokenType::OpeningRoundBracket:
+        case TokenType::OpeningSquareBracket:
+        case TokenType::OpeningCurlyBrace:
+        case TokenType::Comma:
+        case TokenType::Plus:
+        case TokenType::Minus:
+        case TokenType::Slash:
+        case TokenType::Percent:
+        case TokenType::Caret:
+        case TokenType::Arrow:
+        case TokenType::QuestionMark:
+        case TokenType::Colon:
+        case TokenType::Equals:
+        case TokenType::NotEquals:
+        case TokenType::Less:
+        case TokenType::Greater:
+        case TokenType::LessOrEquals:
+        case TokenType::GreaterOrEquals:
+        case TokenType::Spaceship:
+        case TokenType::Concatenation:
+            return true;
+        /// a wildcard (`SELECT * - 1`, `t.* - 1`) takes a binary sign, and a bare word before `*` can be a keyword
+        case TokenType::Asterisk:
+            return endsOperand(before_prev);
+        default:
+            return false;
+    }
+}
+
+/// a unary sign is part of the number it precedes, so that `-1` normalizes like `1`
+bool isUnarySignOfNumber(const Token & token, const Token & prev, const Token & before_prev, Lexer lexer)
+{
+    if ((token.type != TokenType::Plus && token.type != TokenType::Minus) || !canPrecedeUnarySign(prev, before_prev))
+        return false;
+
+    /// lexer is a copy, so looking ahead does not move the caller
+    Token next = lexer.nextToken();
+    while (!next.isSignificant())
+        next = lexer.nextToken();
+    return next.type == TokenType::Number;
+}
+
+}
 
 UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
 {
@@ -15,12 +88,19 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
     /// Coalesce a list of comma separated literals.
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
+    Token prev_token(TokenType::Whitespace, begin, begin);
+    Token before_prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
         Token token = lexer.nextToken();
 
         if (!token.isSignificant())
+            continue;
+
+        const bool is_unary_sign = isUnarySignOfNumber(token, prev_token, before_prev_token, lexer);
+        before_prev_token = std::exchange(prev_token, token);
+        if (is_unary_sign)
             continue;
 
         /// Literals.
@@ -211,6 +291,8 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
     bool prev_whitespace = false;
+    Token prev_token(TokenType::Whitespace, begin, begin);
+    Token before_prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
@@ -237,6 +319,12 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             prev_insignificant = true;
             continue;
         }
+
+        /// skipped before prev_insignificant is reset, so the spaces around the sign collapse into one
+        const bool is_unary_sign = isUnarySignOfNumber(token, prev_token, before_prev_token, lexer);
+        before_prev_token = std::exchange(prev_token, token);
+        if (is_unary_sign)
+            continue;
 
         prev_insignificant = false;
 
