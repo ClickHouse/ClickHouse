@@ -1,7 +1,0 @@
-File name '../../../evil' in checksums of data part contains '..' path component
-File name './data.bin' in checksums of data part contains '.' path component
-Absolute file name '/etc/passwd' in checksums of data part
-Empty file name in checksums of data part
-in checksums of data part contains a NUL byte
-File name '../../evil' in checksums of data part contains '..' path component
-1	1

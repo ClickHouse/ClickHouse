@@ -4,8 +4,6 @@
 -- so the rewrite used to widen such filters: `s LIKE 'tenant-a'` also returned `'tenant-a\n'`.
 -- Results must not depend on `optimize_or_like_chain` or `allow_hyperscan`.
 
-SET optimize_or_like_chain_min_patterns = 1;
-
 DROP TABLE IF EXISTS t_or_like_end_anchor;
 CREATE TABLE t_or_like_end_anchor (s String) ENGINE = Memory;
 
@@ -42,7 +40,7 @@ SELECT 'empty pattern / rewrite off', count() FROM t_or_like_end_anchor WHERE s 
 SELECT 'empty pattern / rewrite on, hyperscan on', count() FROM t_or_like_end_anchor WHERE s LIKE '' OR s LIKE 'never' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
 SELECT 'empty pattern / rewrite on, hyperscan off', count() FROM t_or_like_end_anchor WHERE s LIKE '' OR s LIKE 'never' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0, enable_analyzer = 1;
 
--- A group is kept or rewritten as a whole: one anchored branch keeps the whole group unrewritten.
+-- An anchored branch stays as the original `LIKE` while the rest of the chain is still rewritten.
 SELECT 'mixed group / rewrite off', count() FROM t_or_like_end_anchor WHERE s LIKE 'never%' OR s LIKE 'tenant-a' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
 SELECT 'mixed group / rewrite on, hyperscan on', count() FROM t_or_like_end_anchor WHERE s LIKE 'never%' OR s LIKE 'tenant-a' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
 SELECT 'mixed group / rewrite on, hyperscan off', count() FROM t_or_like_end_anchor WHERE s LIKE 'never%' OR s LIKE 'tenant-a' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0, enable_analyzer = 1;

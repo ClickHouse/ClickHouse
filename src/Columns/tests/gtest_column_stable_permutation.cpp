@@ -21,14 +21,14 @@
 
 using namespace DB;
 
-static void stableGetColumnPermutation(
+void stableGetColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
     int nan_direction_hint,
     IColumn::Permutation & out_permutation)
 {
-    (void)limit;
+    (void)(limit);
 
     size_t size = column.size();
     out_permutation.resize(size);
@@ -48,7 +48,7 @@ static void stableGetColumnPermutation(
         });
 }
 
-static void columnGetPermutation(
+void columnGetPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -58,7 +58,7 @@ static void columnGetPermutation(
     column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
-[[maybe_unused]] static void printColumn(const IColumn & column)
+void printColumn(const IColumn & column)
 {
     size_t column_size = column.size();
     Field value;
@@ -73,7 +73,7 @@ static void columnGetPermutation(
 }
 
 template <typename ValueTransform>
-void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, size_t range_size, ValueTransform value_transform)
+void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size, ValueTransform value_transform)
 {
     for (auto & range : ranges)
     {
@@ -92,7 +92,7 @@ void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & 
     }
 }
 
-static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
+void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std::vector<size_t> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -105,7 +105,7 @@ static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTrac
     }
 }
 
-static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
+void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
 {
     if (limit == 0)
     {
@@ -118,7 +118,7 @@ static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const 
     }
 }
 
-static void assertColumnPermutation(
+void assertColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -141,10 +141,10 @@ template <typename ColumnCreateFunc, typename ValueTransform>
 void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransform value_transform)
 {
     static constexpr size_t ranges_size = 3;
-    static const VectorWithMemoryTracking<size_t> range_sizes = {1, 5, 50, 500};
+    static const std::vector<size_t> range_sizes = {1, 5, 50, 500};
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> ranges(ranges_size);
-    VectorWithMemoryTracking<size_t> ranges_permutations(ranges_size);
+    std::vector<std::vector<Field>> ranges(ranges_size);
+    std::vector<size_t> ranges_permutations(ranges_size);
     iota(ranges_permutations.data(), ranges_size, IColumn::Permutation::value_type(0));
 
     IColumn::Permutation actual_permutation;
@@ -484,62 +484,4 @@ TEST(StablePermutation, ColumnSparse)
 
         assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
     }
-}
-
-template <typename Column, typename ColumnCreateFunc>
-static void assertUpdatePermutationPreservesEqualKeys(ColumnCreateFunc create_column)
-{
-    for (size_t size : {128, 80000})
-    {
-        auto type = create_column();
-        auto id = create_column();
-        for (size_t i = 0; i < size; ++i)
-        {
-            type->insertValue(typename Column::ValueType((i / 2) % 64));
-            id->insertValue(typename Column::ValueType(i / 2));
-        }
-
-        for (auto direction : {IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortDirection::Descending})
-        {
-            IColumn::Permutation actual;
-            actual.resize(size);
-            iota(actual.data(), size, IColumn::Permutation::value_type(0));
-            IColumn::Permutation expected;
-            expected.resize(size);
-            iota(expected.data(), size, IColumn::Permutation::value_type(0));
-            EqualRanges ranges{{0, size}};
-
-            /// Check every sorting stage against an independent stable reference.
-            /// Equal keys must retain the original cancellation/replacement order.
-            for (const auto * column : {type.get(), id.get()})
-            {
-                for (const auto & range : ranges)
-                {
-                    std::stable_sort(expected.begin() + range.from, expected.begin() + range.to,
-                        [&](size_t lhs, size_t rhs)
-                        {
-                            int result = column->compareAt(lhs, rhs, *column, 1);
-                            return direction == IColumn::PermutationSortDirection::Ascending ? result < 0 : result > 0;
-                        });
-                }
-                column->updatePermutation(direction, IColumn::PermutationSortStability::Stable, 0, 1, actual, ranges);
-                assertPermutationsWithLimit(actual, expected, 0);
-            }
-        }
-    }
-}
-
-TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
-{
-    assertUpdatePermutationPreservesEqualKeys<ColumnInt64>([] { return ColumnInt64::create(); });
-}
-
-TEST(StablePermutation, UpdatePermutationPreservesEqualDecimalKeys)
-{
-    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<Decimal64>>([] { return ColumnDecimal<Decimal64>::create(0, 4); });
-}
-
-TEST(StablePermutation, UpdatePermutationPreservesEqualDateTime64Keys)
-{
-    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<DateTime64>>([] { return ColumnDecimal<DateTime64>::create(0, 3); });
 }

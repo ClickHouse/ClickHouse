@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <Poco/String.h>
@@ -35,7 +34,7 @@ namespace ErrorCodes
 
 /// Checks if the secret contains only valid base32 characters.
 /// The secret may contain spaces, which are ignored and lower-case characters, which are converted to upper-case.
-static String normalizeOneTimePasswordSecret(const String & secret)
+String normalizeOneTimePasswordSecret(const String & secret)
 {
     static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     static const UInt8 b32_lower_alphabet[] = u8"abcdefghijklmnopqrstuvwxyz";
@@ -127,14 +126,14 @@ String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
 
 struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
 
-static String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
+String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL && USE_LIBCOTP
     int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512
                  : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
-    cotp_error_t error = {};
+    cotp_error_t error;
     auto result = std::unique_ptr<char, CStringDeleter>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
 
     if (result == nullptr || (error != NO_ERROR && error != VALID))
@@ -152,19 +151,15 @@ static String getOneTimePassword(const String & secret [[ maybe_unused ]], const
 static std::optional<Int64> findMatchingTimeStep(std::string_view password, const OneTimePasswordSecret & secret, UInt64 current_time)
 {
     if (password.size() != static_cast<size_t>(secret.params.num_digits)
-     || !std::all_of(password.begin(), password.end(), isNumericASCII))
+     || !std::all_of(password.begin(), password.end(), ::isdigit))
         return {};
 
-    std::optional<Int64> result;
     for (int delta : {0, -1, 1})
     {
-        auto candidate_pass = getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period);
-        bool matched = constantTimeEquals(password, candidate_pass);
-        /// No early return to avoid leaking which window matched
-        if (matched && !result.has_value())
-            result = static_cast<Int64>(current_time / secret.params.period) + delta;
+        if (password == getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period))
+            return static_cast<Int64>(current_time / secret.params.period) + delta;
     }
-    return result;
+    return {};
 }
 
 bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)

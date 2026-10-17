@@ -86,7 +86,6 @@ set(libprotobuf_lite_files
   ${protobuf_source_dir}/src/google/protobuf/any_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/arena.cc
   ${protobuf_source_dir}/src/google/protobuf/arena_align.cc
-  ${protobuf_source_dir}/src/google/protobuf/arena_allocation_policy.cc
   ${protobuf_source_dir}/src/google/protobuf/arenastring.cc
   ${protobuf_source_dir}/src/google/protobuf/arenaz_sampler.cc
   ${protobuf_source_dir}/src/google/protobuf/extension_set.cc
@@ -106,16 +105,12 @@ set(libprotobuf_lite_files
   ${protobuf_source_dir}/src/google/protobuf/repeated_field.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
   ${protobuf_source_dir}/src/google/protobuf/stubs/common.cc
-  ${protobuf_source_dir}/src/google/protobuf/type_id.cc
-  ${protobuf_source_dir}/src/google/protobuf/unknown_field_set_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/wire_format_lite.cc
 )
 
 add_library(_libprotobuf-lite ${libprotobuf_lite_files})
-if (NOT USE_MUSL)
-    target_link_libraries(_libprotobuf-lite pthread)
-endif()
 target_link_libraries(_libprotobuf-lite
+    pthread
     utf8_validity)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf-lite log)
@@ -141,13 +136,11 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/any_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/arena.cc
   ${protobuf_source_dir}/src/google/protobuf/arena_align.cc
-  ${protobuf_source_dir}/src/google/protobuf/arena_allocation_policy.cc
   ${protobuf_source_dir}/src/google/protobuf/arenastring.cc
   ${protobuf_source_dir}/src/google/protobuf/arenaz_sampler.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/importer.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/parser.cc
   ${protobuf_source_dir}/src/google/protobuf/cpp_features.pb.cc
-  ${protobuf_source_dir}/src/google/protobuf/cpp_file_options.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/descriptor.cc
   ${protobuf_source_dir}/src/google/protobuf/descriptor.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/descriptor_database.cc
@@ -182,11 +175,9 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/json/internal/writer.cc
   ${protobuf_source_dir}/src/google/protobuf/json/internal/zero_copy_buffered_stream.cc
   ${protobuf_source_dir}/src/google/protobuf/json/json.cc
-  ${protobuf_source_dir}/src/google/protobuf/json_enumvalue_options.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/map.cc
   ${protobuf_source_dir}/src/google/protobuf/map_field.cc
   ${protobuf_source_dir}/src/google/protobuf/micro_string.cc
-  ${protobuf_source_dir}/src/google/protobuf/naming_style.cc
   ${protobuf_source_dir}/src/google/protobuf/message.cc
   ${protobuf_source_dir}/src/google/protobuf/message_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/parse_context.cc
@@ -197,13 +188,10 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/repeated_field.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
   ${protobuf_source_dir}/src/google/protobuf/service.cc
-  ${protobuf_source_dir}/src/google/protobuf/symbol.cc
   ${protobuf_source_dir}/src/google/protobuf/symbol_checker.cc
   ${protobuf_source_dir}/src/google/protobuf/stubs/common.cc
   ${protobuf_source_dir}/src/google/protobuf/text_format.cc
-  ${protobuf_source_dir}/src/google/protobuf/type_id.cc
   ${protobuf_source_dir}/src/google/protobuf/unknown_field_set.cc
-  ${protobuf_source_dir}/src/google/protobuf/unknown_field_set_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/util/delimited_message_util.cc
   ${protobuf_source_dir}/src/google/protobuf/util/field_comparator.cc
   ${protobuf_source_dir}/src/google/protobuf/util/field_mask_util.cc
@@ -218,10 +206,8 @@ add_library(_libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
 if (ENABLE_FUZZING)
     target_compile_options(_libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
-if (NOT USE_MUSL)
-    target_link_libraries(_libprotobuf pthread)
-endif()
 target_link_libraries(_libprotobuf
+    pthread
     ch_contrib::zlib
     utf8_validity
     ${protobuf_absl_used_targets})
@@ -249,7 +235,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/primitive_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/string_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/string_view_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_layout.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/file.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/helpers.cc
@@ -258,7 +243,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/parse_function_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/service.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/tracker.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/c_sharp_features.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_doc_comment.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum_field.cc
@@ -385,7 +369,6 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/message/map_sorter.c
   ${protobuf_source_dir}/upb/message/merge.c
   ${protobuf_source_dir}/upb/message/message.c
-  ${protobuf_source_dir}/upb/message/unknown_fields.c
   ${protobuf_source_dir}/upb/message/promote.c
   ${protobuf_source_dir}/upb/mini_descriptor/build_enum.c
   ${protobuf_source_dir}/upb/mini_descriptor/decode.c
@@ -397,9 +380,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/mini_table/generated_registry.c
   ${protobuf_source_dir}/upb/mini_table/internal/message.c
   ${protobuf_source_dir}/upb/mini_table/message.c
-  ${protobuf_source_dir}/upb/port/port.c
   ${protobuf_source_dir}/upb/reflection/cmake/google/protobuf/descriptor.upb_minitable.c
-  ${protobuf_source_dir}/upb/reflection/cmake/google/protobuf/json_enumvalue_options.upb_minitable.c
   ${protobuf_source_dir}/upb/reflection/def_pool.c
   ${protobuf_source_dir}/upb/reflection/def_type.c
   ${protobuf_source_dir}/upb/reflection/desc_state.c
@@ -420,9 +401,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/wire/decode.c
   ${protobuf_source_dir}/upb/wire/encode.c
   ${protobuf_source_dir}/upb/wire/eps_copy_input_stream.c
-  ${protobuf_source_dir}/upb/wire/internal/back_alloc.c
   ${protobuf_source_dir}/upb/wire/internal/decoder.c
-  ${protobuf_source_dir}/upb/wire/internal/encoder.c
   ${protobuf_source_dir}/upb/wire/reader.c
   ${protobuf_source_dir}/upb_generator/common.cc
   ${protobuf_source_dir}/upb_generator/common/names.cc
@@ -445,11 +424,9 @@ add_library(protobuf::libprotoc ALIAS _libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 add_executable(protoc ${protoc_files})
-target_link_libraries(protoc _libprotoc _libprotobuf)
-if (NOT USE_MUSL)
-    target_link_libraries(protoc pthread)
-endif()
-target_link_libraries(protoc
+target_link_libraries(protoc _libprotoc
+    _libprotobuf
+    pthread
     utf8_validity
     ${protobuf_absl_used_targets})
 target_include_directories(protoc PRIVATE
@@ -469,7 +446,7 @@ if (ENABLE_FUZZING)
 endif()
 
 add_native_target (protoc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 endif()
 

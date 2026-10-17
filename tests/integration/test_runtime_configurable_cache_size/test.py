@@ -117,13 +117,16 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
 
     node.query("SYSTEM RELOAD CONFIG")
 
-    # A query cache with a zero limit can not store entries, so the existing entries are dropped on reload.
     res = node.query(
         "SELECT count(*) FROM system.query_cache",
     )
-    assert res == "0\n"
+    assert res == "1\n"
+    # "Why not 0?", I hear you say. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
+    # Not a real issue, can be changed later, at least there's a test now.
 
-    # The 'SELECT 2' result cannot be added according to the config.
+    # The next SELECT will find a single stale entry which is one entry too much according to the new config.
+    # This triggers the eviction of all stale entries, in this case the 'SELECT 1' result.
+    # Then, it tries to insert the 'SELECT 2' result but it also cannot be added according to the config.
     node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     res = node.query(
         "SELECT count(*) FROM system.query_cache",
@@ -151,44 +154,3 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
         "SELECT count(*) FROM system.query_cache",
     )
     assert res == "1\n"
-
-
-def test_cache_size_capped_by_ram_ratio(start_cluster):
-    """
-    Test that cache sizes are capped by `cache_size_to_ram_max_ratio * RAM` when config
-    is reloaded with oversized values.
-    """
-    oversized_cache_size = 1098437885952000  # 999 TiB - much larger than any real machine's RAM
-
-    node.query("SYSTEM CLEAR MARK CACHE")
-    node.query("SYSTEM CLEAR QUERY CACHE")
-
-    node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "oversized_caches.xml"),
-        "/etc/clickhouse-server/config.d/oversized_caches.xml",
-    )
-    node.query("SYSTEM RELOAD CONFIG")
-
-    try:
-        mark_cache_size = int(
-            node.query(
-                "SELECT toUInt64(value) FROM system.server_settings WHERE name = 'mark_cache_size'"
-            ).strip()
-        )
-        assert mark_cache_size < oversized_cache_size, (
-            f"mark_cache_size was not capped: got {mark_cache_size}, expected < {oversized_cache_size}"
-        )
-
-        query_cache_size = int(
-            node.query(
-                "SELECT toUInt64(value) FROM system.server_settings WHERE name = 'query_cache.max_size_in_bytes'"
-            ).strip()
-        )
-        assert query_cache_size < oversized_cache_size, (
-            f"query_cache.max_size_in_bytes was not capped: got {query_cache_size}, expected < {oversized_cache_size}"
-        )
-    finally:
-        node.exec_in_container(
-            ["rm", "-f", "/etc/clickhouse-server/config.d/oversized_caches.xml"]
-        )
-        node.query("SYSTEM RELOAD CONFIG")

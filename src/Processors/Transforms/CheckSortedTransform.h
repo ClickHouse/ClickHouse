@@ -7,7 +7,7 @@ namespace DB
 {
 /// Streams checks that flow of blocks is sorted in the sort_description order
 /// Othrewise throws exception in readImpl function.
-class CheckSortedTransform final : public ISimpleTransform
+class CheckSortedTransform : public ISimpleTransform
 {
 public:
     CheckSortedTransform(SharedHeader header, const SortDescription & sort_description);

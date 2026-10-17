@@ -1,4 +1,3 @@
--- Tags: no-s3-storage, no-azure-blob-storage
 -- Test for issue #96068
 
 SET use_statistics = 1;
@@ -18,7 +17,7 @@ CREATE TABLE tab
 ) Engine = MergeTree() ORDER BY tuple() PARTITION BY u64_minmax
 SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
 
--- Insert 99 parts (one per partition)
+-- Insert looooots of parts (1000)
 INSERT INTO tab
 SELECT number % 1000,
        number % 1000,
@@ -32,7 +31,7 @@ FROM system.numbers LIMIT 10000;
 SELECT * FROM tab
 WHERE u64_countmin > 3500 and u64_countmin < 3600
 FORMAT NULL
-SETTINGS log_comment = '03904_empty';
+SETTINGS use_statistics_cache = 0, log_comment = '03904_empty';
 
 SYSTEM FLUSH LOGS query_log;
 

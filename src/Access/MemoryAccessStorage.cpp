@@ -115,13 +115,13 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
     {
-        chassert(replace_if_exists);
+        assert(replace_if_exists);
         removeNoLock(id_by_name, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
     }
 
     if (id_collision)
     {
-        chassert(replace_if_exists);
+        assert(replace_if_exists);
         auto & existing_entry = it_by_id->second;
         if (existing_entry.entity->getType() == new_entity->getType())
         {
@@ -131,7 +131,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
                 {
                     entries_by_name.erase(existing_entry.entity->getName());
                     [[maybe_unused]] bool inserted = entries_by_name.emplace(new_entity->getName(), &existing_entry).second;
-                    chassert(inserted);
+                    assert(inserted);
                 }
                 existing_entry.entity = new_entity;
                 if (notify)

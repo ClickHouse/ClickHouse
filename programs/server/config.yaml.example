@@ -85,10 +85,6 @@ postgresql_port: 9005
 # ClickHouse will extract information about proxy-forwarded client address from the header.
 # tcp_with_proxy_port: 9011
 
-# Set to false to reject the native protocol's interserver mode on tcp_with_proxy_port,
-# for example when that port is exposed to untrusted clients through a proxy.
-# tcp_with_proxy_allow_interserver_mode: false
-
 # Port for communication between replicas. Used for data exchange.
 # It provides low-level data access between servers.
 # This port should not be accessible from untrusted networks.
@@ -145,7 +141,7 @@ interserver_http_port: 9009
 # max_connections: 4096
 
 # For 'Connection: keep-alive' in HTTP 1.1
-keep_alive_timeout: 30
+keep_alive_timeout: 10
 
 # gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
 # grpc_port: 9100
@@ -510,15 +506,6 @@ mlock_executable: true
 # Reallocate memory for machine code ("text") using huge pages. Highly experimental.
 remap_executable: false
 
-# Allow the server to make only the system calls it uses (a seccomp filter, Linux only).
-# With "trap", a system call outside the policy terminates the server with SIGSYS, writing the system call number
-# and a stack trace to the log. Other values: "kill", "errno", "log" (only record, the default without this line), "disabled".
-# If the filter cannot be installed, for example because a container runtime refuses the seccomp system call,
-# the server does not start: set it to "log" or "disabled" in that case.
-# The policy is implemented for x86_64 and aarch64 only. On other architectures the server only sets
-# PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
-seccomp: trap
-
 # Uncomment below in order to use JDBC table engine and function.
 # To install and run JDBC bridge in background:
 # * [Debian/Ubuntu]
@@ -594,7 +581,7 @@ remote_servers:
 # (forgetting to do so is a common source of error).
 
 # If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
-# The path to the file with substitutions is specified in the 'include_from' element. There is no default path.
+# By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
 # Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
 
 # ZooKeeper is used to store metadata about replicas, when using Replicated tables.
@@ -676,38 +663,13 @@ default_session_timeout: 60
 #     events: true
 #     asynchronous_metrics: true
 
-# Create all_... union tables next to the system log tables:
-# system.all_query_log for system.query_log, system.all_text_log for system.text_log, and so on.
-# Such a table is a union of the corresponding log table, its rotated versions
-# (query_log_0, query_log_1, ...) and/or the same tables across all replicas of a cluster,
-# and allows querying them all at once without remembering constructs like
-# clusterAllReplicas(default, merge(system, '^query_log')).
-# The option applies to all system log tables at once.
-# The tables have no state of their own, so it is safe to drop them at any time:
-# they will be recreated at the next flush of the corresponding log.
-# A pre-existing table under one of these names that was not created by this option
-# is never replaced: it is left intact and a warning is written to the log;
-# the union table is created at the next flush after the table is dropped or renamed.
-create_union_system_log_tables:
-    # Select from the log table and its rotated versions with the merge table function.
-    merge_rotated_tables: true
-
-    # Select from the corresponding tables across all replicas of the specified cluster
-    # with the clusterAllReplicas table function (with SETTINGS skip_unavailable_shards = 1,
-    # so that unavailable replicas do not fail the queries).
-    # Note: the definitions of the all_... tables will reference the cluster,
-    # so the cluster has to exist for the tables to be loaded. If you remove the cluster
-    # from the configuration, also drop the all_... tables: they will be recreated
-    # according to the new configuration at the next flush.
-    # cluster: default
-
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:
     # What table to insert data. If table is not exist, it will be created.
     # When query log structure is changed after system update,
     # then old table will be renamed and new table will be created automatically.
-    # database: system
-    # table: query_log
+    database: system
+    table: query_log
 
     # PARTITION BY expr: https://clickhouse.com/docs/table_engines/mergetree-family/custom_partitioning_key/
     # Example:
@@ -715,7 +677,7 @@ query_log:
     # toMonday(event_date)
     # toYYYYMM(event_date)
     # toStartOfHour(event_time)
-    # partition_by: toYYYYMM(event_date)
+    partition_by: toYYYYMM(event_date)
 
     # Table TTL specification: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
     # Example:
@@ -729,39 +691,39 @@ query_log:
     # Example: engine: 'ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024'
 
     # Interval of flushing data.
-    # flush_interval_milliseconds: 7500
+    flush_interval_milliseconds: 7500
 
 # Trace log. Stores stack traces collected by query profilers.
 # See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings.
 trace_log:
-    # database: system
-    # table: trace_log
-    # partition_by: toYYYYMM(event_date)
-    # flush_interval_milliseconds: 7500
+    database: system
+    table: trace_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Query thread log. Has information about all threads participated in query execution.
 # Used only for queries with setting log_query_threads = 1.
 query_thread_log:
-    # database: system
-    # table: query_thread_log
-    # partition_by: toYYYYMM(event_date)
-    # flush_interval_milliseconds: 7500
+    database: system
+    table: query_thread_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Query views log. Has information about all dependent views associated with a query.
 # Used only for queries with setting log_query_views = 1.
 query_views_log:
-    # database: system
-    # table: query_views_log
-    # partition_by: toYYYYMM(event_date)
-    # flush_interval_milliseconds: 7500
+    database: system
+    table: query_views_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Uncomment if use part log.
 # Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
 part_log:
-    # database: system
-    # table: part_log
-    # partition_by: toYYYYMM(event_date)
-    # flush_interval_milliseconds: 7500
+    database: system
+    table: part_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Uncomment to write text log into table.
 # Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -774,65 +736,61 @@ part_log:
 
 # Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
 metric_log:
-    # database: system
-    # table: metric_log
-    # flush_interval_milliseconds: 7500
-    # collect_interval_milliseconds: 1000
+    database: system
+    table: metric_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
 
 # Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
 error_log:
-    # database: system
-    # table: error_log
-    # flush_interval_milliseconds: 7500
-    # collect_interval_milliseconds: 1000
+    database: system
+    table: error_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
 
 # Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
 query_metric_log:
-    # database: system
-    # table: query_metric_log
-    # flush_interval_milliseconds: 7500
-    # collect_interval_milliseconds: 1000
+    database: system
+    table: query_metric_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
 
 # Asynchronous metric log contains values of metrics from
 # system.asynchronous_metrics.
 asynchronous_metric_log:
-    # database: system
-    # table: asynchronous_metric_log
+    database: system
+    table: asynchronous_metric_log
 
     # Asynchronous metrics are updated once a minute, so there is
     # no need to flush more often.
-    # flush_interval_milliseconds: 60000
+    flush_interval_milliseconds: 60000
 
 # OpenTelemetry log contains OpenTelemetry trace spans.
 opentelemetry_span_log:
-    # partition_by: toYYYYMM(event_date)
-    # order_by: event_date, finish_time_us
-    # database: system
-    # table: opentelemetry_span_log
-    # flush_interval_milliseconds: 7500
+
+    # The default table creation code is insufficient, this <engine> spec
+    # is a workaround. There is no 'event_time' for this log, but two times,
+    # start and finish. It is sorted by finish time, to avoid inserting
+    # data too far away in the past (probably we can sometimes insert a span
+    # that is seconds earlier than the last span in the table, due to a race
+    # between several spans inserted in parallel). This gives the spans a
+    # global order that we can use to e.g. retry insertion into some external
+    # system.
+    engine: |-
+        engine MergeTree
+             partition by toYYYYMM(finish_date)
+             order by (finish_date, finish_time_us, trace_id)
+    database: system
+    table: opentelemetry_span_log
+    flush_interval_milliseconds: 7500
 
 # Crash log. Stores stack traces for fatal errors.
 # This table is normally empty.
 crash_log:
-    # database: system
-    # table: crash_log
-    # partition_by: ''
-    # flush_interval_milliseconds: 1000
-
-# Global settings for system tables
-# system_tables:
-#     ttl: ''
-#     partition_by: ''
-#     order_by: ''
-#     storage_policy: ''
-#     settings: ''
-#
-#     flush_interval_milliseconds: ''
-#     max_size_rows: ''
-#     reserved_size_rows: ''
-#     buffer_size_rows_flush_threshold: ''
-#     flush_on_crash: ''
-#     skip_alias_columns: ''
+    database: system
+    table: crash_log
+    partition_by: ''
+    flush_interval_milliseconds: 1000
 
 # top_level_domains_path: /var/lib/clickhouse/top_level_domains/
 # Custom TLD lists.
@@ -848,20 +806,17 @@ top_level_domains_lists: ''
 # https://clickhouse.com/docs/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
-# By default the codec is chosen by part size: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
-# Uncomment if you want to compress large parts even better than the ZSTD(3) default.
+# Uncomment if you want data to be compressed 30-100% better.
 # Don't do that if you just started using ClickHouse.
-# Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
 
 # compression:
-#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, the size-aware built-in default is used: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
+#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used.
 #     case:
 #         Conditions. All must be satisfied. Some conditions may be omitted.
 #         # min_part_size: 10000000000    # Min part size in bytes.
 #         # min_part_size_ratio: 0.01     # Min size of part relative to whole table size.
-#         # What compression method to use. Use a level above the ZSTD(3) default so this case actually improves compression for large parts.
+#         # What compression method to use.
 #         method: zstd
-#         level: 10
 
 # Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
 # Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
@@ -949,23 +904,28 @@ query_masking_rules:
 # status - use with static type, response status code
 # content_type - use with static type, response content-type
 # response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
-# defaults - include an empty string value at the bottom to preserve default handlers (e.g. /ping, /health)
 
 # http_handlers:
-#     rule:
-#       - url: /
+#     - rule:
+#         url: /
 #         methods: POST,GET
 #         headers:
 #           pragma: no-cache
 #         handler:
 #           type: dynamic_query_handler
 #           query_param_name: query
-#       - url: /predefined_query
+#     - rule:
+#         url: /predefined_query
 #         methods: POST,GET
 #         handler:
 #           type: predefined_query_handler
 #           query: 'SELECT * FROM system.settings'
-#     defaults: ""
+#     - rule:
+#         handler:
+#           type: static
+#           status: 200
+#           content_type: 'text/plain; charset=UTF-8'
+#           response_content: config://http_server_default_response
 
 send_crash_reports:
     enabled: true
