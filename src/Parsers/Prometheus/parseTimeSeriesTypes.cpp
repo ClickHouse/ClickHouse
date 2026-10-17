@@ -11,6 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -322,6 +324,29 @@ Decimal64 parseTimeSeriesDuration(const Field & field, UInt32 duration_scale)
 Decimal64 parseTimeSeriesDuration(const Field & field, const DataTypePtr & field_data_type, UInt32 duration_scale)
 {
     return getFromField<Decimal64>(field, field_data_type, duration_scale);
+}
+
+std::optional<Decimal64> convertSecondsSettingToTimeSeriesDuration(std::string_view setting_name, Float64 seconds, UInt32 duration_scale)
+{
+    /// Checked before the truncation to microseconds, so a tiny negative value is rejected too.
+    if (!(seconds >= 0))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} must not be negative, got {}", setting_name, seconds);
+    if (seconds * 1000000 >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is too big: {}", setting_name, seconds);
+
+    auto microseconds = static_cast<Int64>(seconds * 1000000);
+    /// A value like 4.1 is stored a bit below 4.1, so the product can be truncated one microsecond low.
+    if (static_cast<Float64>(microseconds + 1) / 1000000 == seconds)
+        ++microseconds;
+    if (microseconds == 0)
+        return {};
+
+    constexpr UInt32 microseconds_scale = 6;
+    if (duration_scale >= microseconds_scale)
+        return getFromDecimal<Decimal64>(microseconds, microseconds_scale, duration_scale);
+
+    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(microseconds_scale - duration_scale);
+    return Decimal64{microseconds / divisor + (microseconds % divisor != 0)};
 }
 
 }
