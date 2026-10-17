@@ -1,5 +1,7 @@
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
+-- The plan must not depend on the randomized TopN dynamic filtering.
+SET use_top_k_dynamic_filtering = 0;
 
 WITH t AS MATERIALIZED (SELECT abs(rand(42)) >= 0 AS x)
 SELECT x FROM t UNION ALL SELECT x FROM t UNION ALL SELECT x FROM t;

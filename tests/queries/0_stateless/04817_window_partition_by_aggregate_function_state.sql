@@ -85,8 +85,10 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn) S
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY CAST(st, 'Dynamic')) FROM t_wpb_state) SETTINGS allow_suspicious_types_in_group_by = 1;
 DROP TABLE IF EXISTS t_wpb_var;
-CREATE TABLE t_wpb_var (v Variant(AggregateFunction(uniq, UInt64), String), val UInt64) ENGINE = Memory;
-INSERT INTO t_wpb_var SELECT uniqState(number)::Variant(AggregateFunction(uniq, UInt64), String), number FROM numbers(3) GROUP BY number;
+-- The state version is spelled out: a conversion to Variant matches the variants by the exact type,
+-- and a fresh `uniqState` carries state version 1 in its type.
+CREATE TABLE t_wpb_var (v Variant(AggregateFunction(1, uniq, UInt64), String), val UInt64) ENGINE = Memory;
+INSERT INTO t_wpb_var SELECT uniqState(number)::Variant(AggregateFunction(1, uniq, UInt64), String), number FROM numbers(3) GROUP BY number;
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY v) FROM t_wpb_var) SETTINGS allow_suspicious_types_in_group_by = 1; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE IF EXISTS t_wpb_saf;

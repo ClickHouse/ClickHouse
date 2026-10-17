@@ -52,6 +52,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
@@ -59,6 +60,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Common/quoteString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
@@ -204,6 +206,7 @@ namespace
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
@@ -382,6 +385,9 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     if (include_connection_info && object_info.relative_path_with_metadata.read_source_index)
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
+    if (include_connection_info)
+        result = getArchiveEntryKey(result, object_info.archive_entry_index);
+
     return result;
 }
 
@@ -492,7 +498,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -500,7 +506,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
 
@@ -685,7 +691,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             /// FILE_DOESNT_EXIST.
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     keys, paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -693,7 +699,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
         else
@@ -1004,7 +1010,14 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
+        /// from the rows of all files the query reads: a row group can end up without a returned row
+        /// only because the threshold had excluded it. The key covers just the predicate, so such an
+        /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
+        /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
+        /// file that does not store the sort column) is read as without TopN.
+        else if (format_filter_info->condition_hash
+            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -1064,7 +1077,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag
+            && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
@@ -1143,6 +1156,44 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    /// TopN dynamic filtering compares the values the reader returns against a threshold made
+    /// from the values the query sorts by, so it may only be applied to a file where the two are
+    /// the same. They are not where a data lake rewrites the file's columns after the reader:
+    /// schema evolution renames and casts them (and a column of the file may carry the name
+    /// another column has in the current schema), and an identity-partitioned column takes the
+    /// value the manifest defines for it, whatever the file stores. A file with an initial schema
+    /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+    /// read under the current names, and deletes only remove rows after the reader.
+    auto is_top_k_filter_allowed = [&](const ObjectInfoPtr & object) -> bool
+    {
+        if (!format_filter_info || !format_filter_info->top_k_filter)
+            return false;
+        /// Only the Parquet reader consumes the filter, and a data lake table configured as `Parquet`
+        /// can also contain files of other formats (e.g. ORC in Iceberg). Such a file is read as
+        /// without TopN, so it keeps using the query condition cache.
+        if (!boost::iequals(object->getFileFormat().value_or(configuration->format), "Parquet"))
+            return false;
+        if (object->data_lake_metadata && object->data_lake_metadata->schema_transform)
+            return false;
+        if (configuration->getSchemaTransformer(context_, object))
+            return false;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object.get()))
+        {
+            const auto & sort_column = format_filter_info->top_k_filter->column_name;
+            for (const auto & column : iceberg_info->info.identity_partition_columns)
+                if (column.first == sort_column)
+                    return false;
+        }
+#endif
+        return true;
+    };
+
+    /// Entries are only written by reads of files without TopN dynamic filtering (see `generate`), so
+    /// they apply to a file read with it as well. Such a file consults them only while
+    /// `use_query_condition_cache_for_top_k` is on: that setting makes TopK reads neither consult nor
+    /// populate the cache. A file that does not apply the filter is read as without TopN.
+    const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
@@ -1178,7 +1229,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && object_info->getObjectMetadata()->is_size_known)
             continue;
 
-        if (query_condition_cache && !object_info->file_bucket_info)
+        if (query_condition_cache && !object_info->file_bucket_info
+            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info)))
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
@@ -1219,9 +1271,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         break;
     }
 
+    std::unique_ptr<ReadBuffer> read_buf; /// Destroyed last: `builder` and `source` hold the input format reading it.
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
-    std::unique_ptr<ReadBuffer> read_buf;
 
     Names row_lineage_columns;
 
@@ -1310,8 +1362,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-            const auto & archive_reader = object_info_in_archive->archive_reader;
-            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            read_buf = object_info_in_archive->readFile();
         }
         else
         {
@@ -1351,6 +1402,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
 #endif
+
+        const bool top_k_filter_allowed = is_top_k_filter_allowed(object_info);
 
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
@@ -1446,23 +1499,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
                     result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    if (top_k_filter_allowed)
+                        result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
                 }
             }
+
+            /// There is no shared mapper when the table's configured format is not Parquet, but its
+            /// Parquet data files still have to be resolved by field id.
+            ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
+            if (!column_mapper)
+                column_mapper = configuration->getColumnMapperForObject(object_info);
 
             if (!format_supports_prewhere)
                 return std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     nullptr, nullptr);
 
-            if (filters_substituted)
-                return std::make_shared<FormatFilterInfo>(
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
+                || column_mapper != format_filter_info->column_mapper)
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
-                    format_filter_info->column_mapper,
+                    column_mapper,
                     row_level_filter, prewhere_info);
+                if (top_k_filter_allowed)
+                    result->top_k_filter = format_filter_info->top_k_filter;
+                return result;
+            }
 
             return format_filter_info;
         }();
@@ -1531,7 +1598,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
-                object_with_metadata->relative_path = object_info->getPath();
+                object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,
@@ -1834,6 +1901,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
+    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
+        use_distributed_cache = false;
+    }
+
     const auto & object_size = object_info.metadata->size_bytes;
     const bool is_size_known = object_info.metadata->is_size_known;
 
@@ -1908,6 +1981,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
+    /// The distributed cache keys on the etag whether or not this read validates it.
+    if (use_distributed_cache)
+        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -1950,7 +2026,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// Distributed cache
     if (use_distributed_cache)
-        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true);
+        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true, /* include_etag_in_cache_key */ true);
 
     /// Page cache
     if (use_page_cache)
@@ -2047,7 +2123,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
-            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(getContext()));
         }
     }
     else
@@ -2389,6 +2465,28 @@ static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
     return object_metadata->size_bytes;
 }
 
+/// Returns the enumerator at entry `position` of the archive, which must be named `name`.
+static std::unique_ptr<IArchiveReader::FileEnumerator> locateArchiveEntry(
+    IArchiveReader & archive_reader, const std::string & name, size_t position)
+{
+    auto file_enumerator = archive_reader.firstFile();
+    for (size_t i = 0; file_enumerator && i < position; ++i)
+    {
+        if (!file_enumerator->nextFile())
+            file_enumerator.reset();
+    }
+
+    if (!file_enumerator || file_enumerator->getFileName() != name)
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+            "Couldn't unpack archive {}: file {} was not found in archive at position {}",
+            archive_reader.getPath(),
+            quoteString(name),
+            position);
+
+    return file_enumerator;
+}
+
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -2417,13 +2515,18 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!path_in_archive.has_value())
         return object_info;
 
-    return createObjectInfoInArchive(path_to_archive, path_in_archive.value(), object_info->relative_path_with_metadata.read_source_index);
+    return createObjectInfoInArchive(
+        path_to_archive,
+        path_in_archive.value(),
+        object_info->relative_path_with_metadata.read_source_index,
+        object_info->archive_entry_index);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
     const std::string & path_to_archive,
     const std::string & path_in_archive,
-    std::optional<size_t> read_source_index)
+    std::optional<size_t> read_source_index,
+    std::optional<size_t> archive_entry_index)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
     archive_object->relative_path_with_metadata.read_source_index = read_source_index;
@@ -2450,8 +2553,12 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         }
     }
 
+    auto file_info = archive_entry_index
+        ? IArchiveReader::FileInfo(locateArchiveEntry(*archive_reader, path_in_archive, *archive_entry_index)->getFileInfo())
+        : archive_reader->getFileInfo(path_in_archive);
+
     return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
-        archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
+        archive_object, path_in_archive, archive_reader, std::move(file_info), archive_entry_index);
 }
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
@@ -2470,10 +2577,19 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
     ObjectInfoPtr archive_object_,
     const std::string & path_in_archive_,
     std::shared_ptr<IArchiveReader> archive_reader_,
-    IArchiveReader::FileInfo && file_info_)
+    IArchiveReader::FileInfo && file_info_,
+    std::optional<size_t> archive_entry_index_)
     : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
 {
     relative_path_with_metadata.read_source_index = archive_object->relative_path_with_metadata.read_source_index;
+    archive_entry_index = archive_entry_index_;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::readFile() const
+{
+    if (archive_entry_index)
+        return archive_reader->readFile(locateArchiveEntry(*archive_reader, path_in_archive, *archive_entry_index));
+    return archive_reader->readFile(path_in_archive, /*throw_on_not_found=*/true);
 }
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
@@ -2511,6 +2627,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 {
     std::unique_lock lock{next_mutex};
     IArchiveReader::FileInfo current_file_info{};
+    std::optional<size_t> archive_entry_index;
     while (true)
     {
         if (filter)
@@ -2529,6 +2646,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
+                entry_positions.reset();
                 if (!file_enumerator)
                     continue;
             }
@@ -2539,6 +2657,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             }
 
             path_in_archive = file_enumerator->getFileName();
+            archive_entry_index = entry_positions.onEntry(path_in_archive);
             LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
@@ -2561,8 +2680,8 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
         break;
     }
 
-    auto object_in_archive
-        = std::make_shared<ObjectInfoInArchive>(archive_object, path_in_archive, archive_reader, std::move(current_file_info));
+    auto object_in_archive = std::make_shared<ObjectInfoInArchive>(
+        archive_object, path_in_archive, archive_reader, std::move(current_file_info), archive_entry_index);
 
     if (read_keys != nullptr)
         read_keys->push_back(object_in_archive);

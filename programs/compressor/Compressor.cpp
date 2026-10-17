@@ -16,9 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -163,13 +161,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         CompressionCodecPtr codec;
         if (!codecs.empty())
-        {
-            ParserCodec codec_parser;
-
-            std::string codecs_line = boost::algorithm::join(codecs, ",");
-            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            codec = CompressionCodecFactory::instance().get(ast, nullptr);
-        }
+            codec = CompressionCodecFactory::instance().get(boost::algorithm::join(codecs, ","));
         else
             codec = CompressionCodecFactory::instance().get(method_family, level);
 
