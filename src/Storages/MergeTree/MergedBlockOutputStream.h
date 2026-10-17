@@ -29,7 +29,8 @@ public:
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        PlannedMapKeyColumnsKeys map_key_columns_keys = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

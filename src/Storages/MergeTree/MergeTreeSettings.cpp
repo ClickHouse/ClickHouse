@@ -433,6 +433,7 @@ Possible values:
 
 - basic — Use the standard serialization for `Map`.
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- with_key_columns — Store each distinct key of a `Map(String, V)` in independent streams (`m.keys` for the sorted key set, `m.values.<key>` for the values and `m.exists.<key>` for the presence bitmap). Requires `String` keys. Improves reading individual keys from the Map. Experimental: enabling it requires `allow_experimental_map_key_columns = 1`. It changes observable Map semantics: the keys of every row are read back sorted (so `mapKeys(m)[1]` and other order-sensitive expressions see the sorted order), and duplicate or empty keys are rejected on insert. Sorting and partition keys, skip indices and projections see the sorted Map, while `DEFAULT`/`MATERIALIZED` expressions and `UPDATE` expressions are computed from the Map in its input order. Only `map_serialization_version` enables it (zero-level parts use it too); `map_serialization_version_for_zero_level_parts` cannot be set to `with_key_columns` on its own. Incompatible with `basic` / `with_buckets` parts.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
 )", 0, \
@@ -442,8 +443,17 @@ This setting allows to specify a different serialization version of
 `Map` columns for zero level parts that are created during inserts.
 It can be useful to keep `basic` serialization for zero level parts to avoid
 performance degradation during inserts, while using `with_buckets` for merged parts.
+Has no effect on `with_key_columns`, which governs zero-level parts as well
+(`map_serialization_version = 'with_key_columns'` requires this setting to stay at its default).
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version for zero-level parts"}) \
+    DECLARE(UInt64, max_map_key_columns_keys, 10000, R"(
+The maximum number of distinct keys of one `Map` in a data part with `map_serialization_version = 'with_key_columns'`.
+Every key is stored in its own streams (and files in Wide parts), so this bounds the number of streams and
+the memory needed to write and read a part. Inserts, merges and mutations that would produce a part with more
+keys fail with `LIMIT_EXCEEDED`. 0 means unlimited.
+)", 0, \
+        {"26.10", 10000, 10000, "New setting to limit the number of keys of a with_key_columns Map in a data part"}) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
 The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
 The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).

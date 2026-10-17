@@ -210,7 +210,7 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
     for (const auto & variant : variants)
     {
         if (settings.propagate_types_serialization_versions_to_nested_types)
-            serializations.push_back(variant->getSerialization(settings));
+            serializations.push_back(variant->getSerialization(settings.withoutMapKeyColumns()));
         else
             serializations.push_back(variant->getDefaultSerialization());
 

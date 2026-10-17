@@ -85,6 +85,11 @@ private:
     };
 
     FileStreams streams;
+    /// Read order of `columns_to_read`: presence-only (`m.keys`) subcolumns last,
+    /// so their reads see the part's key set already discovered by value streams.
+    std::vector<size_t> read_order;
+    /// See the constructor.
+    std::vector<bool> read_without_substreams_cache;
 
     struct StreamInfo
     {
@@ -168,7 +173,8 @@ private:
         bool continue_reading,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        bool use_substreams_cache = true);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(

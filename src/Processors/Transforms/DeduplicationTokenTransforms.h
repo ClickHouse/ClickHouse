@@ -49,15 +49,20 @@ public:
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 class SelectPartitionTransform final : public ISimpleTransform
 {
     std::string partition_id;
     StorageMetadataPtr metadata_snapshot;
+    /// Settings of the target `MergeTree` table, nullptr for other engines.
+    MergeTreeSettingsPtr storage_settings;
     ContextPtr context;
 
 public:
-    SelectPartitionTransform(std::string partition_id_, StorageMetadataPtr metadata_snapshot_, ContextPtr contex_, SharedHeader header_);
+    SelectPartitionTransform(
+        std::string partition_id_, StorageMetadataPtr metadata_snapshot_, MergeTreeSettingsPtr storage_settings_, ContextPtr contex_, SharedHeader header_);
 
     String getName() const override { return "SelectPartitionTransform"; }
 

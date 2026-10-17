@@ -42,6 +42,10 @@ struct SerializationInfoSettings
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
     void tryDowngradeToBasic();
 
+    /// `with_key_columns` Maps are supported at the top level and inside `Array`/`Tuple` only.
+    /// Other types propagating the settings to their children use the basic Map layout there.
+    SerializationInfoSettings withoutMapKeyColumns() const;
+
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
     bool canUseSparseSerialization(const IDataType & type) const;
