@@ -1,0 +1,12 @@
+-- baseline: the policy confines the user to its single tenant (1)
+1
+-- with a forged client scalar named as the policy subquery hash, the policy still holds (1)
+1
+-- and the visible tenant is unchanged (2)
+2
+-- a client scalar is still usable through an explicit __getScalar reference (42)
+42
+-- a scalar subquery shipped to the shards still resolves there (8 = 4 tenants x 2 shards)
+8
+-- and the shards consumed it through an explicit __getScalar reference (1)
+1
