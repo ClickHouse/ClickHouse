@@ -21,9 +21,8 @@ public:
         std::ostream & out,
         std::ostream & err);
 
-    std::string getJWT() override;
-
 private:
+    std::string fetchJWT() override;
     std::string getAudience() const override;
     bool preferCompleteVerificationURI() const override;
 

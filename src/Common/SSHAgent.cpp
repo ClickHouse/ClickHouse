@@ -9,6 +9,8 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Poco/Net/Socket.h>
+
 #include <cstdlib>
 
 namespace DB
@@ -115,6 +117,14 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
     size_t pos = 0;
     while (pos < size)
     {
+        /// The agent may keep a request pending indefinitely: wait in short steps, so that cancellation and the
+        /// deadline of a thread that has a limit are noticed.
+        if (SSHAgentWaitLimit::isSet())
+        {
+            while (!socket.poll(Poco::Timespan(0, 100 * 1000), Poco::Net::Socket::SELECT_READ))
+                SSHAgentWaitLimit::checkNotExpired();
+        }
+
         int received = socket.receiveBytes(data + pos, static_cast<int>(size - pos));
         if (received <= 0)
             throw Exception(ErrorCodes::SSH_AGENT_ERROR, "Cannot read a response from the ssh-agent: it closed the connection");
@@ -265,6 +275,42 @@ String SSHAgent::signString(const String & key_blob, std::string_view data, std:
     appendString(signature_blob, signature);
 
     return armor(signature_blob);
+}
+
+
+namespace
+{
+thread_local SSHAgentWaitLimit * current_wait_limit = nullptr;
+}
+
+SSHAgentWaitLimit::SSHAgentWaitLimit(std::function<bool()> cancelled_, std::chrono::milliseconds timeout_)
+    : previous(current_wait_limit)
+    , cancelled(std::move(cancelled_))
+    , deadline(std::chrono::steady_clock::now() + timeout_)
+{
+    current_wait_limit = this;
+}
+
+SSHAgentWaitLimit::~SSHAgentWaitLimit()
+{
+    current_wait_limit = previous;
+}
+
+bool SSHAgentWaitLimit::isSet()
+{
+    return current_wait_limit != nullptr;
+}
+
+void SSHAgentWaitLimit::checkNotExpired()
+{
+    const auto * limit = current_wait_limit;
+    if (!limit)
+        return;
+
+    if (limit->cancelled && limit->cancelled())
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "Waiting for the ssh-agent was cancelled");
+    if (std::chrono::steady_clock::now() >= limit->deadline)
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "The ssh-agent did not answer in time");
 }
 
 }

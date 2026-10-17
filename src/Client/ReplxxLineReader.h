@@ -54,6 +54,8 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
+    void addTypedInput(const String & bytes) override;
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;

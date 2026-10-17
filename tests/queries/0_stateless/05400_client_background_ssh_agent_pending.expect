@@ -1,0 +1,183 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest, no-openssl-fips
+# no-openssl-fips: authenticates with an ssh-ed25519 key, which is not FIPS-approved and is rejected on FIPS builds.
+
+# A background job signs the challenge of its new session with the ssh-agent. An agent can accept the request and then
+# keep it pending (it waits for the user to confirm the key). The job must still be cancellable, and the client must
+# still exit: waiting for the agent must not be a blocking read.
+#
+# The agent here is a script that refuses the first signature, which is the one of the login of the main client (it
+# falls back to the key file, which has no passphrase), and takes every later one without ever answering it.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+set history_file $CLICKHOUSE_TMP/$basename.history
+set work_dir $CLICKHOUSE_TMP/$basename.dir
+
+# The paths come from the arguments of the test runner and may contain anything: files are handled here, and the
+# scripts get the paths as arguments and quote them.
+file delete -force -- $work_dir
+file mkdir $work_dir/.ssh
+file attributes $work_dir/.ssh -permissions 0700
+exec ssh-keygen -q -t ed25519 -N "" -C key-05400 -f $work_dir/.ssh/id_ed25519 2>@1
+
+set agent_script {
+import base64, os, socket, struct, sys, threading, time
+
+sock_path, pub_path = sys.argv[1], sys.argv[2]
+blob = base64.b64decode(open(pub_path).read().split()[1])
+
+
+def frame(payload):
+    return struct.pack('>I', len(payload)) + payload
+
+
+if os.path.exists(sock_path):
+    os.unlink(sock_path)
+server = socket.socket(socket.AF_UNIX)
+server.bind(sock_path)
+server.listen(16)
+
+lock = threading.Lock()
+signs = 0
+
+
+def handle(conn):
+    global signs
+    try:
+        while True:
+            header = conn.recv(4)
+            if len(header) < 4:
+                return
+            size = struct.unpack('>I', header)[0]
+            message = b''
+            while len(message) < size:
+                chunk = conn.recv(size - len(message))
+                if not chunk:
+                    return
+                message += chunk
+            kind = message[0]
+            if kind == 11:
+                conn.sendall(frame(bytes([12]) + struct.pack('>I', 1) + frame(blob) + frame(b'key-05400')))
+            elif kind == 13:
+                with lock:
+                    signs += 1
+                    number = signs
+                if number == 1:
+                    conn.sendall(frame(bytes([5])))
+                else:
+                    time.sleep(3600)
+            else:
+                conn.sendall(frame(bytes([5])))
+    finally:
+        conn.close()
+
+
+while True:
+    conn, _ = server.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+}
+set f [open $work_dir/agent.py w]
+puts $f $agent_script
+close $f
+
+exec bash -c {
+    source "$1/../shell_config.sh"
+    work_dir="$2"
+    USER_NAME="ssh_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER_NAME}"
+    ${CLICKHOUSE_CLIENT} --query "CREATE USER ${USER_NAME} IDENTIFIED WITH ssh_key BY KEY '$(awk '{print $2}' "$work_dir/.ssh/id_ed25519.pub")' TYPE 'ssh-ed25519'"
+    echo "${USER_NAME}" > "$work_dir/user"
+} bash $basedir $work_dir 2>@1
+
+# A unix socket path is limited to about 100 bytes, which the work directory of the test runner can exceed.
+set agent_dir [exec mktemp -d /tmp/05400.XXXXXX]
+set agent_pid [exec python3 $work_dir/agent.py $agent_dir/agent.sock $work_dir/.ssh/id_ed25519.pub > /dev/null 2> /dev/null &]
+for {set attempt 0} {$attempt < 100 && ![file exists $agent_dir/agent.sock]} {incr attempt} {
+    after 100
+}
+
+proc cleanup {basedir work_dir agent_pid agent_dir} {
+    catch {exec kill $agent_pid}
+    file delete -force -- $agent_dir
+    catch {
+        exec bash -c {
+            source "$1/../shell_config.sh"
+            ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $(cat "$2/user")"
+        } bash $basedir $work_dir
+    }
+    file delete -force -- $work_dir
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# Wait until the state of the job in `\jobs` is one of the final ones, and report which.
+proc wait_for_final_state {job_id} {
+    set waiting_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $job_id]
+    set terminal_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed|failed|cancel+ed)} $job_id]
+    for {set attempt 0} {$attempt < 300} {incr attempt} {
+        submit {\jobs}
+        expect {
+            -re $terminal_re {
+                set state $expect_out(1,string)
+                expect ":) "
+                return $state
+            }
+            -re $waiting_re {
+                expect ":) "
+                after 100
+            }
+        }
+    }
+    exit 1
+}
+
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    HOME="$2" SSH_AUTH_SOCK="$4/agent.sock" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
+} bash $basedir $work_dir $history_file $agent_dir
+expect ":) "
+
+# The job signs, and the agent never answers. Give it time to get there, then cancel it.
+submit {\bg SELECT 1}
+expect -ex {Background job 1 started}
+expect ":) "
+after 1500
+submit {\cancel 1}
+expect ":) "
+set state [wait_for_final_state 1]
+if {![regexp -nocase {cancel} $state]} {
+    exit 1
+}
+
+# The prompt works, and a job that is still waiting for the agent does not keep the client from exiting.
+submit {SELECT 'alive-05400' FORMAT TabSeparatedRaw}
+expect -ex {alive-05400}
+expect ":) "
+
+submit {\bg SELECT 2}
+expect -ex {Background job 2 started}
+expect ":) "
+after 1500
+send -- "\4"
+expect eof
+cleanup $basedir $work_dir $agent_pid $agent_dir
