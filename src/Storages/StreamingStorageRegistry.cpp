@@ -192,11 +192,13 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
 {
     std::lock_guard lock(mutex);
     const auto metadata_key = makeMetadataKey(zookeeper_name, zookeeper_path);
+    bool inserted = false;
     auto it = metadata_by_path.find(metadata_key);
     if (it == metadata_by_path.end())
     {
         it = metadata_by_path.emplace(metadata_key, std::move(metadata)).first;
         it->second.metadata->setMetadataRefCount(*it->second.ref_count);
+        inserted = true;
     }
     else
     {
@@ -206,7 +208,17 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerNonActive(storage_id, created_new_metadata);
+    try
+    {
+        it->second.metadata->registerNonActive(storage_id, created_new_metadata);
+    }
+    catch (...)
+    {
+        /// No table references a new entry until its count is raised below, so it must not outlive a failure.
+        if (inserted)
+            metadata_by_path.erase(it);
+        throw;
+    }
     *it->second.ref_count += 1;
     return it->second.metadata;
 }
