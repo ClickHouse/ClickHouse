@@ -431,11 +431,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            database->dropTable(context_, table_id.table_name, query.sync);
+
+            /// Only after `dropTable` succeeded: when it throws, the metadata of the table survives
+            /// (`Ordinary` even attaches the table back), so it must stay protected.
             NamedCollectionFactory::instance().removeDependencies(table_id);
             /// A detached entry left over from an earlier detach of this table: its metadata is gone
             /// with the drop, so it must not keep blocking `DROP NAMED COLLECTION`.
             NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
-            database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
@@ -896,9 +899,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate)
         database->assertCanBeDetached(true);
 
-    /// The tables of a database that does not have to be empty on detach (`Atomic`, ...) stay inside
-    /// it: remember their named collection dependencies as detached, like `DETACH TABLE` does.
-    if (!drop && !truncate && !database->shouldBeEmptyOnDetach())
+    /// The tables of a database that does not have to be empty on detach stay inside it: remember
+    /// their named collection dependencies as detached, like `DETACH TABLE` does.
+    /// Only for databases that can hold ClickHouse tables (e.g. the `Overlay` of `clickhouse-local`).
+    /// The tables of an external database (`MySQL`, `PostgreSQL`, ...) are generated from the remote
+    /// source and register no dependencies of their own, and enumerating them may query the source,
+    /// which would make `DETACH DATABASE` fail when it is unavailable. The dependency of the database
+    /// engine itself is handled below.
+    if (!drop && !truncate && !database->shouldBeEmptyOnDetach() && !database->isExternal())
     {
         for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         {
