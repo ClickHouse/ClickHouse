@@ -1,0 +1,115 @@
+== DESCRIBE with union_type_name enabled ==
+id	Int32					
+nullable_payload	Nullable(Tuple(x Int32))					
+nullable_payload.$name	Nullable(String)					
+variant_payload	Variant(Tuple(\n    y String), Tuple(\n    z Float64))					
+variant_payload.$name	Nullable(String)					
+variant_payload.TypeB	Nullable(Tuple(y String))					
+variant_payload.TypeC	Nullable(Tuple(z Float64))					
+
+== SELECT id, nullable_payload.$name, variant_payload.$name ==
+1	\N	TypeB
+2	TypeA	TypeC
+3	TypeA	TypeB
+4	\N	TypeC
+5	TypeA	TypeB
+
+== Filter WHERE nullable_payload.$name = 'TypeA' ==
+2	TypeA
+3	TypeA
+5	TypeA
+
+== Filter WHERE nullable_payload.$name IS NULL ==
+1	\N
+4	\N
+
+== Both value and $name for Nullable union ==
+1	\N	\N
+2	(10)	TypeA
+3	(20)	TypeA
+4	\N	\N
+5	(30)	TypeA
+
+== Both value and $name for Variant union ==
+1	('hello')	TypeB
+2	(3.14)	TypeC
+3	('world')	TypeB
+4	(2.71)	TypeC
+5	('foo')	TypeB
+
+== Explicit schema: only $name columns ==
+1	\N	TypeB
+2	TypeA	TypeC
+3	TypeA	TypeB
+4	\N	TypeC
+5	TypeA	TypeB
+
+== DESCRIBE: branch-value columns exposed (Variant only, not Nullable) ==
+nullable_payload.$name	Nullable(String)					
+variant_payload.$name	Nullable(String)					
+variant_payload.TypeB	Nullable(Tuple(y String))					
+variant_payload.TypeC	Nullable(Tuple(z Float64))					
+
+== Project a Variant branch value by the name $name reports ==
+1	TypeB	('hello')	\N
+2	TypeC	\N	(3.14)
+3	TypeB	('world')	\N
+4	TypeC	\N	(2.71)
+5	TypeB	('foo')	\N
+
+== Filter by $name + project that branch value ==
+1	('hello')
+3	('world')
+5	('foo')
+
+== Value + branch column together: active branch filled, others NULL ==
+1	('hello')	('hello')	\N
+2	(3.14)	\N	(3.14)
+3	('world')	('world')	\N
+4	(2.71)	\N	(2.71)
+5	('foo')	('foo')	\N
+
+== Nullable union has NO branch-value column (only $name) ==
+nullable_payload	Nullable(Tuple(x Int32))					
+nullable_payload.$name	Nullable(String)					
+
+== Non-nullable branch sub-column is rejected (value + branch selected) ==
+rejected: must be Nullable
+
+== Nested union: DESCRIBE exposes the inner $name one level deep ==
+payload	Variant(Tuple(\n    b_value Int32), Tuple(\n    inner Variant(Tuple(\n        x_value String), Tuple(\n        y_value Int64))))					
+payload.$name	Nullable(String)					
+payload.TypeA	Nullable(Tuple(inner Variant(Tuple(x_value String), Tuple(y_value Int64))))					
+payload.TypeA.inner.$name	Nullable(String)					
+payload.TypeB	Nullable(Tuple(b_value Int32))					
+
+== Nested union: inner $name alone ==
+1	InnerX
+2	InnerY
+3	\N
+4	\N
+5	\N
+
+== Nested union: inner $name together with the union value ==
+1	(('hello'))	InnerX
+2	((42))	InnerY
+3	(NULL)	\N
+4	(99)	\N
+5	\N	\N
+
+== Nested union: filter by the inner branch name ==
+1
+
+== Nested union: outer branch value still carries the whole inner union ==
+1	(('hello'))	\N
+2	((42))	\N
+3	(NULL)	\N
+4	\N	(99)
+5	\N	\N
+
+== Nested union with a single non-null inner branch has no inner $name ==
+0
+
+== Nested union: inner $name alongside the outer $name is not supported ==
+rejected: THERE_IS_NO_COLUMN
+
