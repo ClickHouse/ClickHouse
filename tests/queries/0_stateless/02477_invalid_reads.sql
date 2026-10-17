@@ -38,17 +38,17 @@ SELECT finalizeAggregation(CAST(unhex('0F010000000000000001000000000000000300000
 -- sequenceNextNode (This was fine because it would fail in the next readBinary call, but better to add a test)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(''forward'', ''head''), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions=1; -- { serverError CANNOT_READ_ALL_DATA }
+    SETTINGS enable_funnel_functions=1; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- Fuzzer (ALL)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
+    SETTINGS enable_funnel_functions = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- Fuzzer 2 (UBSAN)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError CANNOT_READ_ALL_DATA }
+    SETTINGS enable_funnel_functions = 1; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- uniqUpTo
 SELECT finalizeAggregation(CAST(unhex('04128345AA2BC97190'),

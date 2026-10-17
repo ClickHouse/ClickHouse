@@ -30,9 +30,15 @@ struct ClickHouseDictionarySourceInfo
     QualifiedTableName table_name;
     String query;
     bool is_local = false;
+    /// The host did not resolve, so locality is unknown rather than remote.
+    bool host_unresolved = false;
 };
 
 std::optional<ClickHouseDictionarySourceInfo>
 getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context);
+
+/// Whether the dictionary may read from this server, so its source would read as the user it names.
+/// Unknown counts as local: an unresolved host, or one hidden in a named collection.
+bool mayBeLocalClickHouseDictionarySource(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
 
 }

@@ -14,7 +14,7 @@
 #    include <IO/WriteBufferFromPocoSocket.h>
 #    include <IO/LimitReadBuffer.h>
 #    include <base/defines.h>
-#    include <base/hex.h>
+#    include <Common/Hex.h>
 #    include <Poco/Net/NetException.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 #    include <Common/CurrentThread.h>
@@ -47,6 +47,11 @@
 namespace ProfileEvents
 {
     extern const Event KeeperTotalElapsedMicroseconds;
+    extern const Event KeeperPacketsSent;
+    extern const Event KeeperPacketsReceived;
+    extern const Event KeeperRequestTotal;
+    extern const Event KeeperRequestTotalWithSubrequests;
+    extern const Event KeeperLatency;
 }
 
 namespace DB
@@ -283,10 +288,10 @@ KeeperTCPHandler::KeeperTCPHandler(
     }
 }
 
-void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
+void KeeperTCPHandler::sendHandshake(HandshakeResult result, bool & use_compression)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
-    if (has_leader)
+    if (result != HandshakeResult::Rejected)
     {
         if (expect_opentelemetry_tracing_context)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING, *out);
@@ -305,8 +310,11 @@ void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
         Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, *out);
     }
 
-    Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
-    Coordination::write(session_id, *out);
+    /// A zero timeout with a zero session id tells a ZooKeeper client that its session has expired.
+    const bool expired = result == HandshakeResult::SessionExpired;
+    Coordination::write(expired ? int32_t{0} : static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
+    /// A rejected client has no session, and would send any non-zero id back as the session to continue.
+    Coordination::write(result == HandshakeResult::Accepted ? session_id : int64_t{0}, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
     Coordination::write(passwd, *out);
     out->next();
@@ -322,7 +330,6 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     int32_t protocol_version = 0;
     int64_t last_zxid_seen = 0;
     int32_t timeout_ms = 0;
-    int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
@@ -472,6 +479,14 @@ void KeeperTCPHandler::runImpl()
     if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
         return;
 
+    /// Keeper cannot restore sessions, and a new session in place of the old one would go unnoticed by the client.
+    if (previous_session_id != 0)
+    {
+        LOG_INFO(log, "Client asked to continue session {}, which cannot be restored, replying that it has expired", previous_session_id);
+        sendHandshake(HandshakeResult::SessionExpired, use_compression);
+        return;
+    }
+
     if (keeper_dispatcher->isServerActive())
     {
         try
@@ -483,7 +498,7 @@ void KeeperTCPHandler::runImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
-            sendHandshake(/* has_leader */ false, use_compression);
+            sendHandshake(HandshakeResult::Rejected, use_compression);
             return;
 
         }
@@ -496,12 +511,12 @@ void KeeperTCPHandler::runImpl()
             return;
         }
 
-        sendHandshake(/* has_leader */ true, use_compression);
+        sendHandshake(HandshakeResult::Accepted, use_compression);
     }
     else
     {
         LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
-        sendHandshake(/* has_leader */ false, use_compression);
+        sendHandshake(HandshakeResult::Rejected, use_compression);
         return;
     }
 
@@ -889,12 +904,14 @@ void KeeperTCPHandler::packageSent()
 {
     conn_stats.incrementPacketsSent();
     keeper_dispatcher->incrementPacketsSent();
+    ProfileEvents::increment(ProfileEvents::KeeperPacketsSent);
 }
 
 void KeeperTCPHandler::packageReceived()
 {
     conn_stats.incrementPacketsReceived();
     keeper_dispatcher->incrementPacketsReceived();
+    ProfileEvents::increment(ProfileEvents::KeeperPacketsReceived);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request)
@@ -924,10 +941,13 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
         }
 
-        conn_stats.updateLatency(elapsed_ms, subrequest_count);
+        conn_stats.updateLatency(elapsed_ms);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::KeeperLatency, elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::KeeperRequestTotal);
+        ProfileEvents::increment(ProfileEvents::KeeperRequestTotalWithSubrequests, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),
