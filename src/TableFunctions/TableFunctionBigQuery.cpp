@@ -94,6 +94,7 @@ void TableFunctionBigQuery::parseArguments(const ASTPtr & ast_function, ContextP
 
     configuration = std::make_shared<BigQueryConfiguration>(BigQueryConfiguration::fromArguments(func_args.arguments->children, context));
     setUsedNamedCollectionName(configuration->named_collection_name);
+    configuration->checkHeaders(context);
     /// The token provider only stores the configuration here; no network request is made until a token
     /// is actually needed (during schema inference or execution).
     token_provider = std::make_shared<BigQueryTokenProvider>(*configuration);
