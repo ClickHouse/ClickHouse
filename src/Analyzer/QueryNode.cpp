@@ -428,7 +428,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_alias);
     }
 
-    state.update(is_materialized);
+    state.update(!options.ignore_cte && is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
