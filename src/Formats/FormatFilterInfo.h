@@ -41,6 +41,8 @@ struct FormatTopKFilterInfo
     /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
     /// condition cache.
     bool track_row_group_best_values = false;
+    /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
+    bool filter_rows = true;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
