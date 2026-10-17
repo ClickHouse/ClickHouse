@@ -94,6 +94,13 @@ namespace QueryPlanFormat
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
+    /// Appends under the per-expression length limit, for callers composing several rendered names into
+    /// one. Returns false once the limit is reached, a truncation marker having been appended.
+    bool appendBounded(String & target, std::string_view text);
+
+    /// Enforces the same limit on a composed expression, for text appended without that check.
+    void clipToMaxLength(String & text);
+
     PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
 }
 
