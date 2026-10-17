@@ -53,7 +53,9 @@ using FunctionDivideLegacy = BinaryArithmeticOverloadResolver<DivideFloatingImpl
 class FunctionDivideExactBase final : public IFunctionBase
 {
 public:
-    explicit FunctionDivideExactBase(FunctionBasePtr implementation_) : implementation(std::move(implementation_))
+    FunctionDivideExactBase(FunctionBasePtr implementation_, bool allow_constant_folding_)
+        : implementation(std::move(implementation_))
+        , allow_constant_folding(allow_constant_folding_)
     {
     }
 
@@ -86,7 +88,7 @@ public:
 
     bool isSuitableForConstantFolding() const override
     {
-        return implementation->isSuitableForConstantFolding();
+        return allow_constant_folding && implementation->isSuitableForConstantFolding();
     }
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
@@ -126,6 +128,7 @@ public:
 
 private:
     FunctionBasePtr implementation;
+    bool allow_constant_folding;
 };
 
 class FunctionDivideExact final : public IFunctionOverloadResolver
@@ -161,7 +164,21 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionDivideExactBase>(delegate(arguments)->build(arguments));
+        bool potentially_throwing_constant_divisor = false;
+        if (isInteger(removeNullable(arguments[0].type))
+            && isInteger(removeNullable(arguments[1].type))
+            && arguments[1].column && isColumnConst(*arguments[1].column))
+        {
+            const auto divisor = (*arguments[1].column)[0];
+            potentially_throwing_constant_divisor =
+                accurateEquals(divisor, Field(0)) || accurateEquals(divisor, Field(-1));
+        }
+
+        /// Keep a potentially throwing integer division as an expression until execution.
+        /// Folding it while resolving an unselected `if`, `multiIf`, or `CASE` branch defeats
+        /// short-circuit evaluation. A selected or top-level expression still throws at execution.
+        return std::make_shared<FunctionDivideExactBase>(
+            delegate(arguments)->build(arguments), !potentially_throwing_constant_divisor);
     }
 
 private:
