@@ -422,6 +422,9 @@ def test_generated_sql_ignores_request_dialect_and_parser_limits():
         ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14T22:14:20Z"}),
         ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-15T00:14:20+02:00"}),
         ("/api/v1/query", {"time": "1700000045.123"}, {"time": "2023-11-14T17:14:05.123456789-05:00"}),
+        # Any other format parseDateTimeBestEffort understands is accepted too.
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "Tue, 14 Nov 2023 22:14:20 GMT"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14 22:14:20 +0000"}),
         (
             "/api/v1/query_range",
             {"start": "1700000000", "end": "1700000060", "step": "15s"},
@@ -445,7 +448,7 @@ def test_rfc3339_times(path, unix_params, rfc3339_params):
 
 @pytest.mark.parametrize(
     "time",
-    ["2023-11-14T22:14:20+24:00", "2023-11-14T22:14:20+0200", "2023-11-14T22:14:20z", "2023-11-14T22:14:20Z "],
+    ["2023-11-14T22:14:20z", "2023-11-14T22:14:20Z junk", "2023-11-14T22:14:20Z ", " 1700000060", "now", "abc"],
 )
 def test_rfc3339_times_invalid(time):
     error = execute_query_via_http_api(

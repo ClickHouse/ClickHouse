@@ -20,8 +20,6 @@ SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '2023-11
 SELECT arrayMap(x -> toUnixTimestamp(x.1), samples) FROM prometheusQueryRange('ts', '1', '2023-11-14T22:13:20Z', '2023-11-15T00:14:20+02:00', '30s');
 SELECT timeSeriesLastToGrid('2023-11-14T22:13:20Z', '2023-11-15T00:14:20+02:00', 30, 60)(toDateTime(1700000000 + number * 30, 'UTC'), number::Float64) FROM numbers(3);
 
-SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20+24:00'); -- { serverError BAD_ARGUMENTS }
-SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20+0200'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '2023-11-14T22:13:20z'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE ts;
