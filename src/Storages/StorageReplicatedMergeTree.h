@@ -363,6 +363,14 @@ public:
 
     bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
 
+    /// Whether `shutdown` or `flushAndPrepareForShutdown` has been called on this table. Either one leaves a
+    /// ReplicatedMergeTree permanently read-only (fetches and merges are cancelled and the restarting thread
+    /// has stopped; neither flag is ever reset), unlike a table that is only transiently read-only while
+    /// starting up. Used to detect a nested table left behind by a refused coordinated MaterializedPostgreSQL
+    /// drop, which must be dropped and recreated rather than reused. `DROP DATABASE` prepares all tables for
+    /// shutdown before it drops them one by one, so the tables after the one whose drop failed are only prepared.
+    bool isShutdownCalled () const { return shutdown_called.load() || shutdown_prepared_called.load(); }
+
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.

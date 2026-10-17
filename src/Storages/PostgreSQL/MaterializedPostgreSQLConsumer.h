@@ -99,10 +99,15 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
+            bool coordinated_,
             StorageInfos storages_,
             const String & name_for_logger);
 
     bool consume();
+
+    /// In coordinated mode a table that would have to be skipped from replication breaks the consumer
+    /// for good: see `markTableAsSkipped`. Once broken, `consume` throws and never advances the slot.
+    bool isBroken() const { return broken; }
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
@@ -184,6 +189,10 @@ private:
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
+    const bool coordinated;
+
+    /// Set by `markTableAsSkipped` in coordinated mode.
+    bool broken = false;
 
     String table_to_insert;
 

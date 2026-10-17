@@ -17,6 +17,7 @@
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -295,10 +296,28 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             {
                 /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
-                    table->checkTableCanBeDetached();
+                {
+                    if (query.permanently)
+                    {
+                        table->checkTableCanBeDetachedPermanently();
+                    }
+                    else
+                    {
+                        table->checkTableCanBeDetached();
+                    }
+                }
             }
             else
-                table->checkTableCanBeDetached();
+            {
+                if (query.permanently)
+                {
+                    table->checkTableCanBeDetachedPermanently();
+                }
+                else
+                {
+                    table->checkTableCanBeDetached();
+                }
+            }
 
             bool check_ref_deps = false;
             bool check_loading_deps = false;
@@ -450,13 +469,33 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
     DatabasePtr database;
     std::vector<UUID> tables_to_wait;
+    /// The database DDL guard taken by `executeToDatabaseImpl`. It is kept here, so that the recovery of a
+    /// refused drop below still runs under it: otherwise another `DROP DATABASE` could start between the
+    /// failure and the recovery and have its own drop state consumed or overwritten by this one's recovery.
+    DDLGuardPtr ddl_guard;
     BlockIO res;
     try
     {
-        res = executeToDatabaseImpl(query, database, tables_to_wait);
+        res = executeToDatabaseImpl(query, database, tables_to_wait, ddl_guard);
     }
     catch (...)
     {
+        /// The drop failed. If it is a real DROP DATABASE, the engine may have committed teardown work in
+        /// `beforeDropDatabase` (before any table was removed) and then thrown while dropping the nested tables;
+        /// give it a chance to recover so a refused drop does not leave the database mounted but dead. Idempotent.
+        if (database && query.kind == ASTDropQuery::Kind::Drop)
+        {
+            try
+            {
+                database->onDropDatabaseFailed(getContext());
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to recover the database after a refused DROP");
+            }
+        }
+        ddl_guard.reset();
+
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)
@@ -464,6 +503,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         }
         throw;
     }
+    ddl_guard.reset();
 
     if (query.sync)
     {
@@ -495,13 +535,13 @@ static bool matchesLikePattern(const String & haystack,
     return RE2::PartialMatch(haystack, re);
 }
 
-BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
+BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait, DDLGuardPtr & ddl_guard)
 {
     if (query.kind != ASTDropQuery::Kind::Detach && query.kind != ASTDropQuery::Kind::Drop && query.kind != ASTDropQuery::Kind::Truncate)
         return {};
 
     const auto & database_name = query.getDatabase();
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+    ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
@@ -521,6 +561,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
+    /// Let the engine veto the drop before any of its tables are removed (e.g. fail-close while a coordination
+    /// service it depends on is unreachable). Only for a real DROP: DETACH does not delete data here.
+    if (drop)
+        database->beforeDropDatabase(getContext());
+
+    /// A database-wide TRUNCATE removes data too (it walks the nested tables below and drops/truncates each one),
+    /// so let the engine veto it as well before any table is touched (e.g. a coordinated engine that has no
+    /// consistent cross-replica truncate path and must refuse it outright).
+    if (truncate)
+        database->beforeTruncateDatabase(getContext());
 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
@@ -955,6 +1006,14 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setDDLOrOnClusterInternal(true);
+        /// The copy of the global context above loses the internal-query flag of `current_context`, but the
+        /// interpreter below resolves the target table again through `DatabaseCatalog` with `drop_context`, and
+        /// that resolution can depend on the flag. For example, dropping a nested table of a coordinated
+        /// MaterializedPostgreSQL database with a non-internal context yields a wrapper whose
+        /// `checkTableCanBeDropped` refuses the drop; the internal contexts that engines pass here must keep
+        /// resolving the nested table directly.
+        if (current_context->isInternalQuery())
+            drop_context->setInternalQuery(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
