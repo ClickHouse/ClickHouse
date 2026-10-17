@@ -56,6 +56,7 @@ private:
     mutable KernelTableChangesScan table_changes_scan;
     mutable KernelTableChangesScanIterator table_changes_scan_iterator;
     mutable std::optional<DB::NamesAndTypesList> schema;
+    mutable DB::NameSet binary_columns;
 };
 using TableChangesPtr = std::shared_ptr<TableChanges>;
 
