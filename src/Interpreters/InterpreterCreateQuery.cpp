@@ -1192,6 +1192,8 @@ namespace
         {
             *ptr = nullptr;
         });
+        /// `children` keeps the old nodes, and `hasSecretParts` reads them
+        storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
@@ -1341,11 +1343,22 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
+        /// Check SHOW COLUMNS first, or the error could reveal that an inaccessible table holds credentials.
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
+
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
+        /// SHOW CREATE TABLE masks credentials, so inheriting the definition could expose data to a user
+        /// who cannot SELECT from the source. SHOW COLUMNS already authorizes the rest of the definition.
+        auto check_access_to_inherited_definition = [&](const IAST & definition)
+        {
+            if (definition.hasSecretParts())
+                getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
+        };
 
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
@@ -1371,6 +1384,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
+            check_access_to_inherited_definition(*as_create.as_table_function);
             create.set(create.as_table_function, as_create.as_table_function->ptr());
             return;
         }
@@ -1378,11 +1392,19 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
             create.is_time_series_table = as_create.is_time_series_table;
+
+            if (as_create.is_time_series_table && as_create.targets)
+                for (const auto & target : as_create.targets->targets)
+                    if (target.inner_engine && !create.getTargetInnerEngine(target.kind))
+                        check_access_to_inherited_definition(*target.inner_engine);
         }
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
+
+        if (storage_def)
+            check_access_to_inherited_definition(*storage_def);
     }
 
     if (!storage_def)
@@ -2498,7 +2520,29 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            /// This branch returns before setEngine, and the worker processes AS src without the user's access.
+            if (!create.as_table.empty())
+            {
+                create.as_database = getContext()->resolveDatabase(create.as_database);
+
+                auto preflight_context = Context::createCopy(getContext());
+                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                {
+                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                }
+
+                ASTPtr inherited_query = query_ptr->clone();
+                auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+
+                if (inherited.storage && inherited.storage->engine)
+                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+            }
+
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
