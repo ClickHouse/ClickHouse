@@ -49,7 +49,7 @@ open(dst, 'wb').write(b'Obj\x01' + meta + sync + zz(1) + zz(len(payload)) + payl
 }
 
 gen "$DIR/chain_40.avro" chain 40
-gen "$DIR/chain_50000.avro" chain 50000
+gen "$DIR/chain_300000.avro" chain 300000
 gen "$DIR/list_10.avro" list 10
 gen "$DIR/list_100000.avro" list 100000
 
@@ -57,7 +57,10 @@ for f in chain_40 list_10; do
     $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/$f.avro', Avro, 'id Int64')"
 done
 
-for f in chain_50000 list_100000; do
+# `ulimit -s` sets the stack of new threads only with glibc; musl gives them the fixed 8 MiB from
+# `PT_GNU_STACK`. The depths overflow half of that (where `checkStackSize` throws) by about 2x in a
+# release build, which has the smallest frames.
+for f in chain_300000 list_100000; do
     (ulimit -s 1024; $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/$f.avro', Avro, 'id Int64')" 2>&1) | grep -q -F 'TOO_DEEP_RECURSION' && echo "$f: too deep"
 done
 
