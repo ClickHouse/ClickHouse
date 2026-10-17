@@ -146,6 +146,9 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {

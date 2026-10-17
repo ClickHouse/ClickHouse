@@ -1,12 +1,23 @@
 #include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/CommonParsers.h>
 #include <Common/quoteString.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTObjectTypedPathArgument::clone() const
 {
@@ -87,6 +98,66 @@ void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings 
     }
 }
 
+void ASTObjectTypedPathArgument::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ObjectTypedPathArgument");
+    w.writeString("path", path);
+    w.writeChild("data_type", type);
 }
 
+void ASTObjectTypedPathArgument::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    path = r.getString("path");
+    if (path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ObjectTypedPathArgument` must have a non-empty 'path' during AST JSON deserialization");
+    auto child = r.readChild("data_type");
+    if (!child || !(child->as<ASTDataType>() || child->as<ASTFunction>()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ObjectTypedPathArgument` must have a data type as 'data_type' during AST JSON deserialization");
+    type = child;
+    children.push_back(type);
+}
 
+void ASTObjectTypeArgument::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ObjectTypeArgument");
+    w.writeChild("path_with_type", path_with_type);
+    w.writeChild("skip_path", skip_path);
+    w.writeChild("skip_path_regexp", skip_path_regexp);
+    w.writeChild("parameter", parameter);
+}
+
+void ASTObjectTypeArgument::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    size_t count = 0;
+    if (auto child = r.readChildOfType<ASTObjectTypedPathArgument>("path_with_type"))
+    {
+        path_with_type = child;
+        children.push_back(path_with_type);
+        ++count;
+    }
+    if (auto child = r.readChildOfType<ASTIdentifier>("skip_path"))
+    {
+        skip_path = child;
+        children.push_back(skip_path);
+        ++count;
+    }
+    if (auto child = r.readChildOfType<ASTLiteral>("skip_path_regexp"))
+    {
+        skip_path_regexp = child;
+        children.push_back(skip_path_regexp);
+        ++count;
+    }
+    if (auto child = r.readChildOfType<ASTFunction>("parameter"))
+    {
+        parameter = child;
+        children.push_back(parameter);
+        ++count;
+    }
+    if (count != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ObjectTypeArgument` must have exactly one of 'path_with_type', 'skip_path', 'skip_path_regexp' or 'parameter' during AST JSON deserialization");
+}
+
+}
