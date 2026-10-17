@@ -418,6 +418,33 @@ TEST(AIAgent, HistoryIsTrimmedWithinOneTurn)
     EXPECT_FALSE(last.back().get_tool_results().at(0).result.contains("elided"));
 }
 
+TEST(AIAgent, MessageCountCapKeepsTheCurrentTurn)
+{
+    /// More than forty tool rounds in one turn make more messages than the count cap allows, with
+    /// no later turn to drop up to: the cap must not drop the question of the current turn.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String("1"); };
+
+    AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}})}, hooks, /*max_steps=*/ 50);
+    harness.agent->chat("a long investigation");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 50u);
+    EXPECT_GT(harness.transport->conversations.back().size(), 80u);
+    for (const auto & messages : harness.transport->conversations)
+    {
+        ASSERT_FALSE(messages.empty());
+        EXPECT_EQ(messages.front().role, ai::kMessageRoleUser);
+        EXPECT_FALSE(messages.front().has_tool_results());
+        EXPECT_NE(messages.front().get_text().find("a long investigation"), String::npos);
+    }
+}
+
 TEST(AIAgent, CallsAfterRunQueryInTheSameStepAreNotExecuted)
 {
     /// `run_query` can be declined or fail, and it can change the session (`USE`, a temporary

@@ -423,10 +423,19 @@ void AIAgent::trimHistory()
         return pos;
     };
 
-    /// Drop the oldest turns over the message-count cap.
+    /// The start of the current turn: the last plain user message, the question of the turn.
+    size_t current_turn_start = messages.size();
+    while (current_turn_start > 0
+           && (messages[current_turn_start - 1].role != ai::kMessageRoleUser || messages[current_turn_start - 1].has_tool_results()))
+        --current_turn_start;
+    current_turn_start = current_turn_start > 0 ? current_turn_start - 1 : 0;
+
+    /// Drop the oldest turns over the message-count cap, but never the current turn: a single
+    /// turn of many tool rounds can outgrow the cap on its own, and there is no later turn
+    /// start to drop up to. Its size is bounded by the byte budget below instead.
     size_t drop = 0;
     if (messages.size() > max_history_messages)
-        drop = next_turn_start(messages.size() - max_history_messages);
+        drop = std::min(next_turn_start(messages.size() - max_history_messages), current_turn_start);
 
     /// Then keep dropping whole turns while the prompt is over the byte budget, but never the
     /// last user message - the question of the current turn.
