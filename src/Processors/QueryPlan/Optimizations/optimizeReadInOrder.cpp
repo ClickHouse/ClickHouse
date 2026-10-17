@@ -142,7 +142,8 @@ struct FindReadingStepContext
 
     /// Set to true when the traversal descends through an order-preserving step that performs
     /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
-    /// into `PREWHERE`, an `ArrayJoinStep`, or a non-trivial `ExpressionStep`). Callers use this
+    /// into `PREWHERE`, an `ArrayJoinStep`, a non-trivial `ExpressionStep`, or a preliminary
+    /// `DistinctStep`). Callers use this
     /// to keep the per-stream reading pipeline parallel so that `PrefetchingConcatProcessor` does
     /// not collapse it into a single stream and serialize that residual work.
     bool passed_residual_cpu_step = false;
@@ -222,8 +223,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 
+    /// A preliminary `DistinctStep` deduplicates every input stream separately (a hash-based
+    /// `DistinctTransform`, or `DistinctSortedStreamTransform` with distinct-in-order), which is
+    /// per-stream CPU work above the reading step, like a residual filter. Record it regardless of
+    /// `optimize_distinct_in_order`, so the read stays parallel (see `passed_residual_cpu_step`).
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
+    {
+        data.passed_residual_cpu_step = true;
         return findReadingStep(*node.children.front(), data);
+    }
 
     if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
         return findReadingStep(*node.children.front(), data);
