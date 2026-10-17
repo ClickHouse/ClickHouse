@@ -1112,8 +1112,8 @@ Optional parameters:
 - `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
 - `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
-- `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
-- `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
+- `poll_directory_watch_events_backoff_init` - The initial sleep value for the streaming task of the table, which backs off while there are no new data. On macOS it is also the initial sleep value of the thread that watches the directory. Default: `500`.
+- `poll_directory_watch_events_backoff_max` - The max sleep value for the streaming task of the table. On macOS it is also the max sleep value of the thread that watches the directory. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
 - `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 
