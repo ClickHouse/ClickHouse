@@ -35,54 +35,92 @@ inline bool maskConnectionStringKey(std::string & str, std::string_view key_with
     return true;
 }
 
-/** The range `[begin, end)` of the password in a URI of the form `scheme://user:password@host`, or
-  * `{npos, npos}` if there is none. Only the first such occurrence is found.
-  *
-  * This used to be the regular expression `([^:]+://[^:]*):([^@]*)@(.*)` rewritten to
-  * `\1:[HIDDEN]@\3` - a whole regex engine carried for one substitution. The scan below reproduces
-  * that expression exactly; `src/Common/tests/gtest_mask_uri_password.cpp` checks it against re2.
-  *
-  * Reading the expression: `[^:]+` is the scheme, so a match can only begin right after the
-  * preceding colon (or at the start of the string); `[^:]*` then runs up to the colon that opens
-  * the password; and `[^@]*` runs up to the '@' that closes it. If either is missing, the match
-  * fails at this `://` and the next one is tried.
-  */
-inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view uri)
+/// Whether `authority` is `host [ ":" port ]` of RFC 3986, sections 3.2.2 and 3.2.3.
+inline bool isURIHostAndPort(std::string_view authority)
+{
+    auto is_hex_digit = [](char c) { return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'); };
+    auto is_reg_name_char = [](char c)
+    {
+        return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || std::string_view("-._~!$&'()*+,;=").contains(c);
+    };
+
+    size_t host_end = 0;
+    if (authority.starts_with('['))
+    {
+        host_end = authority.find(']');
+        if (host_end == std::string_view::npos)
+            return false;
+        ++host_end;
+    }
+    else
+    {
+        for (; host_end < authority.length() && authority[host_end] != ':'; ++host_end)
+        {
+            if (authority[host_end] == '%')
+            {
+                if (host_end + 2 >= authority.length() || !is_hex_digit(authority[host_end + 1]) || !is_hex_digit(authority[host_end + 2]))
+                    return false;
+                host_end += 2;
+            }
+            else if (!is_reg_name_char(authority[host_end]))
+            {
+                return false;
+            }
+        }
+    }
+
+    std::string_view port = authority.substr(host_end);
+    if (port.empty())
+        return true;
+    return port[0] == ':' && std::all_of(port.begin() + 1, port.end(), [](char c) { return '0' <= c && c <= '9'; });
+}
+
+/// Where RFC 3986, section 3.2, ends the authority of a URI. `Poco::URI` ends it there too.
+inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
+
+/// The range `[begin, end)` of the password of the first URI in `text` that carries one, or `{npos, npos}`.
+/// RFC 3986: the authority ends at the first '/', '?' or '#', and the password is its userinfo after the first ':'.
+/// Input that breaks the grammar is masked more, never less:
+/// - a raw '@' in the password: the userinfo runs to the last '@' of the authority (`u:pw@1@host` hides `pw@1`);
+/// - an authority cut short by a raw '/', '?' or '#' in the password: it runs to the last '@' (`u:pa/ss@host`).
+/// `authority_terminators` are where the consumer of the URI ends its userinfo. By default only '/', as the MongoDB
+/// driver does, since the consumer of a text is not always known; pass `URI_AUTHORITY_TERMINATORS` for `Poco::URI`.
+inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std::string_view authority_terminators = "/")
 {
     static constexpr std::string_view SEPARATOR = "://";
 
-    for (size_t separator = uri.find(SEPARATOR); separator != std::string_view::npos;
-         separator = uri.find(SEPARATOR, separator + SEPARATOR.length()))
+    for (size_t separator = text.find(SEPARATOR); separator != std::string_view::npos;
+         separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
     {
-        /// `[^:]+` - at least one non-colon character in front of the separator.
-        size_t preceding_colon = separator ? uri.find_last_of(':', separator - 1) : std::string_view::npos;
-        size_t scheme_begin = (preceding_colon == std::string_view::npos) ? 0 : preceding_colon + 1;
-        if (scheme_begin >= separator)
+        size_t authority_begin = separator + SEPARATOR.length();
+        size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
+        std::string_view bounded = text.substr(authority_begin, userinfo_bound - authority_begin);
+
+        if (size_t at_sign = bounded.rfind('@'); at_sign != std::string_view::npos)
+        {
+            if (size_t colon = bounded.find(':'); colon < at_sign)
+                return {authority_begin + colon + 1, authority_begin + at_sign};
+            continue;
+        }
+
+        size_t authority_end = std::min(text.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin), text.length());
+        std::string_view authority = text.substr(authority_begin, authority_end - authority_begin);
+        size_t colon = authority.find(':');
+
+        if (colon == std::string_view::npos || isURIHostAndPort(authority))
             continue;
 
-        /// `[^:]*:` - the colon that opens the password.
-        size_t password_begin = uri.find(':', separator + SEPARATOR.length());
-        if (password_begin == std::string_view::npos)
-            continue;
-        ++password_begin;
-
-        /// `[^@]*@` - the at sign that closes it.
-        size_t password_end = uri.find('@', password_begin);
-        if (password_end == std::string_view::npos)
-            continue;
-
-        return {password_begin, password_end};
+        if (size_t at_sign = text.rfind('@'); at_sign != std::string_view::npos && at_sign > authority_end)
+            return {authority_begin + colon + 1, at_sign};
     }
 
     return {std::string_view::npos, std::string_view::npos};
 }
 
-/** Replace the password in a URI of the form `scheme://user:password@host` with `[HIDDEN]`.
-  * Returns whether anything was masked. Only the first such occurrence is masked.
-  */
-inline bool maskURIPassword(std::string * uri)
+/// Replace the password `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
+inline bool maskURIPassword(std::string * uri, std::string_view authority_terminators = "/")
 {
-    auto [password_begin, password_end] = findURIPasswordRange(*uri);
+    auto [password_begin, password_end] = findURIPasswordRange(*uri, authority_terminators);
     if (password_begin == std::string::npos)
         return false;
 
@@ -315,6 +353,20 @@ inline bool maskPresignedURLParameters(std::string & url)
     result.append(url, copied, std::string::npos);
     url = std::move(result);
     return true;
+}
+
+/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
+  * presigned-URL query parameters. Returns whether anything was masked.
+  *
+  * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
+  * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
+  * one URL, not a URL embedded in a longer string.
+  */
+inline bool maskURICredentials(std::string & url)
+{
+    bool masked = maskURIUserinfo(url);
+    masked |= maskPresignedURLParameters(url);
+    return masked;
 }
 
 }
