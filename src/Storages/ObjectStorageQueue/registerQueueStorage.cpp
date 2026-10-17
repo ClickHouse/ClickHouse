@@ -344,6 +344,8 @@ Tagging requires tag key and value provided as `after_processing_tag_key` and `a
 
 On a versioned S3 bucket, `delete` and `move` remove only the version that was read, so an older version of the same key, if there is one, becomes the current object again. The listing does not report versions, so the read is matched to the listed object by its `ETag` only: if the same bytes are uploaded again between the listing and the read, the new version is read, moved or deleted, and the listed version stays at the key.
 
+Because they name that version, `delete` and `move` on a versioned bucket also need the permissions `s3:GetObjectVersion` and `s3:DeleteObjectVersion` on the source bucket, and `s3:GetObjectVersionTagging` with `after_processing_move_preserve_tags`. Grant them before upgrading a server with such a table: without them these requests fail with `AccessDenied` and the processed files stay at the source. An object uploaded while versioning was off or suspended has the version `null`, which the next such upload reuses, so it is handled like an object of an unversioned bucket.
+
 ### `after_processing_retries` {#after_processing_retries}
 
 Number of retries for the requested after-processing action, before giving up.
