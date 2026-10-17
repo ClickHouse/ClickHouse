@@ -16,8 +16,28 @@ constexpr uint64_t DBMS_MAX_DECOMPRESSED_SIZE = 0x40000000ULL;  /// 1GB
 /** one byte for method, 4 bytes for compressed size, 4 bytes for uncompressed size */
 constexpr uint8_t COMPRESSED_BLOCK_HEADER_SIZE = 9;
 
+/** Checksum before each compressed block (CityHash128). Fixed size; see comment below. */
+constexpr size_t COMPRESSED_BLOCK_CHECKSUM_SIZE = 16;
+
 namespace DB
 {
+
+/// Total on-disk size of one compressed block whose payload (after the codec header) is `payload_bytes`.
+inline size_t getCompressedBlockOnDiskSize(size_t payload_bytes)
+{
+    return COMPRESSED_BLOCK_CHECKSUM_SIZE + COMPRESSED_BLOCK_HEADER_SIZE + payload_bytes;
+}
+
+/// True when `file_size` is exactly `row_count` contiguous blocks of `payload_bytes` each.
+inline bool isFixedPayloadSizeOneBlockPerRow(size_t file_size, size_t row_count, size_t payload_bytes_per_row)
+{
+    if (!file_size || !row_count || !payload_bytes_per_row)
+        return false;
+
+    const size_t block_bytes = getCompressedBlockOnDiskSize(payload_bytes_per_row);
+    return file_size == row_count * block_bytes;
+}
+
 
 /** The compressed block format is as follows:
   *

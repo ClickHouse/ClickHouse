@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnArray.h>
@@ -193,6 +194,26 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
             SerializationProductQuantizationCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             product_quantization_subcolumn_name, ISerialization::Substream::ProductQuantizationCodebook);
     }
+}
+
+bool SerializationQuantizedVector::isVectorElementsSubstream(const ISerialization::SubstreamPath & path)
+{
+    return path.size() == 2
+        && path[0].type == ISerialization::Substream::ArrayElements
+        && path[1].type == ISerialization::Substream::Regular;
+}
+
+ISerialization::SubstreamPath SerializationQuantizedVector::vectorElementsSubstreamPath()
+{
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::ArrayElements);
+    path.push_back(ISerialization::Substream::Regular);
+    return path;
+}
+
+SerializationPtr SerializationQuantizedVector::getVectorElementsSerialization() const
+{
+    return assert_cast<const SerializationArray &>(*nested_serialization).getNestedSerialization();
 }
 
 String SerializationQuantizedVector::getCustomSerializationIdentity() const
