@@ -1,0 +1,26 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- A read-only disk whose backing store is unreachable, so resolving any
+                 path on it raises a connection error instead of answering. Nothing
+                 listens on this port, deliberately. It lives on its own instance
+                 because an unreachable disk also breaks the unrelated all-disk
+                 orphaned-parts scan that a non-default storage policy performs at
+                 table load, which the other tests here rely on. -->
+            <web_unreachable>
+                <type>web</type>
+                <endpoint>http://127.0.0.1:60799/unreachable/</endpoint>
+            </web_unreachable>
+            <!-- A local disk used to exercise the state `DiskLocal` enters when write
+                 access is lost: read-only but still readable and not broken. The test
+                 removes write permission on its root and the periodic disk checker
+                 picks the state up. -->
+            <ro_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/ro_local/</path>
+            </ro_local>
+        </disks>
+    </storage_configuration>
+    <!-- Short period so the disk checker notices lost write access quickly. -->
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+</clickhouse>
