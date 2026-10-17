@@ -117,11 +117,25 @@ private:
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
     void writeQueryResponseFooter(WriteBuffer & response);
-    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
-    void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    /// The block writers write one block and return true iff at least one element was emitted (all-stale-marker
+    /// histogram blocks emit none); `first` is true exactly when nothing was emitted yet, for comma placement.
+    bool writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    bool writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
+    bool writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
+    bool writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    bool writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    /// The histogram variants of the block writers above, used when the result block carries native histograms.
+    bool writeQueryResponseInstantVectorBlockWithHistograms(WriteBuffer & response, const Block & result_block, bool first);
+    bool writeQueryResponseRangeVectorBlockWithHistograms(WriteBuffer & response, const Block & result_block, bool first);
+
+    /// The 11 payload element columns of a histogram payload tuple column (see `getTimeSeriesHistogramPayloadTupleType`).
+    struct HistogramPayloadColumns;
+    /// Pairs the payload tuple's type and column by element name when the tuple has explicit element names,
+    /// else verifies the canonical positional layout. Throws LOGICAL_ERROR on a mismatch.
+    HistogramPayloadColumns resolveHistogramPayloadColumns(const DataTypePtr & payload_tuple_type, const IColumn & payload_tuple_column);
+    /// Writes one histogram payload tuple as a JSON object matching `MarshalHistogram` in Prometheus util/jsonutil/marshal.go.
+    void writeHistogram(WriteBuffer & response, const HistogramPayloadColumns & payload, size_t row_index);
+
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
