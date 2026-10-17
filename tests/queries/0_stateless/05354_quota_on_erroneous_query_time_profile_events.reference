@@ -1,0 +1,8 @@
+-- a failure during execution charges the time it took
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+1	1
+QUOTA_EXCEEDED
+-- a failure after the query is registered but before it starts charges the time as well
+UNKNOWN_TABLE
+1
+QUOTA_EXCEEDED

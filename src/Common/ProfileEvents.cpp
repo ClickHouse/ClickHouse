@@ -2146,8 +2146,7 @@ const std::string_view & getDocumentation(Event event)
     return docs[event];
 }
 
-/// Get ProfileEvent by its name
-Event getByName(std::string_view name)
+static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
 {
     static const std::unordered_map<std::string_view, Event> map =
     {
@@ -2156,6 +2155,13 @@ Event getByName(std::string_view name)
 #undef M
     };
 
+    return map;
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
     auto it = map.find(name);
     if (it == map.end())
     {
@@ -2168,6 +2174,15 @@ Event getByName(std::string_view name)
             name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
     }
 
+    return it->second;
+}
+
+std::optional<Event> tryGetByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
+    auto it = map.find(name);
+    if (it == map.end())
+        return std::nullopt;
     return it->second;
 }
 

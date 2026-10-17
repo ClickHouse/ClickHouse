@@ -1175,6 +1175,14 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(*query_state);
+
+                /// Flush the tail of the profile events accumulated since the last periodic report,
+                /// so that the initiator of a distributed query charges them to the quotas over
+                /// profile events even when this query fails. Only do it while streaming the result
+                /// of a `SELECT`, where `ProfileEvents` packets are already sent periodically: in other
+                /// states (e.g. `INSERT`) the clients do not expect them before the `Exception`.
+                if (query_scope && query_state->streaming_select_result)
+                    sendSelectProfileEvents(*query_state);
             }
             catch (const Exception & e)
             {
@@ -1626,7 +1634,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
                     sendProgress(state);
-                sendInsertProfileEvents(state);
+                sendInsertProfileEvents(state, /* final_report = */ true);
             }
             return;
         }
@@ -1649,7 +1657,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendInsertProfileEvents(state);
+    sendInsertProfileEvents(state, /* final_report = */ true);
 }
 
 
@@ -1670,6 +1678,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             out->sync();
         }
     }
+
+    state.streaming_select_result = true;
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
@@ -1990,11 +2000,17 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 }
 
 
-void TCPHandler::sendInsertProfileEvents(QueryState & state)
+void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    /// The initiator of a distributed `INSERT` (`RemoteInserter`) does not read the packets of the remote
+    /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
+    /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
+    /// final report to the quotas over profile events of the initiating user.
+    /// Older initiators do not expect even the final report and fail on it.
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && (!final_report || client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT))
         return;
 
     sendProfileEvents(state);

@@ -213,12 +213,18 @@ private:
             void finish(ResultProgress result = {});
             void finish(std::exception_ptr exception_);
 
+            /// Increments `FailedAsyncInsertQuery` for this entry, at most once. `finish` with an exception
+            /// calls it too; calling it earlier attributes the failure to the current thread group, e.g. to
+            /// the flush query, before the flush takes the snapshot of its profile events for the quotas.
+            void countFailure();
+
             std::future<ResultProgress> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
         private:
             std::promise<ResultProgress> promise;
             std::atomic_bool finished = false;
+            std::atomic_bool failure_counted = false;
         };
 
         InsertData()
@@ -380,6 +386,8 @@ private:
         const ContextPtr & context_,
         LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
+
+    static void countFailureOfUnfinishedEntries(const InsertData & data);
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
