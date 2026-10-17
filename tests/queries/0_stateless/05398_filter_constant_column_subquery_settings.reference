@@ -4,3 +4,15 @@ inner disabled, outer enabled
 inner enabled, outer disabled
 1
 1
+partial PREWHERE, inner disabled, outer enabled
+0
+0
+partial PREWHERE, inner enabled, outer disabled
+1
+1
+serialized plan, inner disabled, outer enabled
+0
+0
+serialized plan, inner enabled, outer disabled
+1
+1

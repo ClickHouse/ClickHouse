@@ -637,6 +637,14 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in:
+    /// bit 2 is set if the value is known, bit 3 holds the value.
+    if (optimize_constant_columns_after_filter)
+    {
+        flags |= 2;
+        if (*optimize_constant_columns_after_filter)
+            flags |= 4;
+    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -666,7 +674,10 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    if (flags & 2)
+        step->setOptimizeConstantColumnsAfterFilter(bool(flags & 4));
+    return step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
