@@ -21,6 +21,7 @@ SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_merge_expression_into_join = 1; -- Pinned because the test asserts on the plan shape
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 -- The test pins full EXPLAIN outputs, so the randomized settings that shape these plans
 -- are pinned to their defaults.
