@@ -11,6 +11,8 @@ SET query_plan_join_swap_table = 0;
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
+-- The non-joined rows come from parallel sources only when this setting is on.
+SET parallel_non_joined_rows_processing = 1;
 
 DROP TABLE IF EXISTS t_phj_plan_build;
 DROP TABLE IF EXISTS t_phj_plan_probe;

@@ -15,6 +15,8 @@ SET enable_parallel_replicas = 0;
 -- A distinct-key count cached by an earlier run would feed the plan; every query must plan from
 -- its own build.
 SET collect_hash_table_stats_during_joins = 0;
+-- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
+SET max_threads = 8;
 
 DROP TABLE IF EXISTS t_phj_scatter_build;
 DROP TABLE IF EXISTS t_phj_scatter_probe;
