@@ -33,7 +33,7 @@ STRUCTURE="id UInt64,
     file Tuple(uri String, offset UInt32, size UInt64, content_type LowCardinality(String), checksum Nullable(String), inline String),
     inline_file Tuple(inline FixedString(3), content_type String),
     files Array(Tuple(uri String, size Nullable(Int64))),
-    maybe_file Tuple(uri Nullable(String)),
+    maybe_file Nullable(Tuple(uri String)),
     file_map Map(String, Tuple(offset Int8)),
     not_file Tuple(uri String, other UInt64)"
 
@@ -57,11 +57,9 @@ echo "--- data"
 $CLICKHOUSE_LOCAL -q "SELECT * EXCEPT inline_file, hex(inline_file.inline), inline_file.content_type FROM file('${FILE_DATA}') ORDER BY id FORMAT Vertical"
 
 echo "--- round trip with the original structure"
-# A null `maybe_file` is a null FILE reference, which is read as a tuple of NULLs (the reader does not
-# read an OPTIONAL group with OPTIONAL fields as `Nullable(Tuple)`).
 $CLICKHOUSE_LOCAL -q "
-    SELECT count(), sum(cityHash64(id, file, inline_file, files, file_map, not_file, maybe_file.uri))
-        = (SELECT sum(cityHash64(id, file, inline_file, files, file_map, not_file, maybe_file.uri)) FROM (${SOURCE}))
+    SELECT count(), sum(cityHash64(id, file, inline_file, files, file_map, not_file, maybe_file))
+        = (SELECT sum(cityHash64(id, file, inline_file, files, file_map, not_file, maybe_file)) FROM (${SOURCE}))
     FROM file('${FILE_DATA}', Parquet, '${STRUCTURE}')"
 
 echo "--- subset of fields, reordered"
