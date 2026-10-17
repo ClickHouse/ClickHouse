@@ -844,7 +844,6 @@ bool canUseStatisticsToExcludeParts(
         && !(!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context));
 }
 
-/// A part whose check throws can match.
 bool statisticsAllowPartToMatch(
     StatisticsPartPruner & statistics_pruner, const RangesInDataPart & part, const NameSet & required_columns, LoggerPtr log)
 {

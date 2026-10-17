@@ -247,7 +247,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                /// A statistics estimate of 0 is only an estimate; the statistics of every part can prove it.
                 stats.proven_empty = relation_profile.rows == 0 && analyzed_result
                     && MergeTreeDataSelectExecutor::statisticsExcludeAllParts(
                         analyzed_result->parts_with_ranges, reading->getStorageMetadata(), reading->getQueryInfo(),
@@ -319,8 +318,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    /// An array join multiplies each row by its array size, which is not estimated,
-    /// so its output is known only when its input is proven empty.
+    /// An array join changes the row count by unestimated array sizes, so only a proven-empty input gives a known output.
     const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
     if (typeid_cast<const ArrayJoinStep *>(step) || (expression_step && expression_step->getExpression().hasArrayJoin()))
     {
