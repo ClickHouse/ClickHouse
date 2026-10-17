@@ -99,6 +99,7 @@ class Targeting:
                 url=conn.get("url"),
                 user=conn.get("user"),
                 passwd=conn.get("password"),
+                refused_retry_sec=self.config.cidb_refused_retry_sec,
             )
         return self._cidb
 
