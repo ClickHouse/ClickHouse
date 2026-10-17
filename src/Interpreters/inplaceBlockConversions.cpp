@@ -142,17 +142,72 @@ void addDefaultRequiredExpressionsRecursively(
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
         const auto & column = columns.get(required_column_name);
-        auto default_value = column.type->getDefault();
-        ASTPtr expr = make_intrusive<ASTLiteral>(default_value);
+        ASTPtr expr = makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(column.type->getName()));
         if (is_column_in_query && convert_null_to_default)
-        {
-            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
-            auto cast_expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName()));
-            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(cast_expr));
-        }
+            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(expr));
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
+    else if (auto column_in_storage = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_column_name);
+             column_in_storage && column_in_storage->isSubcolumn())
+    {
+        /// A subcolumn has no default of its own, it is taken from its column.
+        addDefaultRequiredExpressionsRecursively(
+            block, column_in_storage->getNameInStorage(), column_in_storage->getTypeInStorage(),
+            columns, default_expr_list_accum, added_columns, /*null_as_default=*/ false);
+    }
+}
+
+/// The analyzer looks a compound identifier up among aliases by its first part only, so a reference to a column with a
+/// compound name that the list provides as an alias gets that name as its first part. A lambda argument shadows it.
+void bindCompoundNamesToAliases(IAST & ast, const NameSet & compound_aliases, NameSet & lambda_arguments)
+{
+    checkStackSize();
+
+    if (auto * identifier = ast.as<ASTIdentifier>())
+    {
+        auto & parts = identifier->name_parts;
+        if (parts.size() < 2 || lambda_arguments.contains(parts.front()))
+            return;
+
+        String prefix = parts.front();
+        String alias;
+        size_t alias_parts = 0;
+        for (size_t i = 1; i < parts.size(); ++i)
+        {
+            prefix += '.';
+            prefix += parts[i];
+            if (compound_aliases.contains(prefix))
+            {
+                alias = prefix;
+                alias_parts = i + 1;
+            }
+        }
+
+        if (alias_parts)
+        {
+            parts.erase(parts.begin() + 1, parts.begin() + alias_parts);
+            parts.front() = std::move(alias);
+        }
+        return;
+    }
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
+        Names added;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            if (lambda_arguments.insert(name).second)
+                added.push_back(name);
+
+        bindCompoundNamesToAliases(*function->arguments->children[1], compound_aliases, lambda_arguments);
+
+        for (const auto & name : added)
+            lambda_arguments.erase(name);
+        return;
+    }
+
+    for (const auto & child : ast.children)
+        bindCompoundNamesToAliases(*child, compound_aliases, lambda_arguments);
 }
 
 
@@ -166,6 +221,17 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
 
     if (default_expr_list->children.empty())
         return nullptr;
+
+    NameSet compound_aliases;
+    for (const auto & expr : default_expr_list->children)
+        if (!Nested::splitName(expr->tryGetAlias()).second.empty())
+            compound_aliases.insert(expr->tryGetAlias());
+
+    if (!compound_aliases.empty())
+    {
+        NameSet lambda_arguments;
+        bindCompoundNamesToAliases(*default_expr_list, compound_aliases, lambda_arguments);
+    }
 
     return default_expr_list;
 }
