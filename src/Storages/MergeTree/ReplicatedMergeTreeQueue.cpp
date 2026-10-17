@@ -1209,6 +1209,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
                 if (hasSupportedMetadataMutation(entry.commands))
                     num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
+                storage.dropMutationInitialBytes(entry.znode_name);
 
                 if (!it->second.is_done)
                 {
@@ -1353,6 +1354,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
             num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
 
         mutations_by_znode.erase(it);
+        storage.dropMutationInitialBytes(mutation_id);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
@@ -2630,6 +2632,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                storage.dropMutationInitialBytes(znode);
                 /// The pointer mtime is the time the mutation it points at was finalized.
                 /// For older mutations the pointer has already been overwritten, so their
                 /// completion time is unknown and `finish_time` is left zero.
@@ -2702,6 +2705,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                storage.dropMutationInitialBytes(entry->znode_name);
                 it->second.finish_time = finish_time;
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
