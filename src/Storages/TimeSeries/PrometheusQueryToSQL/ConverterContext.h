@@ -26,6 +26,12 @@ struct ConverterContext
 
     const ResultType result_type;
     const NodeEvaluationRangeGetter node_range_getter;
+
+    /// A query evaluated at several points aggregates raw samples in two levels, the first one in the order of the samples
+    /// table (see aggregateRangeVector()). A query evaluated at one point holds one window per series in any grouping,
+    /// so it aggregates them in one level.
+    const bool aggregate_range_vectors_in_order;
+
     SQLSubqueries subqueries;
 
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,

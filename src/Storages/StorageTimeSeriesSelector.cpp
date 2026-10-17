@@ -782,7 +782,12 @@ namespace
     /// because it returns exactly the specified type (`CAST` and conversion functions like
     /// `toDateTime64` keep the timezone of the casted expression), and it is free when the type
     /// already matches.
+    ///
+    /// The column `id` is selected as is when the samples table stores it with exactly the expected type:
+    /// a query aggregating `GROUP BY id` can then run in the order of the samples table (`optimize_aggregation_in_order`),
+    /// which the planner allows only if the aggregation key is the sorting key column itself and not a function of it.
     ASTPtr makeSelectQuery(ASTPtr select_query_from_samples_table,
+                           const ColumnsDescription & samples_table_columns,
                            const DataTypePtr & table_id_type,
                            const DataTypePtr & table_timestamp_type,
                            const DataTypePtr & table_value_type)
@@ -794,9 +799,17 @@ namespace
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(table_id_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            auto samples_table_id_column = samples_table_columns.tryGetPhysical(TimeSeriesColumnNames::ID);
+            if (samples_table_id_column && (samples_table_id_column->type->getName() == table_id_type->getName()))
+            {
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            }
+            else
+            {
+                select_list.push_back(makeASTFunction(
+                    "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(table_id_type->getName())));
+                select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            }
 
             select_list.push_back(makeASTFunction(
                 "_CAST",
@@ -1157,6 +1170,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_samples_table),
+        samples_table_metadata->getColumns(),
         config.table_id_type,
         config.table_timestamp_type,
         config.table_value_type);

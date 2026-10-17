@@ -46,12 +46,14 @@ enum class StoreMethod
     VECTOR_GRID,
 
     /// Data are stored in three columns:
-    /// - `group` (UInt64),
+    /// - `id` (the type of the identifiers in the TimeSeries table),
     /// - `timestamp` (the type of the timestamps in the TimeSeries table,
     ///   or `ConverterContext::result_timestamp_type` after applying an offset),
     /// - `value` (Float64 or Float32, the type of the values in the table).
     /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
+    /// The rows come in the order of the samples table, `(id, timestamp)`, so the consumers can aggregate them `GROUP BY id`
+    /// in that order before merging the ids of one set of tags (see aggregateRangeVector()).
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
@@ -93,7 +95,7 @@ struct SQLQueryPiece
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
-    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
+    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `id`, `timestamp`, `value`
     /// (see the comment for StoreMethod::RAW_DATA for their types).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;

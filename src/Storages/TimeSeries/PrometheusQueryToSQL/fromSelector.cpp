@@ -36,12 +36,14 @@ namespace
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
 
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+        /// SELECT id, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>)
+        ///
+        /// The group is calculated after the aggregation over `id` (see aggregateRangeVector()): the samples table is
+        /// sorted by `(id, timestamp)` and the planner can aggregate in that order only if the key is the `id` column itself.
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
         /// The columns `timestamp` and `value` keep the types they have in the table, see the comment for StoreMethod::RAW_DATA.
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
@@ -162,13 +164,13 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
 
     if (range_selector.store_method == StoreMethod::RAW_DATA)
     {
-        /// SELECT group, timestamp,
+        /// SELECT id, timestamp,
         ///        if(<value is a stale marker>, CAST(value, 'Float64'), CAST(timestamp, 'Float64')) AS value
         /// FROM <raw_data>
         /// Stale markers are kept so that last_over_time() can still select them and they are turned into absence below,
         /// exactly as for a plain instant selector.
         SelectQueryBuilder builder;
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
 
         ASTPtr value = makeASTFunction(

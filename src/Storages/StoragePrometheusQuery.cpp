@@ -14,6 +14,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
@@ -34,7 +35,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+    extern const SettingsBool aggregation_in_order_split_by_primary_key_ranges;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -214,9 +218,31 @@ void StoragePrometheusQuery::readImpl(
         query_context->setSetting("enable_materialized_cte", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
+    /// The functions over range vectors aggregate the samples `GROUP BY id` in the order of the samples table,
+    /// so the first level of the aggregation keeps the state of one series at a time (see aggregateRangeVector()).
+    /// The states of the time series aggregate functions hold the samples of the whole window, so they are big and few
+    /// of them fit in a block: a smaller block limit makes the aggregation flush them more often.
+    if (!context->getSettingsRef()[Setting::optimize_aggregation_in_order].changed)
+        query_context->setSetting("optimize_aggregation_in_order", true);
+    if (!context->getSettingsRef()[Setting::aggregation_in_order_max_block_bytes].changed)
+        query_context->setSetting("aggregation_in_order_max_block_bytes", 10000000);
+    if (!context->getSettingsRef()[Setting::aggregation_in_order_split_by_primary_key_ranges].changed)
+        query_context->setSetting("aggregation_in_order_split_by_primary_key_ranges", true);
+
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+
+    if (!query_plan.isInitialized())
+        return;
+
+    /// The plan optimizer applies the settings of the outer query. The wrapper step makes the generated plan
+    /// optimize under `query_context` instead (see optimizeTreeSecondPass).
+    auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
+    query_plan = QueryPlan();
+    query_plan.takeContextsFrom(*generated_plan);
+    query_plan.addDistributedPlanDecisionContext(query_context);
+    query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), query_context));
 }
 
 }

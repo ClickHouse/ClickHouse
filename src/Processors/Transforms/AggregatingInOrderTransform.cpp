@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
@@ -101,6 +102,10 @@ static Int64 getCurrentMemoryUsage()
     Int64 current_memory_usage = 0;
     if (auto * memory_tracker = CurrentThread::getMemoryTracker())
         current_memory_usage = memory_tracker->get();
+    /// Allocations below `max_untracked_memory` wait in the thread-local counter before they reach the tracker,
+    /// and the states of one chunk often stay below it.
+    if (CurrentThread::isInitialized())
+        current_memory_usage += CurrentThread::get().untracked_memory.load();
     return current_memory_usage;
 }
 
