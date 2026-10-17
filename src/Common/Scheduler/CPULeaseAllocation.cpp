@@ -469,14 +469,7 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
 
     // Return surplus quanta to the scheduler now instead of waiting for consume() of another thread.
     // TODO(serxa): requested_ns is not lowered here, so the next preemption is delayed by up to one quantum per parked thread.
-    while (allocated > effectiveMaxSlots())
-    {
-        --allocated;
-        --granted;
-        if (granted == 0 && !exception) // only on the transition to non-acquirable, not every decrement
-            acquirable.store(false, std::memory_order_relaxed);
-        requests.finish();
-    }
+    finishSurplusRequests();
 
     // A preempted thread can run on the parked thread's slot
     resumePreempted();
@@ -537,6 +530,18 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
     }
 }
 
+void CPULeaseAllocation::finishSurplusRequests()
+{
+    while (allocated > effectiveMaxSlots())
+    {
+        --allocated;
+        --granted;
+        if (granted == 0 && !exception) // only on the transition to non-acquirable, not every decrement
+            acquirable.store(false, std::memory_order_relaxed);
+        requests.finish();
+    }
+}
+
 void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
 {
     // This code runs in the scheduler thread, so we have to keep it fast and simple
@@ -577,6 +582,9 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
     } while (!schedule(lock));
 
     resumePreempted();
+
+    if (allParked())
+        finishSurplusRequests();
 }
 
 void CPULeaseAllocation::setMax(SlotCount new_max)

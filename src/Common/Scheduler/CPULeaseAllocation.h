@@ -216,15 +216,23 @@ private:
     bool parkLease(Lease & lease);
     void unparkLease(Lease & lease);
 
+    /// Give back the slots above `effectiveMaxSlots()`
+    void finishSurplusRequests();
+
     /// Parked thread set management (mirrors setPreempted/resetPreempted)
     void setParked(size_t thread_num);
     void resetParked(size_t thread_num);
 
-    /// Slots to request: `current_max_slots` minus parked threads, clamped at 0
+    /// Slots to request: `current_max_slots` minus parked threads, clamped at 0.
+    /// None while every thread is parked: no thread can use a slot.
     SlotCount effectiveMaxSlots() const
     {
+        if (allParked())
+            return 0;
         return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
     }
+
+    bool allParked() const { return threads.running_count == 0 && threads.parked_count > 0 && threads.preempted.none(); }
 
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
