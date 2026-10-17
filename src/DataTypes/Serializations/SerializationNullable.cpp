@@ -7,7 +7,9 @@
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParseError.h>
@@ -19,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <base/scope_guard.h>
 
 namespace DB
@@ -969,15 +972,49 @@ bool SerializationNullable::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     return deserializeTextJSONImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
 }
 
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+namespace
 {
+
+/// JSON has no literal for NaN: ClickHouse writes NaN (and Inf, unless output_format_json_quote_denormals
+/// is set) as `null`, so a Float read back from `null` has to decode to NaN for the round trip to hold.
+/// Substituting the type default instead is what made `Point` (= Tuple(Float64, Float64)) read
+/// `[11, null]` as `(11,0)` rather than `(11,nan)`, while TSV/CSV parse `NaN` correctly -- issue #111917.
+///
+/// This applies only to elements of a composite type. A whole column may carry a DEFAULT expression that
+/// input_format_null_as_default is meant to trigger, but a tuple/array/map element has no default of its
+/// own, so there is nothing to substitute and turning the value into 0 is pure information loss.
+///
+/// SerializationNumber<Float32|Float64>::deserializeTextJSON already maps the `null` literal to
+/// NaNOrZero<T>(), so it is enough to let the nested serialization consume the value itself.
+bool nullShouldBeReadAsNaN(const IColumn & column)
+{
+    const IColumn * col = &column;
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(col))
+        col = low_cardinality->getDictionary().getNestedColumn().get();
+
+    return typeid_cast<const ColumnFloat32 *>(col) || typeid_cast<const ColumnFloat64 *>(col);
+}
+
+}
+
+bool SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, bool is_composite_element)
+{
+    if (is_composite_element && nullShouldBeReadAsNaN(nested_column))
+    {
+        nested_serialization->deserializeTextJSON(nested_column, istr, settings);
+        return true;
+    }
+
     bool is_null = false;
     deserializeTextJSONImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
     return !is_null;
 }
 
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, bool is_composite_element)
 {
+    if (is_composite_element && nullShouldBeReadAsNaN(nested_column))
+        return nested_serialization->tryDeserializeTextJSON(nested_column, istr, settings);
+
     bool is_null = false;
     return deserializeTextJSONImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
 }
