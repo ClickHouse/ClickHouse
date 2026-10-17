@@ -240,6 +240,54 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedD
     EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3NoEndpoint)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
+/// A REST catalog (e.g. Apache Polaris) can vend an `s3.endpoint` that is a bare host such as
+/// `http://minio:9000`. The catalog reports it independently of the metadata file URI, so the
+/// result must stay relative to the table location and carry no trace of the endpoint.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointBareHost)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+    metadata.setEndpoint("http://minio:9000");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
+/// The vended `s3.endpoint` may also already include the bucket, e.g.
+/// `http://minio:9000/bucket123`. The bucket sits inside the endpoint here and after it in the
+/// bare-host shape above, so both are pinned: the result must not depend on where the endpoint
+/// puts the bucket.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointIncludesBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+    metadata.setEndpoint("http://minio:9000/bucket123");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
 TEST_F(AzureAbfssParsingTest, TableMetadataAbfssEndpointAlreadyContainsContainerDefault)
 {
     TableMetadata metadata;
