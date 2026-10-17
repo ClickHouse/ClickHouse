@@ -125,6 +125,9 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
+    /// The merged count of non-nulls is the modular `UInt64` sum of the partial counts, which
+    /// never exceeds their saturating sum - see `MergedValueBound::Subadditive`.
+    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
 #if USE_EMBEDDED_COMPILER
 

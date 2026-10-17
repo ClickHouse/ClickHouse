@@ -1,0 +1,15 @@
+-- with the bucket-local Top-K conversion the aggregation is still pushed below the join
+JoinLogical
+Aggregating
+-- result through cascades
+499	500
+498	499
+497	498
+496	497
+495	496
+-- result classically
+499	500
+498	499
+497	498
+496	497
+495	496
