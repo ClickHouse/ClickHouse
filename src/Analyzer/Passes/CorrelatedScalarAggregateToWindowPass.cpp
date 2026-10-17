@@ -23,6 +23,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
@@ -41,7 +42,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool optimize_correlated_scalar_aggregate_to_window;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
@@ -325,13 +325,17 @@ private:
         /// Without the filter push-down, no condition restricts the windows.
         if (!optimization_settings.filter_push_down)
             return;
-        const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
+        const JoinSettings join_settings(getSettings());
+        const auto & join_algorithms = join_settings.join_algorithms;
+        const bool can_run_grace_hash = join_settings.canRunGraceHash();
         /// A runtime filter restricts only the probe (left) side of a join. With the automatic swap of the join sides,
         /// the larger table becomes the probe side, and the window over a smaller one is small. With a fixed choice,
         /// the target may stay on the build side, as without the join order optimization, which makes the swap.
         /// An `ie_join` listed first takes the joins with inequalities, and builds no runtime filter.
         const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
-            && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter)
+            /// The conditions come only from the ON of `ALL` and `ANY` joins, see `collectEnforcedConjuncts`.
+            && std::ranges::any_of(join_algorithms, [can_run_grace_hash](JoinAlgorithm join_algorithm)
+                { return QueryPlanOptimizations::supportsRuntimeFilter(join_algorithm, can_run_grace_hash, JoinStrictness::All); })
             && !optimization_settings.join_swap_table.has_value()
             && optimization_settings.query_plan_optimize_join_order_limit > 0
             && join_algorithms.front() != JoinAlgorithm::IE_JOIN
