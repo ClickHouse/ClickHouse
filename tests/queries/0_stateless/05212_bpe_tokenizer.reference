@@ -1,0 +1,18 @@
+-- text becomes token ids, and the ids become the text again
+[97,32,260]	a banana
+[267,271]	hello world
+-- the number of tokens of a text is the length of the result
+5
+-- a token of the vocabulary is one id, and merging prefers the lowest rank
+[260]	[256,263]
+-- an empty text has no tokens
+[]	1
+-- the text is tokenized as text, so a piece of it that reads like a special token is not one
+1
+-- a string that is not valid UTF-8 survives the round trip
+1
+-- over a column
+1	3	1
+2	2	1
+3	0	1
+-- errors
