@@ -230,9 +230,11 @@ struct ResolvedExpressionList
     std::shared_ptr<TableNode> table;
 };
 
-ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context, bool prefer_aliases_to_column_names = false)
 {
     auto execution_context = Context::createCopy(context);
+    if (prefer_aliases_to_column_names)
+        execution_context->setSetting("prefer_column_name_to_alias", false);
     auto expression = buildQueryTree(expr_list, execution_context);
 
     ColumnsDescription fake_column_descriptions{};
@@ -252,12 +254,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    ContextPtr context)
+    ContextPtr context,
+    bool prefer_aliases_to_column_names = false)
 {
     if (!expr_list)
         return {};
 
-    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto resolved = resolveExpressionList(header, expr_list, context, prefer_aliases_to_column_names);
     auto & expression = resolved.expression;
     auto & execution_context = resolved.context;
 
@@ -290,18 +293,40 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    const Block & row_columns)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    Block block_with_row_columns;
+    if (!row_columns.empty())
+    {
+        block_with_row_columns = block;
+        for (const auto & column : row_columns)
+            if (!block_with_row_columns.has(column.name))
+                block_with_row_columns.insert(column);
+    }
+    Block & header = row_columns.empty() ? block : block_with_row_columns;
+
+    /// A column referenced by a DEFAULT is the converted one when it is converted too.
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
+        header, conversion_expr_list, true, context, /*prefer_aliases_to_column_names=*/ true);
 
     if (dag)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
-        expression->execute(block);
+        expression->execute(header);
+
+        if (&header != &block)
+            for (auto & column : block)
+                column = header.getByName(column.name);
     }
 }
 
