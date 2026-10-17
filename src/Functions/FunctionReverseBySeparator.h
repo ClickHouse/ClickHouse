@@ -2,6 +2,8 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/Types.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context.h>
@@ -11,7 +13,7 @@ namespace DB
 /** reverseBySeparator(string[, separator]) - reverses the order of parts in a string separated by a separator.
   * Returns a string with parts ordered from right to left, joined by the same separator.
   */
-class FunctionReverseBySeparator final : public IFunction
+class FunctionReverseBySeparator : public IFunction
 {
 public:
     static constexpr auto name = "reverseBySeparator";
@@ -26,11 +28,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
-    {
-        return "(String, [const String]) -> String";
-    }
-
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };
 

@@ -27,7 +27,7 @@ void ProxyV1Handler::run()
     socket().setReceiveTimeout(settings[Setting::receive_timeout]);
 
     std::string word;
-    bool eol = false;
+    bool eol;
 
     // Read PROXYv1 protocol header
     // http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/setThreadName.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TraceSender.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -35,7 +37,7 @@ struct TraceLogElement
     ThreadName thread_name = ThreadName::UNKNOWN;
     String query_id{};
     std::vector<UInt64> trace{};
-    /// Size in bytes for the memory trace types, zero for the others.
+    /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
     Int64 size{};
     /// Allocation ptr for TraceType::MemorySample.
     UInt64 ptr{};
@@ -48,7 +50,7 @@ struct TraceLogElement
     ProfileEvents::Count increment{};
 
     /// Instrumentation values
-    UInt64 instrumented_point_id{};
+    UInt64 instrumented_point_id;
     Int32 function_id = -1;
     String function_name{};
     String handler{};

@@ -6,12 +6,11 @@
 namespace DB
 {
 
-class PlanSquashingTransform final : public ExceptionKeepingTransform
+class PlanSquashingTransform : public ExceptionKeepingTransform
 {
 public:
     PlanSquashingTransform(
-        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
-        size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits);
+        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "PlanSquashingTransform"; }
 

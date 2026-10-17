@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MutationCommands.h>
 
 namespace DB
@@ -47,9 +46,6 @@ struct MergeMutateSelectedEntry
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
     Strings mutation_ids; /// List of mutation version strings being applied
-    /// Taken by `StorageMergeTree::selectPartsToMerge` when the selected merge is a merge with TTL,
-    /// and given back when this entry dies - which happens whether the merge ran or was dropped.
-    MergeList::TTLMergeSlot ttl_merge_slot;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,

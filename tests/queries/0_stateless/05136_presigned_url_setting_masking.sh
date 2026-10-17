@@ -3,7 +3,8 @@
 # A presigned URL carries its credential in a query parameter, and that parameter's value ends at the
 # next `&`, at `#`, or at the end of the text. When such a URL is the last thing in a SQL literal, the
 # masking has to know where the literal ends: masking the already-quoted text replaces the closing
-# quote along with the credential, e.g. `s3_base = 'https://b/f.csv?X-Amz-Signature=[HIDDEN]`, and
+# quote along with the credential, e.g. `format_avro_schema_registry_url =
+# 'https://b/f.csv?X-Amz-Signature=[HIDDEN]`, and
 # `SHOW CREATE SETTINGS PROFILE` then returns something that is no longer parseable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -32,10 +33,10 @@ check_profile()
 }
 
 # 1. The credential is the last query parameter, so it has no `&` to end it.
-check_profile "s3_base = 'https://bucket.s3.amazonaws.com/f.csv?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&X-Amz-Signature=$CANARY'"
+check_profile "format_avro_schema_registry_url = 'https://bucket.s3.amazonaws.com/f.csv?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&X-Amz-Signature=$CANARY'"
 
 # 2. The credential is followed by a parameter that is not masked, which ends it before the quote.
-check_profile "s3_base = 'https://bucket.s3.amazonaws.com/f.csv?X-Amz-Signature=$CANARY&response-content-type=text/csv'"
+check_profile "format_avro_schema_registry_url = 'https://bucket.s3.amazonaws.com/f.csv?X-Amz-Signature=$CANARY&response-content-type=text/csv'"
 
 # 3. The credential is in the userinfo instead, which ends at `@` and never at the closing quote.
 check_profile "format_avro_schema_registry_url = 'http://user:$CANARY@registry:8080/'"

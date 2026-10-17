@@ -35,8 +35,7 @@ print '-- extend #3 --';
 Ledger | extend PriceInCents = 100 * Price | sort by PriceInCents asc | project Fruit, PriceInCents | summarize AveragePrice = avg(PriceInCents), Purchases = count() by Fruit | extend Sentence = strcat(Fruit, ' cost ', tostring(AveragePrice), ' on average based on ', tostring(Purchases), ' samples.') | project Sentence | sort by Sentence asc;
 
 print '-- extend #4 --';
--- [removed in the KQL rewrite] KQL literal bool(...) at position 86 expects a literal
--- Ledger | extend a = Price | extend b = a | extend c = a, d = b + 500 | extend Pass = bool(b == a and c == a and d == b + 500) | summarize binary_all_and(Pass);
+Ledger | extend a = Price | extend b = a | extend c = a, d = b + 500 | extend Pass = bool(b == a and c == a and d == b + 500) | summarize binary_all_and(Pass);
 
 print '-- extend #5 --';
 Ledger | take 2 | extend strcat(Fruit, ' was purchased from ', Supplier, ' for $', tostring(Price), ' on ', tostring(Purchase)) | extend PriceInCents = 100 * Price;
@@ -47,8 +46,14 @@ Ledger | extend Price = 100 * Price;
 print '-- extend #7 --';
 print a = 4 | extend a = 5;
 
+print '-- extend #8 --';
+-- print x = 5 | extend array_sort_desc(range(0, x), range(1, x + 1))
+
 print '-- extend #9 --';
 print x = 19 | extend = 4 + ; -- { clientError SYNTAX_ERROR }
 
 print '-- extend #10 --';
 Ledger | extend PriceInCents = * Price | sort by PriceInCents asc | project Fruit, PriceInCents | summarize AveragePrice = avg(PriceInCents), Purchases = count() by Fruit | extend Sentence = strcat(Fruit, ' cost ', tostring(AveragePrice), ' on average based on ', tostring(Purchases), ' samples.') | project Sentence; -- { clientError SYNTAX_ERROR }
+
+print '-- extend #11 --'; -- should ideally return this in the future: 5	[2,1] because of the alias ex
+print x = 5 | extend ex = array_sort_desc(dynamic([1, 2]), dynamic([3, 4]));

@@ -4,7 +4,6 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -12,13 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-}
-
-namespace FailPoints
-{
-    extern const char hudi_pause_before_iterate[];
-    extern const char hudi_pause_in_listing_data_files[];
+    extern const int LOGICAL_ERROR;
 }
 
 /**
@@ -50,7 +43,6 @@ namespace FailPoints
 Strings HudiMetadata::getDataFilesImpl() const
 {
     auto log = getLogger("HudiMetadata");
-    FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_in_listing_data_files);
     const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
 
     using Partition = std::string;
@@ -69,10 +61,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         const String stem = key_file.stem();
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected format for file: {}. Hudi data files must follow the naming convention "
-                "[FileId]_[FileWriteToken]_[Timestamp].[extension]", key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
         const auto partition = key_file.parent_path().stem();
         const auto & file_id = file_parts[0];
@@ -106,20 +95,8 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorag
 
 Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
 {
-    std::lock_guard lock(data_files_mutex);
     if (data_files.empty())
         data_files = getDataFilesImpl();
-    return data_files;
-}
-
-void HudiMetadata::pauseBeforeIterate()
-{
-    FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_before_iterate);
-}
-
-Strings HudiMetadata::getDataFilesIfListed() const
-{
-    std::lock_guard lock(data_files_mutex);
     return data_files;
 }
 

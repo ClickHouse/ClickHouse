@@ -1,11 +1,8 @@
 #pragma once
 
-#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
@@ -17,14 +14,10 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
-class ColumnsDescription;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
 using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace VirtualColumnUtils
 {
@@ -50,17 +43,7 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
-/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
-/// check the result.
-bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
-
-/// The same, but a set built from a subquery keeps its explicit elements when
-/// `use_index_for_in_with_subqueries` allows it (the way `buildOrderedSetsForDAG` builds it), so a
-/// condition on the set can still be read back afterwards - `extractConstantStringValuesForColumn`
-/// finds nothing in a set built without them. When the setting forbids that, the sets are built
-/// the plain way and stay ready for the filter to run.
-void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context);
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
@@ -72,20 +55,6 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
-
-/// Like `isDeterministic`, but treats the internal `__topKFilter` function as deterministic.
-///
-/// `__topKFilter` is the dynamic filter that `installTopKDynamicFilter` merges into the PREWHERE of
-/// the read of an `ORDER BY ... LIMIT n` query. Its non-determinism is bounded: for a fixed plan and data, the
-/// running threshold only tightens, so any row whose sort-column value lies in the final top-N
-/// passes the filter at every point during execution. Consequently a granule none of whose rows
-/// survive the filter is one that has no row that could have reached the final result, regardless
-/// of the threshold's exact trajectory through the run — such granules may be recorded in the
-/// query condition cache, provided the cache key is salted with the TopK plan parameters
-/// (`TopKFilterInfo::condition_hash`) so the entries are only reused under the same TopK plan.
-/// All query condition cache write and read sites for TopK reads must use this same gate,
-/// otherwise their keys diverge.
-bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
 
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
@@ -131,38 +100,15 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ContextPtr & context,
     const NamesAndTypesList & hive_columns = {});
 
-/// If `predicate` pins the String column read through `column_node` down to a finite set of
-/// constant values, return that set. This covers `col = 'x'`, `col IN ('x', 'y')`, `IN` over a
-/// prepared set, and conjunctions and disjunctions of those; it gives up (returns `nullopt`)
-/// when the column is left open-ended - no predicate on it, a range comparison, a `LIKE`, a
-/// `NOT IN`, or more than `limit` values.
-///
-/// The result is an over-approximation: every row that can pass `predicate` has its value of
-/// the column in the returned set, but a returned value need not match any row. So it is only
-/// good for pruning an enumeration - looking the candidates up directly instead of walking
-/// everything - and the caller must still apply the real filter to what it enumerated. An
-/// empty set means the predicate cannot be satisfied at all.
-std::optional<Strings> extractConstantStringValues(
-    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
-
-/// Same, for the column read through the `predicate`'s input named `column_name`.
-std::optional<Strings> extractConstantStringValuesForColumn(
-    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
-
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
 
-/// `file_names`, if provided, must be parallel to `paths` and supplies the `_file` value for each path.
-/// Otherwise `_file` is derived from the path as the substring after the last '/'. It is needed when
-/// the user-visible `_file` differs from the path suffix, e.g. web paths with a query/fragment part.
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
-    const std::vector<String> * file_names = nullptr);
+    const ContextPtr & context);
 
 template <typename T>
 void filterByPathOrFile(
@@ -171,11 +117,9 @@ void filterByPathOrFile(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
-    const std::vector<String> * file_names = nullptr)
+    const ContextPtr & context)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -190,36 +134,22 @@ void filterByPathOrFile(
 struct VirtualsForFileLikeStorage
 {
     const String & path;
-    const StorageID & storage_id;
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
-    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
-    /// Used by Iceberg position deletes to reference data files in the metadata path format.
-    const String * iceberg_metadata_file_path { nullptr };
-    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
-    std::optional<UInt64> first_row_id = std::nullopt;
-    ColumnPtr materialized_row_ids = {};
-    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with
 /// the "need only count" optimization that skips actual row parsing.
 bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
-
-/// Append virtual columns to a physical columns list for expression analysis.
-/// Virtual columns that already exist in the list are skipped.
-NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
-NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
 
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
@@ -230,17 +160,6 @@ std::string_view findHivePartitioningInPath(const String & path);
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
-
-/// Filter out common virtual column names (marked with is_common) from the given list.
-Names filterVirtualColumns(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsKind & kind_to_filter,
-    const VirtualsMaterializationPlace & place_to_filter);
-
-/// Splits requested column names into physical and virtual.
-/// Returns {physical_names, virtual_names}. Always includes at least one physical column.
-std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 }
 

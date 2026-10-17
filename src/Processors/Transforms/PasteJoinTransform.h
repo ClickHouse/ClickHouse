@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -6,6 +7,7 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>

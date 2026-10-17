@@ -7,6 +7,9 @@
             <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
         </server>
         <client>
+            <!-- This test asserts the source address a connection is made from, not the identity
+                 of the peer, and server.crt names only localhost while the clusters use node1..4. -->
+            <extendedVerification>false</extendedVerification>
             <invalidCertificateHandler>
                 <name>AcceptCertificateHandler</name>
             </invalidCertificateHandler>

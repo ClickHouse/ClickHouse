@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QueryPipeline/SizeLimits.h>
-#include <chrono>
 #include <set>
 #include <mutex>
 
@@ -43,10 +42,6 @@ private:
     std::mutex m;
     std::condition_variable cond_var;
 
-    /// The deadline (ms since steady_clock epoch) the worker's wait is currently armed for;
-    /// 0 while the worker is not parked on a deadline. Lets tests synchronize with the wait state.
-    UInt64 armed_deadline = 0;
-
     static void cancelTask(CancellationChecker::QueryToTrack task);
 
     const LoggerPtr log;
@@ -62,21 +57,12 @@ public:
     void terminateThread();
 
     // Method to add a new task to the multiset. Returns true if the task was added.
-    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout_us, OverflowMode overflow_mode);
-
-    /// The deadline (ms since the steady_clock epoch) for a task appended at `now` with `timeout_us`,
-    /// aligned up to the grid the worker batches deadlines on. Never earlier than `now + timeout_us`:
-    /// a task cancelled before its own timeout fails with a self-contradictory
-    /// `Timeout exceeded: elapsed 999.672 ms, maximum: 1000 ms`.
-    static UInt64 taskDeadlineMs(std::chrono::steady_clock::time_point now, Int64 timeout_us);
+    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
 
     // Used when some task is done
     void appendDoneTasks(const QueryStatusPtr & query);
 
     // Worker thread function
     void workerFunction();
-
-    // The deadline the worker is currently sleeping toward, 0 when it is not. For tests.
-    UInt64 getArmedDeadline();
 };
 }

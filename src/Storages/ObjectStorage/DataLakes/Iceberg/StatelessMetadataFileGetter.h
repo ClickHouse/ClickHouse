@@ -3,14 +3,17 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <Common/Exception.h>
 
 
+#include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
@@ -25,7 +28,8 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename);
+    const String & filename,
+    size_t bytes_size);
 
 /// Creates a fully initialized ManifestFileIterator from a cache key.
 /// All entries are drained so that aggregate methods (e.g. getRowsCountInAllFilesExcludingDeleted)
@@ -43,7 +47,7 @@ ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
-    const IcebergPathFromMetadata & filename,
+    const String & filename,
     LoggerPtr log);
 
 }

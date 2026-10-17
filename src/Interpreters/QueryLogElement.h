@@ -6,15 +6,11 @@
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/FlatStringMap.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
-#include <map>
 #include <memory>
-#include <optional>
 #include <set>
-#include <type_traits>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -26,6 +22,7 @@ class Counters;
 namespace DB
 {
 struct AsyncReadCounters;
+struct Settings;
 
 /** Allows to log information about queries execution:
   * - info about start of query execution;
@@ -90,15 +87,6 @@ struct QueryLogElement
     std::unordered_set<String> used_privileges;
     std::unordered_set<String> missing_privileges;
 
-    UInt64 used_number_of_joins{};
-    /// Sorted containers, so that the logged arrays do not depend on the order of execution.
-    std::set<String> used_join_algorithms;
-    /// Both `used_join_kinds` and `used_join_strictness` are positionally aligned and have
-    /// `used_number_of_joins` elements each, one per physical join.
-    std::vector<String> used_join_kinds;
-    std::vector<String> used_join_strictness;
-    std::set<String> spilled_to_disk;
-
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
@@ -107,22 +95,13 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
-    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query, if any.
-    String http_handler_name;
-    /// The HTTP request URL (path and query string) that invoked the query, if any.
-    String http_request_url;
-
     String log_comment;
 
     std::vector<UInt64> thread_ids;
     UInt64 peak_threads_usage = 0;
-    /// Self-contained snapshots (owning): the profile events, changed settings, and async-read counters as
-    /// the name->value forms they are dumped to. Kept as values (not a shared Settings/counter) so the
-    /// element owns all its memory - see SystemLogBase::add.
-    std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
-    std::map<String, UInt64> async_read_counters;
-    /// Unset when the settings were not dumped, which is not the same as a query that changed none.
-    std::optional<FlatStringMap> query_settings;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<AsyncReadCounters> async_read_counters;
+    std::shared_ptr<Settings> query_settings;
 
     bool is_internal{};
 
@@ -138,7 +117,4 @@ struct QueryLogElement
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
-
-/// Keep the moves implicit: the trait must reflect the members, not a declaration.
-static_assert(std::is_nothrow_move_constructible_v<QueryLogElement>);
 }

@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ColumnsDescription.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
 
@@ -46,14 +45,12 @@ namespace
             return ObjectStorageQueueMode::ORDERED;
         if (mode == "unordered")
             return ObjectStorageQueueMode::UNORDERED;
-        if (mode == "exclusive")
-            return ObjectStorageQueueMode::EXCLUSIVE;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 
     void validateMode(const std::string & mode)
     {
-        if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
+        if (mode != "ordered" && mode != "unordered")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 }
@@ -349,12 +346,7 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
         }
     }
 
-    /// Different versions serialize the same columns to a different text: the redundant parentheses
-    /// the user has written around a column `DEFAULT`, `CODEC` or `TTL` expression were kept by some
-    /// versions and are suppressed now (`IAST::FormatSettings::ignore_redundant_parentheses`),
-    /// so when the texts differ, compare the columns structurally before rejecting.
-    if (columns != from_zk.columns
-        && ColumnsDescription::parse(columns) != ColumnsDescription::parse(from_zk.columns))
+    if (columns != from_zk.columns)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in columns. "

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/StorageID.h>
