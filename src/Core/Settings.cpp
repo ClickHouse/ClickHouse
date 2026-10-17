@@ -8818,14 +8818,20 @@ For the `fair` workload scheduler: once the query has attained this many bytes o
 Scheduling priority of the query within its workload, used by the `priority` workload scheduler (see the `scheduler` workload setting). Lower value = higher priority; the default `0` is the neutral baseline, a negative value raises the query above the default and a positive value lowers it. Queries of equal priority are served first-come-first-served. Ignored by the other schedulers.
 )", 0, \
     {"26.10", 0, 0, "New query setting: scheduling priority of a query within its workload, used by the `priority` workload scheduler."}) \
-    DECLARE(UInt64, max_threads_soft_limit, 0, R"(
-Per-query soft limit on the number of CPU slots for workload CPU scheduling. Once the query holds this many CPU slots, its requests for further slots are demoted: they are served only after every other pending CPU request of the workload. A demoted request returns to the normal order as soon as the query holds fewer slots again. `0` disables the limit.
+    DECLARE(Int64, max_threads_soft_limit, -1, R"(
+Per-query soft limit on the number of CPU slots for workload CPU scheduling. Once the query holds this many CPU slots, its requests for further slots are demoted: they are served only after every other pending CPU request of the workload. A demoted request returns to the normal order as soon as the query holds fewer slots again.
 
-When this setting is not changed, the limit is taken from the workload setting of the same name (see `CREATE WORKLOAD`). When it is changed, even to `0`, it overrides the workload setting for this query.
+Possible values:
+
+- `-1` — use the workload setting of the same name (see `CREATE WORKLOAD`).
+- `0` — no limit for this query, even if the workload sets one.
+- Positive integer — the limit for this query, overriding the workload setting.
+
+A non-negative value means the same as in the workload setting.
 
 Applies only to CPU resources (`MASTER THREAD` and `WORKER THREAD`). Unlike `max_threads`, it never caps the number of threads of the query: it only lowers the scheduling precedence of the slots above the limit. It is also unrelated to the server settings `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, which limit CPU slots of all queries together.
 )", 0, \
-    {"26.11", 0, 0, "New query setting: per-query soft limit on CPU slots for workload CPU scheduling; requests above it are served after all other requests of the workload."}) \
+        {"26.11", -1, -1, "New query setting: per-query soft limit on CPU slots for workload CPU scheduling; requests above it are served after all other requests of the workload."}) \
     DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
 The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
 It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by

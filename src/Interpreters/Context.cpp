@@ -406,7 +406,7 @@ namespace Setting
     extern const SettingsDouble weight_lowering_cpu_seconds;
     extern const SettingsDouble weight_lowering_io_bytes;
     extern const SettingsInt64 workload_priority;
-    extern const SettingsUInt64 max_threads_soft_limit;
+    extern const SettingsInt64 max_threads_soft_limit;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_hdfs_pread;
@@ -2773,14 +2773,14 @@ ClassifierPtr Context::getWorkloadClassifier() const
     // Pass the query's scheduling settings so the classifier can build this query's scheduling
     // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
     // shared mutex under `mutex`.
-    // An unchanged `max_threads_soft_limit` defers to the workload's value; a changed one (even `0`) overrides it.
+    // `max_threads_soft_limit = -1` defers to the workload's value; a non-negative one overrides it.
     std::optional<Int64> max_threads_soft_limit;
-    if (query_settings[Setting::max_threads_soft_limit].changed)
+    if (Int64 value = query_settings[Setting::max_threads_soft_limit]; value != -1)
     {
-        UInt64 value = query_settings[Setting::max_threads_soft_limit];
-        max_threads_soft_limit = (value == 0 || value > static_cast<UInt64>(WorkloadSettings::unlimited))
-            ? WorkloadSettings::unlimited // `0` disables the limit for this query
-            : static_cast<Int64>(value);
+        if (value < -1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `max_threads_soft_limit` must be -1 (use the workload value) or non-negative, got {}", value);
+        max_threads_soft_limit = value == 0 ? WorkloadSettings::unlimited : value; // `0` disables the limit for this query
     }
     ClassifierSettings settings{
         .throw_on_unknown_workload = getThrowOnUnknownWorkload(),

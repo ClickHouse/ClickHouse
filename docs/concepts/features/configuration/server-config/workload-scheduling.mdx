@@ -255,7 +255,7 @@ SELECT ... SETTINGS workload = 'production', max_threads_soft_limit = 8;
 ```
 
 - `0` disables the limit, and the limit is disabled by default. The setting can be specified per resource with the `FOR <resource>` clause, and changing it on an existing workload takes effect for waiting requests immediately.
-- When the query setting `max_threads_soft_limit` is changed, even to `0`, it overrides the workload value for the query. Otherwise the workload value applies.
+- The query setting `max_threads_soft_limit` defaults to `-1`, which means the workload value applies. A non-negative value means the same as in the workload setting and overrides it for the query, so `0` disables the limit for the query even if the workload sets one.
 - It applies only to CPU resources (`MASTER THREAD` and `WORKER THREAD`) and requires CPU slot preemption (`cpu_slot_preemption = 1`, the default).
 - It is a soft limit: a query can still hold more slots when nothing else waits. Use `max_concurrent_threads` for a hard limit on the slots of the whole workload, and the query setting `max_threads` to cap the number of threads of a query. It is unrelated to the server settings `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, which limit the CPU slots of all queries together when no CPU resource is declared.
 - Demoted requests are served only when nothing else waits, so a query that keeps more slots than the limit can make little progress above it while the workload is saturated.
