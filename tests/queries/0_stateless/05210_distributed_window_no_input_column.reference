@@ -1,0 +1,35 @@
+WHERE only
+2000	2000	2000
+PREWHERE only
+2000	2000	2000
+WHERE only, selective
+1000	1000
+JOIN ON only
+200	200
+table expression projecting an unused constant
+2000	2000
+row_number
+2000	2000
+serialized query plan
+2000	2000
+ORDER BY with LIMIT on the initiator
+3	2000
+QUALIFY
+2000	2000
+control: the filtered column is also selected
+2000	999	2000
+control: single shard
+1000	1000
+control: not distributed
+1000	1000
+control: the result keeps exactly one column
+c
+2000
+control: a user column may be named like the placeholder
+2000	999
+placeholder is in the distributed plan
+1
+placeholder is not in the local plan
+0
+placeholder is not added when a column survives the boundary
+0
