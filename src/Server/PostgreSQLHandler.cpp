@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <Server/PostgreSQLHandler.h>
+#include <Server/SocketAliveCheck.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
@@ -1552,6 +1553,9 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
 
         QueryScope query_scope = QueryScope::create(query_context);
 
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+
         String columns_to_insert;
         if (!copy_query->column_names.empty())
         {
@@ -1925,6 +1929,9 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         prepareSystemTables(query_context, query);
 
         QueryScope query_scope = QueryScope::create(query_context);
+
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
 
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
@@ -2331,6 +2338,9 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
         counters->written_rows += progress.written_rows;
     });
     SCOPE_EXIT({ query_context->setProgressCallback(prev_callback); });
+
+    /// For admission queue disconnect detection.
+    query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
 
     auto set_result_details = [](const QueryResultDetails & details)
     {
