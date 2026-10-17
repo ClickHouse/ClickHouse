@@ -51,7 +51,7 @@ String parseURLParameterAsFilter(const String & name, const String & value);
 /// Used to decide whether to set Content-Disposition: attachment.
 bool isBinaryOutputFormat(const String & format_name);
 
-/// Map a known compression extension (gz, br, zstd, xz, lz4, deflate, snappy) to a canonical name.
+/// Map a known compression extension (gz, br, zstd, xz, lz4, bz2, deflate) to a canonical name.
 /// Returns empty if unrecognized.
 String canonicalizeCompressionExtension(const String & ext);
 
