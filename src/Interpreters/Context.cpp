@@ -406,6 +406,7 @@ namespace Setting
     extern const SettingsDouble weight_lowering_cpu_seconds;
     extern const SettingsDouble weight_lowering_io_bytes;
     extern const SettingsInt64 workload_priority;
+    extern const SettingsUInt64 max_threads_soft_limit;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_hdfs_pread;
@@ -2781,6 +2782,14 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
         .priority = Priority{query_settings[Setting::workload_priority]},
     };
+    // An unchanged setting defers to the workload's `max_threads_soft_limit`; a changed one (even `0`) overrides it.
+    if (query_settings[Setting::max_threads_soft_limit].changed)
+    {
+        UInt64 value = query_settings[Setting::max_threads_soft_limit];
+        settings.max_threads_soft_limit = (value == 0 || value > static_cast<UInt64>(WorkloadSettings::unlimited))
+            ? WorkloadSettings::unlimited // `0` disables the limit for this query
+            : static_cast<Int64>(value);
+    }
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)

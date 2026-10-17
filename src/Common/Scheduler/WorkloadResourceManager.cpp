@@ -368,7 +368,8 @@ WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & setti
           settings.weight_lowering_age_seconds,
           settings.weight_lowering_cpu_seconds,
           settings.weight_lowering_io_bytes,
-          settings.priority))
+          settings.priority,
+          settings.max_threads_soft_limit))
 {
 }
 

@@ -6,7 +6,9 @@
 
 #include <atomic>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -70,7 +72,8 @@ public:
         Float64 weight_lowering_age_seconds_,
         Float64 weight_lowering_cpu_seconds_,
         Float64 weight_lowering_io_bytes_,
-        Priority priority_)
+        Priority priority_,
+        std::optional<Int64> max_threads_soft_limit_ = std::nullopt)
         : start_ns(start_ns_)
         // weight <= 0 is meaningless for SFQ (vruntime divides by it) → default 1.0.
         , weight(weight_ > 0 ? weight_ : 1.0)
@@ -81,6 +84,10 @@ public:
         , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_ > 0 ? weight_lowering_cpu_seconds_ : 0.0)
         , weight_lowering_io_bytes(weight_lowering_io_bytes_ > 0 ? weight_lowering_io_bytes_ : 0.0)
         , priority(priority_)
+        // A set but non-positive override disables the limit for this query, like a workload `0`.
+        , max_threads_soft_limit(max_threads_soft_limit_ && *max_threads_soft_limit_ <= 0
+              ? std::optional<Int64>(std::numeric_limits<Int64>::max())
+              : max_threads_soft_limit_)
     {
     }
 
@@ -92,6 +99,8 @@ public:
     const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 = disabled)
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
     const Priority priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
+    /// Query override of the workload `max_threads_soft_limit` (`Int64` max = disabled); unset defers to the workload
+    const std::optional<Int64> max_threads_soft_limit;
 
     /// Allocate the per-resource slots (one per attached leaf). Called once by the classifier after
     /// attaching to all resources, before any request is enqueued; never resized, so a `resourceState()`
