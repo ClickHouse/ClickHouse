@@ -1,0 +1,31 @@
+--- KEYED BY ip_address
+OK
+OK
+1	native
+2	http
+3	select
+0	1
+--- KEYED BY client_key, ip_address
+OK
+OK
+0	1
+--- KEYED BY forwarded_ip_address
+OK
+QUOTA_EXCEEDED
+OK
+OK
+QUOTA_EXCEEDED
+[1,3,4]
+10.0.0.1
+10.0.0.2
+10.0.0.3
+--- batching
+OK
+OK
+OK
+OK
+4
+a	1
+b	2
+10.0.0.1
+10.0.0.2

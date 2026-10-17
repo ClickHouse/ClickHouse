@@ -7,6 +7,7 @@
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/fill.hpp>
+#include <algorithm>
 
 
 namespace DB
@@ -463,6 +464,24 @@ void EnabledQuota::checkClientKeySupplied() const
             quota->intervals->quota_name,
             getUserName());
     }
+}
+
+
+bool EnabledQuota::isKeyedByClientAddress() const
+{
+    if (empty)
+        return false;
+    auto loaded = quotas.load();
+    return std::ranges::any_of(*loaded, [](const auto & quota) { return quota->keyed_by_client_address; });
+}
+
+
+bool EnabledQuota::isKeyedByForwardedAddress() const
+{
+    if (empty)
+        return false;
+    auto loaded = quotas.load();
+    return std::ranges::any_of(*loaded, [](const auto & quota) { return quota->keyed_by_forwarded_address; });
 }
 
 
