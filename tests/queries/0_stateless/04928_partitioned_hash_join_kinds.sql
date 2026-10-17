@@ -1,3 +1,4 @@
+-- Tags: long
 -- Join-kind matrix of the partitioned hash join: INNER/LEFT/RIGHT/FULL crossed with
 -- ALL/ANY/SEMI/ANTI, over a build side large enough to partition. Coverage includes RIGHT/FULL
 -- non-joined rows, ANY/SEMI/ANTI dedup, `join_use_nulls`, NULLs in keys, a duplicate-heavy right
@@ -15,6 +16,9 @@ SET max_bytes_in_join = 0;
 -- The ProfileEvents assertions below read this server's query_log; with parallel replicas the
 -- join builds (and their events) can land on other replicas.
 SET enable_parallel_replicas = 0;
+-- The planner's row estimate picks the build layout. A randomized join order or a reordering limit of 0 loses it.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 -- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
 SET max_threads = 4;
 

@@ -1,3 +1,4 @@
+-- Tags: long
 -- ASOF joins, ON-clause filter conditions on one side, and multi-disjunct ON (`OR` of key sets)
 -- on the partitioned hash join. ASOF and multi-disjunct builds use one partition by design. The
 -- query log check at the end asserts that. The ON-filter builds partition as usual. Right rows the
@@ -14,6 +15,11 @@ SET max_bytes_in_join = 0;
 -- The ProfileEvents assertions below read this server's query_log; with parallel replicas the
 -- join builds (and their events) can land on other replicas.
 SET enable_parallel_replicas = 0;
+-- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
+SET max_threads = 4;
+-- The planner's row estimate picks the build layout. A randomized join order or a reordering limit of 0 loses it.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t_ab;
 DROP TABLE IF EXISTS t_ap;

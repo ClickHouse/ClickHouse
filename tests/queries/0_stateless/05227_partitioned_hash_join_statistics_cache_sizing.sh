@@ -21,7 +21,8 @@ opts=(
 )
 
 N=1024000
-T1="join_partitioned_cache_stats_t1"; T2="join_partitioned_cache_stats_t2"
+# Copies of this test run at once in a flaky check and share the statistics cache by table name.
+T1="join_partitioned_cache_stats_t1_$RANDOM$RANDOM"; T2="join_partitioned_cache_stats_t2_$RANDOM$RANDOM"
 
 $CLICKHOUSE_CLIENT -q "
   DROP TABLE IF EXISTS $T1;

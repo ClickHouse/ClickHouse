@@ -30,7 +30,7 @@ SELECT '-- auto stays in memory';
     ('RIGHT', 'a.k, a.v, b.x'),
     ('FULL', 'a.k, a.v, b.x'),
     ('ANY LEFT', 'a.k, a.v, b.k'),
-    ('ANY INNER', 'a.k, a.v, b.k'),
+    ('ANY INNER', 'a.k, b.k'),
     ('SEMI LEFT', 'a.k, a.v'),
     ('ANTI LEFT', 'a.k, a.v'),
     ('SEMI RIGHT', 'b.k, b.x'),
@@ -49,7 +49,7 @@ SELECT '-- auto switches to MergeJoin at max_rows_in_join';
     ('RIGHT', 'a.k, a.v, b.x'),
     ('FULL', 'a.k, a.v, b.x'),
     ('ANY LEFT', 'a.k, a.v, b.k'),
-    ('ANY INNER', 'a.k, a.v, b.k'),
+    ('ANY INNER', 'a.k, b.k'),
     ('SEMI LEFT', 'a.k, a.v')] -%}
 SELECT '{{ join_type }} | auto,hash | max_rows_in_join', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto,hash', max_rows_in_join = 100) AS pa)
