@@ -1,6 +1,8 @@
 ===== PUT table upload =====
 -- CSV format from the path
 -- JSONEachRow format from the path
+-- dotted table name with a separate format suffix
+dotted-table-upload: OK
 -- inserted rows
 1	one
 2	two
@@ -85,4 +87,6 @@ parser-second-status: 200
 compressed-parser-first-status: 400
 compressed-parser-first-connection-close: False
 compressed-parser-second-status: 200
+get-error-reuse: OK
+post-error-reuse: OK
 chunked-empty-status: 400
