@@ -334,6 +334,12 @@ SELECT 'select', arraySort(groupArray((id, position(message, 'lpha') > 0))) FROM
 SELECT 'select', arraySort(groupArray((id, position(message, 'lpha') > 0))) FROM tab WHERE position(message, 'lpha') > 0 OR id = 2 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'select', arraySort(groupArray((id, position(message, 'lpha') > 0))) FROM tab WHERE position(message, 'lpha') > 0 OR id = 2 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
+-- A CAST that drops Nullable must still throw on the NULL row the OR keeps.
+SELECT 'cast drops nullable', arraySort(groupArray(id)) FROM tab WHERE position(CAST(message, 'String'), 'lpha') > 0 OR id = 2 SETTINGS short_circuit_function_evaluation = 'disable', use_skip_indexes = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT 'cast drops nullable', arraySort(groupArray(id)) FROM tab WHERE position(CAST(message, 'String'), 'lpha') > 0 OR id = 2 SETTINGS short_circuit_function_evaluation = 'disable', use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT 'cast drops nullable', arraySort(groupArray(id)) FROM tab WHERE position(CAST(message, 'String'), 'lpha') > 0 OR id = 2 SETTINGS short_circuit_function_evaluation = 'disable', use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT 'cast drops nullable', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(CAST(message, 'String'), 'lpha') > 0 OR id = 2 SETTINGS short_circuit_function_evaluation = 'disable', use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
 DROP TABLE tab;
 
 SELECT '-- Array tokenizer: the needle is matched literally inside the whole value';
