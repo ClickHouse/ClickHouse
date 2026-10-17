@@ -37,6 +37,17 @@ public:
 
     const char * getName() const override { return "LogsQL Statement"; }
 
+    /// Returns true if parsing the LogsQL statement in [begin, end) fails with a syntax error
+    /// at the end of the input, i.e. the statement is still being typed. Never throws.
+    static bool isIncompleteAtEOF(
+        const char * begin,
+        const char * end,
+        String database,
+        String table,
+        String time_column,
+        String msg_column,
+        size_t max_parser_depth);
+
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 

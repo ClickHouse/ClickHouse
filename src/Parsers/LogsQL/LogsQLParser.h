@@ -41,6 +41,10 @@ public:
     /// The position right after the parsed query (before the trailing semicolon, if any).
     const char * getParsedEnd() const { return parsed_end; }
 
+    /// Whether the lexer has reached the end of input. After `parse` throws a syntax error,
+    /// this tells whether the failure was at the end of input, i.e. the query is unfinished.
+    bool isAtEnd() const { return lex.isEnd(); }
+
 private:
     /// An intermediate representation of one SELECT level.
     struct Layer
