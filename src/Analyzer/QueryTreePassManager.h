@@ -51,6 +51,6 @@ private:
     size_t resolve_passes_count = 0;
 };
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, bool positional_arguments_already_resolved = false);
 
 }
