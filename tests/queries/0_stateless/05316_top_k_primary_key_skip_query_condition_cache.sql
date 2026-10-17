@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- Tag no-parallel: the second read relies on the entries the first one wrote to the server-wide query condition cache, which other tests clear
 -- The top-K granule skipping through the primary index must not stop the PREWHERE from recording the
 -- granules emptied by the top-K threshold in the query condition cache: a granule skipped by the primary
 -- key has all its rows beyond the threshold, so `__topKFilter` in the PREWHERE would have emptied it too.

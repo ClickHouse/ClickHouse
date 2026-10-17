@@ -11,15 +11,16 @@ doc_type: 'reference'
 
 يولّد بيانات عشوائية وفق مخطط محدد.
 ويتيح ملء جداول الاختبار بهذه البيانات.
-ليست كل الأنواع مدعومة.
+جميع أنواع البيانات التي يمكن تخزينها في جدول مدعومة، بما فيها `JSON` و`Dynamic` و`Variant` و`BFloat16` و`Time` و`Time64`.
+أما الأنواع `AggregateFunction` و`Interval` و`Nothing` و`QBit` فغير مدعومة.
 
-## الصيغة
+## الصيغة {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
 ```
 
-## المعاملات
+## المعاملات {#arguments}
 
 | Argument            | Description                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -29,11 +30,37 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | الحد الأقصى لطول جميع السلاسل النصية المُولَّدة. القيمة الافتراضية هي `10`.                              |
 | `max_array_length`  | الحد الأقصى لعدد العناصر في جميع المصفوفات أو الخرائط المُولَّدة. القيمة الافتراضية هي `10`.             |
 
-## القيمة المعادة
+## الإعدادات {#settings}
+
+`SETTINGS` هي الوسيطة الأخيرة في الاستدعاء، وتحدد كيفية توليد قيم `Nullable` و`Variant` و`Dynamic` و`JSON`.
+
+| الإعداد                    | النوع    | القيمة الافتراضية | الوصف                                                                                                                                                                                                         |
+| -------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `null_ratio`               | `Float`  | `0.0625`          | احتمال أن تكون قيمة `Nullable` أو `Variant` أو `Dynamic` مساويةً لـ`NULL`، والاحتمال الأساسي لغياب مفتاح `JSON` عن صف. وتغيب بعض المفاتيح المتناثرة بمعدل يفوق ذلك عدة مرات. يجب أن تكون القيمة ضمن `[0, 1]`. |
+| `max_json_depth`           | `UInt64` | `3`               | أقصى عمق لتداخل كائنات `JSON` المُولَّدة: تعني `1` أن الكائنات غير متداخلة، وتُحتسب الكائنات داخل المصفوفات مستوىً إضافيًا. يجب أن تكون القيمة ضمن `[1, 32]`.                                                 |
+| `max_json_keys_per_object` | `UInt64` | `8`               | أقصى عدد من المفاتيح المُولَّدة في مستوى واحد من كائن `JSON`؛ ويُخصَّص للكائن الجذر نصف هذا العدد على الأقل. تعني `0` توليد المسارات محددة النوع فقط. يجب ألا يتجاوز العدد `1000`.                            |
+
+```sql
+SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
+{"x":{"cursor":"","id":[7037090064212902336]}}
+{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
+```
+
+يمكن أيضًا تمرير `SETTINGS` بوصفها الوسيطة الوحيدة، وبذلك يُحتفظ ببنية جدول الإدراج:
+
+```sql
+INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
+```
+
+## القيمة المعادة {#returned-value}
 
 كائن جدول يتضمن المخطط المطلوب.
 
-## مثال على الاستخدام
+## مثال على الاستخدام {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -106,7 +133,41 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   يمكن أن يُنتج ‎`generateRandom(generateRandomStructure(), [بذرة عشوائية], max_string_length, max_array_length)`‎، عند ضبط ‎`max_array_length`‎ على قيمة كبيرة بما يكفي، مخرجات ضخمة جدًا بسبب العمق المحتمل الكبير للتداخل (حتى 16) في الأنواع المعقدة (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-## محتوى ذي صلة
+## توليد JSON {#generating-json}
+
+يبدو العمود المُولَّد من النوع `JSON` كدفق من المستندات ذات المخطط نفسه: تُحدَّد مجموعة المفاتيح ونوع
+كل مفتاح بناءً على البذرة العشوائية، وتظل ثابتة في العمود كله، بينما تتغير القيم
+والمفاتيح الغائبة وأطوال المصفوفات من صف إلى آخر. يحدّ `max_json_depth` من عمق الكائنات،
+ويحدّ `max_json_keys_per_object` من عدد المفاتيح في المستوى الواحد، ويغيب المفتاح
+عن الصف باحتمال `null_ratio`. وتكون القيم الطرفية من الأنواع التي يستنتجها محلّل JSON من
+المستندات الفعلية: `Int64` و`UInt64` و`Float64` و`Bool` و`String` و`Date` و`DateTime`، ومصفوفات من هذه الأنواع، ومصفوفات
+من الكائنات، ومصفوفات مختلطة. وتحمل بعض المفاتيح نوعًا مختلفًا في نسبة صغيرة من الصفوف، كما
+يحدث في البيانات المجمّعة من تطبيق.
+
+يحدّد تعريف النوع بنية المخطط المُولَّد: تظهر المسارات محددة النوع دائمًا بنوعها المُعلَن،
+ولا تُولَّد المسارات المستبعدة باستخدام `SKIP` و`SKIP REGEXP`، مع الالتزام بحدَّي `max_dynamic_paths` و
+`max_dynamic_types`، لذا تُخزَّن المسارات التي تتجاوز حد `max_dynamic_paths` ضمن البيانات المشتركة
+للعمود.
+
+```sql
+SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
+{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
+{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
+```
+
+يمكن أيضًا ترك تحديد البنية لجدول الإدراج، وهو ما يُسهّل ملء جدول يحتوي على أعمدة من نوع
+`JSON` أو `Dynamic` أو `Variant`:
+
+```sql
+CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
+```
+
+## محتوى ذي صلة {#related-content}
 
 * المدوّنة: [إنشاء بيانات عشوائية في ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 
