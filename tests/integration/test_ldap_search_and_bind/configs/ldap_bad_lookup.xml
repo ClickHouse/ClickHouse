@@ -1,0 +1,26 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <!-- Deliberately wrong (but non-empty) service password: the lookup bind is
+                 rejected with `LDAP_INVALID_CREDENTIALS`, which must surface as an
+                 `LDAP_ERROR` naming the lookup bind in the server log, never as a plain
+                 "no such user". -->
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>wrong</lookup_password>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap_strict>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap_strict</server>
+        </ldap>
+    </user_directories>
+</clickhouse>

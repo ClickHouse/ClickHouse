@@ -1,0 +1,32 @@
+<clickhouse>
+    <ldap_servers>
+        <!-- `lookup_bind_dn` without `lookup_password`: rejected by `parseLDAPServer`. The
+             error is remembered and every login through the directory fails with
+             "is misconfigured" plus the original message, instead of "no such user". -->
+        <broken>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+        </broken>
+        <!-- A valid legacy direct-bind server, used by a local user created with
+             IDENTIFIED WITH ldap SERVER plain; it must keep working while `broken`
+             is rejected. -->
+        <plain>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+        </plain>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>broken</server>
+        </ldap>
+    </user_directories>
+</clickhouse>

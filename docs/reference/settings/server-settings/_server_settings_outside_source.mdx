@@ -657,9 +657,11 @@ The following settings can be configured by sub-tags:
 
 | Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bind_dn` | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `bind_dn` | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt. The exact value `\{user_dn\}` selects search and bind: the DN to bind to is the one found by `user_dn_detection` under the `lookup_bind_dn` identity. This parameter is mandatory and cannot be empty; `lookup_bind_dn` does not replace it. |
 | `enable_tls` | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
 | `host` | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
+| `lookup_bind_dn` | Optional DN of a service account. When set, every LDAP search (`user_dn_detection` and `role_mapping`) runs under this identity instead of the user's, and `bind_dn` may be `\{user_dn\}`. Must not contain `\{user_name\}` and must be specified together with `lookup_password`. Requires `user_dn_detection` whose `base_dn` or `search_filter` depends on the requested user: directly via `\{user_name\}`, or via `\{bind_dn\}` / `\{user_dn\}` when the `bind_dn` template contains `\{user_name\}`; with `bind_dn` = `\{user_dn\}` (search and bind) the literal `\{user_name\}` is required. |
+| `lookup_password` | Password of `lookup_bind_dn`. Cannot be empty. Supports `from_env`, `from_zk` and `hide_in_preprocessed="true"`. |
 | `port` | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_ca_cert_dir` | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_ca_cert_file` | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -675,9 +677,9 @@ Setting `user_dn_detection` can be configured with sub-tags:
 
 | Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}` and `\{user_dn\}` substrings of the template with the actual user name, bind DN and user DN during the LDAP search (before the detection has run, `\{user_dn\}` equals the bind DN; with `bind_dn` = `\{user_dn\}` only `\{user_name\}` may be used).                                                                                                       |
 | `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |
-| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, `\{user_dn\}` and `\{base_dn\}` substrings of the template with the actual user name, bind DN, user DN and base DN during the LDAP search (before the detection has run, `\{user_dn\}` equals the bind DN; with `bind_dn` = `\{user_dn\}` only `\{user_name\}` and `\{base_dn\}` may be used). Note, that the special characters must be escaped properly in XML.  |
 
 Example:
 
@@ -710,6 +712,27 @@ Example (typical Active Directory with configured user DN detection for further 
         <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
     </user_dn_detection>
     <enable_tls>no</enable_tls>
+</my_ad_server>
+```
+
+Example (Active Directory with search and bind: a service account locates the user by `sAMAccountName` and performs the role mapping searches, the user's password is verified by binding as the DN that was found):
+
+```xml
+<my_ad_server>
+    <host>ldap.example.com</host>
+    <port>636</port>
+    <enable_tls>yes</enable_tls>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+    <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+    <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+    <bind_dn>{user_dn}</bind_dn>
+    <user_dn_detection>
+        <base_dn>DC=example,DC=com</base_dn>
+        <scope>subtree</scope>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <verification_cooldown>300</verification_cooldown>
 </my_ad_server>
 ```
 

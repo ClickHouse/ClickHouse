@@ -6,8 +6,11 @@
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <fmt/format.h>
 
+#include <cctype>
 #include <mutex>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -41,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int LDAP_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 void LDAPClient::SearchParams::updateHash(SipHash & hash) const
@@ -64,10 +68,26 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
+    /// The lookup credentials are part of the key so that a login verified under rotated
+    /// service credentials (i.e. one in flight during a reload) is not cached.
+    ::updateHash(hash, lookup_bind_dn);
+    ::updateHash(hash, lookup_password);
     ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
+}
+
+bool LDAPClient::Params::templateDependsOnUserName(const String & search_template) const
+{
+    if (search_template.contains("{user_name}"))
+        return true;
+
+    /// `{bind_dn}`, and `{user_dn}` (which equals the bind DN until the detection has run), are
+    /// substituted from the `bind_dn` template, so they carry the login exactly when that
+    /// template does. In search-and-bind `bind_dn` is `{user_dn}` itself and carries nothing.
+    return bind_dn.contains("{user_name}")
+        && (search_template.contains("{bind_dn}") || search_template.contains("{user_dn}"));
 }
 
 LDAPClient::LDAPClient(const Params & params_)
@@ -169,6 +189,83 @@ namespace
         return dest;
     }
 
+    /// Must be called under `ldap_global_mutex`.
+    String getDiagnosticMessage(LDAP * handle)
+    {
+        if (!handle)
+            return {};
+
+        char * raw_message = nullptr;
+
+        SCOPE_EXIT({
+            if (raw_message)
+            {
+                ldap_memfree(raw_message);
+                raw_message = nullptr;
+            }
+        });
+
+        ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
+
+        if (raw_message && *raw_message != '\0')
+            return raw_message;
+
+        return {};
+    }
+
+    /// Active Directory explains a failed bind in the diagnostic message with a sub-code, e.g.
+    /// `80090308: LdapErr: DSID-0C09042A, comment: AcceptSecurityContext error, data 52e, v3839`.
+    /// Returns a human-readable rendering of the `data <hex>` part, if present.
+    std::optional<String> describeActiveDirectorySubCode(const String & diagnostic_message)
+    {
+        static constexpr std::string_view marker = "data ";
+
+        const auto pos = diagnostic_message.find(marker);
+        if (pos == String::npos)
+            return std::nullopt;
+
+        const auto begin = pos + marker.size();
+        auto end = begin;
+        while (end < diagnostic_message.size() && std::isxdigit(static_cast<unsigned char>(diagnostic_message[end])))
+            ++end;
+
+        if (end == begin)
+            return std::nullopt;
+
+        const String code = diagnostic_message.substr(begin, end - begin);
+
+        static constexpr std::pair<const char *, const char *> known_sub_codes[] =
+        {
+            {"525", "user not found"},
+            {"52e", "invalid credentials"},
+            {"530", "not permitted to logon at this time"},
+            {"531", "not permitted to logon at this workstation"},
+            {"532", "password expired"},
+            {"533", "account disabled"},
+            {"701", "account expired"},
+            {"773", "user must reset password"},
+            {"775", "account locked out"},
+        };
+
+        for (const auto & [sub_code, description] : known_sub_codes)
+        {
+            if (boost::iequals(code, sub_code))
+                return fmt::format("data {} ({})", sub_code, description);
+        }
+
+        return fmt::format("data {} (unknown sub-code)", code);
+    }
+
+    const char * toString(LDAPClient::BindMode mode)
+    {
+        switch (mode)
+        {
+            case LDAPClient::BindMode::None:    return "nobody";
+            case LDAPClient::BindMode::User:    return "the user";
+            case LDAPClient::BindMode::Service: return "the lookup identity";
+        }
+    }
+
 }
 
 void LDAPClient::handleError(int result_code, String text)
@@ -185,33 +282,19 @@ void LDAPClient::handleError(int result_code, String text)
             text += raw_err_str;
         }
 
-        if (handle)
+        const auto diagnostic_message = getDiagnosticMessage(handle);
+        if (!diagnostic_message.empty())
         {
-            char * raw_message = nullptr;
-
-            SCOPE_EXIT({
-                if (raw_message)
-                {
-                    ldap_memfree(raw_message);
-                    raw_message = nullptr;
-                }
-            });
-
-            ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
-
-            if (raw_message && *raw_message != '\0')
-            {
-                if (!text.empty())
-                    text += ": ";
-                text += raw_message;
-            }
+            if (!text.empty())
+                text += ": ";
+            text += diagnostic_message;
         }
 
         throw Exception::createDeprecated(text, ErrorCodes::LDAP_ERROR);
     }
 }
 
-bool LDAPClient::openConnection()
+void LDAPClient::connect()
 {
     std::lock_guard lock(ldap_global_mutex);
 
@@ -352,42 +435,80 @@ bool LDAPClient::openConnection()
     if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
         handleError(ldap_start_tls_s(handle, nullptr, nullptr));
 
-    final_user_name = escapeForDN(params.user);
-    final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
-    final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
+    bound_as = BindMode::None;
+
+    /// The raw login is kept and escaped exactly once wherever it is substituted.
+    placeholders.user_name = params.user;
+
+    if (params.bindsAsDetectedUserDN())
+    {
+        /// The bind DN is only known after `user_dn_detection`. Leave the DN placeholders
+        /// empty rather than substituting the literal `{user_dn}` into a template.
+        placeholders.bind_dn.clear();
+        placeholders.user_dn.clear();
+    }
+    else
+    {
+        placeholders.bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escapeForDN(params.user)} });
+        placeholders.user_dn = placeholders.bind_dn; // The default value... may be updated by `user_dn_detection`.
+    }
+}
+
+bool LDAPClient::bind(BindMode mode)
+{
+    std::lock_guard lock(ldap_global_mutex);
+
+    if (!handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP bind attempted without an open connection");
+
+    if (mode == BindMode::None)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP bind attempted without an identity");
+
+    const bool as_service = (mode == BindMode::Service);
+
+    if (as_service && !params.hasLookupIdentity())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP lookup bind attempted while 'lookup_bind_dn' is not configured");
+
+    if (!as_service && placeholders.bind_dn.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP user bind attempted before the bind DN is known");
+
+    /// Whatever happens below, the previous identity is gone.
+    bound_as = BindMode::None;
+
+    const String & dn = as_service ? params.lookup_bind_dn : placeholders.bind_dn;
+    const String & password = as_service ? params.lookup_password : params.password;
 
     switch (params.sasl_mechanism)
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
             ::berval cred{};
-            cred.bv_val = const_cast<char *>(params.password.c_str());
-            cred.bv_len = params.password.size();
+            cred.bv_val = const_cast<char *>(password.c_str());
+            cred.bv_len = password.size();
 
+            const auto rc = ldap_sasl_bind_s(handle, dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+
+            if (rc == LDAP_INVALID_CREDENTIALS)
             {
-                const auto rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+                /// The service credentials come from the server configuration, so a rejection
+                /// means the lookup account is mistyped, rotated or revoked - an operator error,
+                /// not a "user not found" or "wrong password" signal. Fail loudly.
+                if (as_service)
+                    throw Exception(ErrorCodes::LDAP_ERROR,
+                        "LDAP lookup bind as '{}' failed for server '{}': invalid credentials; check 'lookup_bind_dn' and 'lookup_password'",
+                        dn, params.name);
 
-                // Handle invalid credentials gracefully.
-                if (rc == LDAP_INVALID_CREDENTIALS)
-                    return false;
+                /// The user supplied the password, so invalid credentials is the canonical
+                /// authentication-failed outcome. Active Directory tells the reason apart in a
+                /// sub-code which is useful in the log but must never reach the client.
+                if (const auto sub_code = describeActiveDirectorySubCode(getDiagnosticMessage(handle)))
+                    LOG_DEBUG(getLogger("LDAPClient"), "LDAP bind as '{}' failed with invalid credentials: {}", dn, *sub_code);
 
-                handleError(rc);
+                return false;
             }
 
-            // Once bound, run the user DN search query and update the default value, if asked.
-            if (params.user_dn_detection)
-            {
-                const auto user_dn_search_results = search(*params.user_dn_detection);
-
-                if (user_dn_search_results.empty())
-                    throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: empty search results");
-
-                if (user_dn_search_results.size() > 1)
-                    throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: more than one entry in the search results");
-
-                final_user_dn = *user_dn_search_results.begin();
-            }
-
+            handleError(rc);
+            bound_as = mode;
             return true;
         }
 
@@ -396,23 +517,66 @@ bool LDAPClient::openConnection()
     }
 }
 
+std::optional<String> LDAPClient::detectUserDN(bool tolerate_missing_user)
+{
+    if (!params.user_dn_detection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP user DN detection requested while 'user_dn_detection' is not configured");
+
+    /// A `base_dn` that depends on the login (`cn={user_name},ou=users,...`, or `{bind_dn}`
+    /// with a `bind_dn` template carrying `{user_name}`) does not exist for an unknown user
+    /// and the directory answers the search itself with `LDAP_NO_SUCH_OBJECT`; that is the
+    /// same "user does not exist" signal as an empty result. A static `base_dn` (e.g.
+    /// `dc=example,dc=org`) must exist, so the same code there means the configuration points
+    /// at a wrong naming context; tolerating it would turn every login through this server
+    /// into a silent "user not found" instead of an `LDAP_ERROR`. The rule is the one
+    /// `parseLDAPServer` accepts the configuration with, so the two can never disagree.
+    const bool base_dn_depends_on_user = params.templateDependsOnUserName(params.user_dn_detection->base_dn);
+    const auto results = search(*params.user_dn_detection, /* tolerate_no_such_object = */ tolerate_missing_user && base_dn_depends_on_user);
+
+    if (results.empty())
+    {
+        if (tolerate_missing_user)
+            return std::nullopt;
+
+        throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: empty search results");
+    }
+
+    if (results.size() > 1)
+        throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: more than one entry in the search results");
+
+    return *results.begin();
+}
+
 void LDAPClient::closeConnection() noexcept
 {
     std::lock_guard lock(ldap_global_mutex);
+
+    bound_as = BindMode::None;
+    placeholders.user_name.clear();
+    placeholders.bind_dn.clear();
+    placeholders.user_dn.clear();
 
     if (!handle)
         return;
 
     ldap_unbind_ext_s(handle, nullptr, nullptr);
     handle = nullptr;
-    final_user_name.clear();
-    final_bind_dn.clear();
-    final_user_dn.clear();
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params, bool tolerate_no_such_object)
 {
     std::lock_guard lock(ldap_global_mutex);
+
+    if (!handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted without an open connection");
+
+    /// Invariant: once a lookup identity is configured, no search may ever run as the user
+    /// (users frequently cannot read group containers or their own `memberOf`, and a search
+    /// as the user would silently return fewer roles). Without a lookup identity the legacy
+    /// model applies and the connection must be bound as the user.
+    const auto expected = params.hasLookupIdentity() ? BindMode::Service : BindMode::User;
+    if (bound_as != expected)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP search attempted while bound as {} instead of {}", toString(bound_as), toString(expected));
 
     SearchResults result;
 
@@ -425,16 +589,18 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
         case SearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
     }
 
+    /// `{user_name}` is the raw login and is escaped for the context it lands in; the DN
+    /// placeholders are already DNs and are only filter-escaped when used in a filter.
     const auto final_base_dn = replacePlaceholders(search_params.base_dn, {
-        {"{user_name}", final_user_name},
-        {"{bind_dn}", final_bind_dn},
-        {"{user_dn}", final_user_dn}
+        {"{user_name}", escapeForDN(placeholders.user_name)},
+        {"{bind_dn}", placeholders.bind_dn},
+        {"{user_dn}", placeholders.user_dn}
     });
 
     const auto final_search_filter = replacePlaceholders(search_params.search_filter, {
-        {"{user_name}", escapeForFilter(final_user_name)},
-        {"{bind_dn}", escapeForFilter(final_bind_dn)},
-        {"{user_dn}", escapeForFilter(final_user_dn)},
+        {"{user_name}", escapeForFilter(placeholders.user_name)},
+        {"{bind_dn}", escapeForFilter(placeholders.bind_dn)},
+        {"{user_dn}", escapeForFilter(placeholders.user_dn)},
         {"{base_dn}", escapeForFilter(final_base_dn)}
     });
 
@@ -450,7 +616,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
         }
     });
 
-    handleError(ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
+    const int search_rc = ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs);
+    if (tolerate_no_such_object && search_rc == LDAP_NO_SUCH_OBJECT)
+        return result;
+    handleError(search_rc);
 
     for (
          auto * msg = ldap_first_message(handle, msgs);
@@ -597,6 +766,54 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     return result;
 }
 
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
+{
+    if (params.user.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP lookup of a user with empty name is not allowed");
+
+    if (!role_search_params != !role_search_results)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot return LDAP search results");
+
+    /// The service-bind path requires lookup credentials AND `user_dn_detection`. The DN
+    /// search is the only mechanism we have to confirm that the user actually exists in the
+    /// directory; without it any non-empty name would be silently accepted, which would let
+    /// an account holding `IMPERSONATE ON *` materialize arbitrary users.
+    if (!params.hasLookupIdentity() || !params.user_dn_detection)
+        return false;
+
+    SCOPE_EXIT({ closeConnection(); });
+
+    connect();
+    bind(BindMode::Service);
+
+    const auto user_dn = detectUserDN(/* tolerate_missing_user = */ true);
+    if (!user_dn)
+        return false;
+
+    placeholders.user_dn = *user_dn;
+    if (params.bindsAsDetectedUserDN())
+        placeholders.bind_dn = *user_dn;
+
+    if (role_search_params)
+    {
+        role_search_results->clear();
+        role_search_results->reserve(role_search_params->size());
+
+        try
+        {
+            for (const auto & params_instance : *role_search_params)
+                role_search_results->emplace_back(search(params_instance));
+        }
+        catch (...)
+        {
+            role_search_results->clear();
+            throw;
+        }
+    }
+
+    return true;
+}
+
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
 {
     if (params.user.empty())
@@ -611,9 +828,42 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
 
     SCOPE_EXIT({ closeConnection(); });
 
-    // Will return false on invalid credentials, will throw on any other error.
-    if (!openConnection())
-        return false;
+    connect();
+
+    if (params.bindsAsDetectedUserDN())
+    {
+        /// Search-and-bind: locate the user under the lookup identity, verify the password by
+        /// binding as the DN that was found, then return to the lookup identity so that the
+        /// role searches never run as the user. An unknown user is reported as `false` so the
+        /// storages following this one still get their chance.
+        bind(BindMode::Service);
+
+        const auto user_dn = detectUserDN(/* tolerate_missing_user = */ true);
+        if (!user_dn)
+            return false;
+
+        placeholders.bind_dn = *user_dn;
+        placeholders.user_dn = *user_dn;
+
+        if (!bind(BindMode::User))
+            return false;
+
+        bind(BindMode::Service);
+    }
+    else
+    {
+        /// Direct bind: the password is verified against the substituted `bind_dn` template.
+        if (!bind(BindMode::User))
+            return false;
+
+        /// With a lookup identity configured neither the DN detection nor the role searches
+        /// may run as the user.
+        if (params.hasLookupIdentity())
+            bind(BindMode::Service);
+
+        if (params.user_dn_detection)
+            placeholders.user_dn = detectUserDN(/* tolerate_missing_user = */ false).value();
+    }
 
     // While connected, run search queries and save the results, if asked.
     if (role_search_params)
@@ -645,7 +895,17 @@ void LDAPClient::handleError(const int, String)
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
-bool LDAPClient::openConnection()
+void LDAPClient::connect()
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+bool LDAPClient::bind(BindMode)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+std::optional<String> LDAPClient::detectUserDN(bool)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
@@ -654,12 +914,17 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams &, bool)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList *, SearchResultsList *)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList *, SearchResultsList *)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
