@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -155,6 +156,8 @@ private:
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
+    /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
+    void checkShardingKeySetsAreBuilt() const;
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
 
@@ -278,6 +281,7 @@ private:
     /// in `distributedWriteFromClusterStorage`.
     bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
+    bool sharding_key_has_unbuilt_set = false;
     String sharding_key_column_name;
 
     /// Used for global monotonic ordering of files to send.
@@ -326,5 +330,8 @@ private:
 
     void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
+
+/// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
+SecretArgumentsSpec remoteSecretArguments();
 
 }

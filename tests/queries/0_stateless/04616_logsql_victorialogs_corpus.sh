@@ -11,19 +11,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The dialect is gated by a setting, and SET queries still work when it is off, so that users can recover.
 $CLICKHOUSE_CLIENT --dialect logsql -q "error" |& grep -om1 "SUPPORT_IS_DISABLED"
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --dialect logsql -q "error" |& grep -om1 "INVALID_SETTING_VALUE"
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --dialect logsql -q "error" |& grep -om1 "INVALID_SETTING_VALUE"
 $CLICKHOUSE_CLIENT --dialect logsql -q "SET dialect = 'clickhouse'" && echo "SET works with the dialect disabled"
 
 # The _time and _msg fields can be mapped to arbitrary columns.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE text_log_style_04616 (event_time DateTime, message String) ENGINE = MergeTree ORDER BY event_time"
 $CLICKHOUSE_CLIENT -q "INSERT INTO text_log_style_04616 VALUES ('2024-01-01 00:00:00', 'an error happened'), ('2024-01-01 00:00:01', 'all good')"
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table text_log_style_04616 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table text_log_style_04616 \
     --logsql_time_column event_time --logsql_message_column message --dialect logsql \
     -q "error _time:>=2024-01-01T00:00:00 | count()"
 $CLICKHOUSE_CLIENT -q "DROP TABLE text_log_style_04616"
 
 # Unsupported LogsQL features are reported clearly.
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table corpus_logs_04616 --dialect logsql -q "* | unpack_json" |& grep -om1 "NOT_IMPLEMENTED"
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table corpus_logs_04616 --dialect logsql -q "* | unpack_json" |& grep -om1 "NOT_IMPLEMENTED"
 
 $CLICKHOUSE_CLIENT -q 'CREATE TABLE corpus_logs_04616
 (
@@ -65,7 +65,7 @@ $CLICKHOUSE_CLIENT -q 'CREATE TABLE corpus_logs_04616
     `field` String
 ) ENGINE = MergeTree ORDER BY _time'
 
-LOGSQL_OPTS=(--allow_experimental_logsql_dialect 1 --logsql_table corpus_logs_04616 --dialect logsql)
+LOGSQL_OPTS=(--enable_logsql_dialect 1 --logsql_table corpus_logs_04616 --dialect logsql)
 
 # All these queries from the VictoriaLogs test suite must parse and execute successfully.
 VALID_QUERIES=$CLICKHOUSE_TMP/logsql_valid_queries.sql
@@ -1264,7 +1264,7 @@ $CLICKHOUSE_CLIENT "${LOGSQL_OPTS[@]}" --queries-file "$VALID_QUERIES" < /dev/nu
 
 # All these queries are invalid in LogsQL and must be rejected.
 # The queries are sent over HTTP, because spawning a separate client for each of them is too slow under sanitizers.
-LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&allow_experimental_logsql_dialect=1&logsql_table=corpus_logs_04616"
+LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&enable_logsql_dialect=1&logsql_table=corpus_logs_04616"
 while IFS= read -r query; do
     if ! ${CLICKHOUSE_CURL} -sS "$LOGSQL_URL" --data-binary "$query" 2>&1 | grep -q "Code:"; then
         echo "UNEXPECTEDLY ACCEPTED: $query"

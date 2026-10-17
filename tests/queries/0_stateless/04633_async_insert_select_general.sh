@@ -110,7 +110,7 @@ Q=$(urlencode "INSERT INTO test_async_sel_wait SELECT number::UInt32 AS id, 'wai
 ${CLICKHOUSE_CURL} -sS -X POST \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=${Q}" -d ""
 
-for _ in $(seq 1 20); do
+while true; do
     count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_wait")
     [ "$count" -ge 2 ] && break
     sleep 0.5
