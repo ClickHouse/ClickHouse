@@ -14,12 +14,10 @@ TimestampType alignTimestampWithStep(TimestampType timestamp, DurationType step)
 {
     if (step <= 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
-    auto x = timestamp % step;
-    if (!x)
-        return timestamp;
-    if (x < 0)
-        x += step;
-    return timestamp - x;
+    auto remainder = timestamp % step;
+    if (remainder < 0)
+        remainder += step;
+    return timestamp - remainder;
 }
 
 }
