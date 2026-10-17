@@ -127,6 +127,15 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+/// Make the outputs of a filter DAG over `header` the columns of `header` in their order, followed by
+/// `filter_node` unless it is itself one of them, so that `FilterStep` keeps the header as it is. A filter
+/// DAG has inputs only for the columns its expression references, in first-use order, and `FilterStep`
+/// puts the DAG outputs first and the untouched columns after them: `c > a` over [a, b, c] would give
+/// [c, a, b]. A computed filter is renamed if a column of `header` has the same name. Sets
+/// `filter_column_name` to the name of the filter column to pass to `FilterStep`.
+/// Returns whether the filter column has to be removed after filtering.
+bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsDAG::Node * filter_node, String & filter_column_name);
+
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 

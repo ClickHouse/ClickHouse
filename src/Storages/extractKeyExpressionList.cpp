@@ -1,7 +1,10 @@
 #include <Storages/extractKeyExpressionList.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/misc.h>
 #include <Common/checkStackSize.h>
@@ -38,6 +41,25 @@ namespace DB
 
         for (const auto & child : ast.children)
             checkExpressionDoesntContainSubqueries(*child);
+    }
+
+    /// The Analyzer expands wildcards and column matchers into the columns of the table,
+    /// so a stored metadata expression containing them is schema-dependent: rebuilding it
+    /// after a column-layout change (e.g. `ALTER TABLE ... ADD COLUMN`) would silently
+    /// resolve to a different column set. A count-based guard cannot catch a matcher that
+    /// resolves to exactly one column (e.g. `COLUMNS('^a$')` with a single match), so
+    /// reject them syntactically up front.
+    void checkExpressionDoesntContainMatchers(const IAST & ast)
+    {
+        checkStackSize();
+
+        if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>()
+            || ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>()
+            || ast.as<ASTQualifiedColumnsRegexpMatcher>() || ast.as<ASTQualifiedColumnsListMatcher>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain wildcards or column matchers");
+
+        for (const auto & child : ast.children)
+            checkExpressionDoesntContainMatchers(*child);
     }
 
     ASTPtr extractKeyExpressionList(const ASTPtr & node)

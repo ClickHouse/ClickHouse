@@ -24,12 +24,9 @@ INSERT INTO in_subquery_constraint VALUES (1), (2);
 INSERT INTO in_subquery_constraint VALUES (100); -- { serverError VIOLATED_CONSTRAINT }
 SELECT x FROM in_subquery_constraint ORDER BY x;
 
--- A bare table name on the right of `IN` stands for `SELECT * FROM` it and takes the same path.
+-- A bare table name on the right of `IN` is not allowed in a `CHECK` constraint; only a direct subquery is.
 CREATE TABLE in_subquery_constraint_bare (x UInt64, CONSTRAINT c CHECK x IN in_subquery_dist)
-ENGINE = MergeTree ORDER BY x;
-INSERT INTO in_subquery_constraint_bare VALUES (1), (2);
-INSERT INTO in_subquery_constraint_bare VALUES (100); -- { serverError VIOLATED_CONSTRAINT }
-SELECT x FROM in_subquery_constraint_bare ORDER BY x;
+ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
 -- The `IN` subquery of a row policy is executed while a `Merge` table reads the table it is set on.
 CREATE TABLE in_subquery_child (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -52,7 +49,6 @@ DROP TABLE in_subquery_ttl;
 
 DROP TABLE in_subquery_merge;
 DROP TABLE in_subquery_child;
-DROP TABLE in_subquery_constraint_bare;
 DROP TABLE in_subquery_constraint;
 DROP TABLE in_subquery_dist;
 DROP TABLE in_subquery_source;

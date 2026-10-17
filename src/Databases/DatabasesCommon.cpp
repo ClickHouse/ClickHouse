@@ -135,11 +135,16 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
+            /// Validation of the whole resulting metadata, including for ordinary `ALTER`s, so the
+            /// fresh-definition-only checks are not enforced here - the same reasoning as for defaults above.
+            IndexDescription::getIndexFromAST(
+                child, columns_desc, is_implicitly_created, escape_index_filenames, context, /* validate_expressions = */ false);
     }
     if (columns.constraints)
     {
-        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context);
+        /// Re-resolve the existing constraints against the resulting columns, so that e.g. dropping a column
+        /// referenced by a constraint is rejected. Grandfathered constraints with a subquery are skipped.
+        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context, /* validate_expressions = */ true);
     }
     if (columns.projections)
     {
