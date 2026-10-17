@@ -2,6 +2,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Analyzer/TableQualifiers.h>
+#include <Core/Block.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
@@ -161,12 +163,21 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptions(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        /// `column_name` is the rendered call (`calculateActionNodeName`), a label rather than semantic
+        /// state, and the shard rewrite can render it differently for the same aggregate by inlining
+        /// aliases. A cache key leaves it out and keeps what the call is made of - the argument names, the
+        /// function and its parameters, all written below. The argument names, which are column
+        /// references, still go through `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -183,7 +194,10 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            writeStringBinary(aggregate.argument_names[i], out);
+            if (for_cache_key)
+                writeCacheKeyColumnName(aggregate.argument_names[i], input_header, out);
+            else
+                writeStringBinary(aggregate.argument_names[i], out);
             encodeDataType(argument_types[i], out);
         }
 
@@ -234,12 +248,17 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 
 }
 
-void serializeAggregateDescriptionsWithoutArguments(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptionsWithoutArguments(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * /*input_header*/)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        /// A rendered label, left out of a cache key - see `serializeAggregateDescriptions`.
+        if (for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
         writeStringBinary(aggregate.function->getName(), out);
 
         const auto & argument_types = aggregate.function->getArgumentTypes();

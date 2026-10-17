@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -75,7 +76,7 @@ private:
     };
 
     MutableColumns invalid_sign_columns;
-    std::vector<BufferedInvalidSignRow> invalid_sign_rows;
+    VectorWithMemoryTracking<BufferedInvalidSignRow> invalid_sign_rows;
     size_t next_invalid_sign_index = 0;
 
     /// To prevent too many error messages from writing to the log.

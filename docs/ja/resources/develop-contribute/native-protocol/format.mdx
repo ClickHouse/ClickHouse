@@ -1,0 +1,1509 @@
+---
+description: 'ClickHouse の Native 列指向フォーマットの仕様：wireプリミティブ、Block と Column の構造、各データ型のエンコーディング、および圧縮フレーム'
+sidebarTitle: 'Native フォーマット'
+slug: /native-protocol/format
+title: 'Native フォーマット'
+doc_type: 'reference'
+keywords: ['native format', 'columnar', 'block', 'wire format', 'serialization', 'compression']
+---
+
+Native フォーマットは、ClickHouse が表形式のデータを転送する際に使用する列指向のwire形式です。主に次の場面で使用されます。
+
+* [ネイティブ TCP プロトコル](/ja/resources/develop-contribute/native-protocol/protocol)における `Data`、`Totals`、`Extremes`、`Log`、`ProfileEvents` パケットの本体 (`TableColumns` パケットは Native ブロックでは**ありません**。このパケットは 2 つのバイナリ文字列を格納するため、そのレイアウトは[ネイティブプロトコル仕様](/ja/resources/develop-contribute/native-protocol/protocol)で扱います)
+* HTTP 経由で実行した `SELECT ... FORMAT Native` の出力
+* `INTO OUTFILE ... FORMAT Native` で書き出したエクスポートファイル
+* サーバー間レプリケーションのペイロード
+
+このページでは、Block 内部のバイト列 (列指向ペイロード) と、Block を構成するカラムごとの型エンコーディングについて説明します。パケットのフレーミング、接続状態、バージョンネゴシエーションについては、[ネイティブプロトコル仕様](/ja/resources/develop-contribute/native-protocol/protocol)を参照してください。
+
+マルチバイトの整数フィールドはすべてリトルエンディアンです。符号付き整数は 2 の補数で表現されます。
+
+<Tip>
+  `Native` フォーマットのユーザー向けの概要 (`curl` を使った例を含む) については、[Native フォーマットのページ](/ja/reference/formats/Native)を参照してください。本仕様は、より低レベルなwire形式のリファレンスです。
+</Tip>
+
+## 概要 {#overview}
+
+wire 上で行を運ぶものはすべて **Block** です。Block は、行をカラムごとに格納した自己記述型の chunk です。まずカラム 1 のすべての値が並び、次にカラム 2 のすべての値が続き、以降も同様です。Block にはクエリが参照するカラムのみが含まれ、テーブル全体が含まれることはありません。
+
+カラムの `data` のレイアウトは、その型が属する*ファミリー*によって決まります。ファミリーをデコーダの複雑さが低い順に挙げると、次のとおりです。
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="列指向の wire ブロックの構造とそのデータレイアウトのファミリー" width="1568" height="976" loading="lazy" />
+
+* **固定幅**型は、`data` を `bytes_per_value × num_rows` バイトの raw bytes として配置します。行ごとのフレーミングはありません。
+* **複合**型 (`Nullable`、`Array`、`Tuple`、`Map`、`Nested`) は、型文字列から完全に導出できる再帰的な構造を持ちます。バージョンプレフィックスやブロック間の状態はありません。
+* **バージョン付き / ステートフル**型 (`LowCardinality`、`JSON`、`Variant`、`Dynamic`) は、空でない各ブロックの先頭にシリアライゼーションバージョン/state prefix を持ちます。`Native` wire では、このプレフィックスおよび Dictionary は**ブロックごと**に存在し、フォーマットがブロック*間*で状態を持ち越すことはありません (writer はブロックごとに新しいシリアル化状態を作成し、`low_cardinality_max_dictionary_size = 0` を設定します) 。ブロック間の状態は MergeTree のディスク上の表現に関わるものであり、Native のwireレイアウトとは関係ありません。
+
+## wire プリミティブ {#wire-primitives}
+
+Native フォーマットは、4 種類のプリミティブなエンコーディングで構成されています。
+
+| プリミティブ  | サイズ                  | 説明                                                                                          |
+| ------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| VarUInt | 1–10 B               | LEB-128 可変長符号なし整数                                                                           |
+| 固定幅 int | 1, 2, 4, 8, 16, 32 B | リトルエンディアン。符号付きの場合は 2 の補数                                                                    |
+| String  | 可変                   | 値ごとに VarUInt の長さプレフィックス + raw bytes。リビジョン `54492` 以降では、別途 [offsets ストリーム](#string-type) を使用 |
+| Bool    | 1 B                  | `0x00` = false、0 以外 = true                                                                  |
+
+### VarUInt {#varuint}
+
+LEB-128エンコーディングを使用する可変長の符号なし整数です。各バイトは、ビット位置0–6に7ビットのデータを、ビット位置7に1ビットの継続ビットを格納します。継続ビットは、後続のバイトがある場合は`1`、最後のバイトでは`0`になります。
+
+| 値の範囲            | バイト数 |
+| --------------- | ---- |
+| 0 – 127         | 1    |
+| 128 – 16383     | 2    |
+| 16384 – 2097151 | 3    |
+| UInt64の全範囲まで    | 最大10 |
+
+値`300`をエンコードする例:
+
+```text
+300 = 0b100101100
+
+Byte 0: 0xAC = 0b10101100   (data: 0101100, continuation: 1)
+Byte 1: 0x02 = 0b00000010   (data: 0000010, continuation: 0)
+```
+
+バイト列 `0xAC 0x02` のデコード：
+
+```text
+Byte 0: data = 0x2C, continuation = 1 → accumulator = 0x2C, shift = 7
+Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
+```
+
+### 固定幅整数 {#fixed-width-integers}
+
+| 型       | バイト数 | エンコーディング               |
+| ------- | ---- | ---------------------- |
+| UInt8   | 1    | 生バイト                   |
+| UInt16  | 2    | リトルエンディアン              |
+| UInt32  | 4    | リトルエンディアン              |
+| UInt64  | 8    | リトルエンディアン              |
+| UInt128 | 16   | リトルエンディアン              |
+| UInt256 | 32   | リトルエンディアン              |
+| Int8    | 1    | 生バイト、2の補数              |
+| Int16   | 2    | リトルエンディアン、2の補数         |
+| Int32   | 4    | リトルエンディアン、2の補数         |
+| Int64   | 8    | リトルエンディアン、2の補数         |
+| Int128  | 16   | リトルエンディアン、2の補数         |
+| Int256  | 32   | リトルエンディアン、2の補数         |
+| Float32 | 4    | IEEE 754 単精度、リトルエンディアン |
+| Float64 | 8    | IEEE 754 倍精度、リトルエンディアン |
+
+例えば、UInt32 の値 `1` は `01 00 00 00` に、Int32 の値 `-1` は `FF FF FF FF` にエンコードされます。
+
+### String {#string}
+
+長さプレフィックス付きのバイト列：
+
+```text
+[VarUInt: byte_length] [byte_length bytes: raw value]
+```
+
+バイト列は有効な UTF-8 である必要はありません。空文字列は 1 バイトの `0x00` としてエンコードされます。また、文字列には途中に NUL を含め、任意のバイト値を含めることができます。文字列 `"ab"` は `02 61 62` としてエンコードされます。デコードする際は、まず VarUInt の長さ (`2`) を読み取り、続いてその長さ分のバイトを読み取ります。
+
+### Bool {#bool}
+
+1 バイトで表されます。`0x00` は false、0 以外の値はすべて true を表します (標準の表現は `0x01`) 。
+
+## Block とカラムの構造 {#block-and-column-structure}
+
+### Block のwireレイアウト {#block-wire-layout}
+
+```text
+[BlockInfo]               metadata (only on the TCP Data-packet path; see below)
+[VarUInt: num_columns]    number of columns in this block
+[VarUInt: num_rows]       number of rows in this block
+[Column × num_columns]    column entries, omitted when num_columns = 0
+```
+
+`BlockInfo` プレフィックスの有無はチャネルによって異なります。これは、writer が *リビジョン* によってパラメータ化されているためです(`client_protocol_version` が出力専用であることも含めた詳細は [プロトコルのリビジョンとNativeフォーマット](#protocol-revision) を参照してください)。
+
+* **ネイティブ TCP プロトコル** では、サーバーは接続時にネゴシエートされたリビジョン(大きな値 — `DBMS_TCP_PROTOCOL_VERSION`、`src/Core/ProtocolDefines.h` を参照)でブロックを書き込みます。`BlockInfo` はそのリビジョンが 0 より大きければ必ず書き込まれ、実際の接続では常にこの条件を満たします。各カラムの `has_custom_serialization` バイト([カラムのwireレイアウト](#column-wire-layout) を参照)は、リビジョン `54454` 以上で書き込まれます。
+* `Native` *出力フォーマット* — HTTP 経由の `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`、および `clickhouse-client` が生成する `Native` フォーマット — は、*デフォルトでは* リビジョン `0` でシリアライズされます。リビジョン `0` では `BlockInfo` プレフィックスと `has_custom_serialization` バイトがいずれも省略されるため、ブロックは `num_columns`、`num_rows`、およびカラムだけで構成されます。
+
+  HTTP 経由の場合、このリビジョンは固定ではありません。クライアントは `?client_protocol_version=<n>` クエリパラメータでリビジョンを引き上げることができ、サーバーはその値をレスポンスのシリアライゼーションのリビジョンとして使用します。
+
+  十分に大きな値を指定すると、HTTP 出力にも TCP 経路とまったく同じように、`BlockInfo` プレフィックス(リビジョンが `0` より大きい場合に書き込まれる)と `has_custom_serialization` バイト(リビジョン `54454` 以上で書き込まれる)が含まれます。したがってクライアントは、HTTP の `FORMAT Native` ペイロードがすべてリビジョン `0` であると想定してはいけません。
+
+つまり、このセクションに掲載している `BlockInfo` プレフィックスで始まるバイト例は、TCP の Data パケットのペイロードを示しています。同じクエリを `FORMAT Native` で実行した場合は、併記されている短い形式が生成されます。
+
+### BlockInfo {#blockinfo}
+
+BlockInfo はフィールドの並びで、各フィールドの前には VarUInt のフィールド ID が置かれ、末尾はフィールド ID `0` で終端されます。このwire形式は自己記述的では**ありません**。フィールド ID には値の長さや型がエンコードされていないため、リーダーは出現しうるすべてのフィールド ID の型をあらかじめ把握しておく必要があります。ClickHouse 自身のリーダーは、認識できないフィールド ID を破損とみなし、例外 (`UNKNOWN_BLOCK_INFO_FIELD`) を送出します。前方互換性は、その代わりにプロトコルリビジョンによって担保されています。送信側は、ネゴシエートされたリビジョンがそのフィールドの最小リビジョン以上である場合にのみフィールドを書き込むため、古い受信側が未知のフィールドを受け取ることはありません。
+
+| フィールド ID | フィールド                            | 型          | 最小リビジョン | 説明                                                          |
+| -------- | -------------------------------- | ---------- | ------- | ----------------------------------------------------------- |
+| 1        | is&#95;overflows                 | UInt8      | 0       | GROUP BY のオーバーフローブロック。オーバーフローでないブロックでは `0`。                 |
+| 2        | bucket&#95;number                | Int32      | 0       | 集約バケット。バケット化されていないブロックでは `-1`。                              |
+| 3        | out&#95;of&#95;order&#95;buckets | Int32 のリスト | 54480   | 分散集約中に遅延したバケット。VarUInt の個数と、それに続く同数の `Int32` 値としてエンコードされます。 |
+| 0        | (終端)                             | —          | —       | BlockInfo の終端。常に必須です。                                       |
+
+フィールド `1` と `2` は最小リビジョンが `0` であるため、`BlockInfo` が書き込まれる場合は必ず含まれます。フィールド `3` はリビジョン `54480` 以上の場合にのみ書き込まれます。一般的なケース (リビジョンが `54480` 未満) のwireレイアウトは次のとおりです。
+
+```text
+[VarUInt: 1] [UInt8: is_overflows]
+[VarUInt: 2] [Int32: bucket_number]
+[VarUInt: 0]
+```
+
+### カラムのwireレイアウト {#column-wire-layout}
+
+Column は 1 つの Block 内に `num_columns` 回出現します。
+
+| # | フィールド                            | 型                          | 条件                                 | 説明                                                                                                                                                                                              |
+| - | -------------------------------- | -------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | name                             | String                     | 常に                                 | カラム名                                                                                                                                                                                            |
+| 2 | type                             | String *または* バイナリ型エンコーディング | 常に                                 | デフォルトでは ClickHouse の型文字列 (例: `"UInt64"`、`"Array(String)"`)。`output_format_native_encode_types_in_binary_format = 1` の場合はバイナリ型エンコーディング。ただしセカンダリクエリの場合を除く (下記の注記を参照)                              |
+| 3 | has&#95;custom&#95;serialization | UInt8                      | 機能 `CUSTOM_SERIALIZATION` (v54454) | `0` = デフォルト、`1` = カスタム (この後に kind&#95;stack が続く)                                                                                                                                                |
+| 4 | kind&#95;stack                   | bytes                      | フィールド 3 が `1` の場合                  | デフォルト以外のシリアライゼーション (スパースなど) を表す 1 バイトの UInt8 列挙値 (下記参照)。`COMBINATION` 値の場合は、その後に VarUInt のカウントと、その個数分の追加の kind バイトが続きます。`Tuple` (および要素レベルのシリアライゼーション情報を持つその他の複合型) の場合、ペイロードは再帰的な構造になります (下記参照)。 |
+| 5 | data                             | bytes                      | 常に                                 | 全 `num_rows` 行分のカラム値。型ごとのレイアウトについては [データ型](#data-types) を参照してください。スパースカラムについては下記を参照してください。                                                                                                      |
+
+デコーダは `type` 文字列に基づいて処理を振り分けます。型文字列には括弧付きのパラメータが含まれることが多く、デコーダは `(...)` サフィックスを取り除いて基本型を特定したうえで、パラメータをパースしてサイズ、スケール、内部型を決定します。Nested 型 (`Array` 内の `Tuple` など) を含むパラメータリストをパースする場合、`,` で単純に分割するのではなく、括弧のネストの深さを追跡しながらカンマで分割する処理が必要です。
+
+<Info>
+  **バイナリ型エンコーディング**
+
+  `type` フィールドがテキストの `String` になるのは、デフォルトのモードの場合だけです。クエリ設定 `output_format_native_encode_types_in_binary_format = 1` が設定されている場合、このフィールドは **バイナリ型エンコーディング** になります。これは [データ型のバイナリエンコーディング](/ja/reference/data-types/data-types-binary-encoding) で説明しているものと同じタグベースのエンコーディングです。また、フラット化された `Dynamic` 型のリストでも、各型の名前に同じバイナリエンコーディングが使用されます。フィールド 2 を常に長さプレフィックス付きの文字列として読み取るデコーダは、最初のバイナリ型タグを文字列長と誤認して同期がずれてしまいます。そのため、デコーダはストリームがどちらのモードを使用しているかを把握しておく必要があります。
+
+  `query_kind = SECONDARY_QUERY` のクエリ (`remote`、`Distributed`、並列レプリカのために別のサーバーから送信されたもの、または `clickhouse-client --query_kind secondary_query` で送信されたもの) では、送受信の双方が、そのクエリのブロックについて `output_format_native_encode_types_in_binary_format` と `input_format_native_decode_types_in_binary_format` を無視します。つまり、どちらの方向でもブロックにはテキストの型名が含まれます。このルールが導入される前のサーバーは、セカンダリクエリにも他のクエリと同様にこれらの設定を適用します。
+</Info>
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="型記述から対応するエンコーディングファミリーへのデコーダのルーティング" width="1568" height="854" loading="lazy" />
+
+#### kind_stack とスパースエンコーディング {#kind-stack-and-sparse-encoding}
+
+`kind_stack` バイトは、デフォルト以外のカラムごとのシリアライゼーションを列挙します。
+
+| バイト    | 名前                           | 意味                                                  | `data` へのwire上の影響                                         |
+| ------ | ---------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `0x00` | DEFAULT                      | デフォルトのシリアライゼーション                                    | `has_custom = 0` と同一                                     |
+| `0x01` | SPARSE                       | スパースシリアライゼーション (v54465+)                            | オフセットストリーム + デフォルト以外の値。下記参照                              |
+| `0x02` | DETACHED                     | 並列ブロックマーシャリングによって `ColumnBLOB` にラップされたカラム (v54478+) | 事前にマーシャリングされたブロブ: `VarUInt size` + そのバイト数分のデータ。下記参照      |
+| `0x03` | DETACHED&#95;OVER&#95;SPARSE | `ColumnBLOB` にラップされたスパースカラム                         | `DETACHED` と同じブロブペイロード。下記参照                              |
+| `0x04` | REPLICATED                   | 繰り返し出現する値のための Dictionary 形式 (v54482+)               | 索引ストリーム + 密な要素値。下記参照                                 |
+| `0x05` | COMBINATION                  | 複数の kind からなるスタック                                   | VarUInt の `count` と、それに続く `count` 個の kind バイト — 下記の注記を参照 |
+
+**`COMBINATION` のペイロードは別の enum を使用します。** 上記の 5 行は *compact* な 1 バイトコードです。`COMBINATION` (`0x05`) は、これらでカバーされない任意のスタックを表すための汎用エスケープであり、その後に `VarUInt` の `count`、さらに `count` 個の 1 バイトのエントリが続きます。これらのエントリは表の compact コードでは**なく**、生の `ISerialization::Kind` 値です。
+
+| バイト    | ネストされた `Kind` |
+| ------ | ------------- |
+| `0x00` | DEFAULT       |
+| `0x01` | SPARSE        |
+| `0x02` | DETACHED      |
+| `0x03` | REPLICATED    |
+
+バイト値は compact コードとは異なります。`REPLICATED` はこのネストされた enum では `0x03` ですが、compact コードでは `0x04` です。また `DETACHED_OVER_SPARSE` のエントリは存在せず、この組み合わせは `SPARSE`、`DETACHED` という 2 つの連続したエントリとして表されます。ネストされたバイトにも compact テーブルを適用し続けるデコーダは、`0x03`/`0x04` を誤ってマッピングし、同期がずれます。
+
+`count` は、すべてのスタックの先頭にある **`DEFAULT` エントリを含めた**スタック全体の長さです。エントリ数が 1 または 2 のスタックはすべて compact コードでカバーされているため、`COMBINATION` の `count` は常に 3 以上になります。
+
+**kind スタックの妥当性。** デコーダは不正なスタックを受け取った場合、それが記述するシリアライゼーションを構築せず、`INCORRECT_DATA` で拒否します。条件は次のとおりです。
+
+* スタックは `DEFAULT` で始まること。
+* スタックは `DEFAULT`、`SPARSE`、`REPLICATED`、`DETACHED` の部分列であること — これは各 kind が互いをラップする順序です。`SPARSE` は `REPLICATED` の内側に配置できますが、その逆はできません。また `ColumnBLOB` はその下位にあるすべての要素のシリアル化された形式を保持するため、`DETACHED` は常に最後になります。このことから同じ kind が 2 回出現することはなく、`count` の上限は kind の数となります。
+
+この順序は、上記の kind バイト値の順序とは異なる点に注意してください。これ以外のスタックは、どのライターも構築しないカラムレイアウトを表しており、どのマテリアライズ処理でも宣言された型の完全なカラムへとアンラップされることはありません。たとえば、値カラム自体がスパースまたはレプリケートされている `ColumnSparse` は、ラップされたままになります。
+
+**`Tuple` カラムの再帰的な `kind_stack`。** 上記の `kind_stack` ペイロードは、1 つのカラム自身のシリアライゼーション情報を表すバイト (または `COMBINATION` シーケンス) です。`Tuple` は `SerializationInfoTuple` を持ち、まずタプル*自身*の kind スタックペイロードを書き込み、続いて*各*要素の完全な kind スタックペイロードを順に書き込みます。デコーダも同じ再帰構造で読み戻します。したがって `Tuple(A, B, C)` の場合、フィールド 4 のバイトは `[tuple_kind][A_kind][B_kind][C_kind]` となり、要素がさらに複合型であれば、その要素のペイロード自体も再帰的な構造になります。`has_custom_serialization` バイト (フィールド 3) は、タプル自身の情報*またはいずれかの要素*の情報がデフォルト以外であれば必ずセットされます。そのため、特殊な要素がスパースまたはレプリケートされた要素だけである `Tuple` でも、kind スタックペイロードがトリガーされます。`Tuple` に対して先頭の enum バイト 1 つだけを読み取るデコーダは、読み取りを途中で打ち切ってしまい、残りの要素 kind バイトをカラムデータとして誤読します。
+
+**スパースのwire形式。** `kind_stack = 0x01` の場合、カラムの `data` は、単一の共有 TCP ストリーム内に連続して書き込まれる 2 つのストリームで構成されます。
+
+1. **オフセットストリーム** — `VarUInt` の数列です。各値 `v` は次のいずれかです。
+   * ビット 62 (上位ビット) がクリアされている `v`: `(v & 0x3FFFFFFFFFFFFFFF)` は、次の明示的な非デフォルト値より前にあるデフォルト位置の数を表します。この非デフォルト位置は `cursor + group_size` で、`cursor` は現在の位置を表します。その後、`cursor` は `group_size + 1` だけ進みます。
+   * ビット 62 がセットされている `v` (`END_OF_GRANULE_FLAG`): フラグをクリアした値は、最後の非デフォルト値の後に続く末尾のデフォルト位置の数を表します。これは、そのブロックにおける オフセットストリーム の終端を示します。
+2. **Values stream** — 内部型で密にエンコードされた `count` 個の非デフォルト値です。`count` は、上記で読み取った VarUInt のうち EOG 以外のものの数です。
+
+デコーダは、明示されていないすべての位置を内部型のデフォルト値 (整数および浮動小数点数では `0`、`String` では `""`、`Date` では `0` 日など) で補完し、`num_rows` 個のエントリからなる密なカラムを再構築します。
+
+スパースな `Nullable(T)` カラムは特殊なケースです。`Nullable(T)` のデフォルト値は **NULL** であるためです。スパースエンコーディングでは、通常の `Nullable` の null マップストリームは完全に省略されます。オフセットストリーム は非デフォルト (すなわち非 NULL) の位置を特定し、values ストリームはそれらの非 NULL 値のみを `T` で密に保持し、明示されていない位置はすべて NULL として再構築されます。したがって、デコーダは values ストリーム内で null マップを探しては*ならず*、欠落位置を実在する値 `0` で補完しても*なりません*。欠落位置は NULL で補完します。
+
+**Replicated のwire形式。** `kind_stack = 0x04` の場合、カラムの `data` は Dictionary です。つまり、重複のない要素値のリストと、そのリストを指す行ごとの索引で構成されます (`LowCardinality` と同じルックアップ構造です)。内部型自体がバージョン付きである場合 (例: `LowCardinality(T)`)、その state prefix は索引ストリームより**前に**書き込まれます。これは、replicated シリアライゼーションが `num_rows` を書き込む前に、プレフィックスフェーズを内部型に委譲するためです。プレフィックスが空の内部型 (リーフ型および単純な複合型) は、ここでは 1 バイトも出力しません。
+
+```text
+[inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
+[VarUInt num_rows]
+[UInt8  size_of_indexes_type]            width of each index: 1, 2, 4, or 8 bytes
+[indexes: num_rows × size_of_indexes_type bytes]
+[VarUInt num_elements]
+[elements: num_elements dense inner-type values]
+```
+
+デコーダは、各出力行 `i` について `elements[indexes[i]]` を選択することで、密なカラムを再構築します。複合的な内部型は再帰的に処理されます。つまり、要素リストを内部型としてマテリアライズしてから、索引で参照します。サポート済みの内部型には、leaf 型、`Nullable(T)`、`Array(T)`、`Tuple(...)`、`Map(K, V)`、`Nested(...)` (各フィールドは `Array` と同様に展開されます) 、および `LowCardinality(T)` (共有 Dictionary はそのまま保持され、要素ごとのキーのみが索引で参照されます) があります。
+
+**デタッチされたwire形式。** `DETACHED` (`0x02`) と `DETACHED_OVER_SPARSE` (`0x03`) は、実際にwire上に*出現します*。純粋に内部でのみ使われる値ではありません。TCP 経路では、圧縮が有効で、かつネゴシエートされたリビジョンが `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478) 以上の場合、カラムは次の 3 つのステップで処理されます。
+
+1. 対象となる各カラム (`const` でも `Tuple` でもなく、かつ 2 行以上を含むブロック内のもの) は、メインスレッド以外ですでにマーシャリングおよび圧縮済みのカラムを保持する `ColumnBLOB` でラップされます。
+2. ラップされたカラムの kind stack に `DETACHED` が追加されます。
+3. カラムの `data` は、`VarUInt` 形式のブロブサイズと、それに続くちょうどそのバイト数分のブロブバイトとして書き込まれます。
+
+ラップされたカラムがスパースの場合、その stack は `{DEFAULT, SPARSE, DETACHED}` となり、`DETACHED_OVER_SPARSE` としてシリアライズされます。このようなカラムをデコードするクライアントは、ブロブの長さとバイト列を読み取った後、ブロブを展開して内部カラムのペイロードを復元します (圧縮の節にある [`ColumnBLOB` に関する注記](#compression-negotiation) を参照してください) 。
+
+`DETACHED` には方向性があります。サーバーが送信する結果ブロック内でのみ、しかもトップレベルのカラム全体に対してのみ使用でき、`Tuple` の要素の kind の 1 つとして現れることはありません。他の kind とは異なり、`DETACHED` を指定すると、ランタイム上のカラムは宣言された型のカラムではなく `ColumnBLOB` になります。そのため受信側がこれを受け入れるのは、自身のパイプラインでブロブを元の型に変換し直せる場合に限られます。したがってサーバーは、クライアントが送信するブロックに `DETACHED` が含まれていれば、外部テーブルのデータ、スカラー、挿入データのいずれであっても、`INCORRECT_DATA` として拒否します。
+
+### Block のバリアント {#block-variants}
+
+Data 系のパケットはすべて、同一の Block wire形式を使用します。各バリアントの違いは、カラム数と行数のみです。
+
+| バリアント    | num&#95;columns | num&#95;rows | 用途                                       |
+| -------- | --------------- | ------------ | ---------------------------------------- |
+| ヘッダーブロック | N &gt; 0        | 0            | 結果スキーマ (カラム名と型) を通知します。                  |
+| 結果ブロック   | N &gt; 0        | M &gt; 0     | 実際の結果行を格納します。                            |
+| 空のブロック   | 0               | 0            | センチネル。クライアント側では入力の終端、サーバー側では境界マーカーを表します。 |
+
+### バイトレベルの例 {#byte-level-examples}
+
+このセクションの例はすべて **TCP の Data パケットのパス** から取得したものであるため、`BlockInfo` プレフィックスと `has_custom_serialization` バイトが含まれています。`FORMAT Native` を使用する場合、同じブロックはより短くなります。理解の助けになる箇所には、同等の短い形式も併記しています。
+
+空のブロック (BlockInfo 付き) 、合計 8 バイト：
+
+```text
+01 00                   BlockInfo: field_id=1, is_overflows=0
+02 FF FF FF FF          BlockInfo: field_id=2, bucket_number=-1
+00                      BlockInfo terminator
+00                      num_columns = 0
+00                      num_rows = 0
+```
+
+`SELECT 1` のヘッダーブロックは、`UInt8` 型の `"1"` という名前のカラム 1 つを、0 行で通知します。プロトコルバージョン 54454 以上では、`has_custom_serialization` バイトが含まれます。
+
+```text
+01 00                   BlockInfo: is_overflows = 0
+02 FF FF FF FF          BlockInfo: bucket_number = -1
+00                      BlockInfo terminator
+01                      num_columns = 1
+00                      num_rows = 0
+01 "1"                  Column[0].name = "1"
+05 "UInt8"              Column[0].type = "UInt8"
+00                      Column[0].has_custom_serialization = 0
+                        Column[0].data: no bytes (num_rows = 0)
+```
+
+同じクエリに対する、1行を含む結果ブロックは次のとおりです。
+
+```text
+01 00                   BlockInfo: is_overflows = 0
+02 FF FF FF FF          BlockInfo: bucket_number = -1
+00                      BlockInfo terminator
+01                      num_columns = 1
+01                      num_rows = 1
+01 "1"                  Column[0].name = "1"
+05 "UInt8"              Column[0].type = "UInt8"
+00                      Column[0].has_custom_serialization = 0
+01                      Column[0].data: one UInt8 byte = 1
+```
+
+`FORMAT Native` (リビジョン `0`) を使用した場合、同じ結果ブロックには `BlockInfo` も `has_custom_serialization` バイトも含まれないため、`SELECT 1 FORMAT Native` は 11 バイトになります:
+
+```text
+01                      num_columns = 1
+01                      num_rows = 1
+01 "1"                  Column[0].name = "1"
+05 "UInt8"              Column[0].type = "UInt8"
+01                      Column[0].data: one UInt8 byte = 1
+```
+
+(ヘッダーのみのブロックなど、0 行の結果の場合、`FORMAT Native` では 1 バイトも出力されません。この出力フォーマットは空のブロックを出力しないためです。)
+
+## プロトコルのリビジョンとNativeフォーマット {#protocol-revision}
+
+Native のバイトストリームの構造を何よりも大きく左右するのは、ライターとリーダーが動作している**プロトコルのリビジョン**です。リビジョンはバイト列自体のどこにも含まれておらず、wire 上にリビジョンを示すフィールドは存在しません。それにもかかわらず、いくつかの機能がそもそも現れるかどうかはリビジョンによって決まります。そのため、デコーダはペイロードをパースする前に、そのペイロードがどのリビジョンで書き込まれたかを把握しておく必要があります。リビジョンはストリームに含まれないため、リーダーとライターは別の手段でリビジョンを取り決めておかなければなりません。
+
+リビジョンは単一の `UInt64` 値で、`NativeWriter` と `NativeReader` のどちらもコンストラクタの引数として受け取ります。ライター側では `client_revision`、リーダー側では `server_revision` という名前ですが、どちらも同じ値を指します。このリリースが認識している最新のリビジョンは `DBMS_TCP_PROTOCOL_VERSION` です (`src/Core/ProtocolDefines.h` を参照) 。
+
+### リビジョンによって制御される機能 {#what-the-revision-gates}
+
+各機能は `DBMS_MIN_REVISION_WITH_*` のしきい値によって制御されます。ライターはリビジョンがしきい値に達した場合にのみその機能を出力し、リーダーもまったく同じ規則に従ってその機能を探すため、両者は常に同期が保たれます。どちらか一方でリビジョンを誤ると、両者の同期が崩れます。Native フォーマット に関係するゲートは次のとおりです。
+
+| 機能                                                 | しきい値定数                                                             | リビジョン   | しきい値未満の場合の影響                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------- | ------------------------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BlockInfo` プレフィックス                                | (`> 0` の任意の値)                                                      | `1`     | [`BlockInfo`](#blockinfo) プレフィックスは完全に省略され、ブロックは `num_columns`、`num_rows`、カラムのみで構成されます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `has_custom_serialization` バイト                     | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454` | カラムごとの [`has_custom_serialization`](#column-wire-layout) バイトは省略され、すべてのカラムがデフォルトのシリアライゼーションを使用します(スパース、レプリケート、デタッチされた形式は使われません)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| wire 上の `LowCardinality`                           | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405` | 特殊なケースで、単純な「しきい値未満」の規則には**従いません**。`LowCardinality(T)` が基本型 `T` に変換されるのは、リビジョンが *0 以外* かつ `54405` 未満の場合、または変換が別途強制された場合のみです。リビジョン `0` では保持されます。後述の注記を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| V2 `Dynamic` / `JSON` シリアライゼーション                   | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473` | `Dynamic` および `JSON`/`Object` は V2 ではなく V1 シリアライゼーション(`max_dynamic_*` パラメータ付き)を使用します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| オフセット方式の `String` シリアライゼーション                       | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`     | `54492` | しきい値未満では、`String` のカラムデータは [offsets layout](#string-type)(`UInt64` の累積バイトオフセットに続けて全データを連結)ではなく、per-value layout(行ごとに `VarUInt` の length prefix + raw bytes)を使用します。リビジョンのみで判定され、カラムごとの wire 上のマーカーはありません。しきい値以上では、offsets layout は複合型(`Array`、`Nullable`、`Map`、`Tuple`、`Variant`、`Dynamic`、`JSON`)内にネストされた `String` にも適用されますが、`LowCardinality` カラムの Dictionary には適用**されません**。`LowCardinality` の Dictionary は常にデフォルトのネストされたシリアライゼーションで書き込まれるため、その `String` 値は per-value layout のままです(`LowCardinality(String)` および `LowCardinality(Nullable(String))` も同様です)。`Buffers` フォーマットはプロトコルの一部ではなく、常に per-value layout を使用します。 |
+| 集約関数のバージョニング                                       | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452` | `AggregateFunction` の state はバージョンを埋め込まずに書き込まれます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `quantileDeterministic` の state における `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491` | `AggregateFunction(quantileDeterministic, ...)` の state(および同じ関数の `quantiles`/`median` 表記)は、末尾の `UInt8 skip_degree` を含まない state バージョン `0` として書き込まれます。[型の別名](#type-aliases)の注記を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `uniq` の state における 64 ビットハッシュのサンプル                | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1`                      | `54493` | `AggregateFunction(uniq, ...)` の state は state バージョン `0` として書き込まれ、先頭のフラグバイトも末尾の 64 ビットハッシュのサンプルも含まれません。[型の別名](#type-aliases)の注記を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `BlockInfo` 内の `out_of_order_buckets`              | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480` | `BlockInfo` のフィールド ID `3` は書き込まれません([BlockInfo](#blockinfo) を参照)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 並列ブロックマーシャリング(`DETACHED`)                          | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478` | カラムが `ColumnBLOB` でラップされることはなく、`DETACHED` / `DETACHED_OVER_SPARSE` の kind も現れません([kind&#95;stack](#kind-stack-and-sparse-encoding) を参照)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `DateTime(tz)` の型パラメータ                             | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | タイムゾーンパラメータは `type` 文字列から除かれ、`DateTime('UTC')` は単なる `DateTime` として通知されます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+そのため、リビジョン `0` はほぼすべての点で最も保守的なエンコーディングとなります。ストリームには `BlockInfo` も `has_custom_serialization` バイトも含まれず、`Dynamic`/`JSON` は V1 となり、集約関数のバージョンも含まれず、`DateTime` はタイムゾーンパラメータが取り除かれた素の形になります。ただし、リビジョン `0` における集約関数の *state* バージョンは例外です。バージョンを導出する相手側が存在しない (ストリームは、それを生成した側自身が書き込み、読み戻すもの。たとえば `StripeLog` のデータファイル、`Set`/`Join` のバックアップ、`Native` フォーマットのファイルなど) ため、ライター側は state をバージョン `0` にダウングレードせず、型に固定されたバージョンをそのまま維持します (通常どおり型文字列内に明記します) 。バージョン `0` で書き込まれるのは、バージョンを固定していない型だけです。
+
+`LowCardinality` は唯一の例外であり、しかも重要な例外です。ライター側のチェックは `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)` です。ポイントは先頭の `client_revision &&` です。リビジョンがちょうど `0` の場合、条件全体が short-circuit により false になります。
+
+したがって、リビジョン `0` (`FORMAT Native` のデフォルト) では、`LowCardinality(T)` は除去**されません**。型文字列とBlockごとの state prefix はストリーム内に残り、リビジョン `0` のリーダーはそれらをそのまま読み戻します。除去が行われるのは、リビジョンが `54405` 未満かつゼロ以外の場合か、リビジョンに関係なく強制された場合に限られます。
+
+この強制を担うのが `remove_low_cardinality` フラグです。`FORMAT Native` の出力がこのフラグを設定することはありませんが、ネイティブ TCP 経路では `low_cardinality_allow_in_native_format = 0` (デフォルトは `1`) のときに設定されます。つまり、この設定はネイティブ TCP の出力には影響しますが、`FORMAT Native` には一切影響しません。
+
+実務上の要点として、デフォルトの `FORMAT Native` ストリームに `LowCardinality` が含まれることは正当にありえます。リビジョン `0` では存在しない機能として扱わないようにしてください。
+
+### データの転送経路ごとのリビジョンの決まり方 {#revision-per-channel}
+
+同じ Native バイト列でも、ネイティブ TCP プロトコル、HTTP リクエスト、ディスク上のファイルなど、さまざまな経路で転送されます。リビジョンの決まり方は経路ごとに異なります。注意点として、読み取り側と書き込み側はそれぞれ個別に設定されるため、両者のリビジョンが一致しない場合があります。
+
+#### ネイティブ TCP プロトコル — ネゴシエーションあり、双方向 {#revision-tcp}
+
+[ネイティブ TCP プロトコル](/ja/resources/develop-contribute/native-protocol/protocol)では、リビジョンは Hello ハンドシェイクで決まります。クライアントが `DBMS_TCP_PROTOCOL_VERSION` を送信すると、サーバーは自身の値を返します。以降、双方はそれぞれ**相手側が通知したリビジョン**でシリアライズを行います。サーバーは `client_tcp_protocol_version` に基づいて `NativeReader`/`NativeWriter` を構築し、クライアントは受信した `server_revision` を使用します。明示的な `min` は存在しませんが、どちらの側も自身が実装していない機能を送出することはできないため、各方向の上限は実質的に 2 つのピアのうち古い方によって決まります。
+
+両方のピアが同じ最新ビルドであれば、両方向とも同じリビジョン (`DBMS_TCP_PROTOCOL_VERSION`。`src/Core/ProtocolDefines.h` を参照) に揃い、すべてのゲートが有効になります。これが一般的なケースですが、常にそうなるとは限りません。バージョンが混在している場合やサードパーティ製のピアが関わる場合は、方向ごとにリビジョンが異なることがあるため、ゲートは方向ごとに判断する必要があります。`BlockInfo` は 0 以外であればどのリビジョンでも含まれますが、それ以外のフィールド (`has_custom_serialization` を含む) は、その方向の実効リビジョンが各しきい値に達して初めて含まれるようになります。例えば、`54454` 未満のリビジョンを通知するピアは、`has_custom_serialization` バイトを送信も受信もしません。
+
+#### `FORMAT Native` 出力 — デフォルトはリビジョン 0、HTTP 経由で引き上げ可能 {#revision-output}
+
+`Native` の*出力*フォーマットは、デフォルトでリビジョン **`0`** を使用します。対象となるのは、HTTP 経由の `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`、および `clickhouse-client` が書き出す `Native` 出力です。いずれの場合も、出力ファクトリは `FormatSettings::client_protocol_version` をそのまま `NativeWriter` に渡します。この値によって、`BlockInfo` / `has_custom_serialization` のフレーミング*と*オフセット `String` レイアウトの両方が決まります。そのため、`client_protocol_version` を引き上げた (≥ `54492`) HTTP の `SELECT ... FORMAT Native` はオフセットレイアウトで書き出され、デフォルトのリビジョン `0` では移植性のある値ごとのレイアウトが維持されます。
+
+ただし HTTP の場合、話はこのデフォルトだけでは終わりません。クライアントは `?client_protocol_version=<n>` クエリパラメータでこの値を引き上げられます。HTTP ハンドラーはこれを SQL の設定ではなく予約されたパラメータとして扱い、クエリコンテキストに格納します。その後、フォーマット層がこの値を `FormatSettings` にコピーします。十分に大きな値を指定すると、HTTP の `FORMAT Native` 出力にも TCP 経路と同様に `BlockInfo` プレフィックスと `has_custom_serialization` バイトが含まれるようになります。したがって、HTTP の `FORMAT Native` ペイロードが常にリビジョン `0` であるとは限りません。
+
+このパラメータはクエリコンテキスト全体に格納されるため、結果ストリームだけでなく、そのリクエストで生成されるすべての `NativeWriter` に影響します。たとえば、`?client_protocol_version=` を引き上げた HTTP リクエストで `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` のようなサーバー側の書き込みを行うと、ファイルはそのリビジョンで書き出されます。これは以前からある動作で (String のオフセットシリアライゼーションの導入以前から存在し、`BlockInfo` と `has_custom_serialization` にも適用されます) 、しかも非対称です。読み取り側 (後述) は同じ方法では引き上げられないため、このようにして書き出したファイルは `file(...)` で読み戻せません。後で再度読み込むデータを書き出すリクエストでは、`client_protocol_version` を指定しないでください。なお、`INTO OUTFILE` およびローカルの `clickhouse-client` 出力にはこのような調整手段がなく、常に `0` のままです。
+
+#### `FORMAT Native` 入力 — 常にリビジョン 0 {#revision-input}
+
+`Native` *入力*フォーマットは、常にリビジョン **`0`** で `NativeReader` を構築します。`BlockInfo` プレフィックスを想定せず、`has_custom_serialization` バイトも読み取らず、常にデフォルトのシリアライゼーションを前提とします。これは `INSERT ... FORMAT Native` のボディをパースする場合も、`Native` ファイルを読み取る場合も、スキーマを推論する場合も同様です。`?client_protocol_version=<n>` を指定しても入力側のリビジョンは引き上げられません (このパラメータを読み取るのは出力側のみです) 。
+
+入力リビジョンは常に `0` であるため、入力フォーマットは常に値ごとの `String` レイアウトで読み取ります。そのため、オフセットレイアウトで書き込まれたストリーム (ネイティブ TCP プロトコル経由のもの、または `client_protocol_version` を引き上げた `SELECT ... FORMAT Native` で出力されたもの) は、`FORMAT Native` 入力では読み戻せません。これは `BlockInfo` のフレーミングと同じ非対称性です。
+
+### 往復変換への影響 {#revision-round-trip}
+
+`FORMAT Native` では、デフォルトのリビジョンは両端とも `0` です。リビジョン `0` で `SELECT ... FORMAT Native` によって書き出されたデータは、そのまま `INSERT ... FORMAT Native` で問題なく読み戻せます。
+
+出力リビジョンを引き上げて (`SELECT` に `?client_protocol_version=<n>` を指定して) 生成したストリームには、`BlockInfo` と `has_custom_serialization` のフレーミング、およびオフセット `String` レイアウトが含まれます。しかし入力フォーマットは常にリビジョン `0` で動作するため、これらはいずれも読み戻せません。したがって、`client_protocol_version` を引き上げるのはネイティブ TCP プロトコルを扱うコンシューマー向けの場合に限られ、HTTP 経由で `FORMAT Native` を往復変換する用途には向きません。
+
+ファイルの場合は非対称になります。サーバー側の `INSERT INTO FUNCTION file(...)` (または `s3`、`url`) で `?client_protocol_version=` を引き上げると、ファイルはそのリビジョンで*書き込まれ*ますが、`file(...)` による*読み取り*は常にリビジョン `0` でパースされます。そのため、このようなファイルは往復変換できません。書き込みリクエストに `client_protocol_version` を指定せず、ファイルを通常のリビジョン `0` で書き出すか、ネイティブ TCP プロトコル経由でデータを移動してください。ネイティブ TCP プロトコルでは、各方向でハンドシェイクによりネゴシエートされたリビジョンが使用されます。
+
+| チャネル                                                           | 書き込みリビジョン                              | 読み取りリビジョン            | `BlockInfo` / カスタムシリアライゼーション                                           |
+| -------------------------------------------------------------- | -------------------------------------- | -------------------- | ---------------------------------------------------------------------- |
+| ネイティブ TCP の Data パケット                                          | ピアが通知したリビジョン (方向ごと)                    | ピアが通知したリビジョン (方向ごと)  | リビジョンが `> 0` の場合は常に `BlockInfo`、`≥ 54454` で `has_custom_serialization` |
+| HTTP 経由の `SELECT ... FORMAT Native`                            | `client_protocol_version` (デフォルト `0`)  | 該当なし                 | `client_protocol_version` を引き上げた場合のみ                                   |
+| HTTP 経由の `INSERT ... FORMAT Native` (ボディ)                      | 該当なし                                   | `0` (常に)             | フレーミングなし、`String` は常に値ごと                                               |
+| HTTP 経由の `INSERT INTO FUNCTION file`/`s3`/`url(..., 'Native')` | `client_protocol_version` (デフォルト `0`)  | `0` (読み取りは常に)        | `client_protocol_version` を引き上げた場合の書き込み時のみ — このようなファイルは読み戻せません         |
+| `INTO OUTFILE` / ローカルの `clickhouse-client` での `FORMAT Native`  | `0`                                    | `0`                  | なし (ただし `LowCardinality` は保持されます — 上記の注記を参照)                           |
+
+<Info>
+  **プロトコルリビジョンとシリアル化バージョンの違い**
+
+  プロトコルリビジョンを[シリアル化バージョン](#serialization-version-concept)と混同しないでください。ここでいうリビジョンは接続単位またはリクエスト単位で適用され、バイト列には現れません。一方、シリアル化バージョンはカラムごとに存在し、[バージョン付き型](#versioned-types)によって保持され、空でないすべてのBlockに書き込まれます。リビジョンはある機能がそもそも含まれるかどうかを決め、シリアル化バージョンは、バージョン付きカラムの内部で、その型のエンコーディングのうちどのバリアントが続くかを決めます。
+</Info>
+
+## データ型 {#data-types}
+
+このセクションでは、Native フォーマットがカラムの `data` 内に保持できる型のワイヤエンコーディングについて説明します。各型は、デコーダの実装の複雑さが低いものから順に 4 つのファミリーに分類されています。`AggregateFunction(func, ...)` と `QBit(T, N[, stride])` の 2 つの型は `Native` のカラム型として有効ですが、関数や型に固有のペイロードを持つため、本ドキュメントでは扱いません。ただし、別名と誤解されやすい箇所では、以下でその旨を明記します。
+
+| ファミリー            | セクション                          | カラムあたりのストリーム数 | Block をまたぐ状態                                                     |
+| ---------------- | ------------------------------ | ------------- | ---------------------------------------------------------------- |
+| 固定長              | [固定長型](#fixed-width-types)     | 1             | なし                                                               |
+| 可変長              | [可変長型](#variable-length-types) | 1             | なし                                                               |
+| 複合型 (固定形状)       | [複合型](#composite-types)        | 複数            | なし                                                               |
+| バージョン付き / ステートフル | [バージョン付き型](#versioned-types)   | 複数            | Native wire 上ではなし — Block ごとに state prefix があり、Block ごとに新しく付与される |
+
+### 固定長型 {#fixed-width-types}
+
+各値は一定のバイト数を占めます。`M` 行のカラムは、wire 上でちょうど `bytes_per_row × M` バイトを占め、各値は区切り文字やパディングなしで連結されます。
+
+| 型文字列                | 値あたりのバイト数       | 論理値                                                                                  | ワイヤエンコーディング                                             |
+| ------------------- | --------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| `UInt8`             | 1               | 符号なし 8 ビット整数                                                                         | 生バイト                                                    |
+| `UInt16`            | 2               | 符号なし 16 ビット整数                                                                        | リトルエンディアン                                               |
+| `UInt32`            | 4               | 符号なし 32 ビット整数                                                                        | リトルエンディアン                                               |
+| `UInt64`            | 8               | 符号なし 64 ビット整数                                                                        | リトルエンディアン                                               |
+| `UInt128`           | 16              | 符号なし 128 ビット整数                                                                       | リトルエンディアン                                               |
+| `UInt256`           | 32              | 符号なし 256 ビット整数                                                                       | リトルエンディアン                                               |
+| `Int8`              | 1               | 符号付き 8 ビット、2 の補数                                                                     | 生バイト                                                    |
+| `Int16`             | 2               | 符号付き 16 ビット、2 の補数                                                                    | リトルエンディアン                                               |
+| `Int32`             | 4               | 符号付き 32 ビット、2 の補数                                                                    | リトルエンディアン                                               |
+| `Int64`             | 8               | 符号付き 64 ビット、2 の補数                                                                    | リトルエンディアン                                               |
+| `Int128`            | 16              | 符号付き 128 ビット、2 の補数                                                                   | リトルエンディアン                                               |
+| `Int256`            | 32              | 符号付き 256 ビット、2 の補数                                                                   | リトルエンディアン                                               |
+| `Float32`           | 4               | IEEE 754 単精度                                                                         | リトルエンディアン                                               |
+| `Float64`           | 8               | IEEE 754 倍精度                                                                         | リトルエンディアン                                               |
+| `BFloat16`          | 2               | IEEE 754 `Float32` の上位 16 ビット                                                        | リトルエンディアン                                               |
+| `Bool`              | 1               | `0x00` = false、`0x01` = true                                                         | 生バイト                                                    |
+| `Date`              | 2               | `1970-01-01` からの日数                                                                   | リトルエンディアン UInt16                                        |
+| `Date32`            | 4               | `1970-01-01` からの日数 (符号付き。1970 年以前も可)                                                 | リトルエンディアン Int32                                         |
+| `DateTime`          | 4               | 秒単位の Unixタイムスタンプ                                                                     | リトルエンディアン UInt32                                        |
+| `DateTime(tz)`      | 4               | `DateTime` と同じ。タイムゾーンはメタデータとして保持                                                     | リトルエンディアン UInt32                                        |
+| `DateTime64(s)`     | 8               | スケール `s` でのティック数 (epoch からの 10^-s 秒単位)                                               | リトルエンディアン Int64                                         |
+| `DateTime64(s, tz)` | 8               | `DateTime64(s)` と同じ。タイムゾーンはメタデータとして保持                                                | リトルエンディアン Int64                                         |
+| `Time`              | 4               | 秒単位の符号付き経過時間                                                                         | リトルエンディアン Int32                                         |
+| `Time64(s)`         | 8               | スケール `s` のティック数で表す符号付き経過時間                                                           | リトルエンディアン Int64                                         |
+| `Interval<Unit>`    | 8               | 符号付きのカウント値。単位は型文字列で指定                                                                | リトルエンディアン Int64                                         |
+| `UUID`              | 16              | 128 ビット識別子                                                                           | 前半・後半それぞれをバイトスワップした 2 つの LE UInt64 ([UUID](#uuid) を参照)  |
+| `IPv4`              | 4               | IPv4 アドレス                                                                            | リトルエンディアン UInt32                                        |
+| `IPv6`              | 16              | IPv6 アドレス                                                                            | ネットワークバイトオーダー (スワップなし)                                  |
+| `Enum8`             | 1               | 符号付き 8 ビット (バリアントのインデックス)                                                            | 生バイト                                                    |
+| `Enum16`            | 2               | 符号付き 16 ビット (バリアントのインデックス)                                                           | リトルエンディアン                                               |
+| `Decimal(P, S)`     | 4 / 8 / 16 / 32 | `value × 10^S` を符号付き整数として格納。幅は P によって決まる (≤9 → 4 B、≤18 → 8 B、≤38 → 16 B、≤76 → 32 B)  | リトルエンディアンの符号付き整数                                        |
+
+#### 整数型 {#integer-types}
+
+`UInt8`–`UInt256` および `Int8`–`Int256` は、整数値をそのままバイナリエンコードしたものです。デコーダは `bytes_per_row × num_rows` バイトを読み取り、型に応じて解釈します。
+
+`[1, 256, 65536]` を格納する `UInt32` カラムの例：
+
+```text
+01 00 00 00              row 0: 1
+00 01 00 00              row 1: 256
+00 00 01 00              row 2: 65536
+```
+
+`[-1, 42]` を格納する `Int32` カラム:
+
+```text
+FF FF FF FF              row 0: -1
+2A 00 00 00              row 1: 42
+```
+
+#### Float32 と Float64 {#float32-and-float64}
+
+標準的な IEEE 754 のバイナリ浮動小数点数で、単精度 (`binary32`) は 4 バイト、倍精度 (`binary64`) は 8 バイトです。いずれもリトルエンディアンで格納されます。NaN、±Infinity、±0.0、および非正規化数は、いずれも正規化されることなくそのまま往復変換されます。
+
+`Float32` の値 `1.5` (`0x3FC00000`):
+
+```text
+00 00 C0 3F              little-endian IEEE 754
+```
+
+`Float64` の値 `1.5` (`0x3FF8000000000000`) :
+
+```text
+00 00 00 00 00 00 F8 3F  little-endian IEEE 754
+```
+
+#### BFloat16 {#bfloat16}
+
+brain-floating-point フォーマットです。IEEE 754 `Float32` の上位 16 ビットに相当し、符号 1 ビット、指数 8 ビット、仮数 7 ビットで構成されます。各値は 2 バイトのリトルエンディアンで、生の 16 ビットパターンを保持します。数値を復元するには、パターンを上位半分に配置して下位半分をゼロで埋め、`Float32` に拡張します (`bits << 16` を `Float32` として再解釈) 。拡張後の値は、`Float32` と同じテキストフォーマットで表現されます。
+
+`BFloat16` の値 `1.5` (パターン `0x3FC0`、`Float32` `0x3FC00000` の上位半分) ：
+
+```text
+C0 3F                    little-endian, widens to Float32 1.5
+```
+
+#### Bool {#bool-type}
+
+`UInt8` とワイヤ形式で互換性があります。1 行あたり 1 バイトで、`0x00` = false、`0x01` = true です。ただし、wire 上の型文字列は `UInt8` ではなく、文字どおり `Bool` です。そのため、型文字列に基づいて処理を振り分けるデコーダでは、これを別途認識する必要があります。
+
+`Bool` カラム `[true, false, true]`：
+
+```text
+01 00 01
+```
+
+#### Date と Date32 {#date-and-date32}
+
+どちらも日付を、Unix エポック `1970-01-01` からの日数を表す整数としてエンコードします。いずれも時刻部分は持ちません。
+
+| 型        | バイト数 | エンコーディング         | 範囲                          |
+| -------- | ---- | ---------------- | --------------------------- |
+| `Date`   | 2    | リトルエンディアン UInt16 | `1970-01-01` ～ `2149-06-06` |
+| `Date32` | 4    | リトルエンディアン Int32  | 符号付きの広い範囲 (1970 年以前も可)      |
+
+`Date` 型の値 `1970-01-02` (1 日) :
+
+```text
+01 00                    UInt16 LE = 1
+```
+
+`Date32` の値 `1900-01-01` (-25567 日) ：
+
+```text
+21 9C FF FF              Int32 LE = -25567
+```
+
+#### DateTime {#datetime}
+
+`UInt32` とワイヤ形式で互換性があります。秒単位のUnixタイムスタンプを、4バイトのリトルエンディアンで表現します。型は `DateTime` または `DateTime('Timezone')` と表記されます。タイムゾーンは表示にのみ影響し、wire 上の値には含まれません。タイムゾーンパラメータが異なる2つの `DateTime` カラムでも、同じ時点であれば同一のバイト列になります。デコーダは `(...)` のパラメータ接尾辞を取り除き、そのカラムを `UInt32` として処理します。
+
+`DateTime('UTC')` の値 `2024-03-15 14:30:00 UTC` (タイムスタンプ `1710513000`) :
+
+```text
+68 5B F4 65              UInt32 LE = 1710513000
+```
+
+#### DateTime64(scale[, timezone]) {#datetime64}
+
+8 バイトのリトルエンディアン Int64 で、Unix エポックからの経過時間を `10^-scale` 秒単位のティック数として表します。`scale` パラメータ (0〜9) は型文字列に含まれ、時間の単位を決定します。
+
+| Scale | ティックサイズ | 一般的な呼称 |
+| ----- | ------- | ------ |
+| 0     | 1 秒     | 秒      |
+| 3     | 1 ミリ秒   | ms     |
+| 6     | 1 マイクロ秒 | µs     |
+| 9     | 1 ナノ秒   | ns     |
+
+この型は `DateTime64(s)` (サーバーのデフォルトのタイムゾーンを暗黙的に使用) または `DateTime64(s, 'TimezoneName')` (タイムゾーンを明示的に指定。表示にのみ影響) として表記されます。負の値はエポックより前のティックを表します。
+
+`DateTime64(3, 'UTC')` の値 `2024-01-15 12:30:45.123 UTC` (1705321845123 ms):
+
+```text
+83 51 1A 0D 8D 01 00 00  Int64 LE = 1705321845123
+```
+
+`DateTime64(0)` の値 `2024-01-15 12:30:45 UTC` (1705321845 秒) ：
+
+```text
+75 25 A5 65 00 00 00 00  Int64 LE = 1705321845
+```
+
+#### Time と Time64(scale) {#time-and-time64}
+
+特定の時点ではなく、経過時間を表します。`Time` は符号付きの秒数で、4 バイトのリトルエンディアン Int32 です。`Time64(scale)` は指定された 10 進スケール (0–9) における符号付きのティック数で、8 バイトのリトルエンディアン Int64 です。これは `DateTime64` と同じ wire 形式です。
+
+テキスト形式は `[-]HH:MM:SS[.fraction]` ですが、`DateTime` とは異なり、時間フィールドは 24 時間で折り返され**ません**。この値は時間の総数を表し、23 を超えることもあります。表示される値の大きさの上限は `999:59:59` (`3599999` 秒) です。これを超える値は、秒の部分が上限値で表示され、格納された小数部はそのまま維持されます。たとえば、ティック数 `3700000.25` は `999:59:59.250000` と表示されます。`CAST` は格納値を、秒単位ではなく、ターゲットのスケールで表現可能な最大のティック (`Time64(6)` の場合は `999:59:59.999999`) に飽和させます。一方、算術演算ではカラム内に範囲外のティック数が残る場合があり、その値は表示時にのみ上限に丸められます。いずれの場合も wireバイトには影響せず、wireバイトは単なる符号付き整数のままです。
+
+`Time` の値 `45296` (`12:34:56`):
+
+```text
+F0 B0 00 00              Int32 LE = 45296
+```
+
+`Time64(3)` の値 `45296789` ティック (`12:34:56.789`) ：
+
+```text
+95 2C B3 02 00 00 00 00  Int64 LE = 45296789
+```
+
+<Note>
+  `Time` と `Time64` は実験的な機能であり、使用するにはサーバーで `allow_experimental_time_time64_type = 1` を設定する必要があります。
+</Note>
+
+#### インターバル {#interval}
+
+`Interval<Unit>` — `IntervalSecond`、`IntervalMinute`、`IntervalHour`、`IntervalDay`、`IntervalWeek`、`IntervalMonth`、`IntervalQuarter`、`IntervalYear`、`IntervalNanosecond` など。すべての単位で同一のワイヤエンコーディングが使われ、カウント値は符号付き 8 バイトのリトルエンディアン Int64 として表現されます。単位は型文字列に**のみ**含まれ、wireバイトにもテキスト形式 (単なる整数) にも影響しません。そのため、すべての単位を単一のデコーダパスで処理できます。
+
+`IntervalDay` の値 `5`:
+
+```text
+05 00 00 00 00 00 00 00  Int64 LE = 5
+```
+
+#### UUID {#uuid}
+
+値1つあたり16バイトです。ワイヤエンコーディングは、標準形式の16バイトのビッグエンディアン表現では**ありません**。8バイトずつの前半と後半が、それぞれ独立してバイト順を反転されます。
+
+論理モデルは、標準テキスト形式 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` で表される128ビットの識別子で、そのバイトは慣例的にビッグエンディアンで表記されます。wireモデルでは、この標準形式の16バイトを8バイトずつ2つに分割し、それぞれをリトルエンディアンで書き込みます。
+
+* wireバイト 0..7 = 標準形式のバイト 0..7 を逆順にしたもの
+* wireバイト 8..15 = 標準形式のバイト 8..15 を逆順にしたもの
+
+UUID `550e8400-e29b-41d4-a716-446655440000`:
+
+```text
+Canonical bytes (16):    55 0E 84 00 E2 9B 41 D4  A7 16 44 66 55 44 00 00
+
+Wire bytes:
+D4 41 9B E2 00 84 0E 55  high half byte-reversed
+00 00 44 55 66 44 16 A7  low half byte-reversed
+```
+
+nil UUID (すべてのビットがゼロ) は、どちらの表現でも同じになります。
+
+#### IPv4 と IPv6 {#ipv4-and-ipv6}
+
+互いに関連はあるものの、エンコード方式が異なる 2 つのアドレス型です。
+
+`IPv4` は 4 バイトで、標準の 32 ビットアドレス (`a.b.c.d` から得られる値 `(a << 24) | (b << 16) | (c << 8) | d`) を保持するリトルエンディアンの UInt32 としてエンコードされます。wireバイトは、ネットワークバイトオーダーのバイト列を逆順に並べたものです。
+
+`192.168.1.10` (標準の 32 ビット値は `0xC0A8010A`) :
+
+```text
+0A 01 A8 C0              Little-endian UInt32
+```
+
+`IPv6` は 16 バイトで、バイトの入れ替えを行わず**ネットワークバイトオーダーのまま**書き込まれます。これは `inet_pton(AF_INET6, ...)` と同じバイト順序です。
+
+`2001:db8::1`:
+
+```text
+20 01 0D B8 00 00 00 00  network bytes 0..7
+00 00 00 00 00 00 00 01  network bytes 8..15
+```
+
+この非対称性は意図的なものです。IPv4 は算術演算や効率的な範囲クエリを可能にするため `u32` として格納されますが、IPv6 は多くのネットワーク API で一般的なネットワークバイトオーダーのレイアウトをそのまま保持します。
+
+#### Enum8 と Enum16 {#enum8-and-enum16}
+
+それぞれ `Int8` および `Int16` とワイヤ形式で互換性があります。1 行あたり 1 バイトまたは 2 バイトで、16 ビット版は 2 の補数のリトルエンディアンで表現されます。値と名前の対応関係はすべて型文字列に含まれています:
+
+```text
+Enum8('active' = 1, 'inactive' = 2, 'banned' = -1)
+Enum16('a' = 1, 'b' = 30000)
+```
+
+デコーダは `(...)` パラメータの接尾辞を取り除き、`Int8` / `Int16` としてディスパッチしてもかまいません。wireバイトは単なる整数のインデックスにすぎません。ラベルを表示するクライアントは、型文字列から `'name' = value` のマップをパースし、カラムと併せて保持します。整数だけではラベルを復元できないためです。テキスト指向の出力では、インデックスではなくラベル (`active`) を表示し、enum が複合型の内部にネストされている場合はシングルクォートで囲みます (`'active'`)。マップは整数カラムから復元できないため、`Array(Enum8(...))` や `Map(Enum16(...), V)` のようにネストされた enum の場合も、マップを保持しておく必要があります。
+
+`Enum8('active' = 1, 'inactive' = 2)` カラム `[active, inactive, active]`:
+
+```text
+01 02 01
+```
+
+`Enum16(...)` の値 `30000` の場合：
+
+```text
+30 75                    Int16 LE = 30000
+```
+
+#### Decimal(P, S) {#decimal}
+
+10 のべき乗でスケーリングされた符号付き整数です。整数のバイト幅は **精度** `P` によって決まり、**スケール** `S` は負の指数 (小数点以下の桁数) を表します。どちらも型文字列に含まれます。
+
+| 精度 (P)      | 基になる整数 | バイト数 |
+| ----------- | ------ | ---- |
+| 1 ≤ P ≤ 9   | Int32  | 4    |
+| 10 ≤ P ≤ 18 | Int64  | 8    |
+| 19 ≤ P ≤ 38 | Int128 | 16   |
+| 39 ≤ P ≤ 76 | Int256 | 32   |
+
+ワイヤエンコーディングは、基になる整数をリトルエンディアンの 2 の補数で表現したものです。論理的な 10 進数値は `wire_integer × 10^(-S)` で求められます。
+
+ClickHouse は、型の宣言方法にかかわらず、常に `Decimal(P, S)` を出力します。`Decimal32(S)`、`Decimal64(S)` などはすべて、wire 上では `Decimal(P, S)` に正規化されます (`P` には各幅で取り得る最大値である 9、18、38、76 が設定されます) 。そのため、`Decimal(P, S)` だけを認識するデコーダであれば、サーバーが出力するすべての表記に対応できます。
+
+`Decimal(9, 4)` の値 `123.4567` → 基になる整数 `1234567`:
+
+```text
+87 D6 12 00              Int32 LE = 1234567
+```
+
+`Decimal(18, 1)` の値 `-1.5` → 基になる整数 `-15`：
+
+```text
+F1 FF FF FF FF FF FF FF  Int64 LE = -15
+```
+
+`Decimal(38, 4)` 型の値 `123.4567` (合計 16 バイト) ：
+
+```text
+87 D6 12 00 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+#### Nothing {#nothing}
+
+`Nothing` 型は値を一切保持しません。実際には `Nullable(Nothing)` の内部型としてのみ使われます。これは、`SELECT NULL` のように、有効な値が「値が存在しないこと」だけである式に対してサーバーが返す型です。概念的にはユニット型にあたります。
+
+wire 上では、**1 行あたりちょうど 1 バイトのプレースホルダーバイト**を占めます。サーバーは ASCII 文字 `'0'` (`0x30`) を出力しますが、デシリアライザはこれらのバイトを無視します。内容は未定義であり、デコーダは特定の値に依存してはなりません。書き込まれるバイト数は `num_rows × 1` であるため、消費すべきバイト数はカラムヘッダーの `num_rows` だけで決まります。
+
+1 行につき 1 バイトを割り当てることで、Block の不変条件が保たれます。つまり、すべてのカラムの長さは `num_rows` から導出できるため、デコーダはセルごとの長さプレフィックスがなくても順に読み進められます。外側の `Nullable` は常にすべての位置を NULL として報告するため、プレースホルダーの中身が参照されることはありません。
+
+3 行 (すべて NULL) の `Nullable(Nothing)` カラム:
+
+```text
+01 01 01                 null map: 1, 1, 1 (three NULLs)
+30 30 30                 Nothing placeholder bytes (one per row)
+```
+
+null マップのプレフィックスは、標準的な `Nullable` のフレーミングです ([Nullable](#nullable) を参照) 。内側の 3 バイトは `Nothing` のペイロードで、デコーダはこれを読み飛ばします。
+
+### 可変長型 {#variable-length-types}
+
+各値は、wire 上で自身の長さ情報を保持します。
+
+#### String {#string-type}
+
+型文字列: `String`。`String` カラムには 2 種類のワイヤレイアウトがあり、どちらを使うかはプロトコルのリビジョンによって決まります ([リビジョンによって制御される内容](#what-the-revision-gates) を参照) 。ここでいうリビジョンとは、ネイティブ TCP プロトコルではネゴシエートされたリビジョン、`FORMAT Native` 出力では `client_protocol_version` (デフォルトは `0`) を指します。`FORMAT Native` 入力は常にリビジョン `0` であり、`Buffers` フォーマットは常に値単位レイアウトを使用します。
+
+**値単位レイアウト** — `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54492`) 未満の場合 (`FORMAT Native` のデフォルトであるリビジョン `0` を含む) 。長さプレフィックス付きのバイト列を `num_rows` 個並べた形式です:
+
+```text
+[VarUInt: byte_length] [byte_length bytes: raw value]
+[VarUInt: byte_length] [byte_length bytes: raw value]
+...
+```
+
+長さプレフィックスを除き、行と行の間に区切り文字はなく、行単位の状態も保持しません。空文字列は 1 バイトの `0x00` で表されます。カラムが占める総バイト数は、全行についての `Σ (varuint_size(len_i) + len_i)` です。
+
+3 つの文字列 `["ab", "", "c"]` からなるカラム (合計 6 バイト) :
+
+```text
+02 61 62                 row 0: length 2, "ab"
+00                       row 1: length 0, empty
+01 63                    row 2: length 1, "c"
+```
+
+**オフセットレイアウト** — リビジョン `54492` 以降：2つのストリームを連結した形式です。まず累積バイトオフセットが配置され、その後にすべてのデータが続きます：
+
+```text
+[UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
+[last offset bytes: all values concatenated, no separators]
+```
+
+オフセットはそのまま送信されます。これは、`Array` がネイティブプロトコル上でオフセットを送信する方式と同じです。オフセット `i` はデータブロブ内における値 `i` の終端位置を表すため、値 `i` のサイズは `offset[i] - offset[i-1]` (ただし `offset[-1] = 0`) となり、最後のオフセットはデータブロブの合計サイズと一致します。デコーダは `8 × num_rows` バイト分のオフセットを読み取った後、最後のオフセットを正確な長さとして用いてデータブロブ全体を一括で読み取ります。これにより、行ごとにパースすることなく、バッファを正確なサイズで事前に割り当てて一括コピーできるうえ、サイズからオフセットへの変換も不要です。`num_rows = 0` のカラムは、どちらのストリームにもバイトを出力しません。
+
+同じ 3 つの文字列 `["ab", "", "c"]` (合計 27 バイト) の場合:
+
+```text
+02 00 00 00 00 00 00 00  row 0 offset: 2  (end of "ab")
+02 00 00 00 00 00 00 00  row 1 offset: 2  (end of "", so unchanged)
+03 00 00 00 00 00 00 00  row 2 offset: 3  (end of "c")
+61 62 63                 "ab" + "" + "c"
+```
+
+オフセットレイアウトが有効な場合、このレイアウトはブロック内のすべての `String` に適用されます。複合型 (`Array(String)`、`Nullable(String)`、`Map`、`Tuple`、`Variant`、`Dynamic`、`JSON`) の内部にネストされた `String` も対象です。ただし、例外が 1 つあります。[`LowCardinality`](#lowcardinality) カラムの dictionary は常にデフォルトのネストされたシリアライゼーションで書き込まれるため、その `String` 値はどのリビジョンでも値ごとのレイアウトのままです。これは `LowCardinality(String)`、`LowCardinality(Nullable(String))`、および String を含むその他すべての `LowCardinality` dictionary に当てはまります。
+
+いずれのレイアウトでも、ClickHouse の `String` はテキスト指向ではなくバイト指向です。UTF-8 として有効かどうかはチェックされず、値には埋め込みの NUL を含む任意のバイトが含まれる場合があります。UTF-8 文字列型にデコードするデコーダは、読み取り時に検証を行うか、raw bytes をそのまま呼び出し元に渡すかのいずれかとなります。
+
+#### FixedString(N) {#fixedstring}
+
+型文字列: `FixedString(N)`。`N` は正の整数です (例: `FixedString(16)`) 。カラムは正確に `N × num_rows` バイトの raw bytes で構成され、長さプレフィックスや区切り文字は含まれません。デコーダは型文字列から `N` をパースし、1 行ごとにそのバイト数を消費します。
+
+SQL で `N` バイトより短い値を挿入した場合 (例: `CAST('abc' AS FixedString(5))`) 、サーバーは宣言された長さになるまで値の右側を NUL バイト (`0x00`) でパディングします。これらのパディングバイトは格納された値の一部であり、wire 上でもそのまま送信されます。トリミングはクライアント側で対処すべき事項です。`String` と同様に、`FixedString(N)` はテキストというよりバイト配列に近い型で、通常は固定幅の識別子、アドレスのバイト列、ハッシュダイジェストなどに使用されます。
+
+2 つの `FixedString(3)` 値 `["abc", "de\0"]` (合計 6 バイト) :
+
+```text
+61 62 63                 row 0: 3 bytes, "abc"
+64 65 00                 row 1: 3 bytes, "de" + NUL padding
+```
+
+2 つの文字列型の比較:
+
+| プロパティ           | `String`                                        | `FixedString(N)`      |
+| --------------- | ----------------------------------------------- | --------------------- |
+| 行ごとの長さプレフィックス   | あり (VarUInt)。リビジョン `54492` 以降では別の オフセット ストリーム | なし                    |
+| 行サイズ            | 可変                                              | 常に `N` バイト            |
+| カラムの合計バイト数      | 可変                                              | `N × num_rows`        |
+| NUL バイトによるパディング | 該当なし                                            | サーバーが右側をパディング         |
+| UTF-8 を想定       | 通常は想定 (強制ではない)                                  | いいえ (raw bytes として扱う) |
+| 型パラメータ          | なし                                              | 整数 `N` (必須)           |
+
+### 複合型 {#composite-types}
+
+複合型は 1 つ以上の内部型をラップするもので、**1 カラムあたり複数のストリーム**という共通のwireモデルを持ちます。1 つの論理カラムは、それぞれ独立して読み取られる 2 つ以上のバイト列を連結した形でエンコードされます。
+
+複合型には、次の 3 つの構造的特性が共通しています。
+
+* **形状はスキーマごとに固定される。** 構造はデコード時の型文字列だけで決まります。`Array(UInt32)` のストリームレイアウトは、どのブロックでも常に同じです。
+* **独自のバージョンプレフィックスを持たない。** 複合型のラッパー自体はバージョンバイトを付加しません。そのフレーミング (オフセット、null マップ、要素ストリーム) は ClickHouse のリリース間で変わりません。ただし、これは*ラッパー*についてのみ言えることです。内部のバージョン付き型については、後述のプレフィックスフェーズに関する注記を参照してください。
+* **独自のブロック間状態を持たない。** ラッパーのフレーミングはブロック単位で完全に自己記述的です。ブロック間状態に関わる問題が生じるとすれば、それはラッパーではなく内部のバージョン付き型によるものです。
+
+複合型は再帰的な構造を取り、内部型自体が複合型であることもあります。
+
+**データストリームに先立つプレフィックスフェーズ。** カラムの読み取りは、**state prefix フェーズ**、**データストリームフェーズ**の 2 つのフェーズをこの順に経て行われます。複合型のラッパーは独自のプレフィックスバイトを持ちませんが、自身のデータストリームを書き込む前に、プレフィックスフェーズを内部シリアライゼーションに*委譲*します。`SerializationArray` は配列オフセットを書き込む前に内部型のプレフィックスフェーズを実行し、`Tuple`、`Map`、`Nested`、`Nullable` も同様に要素のシリアライゼーションを通じてこれを行います (`Nullable` は null マップより前に内部プレフィックスを実行します) 。
+
+そのため、複合型が[バージョン付き/ステートフルな型](#versioned-types) (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) をラップしている場合、その内部型のバージョン/状態プレフィックスは、ラッパーのオフセットや要素ペイロードよりも*先に*出力されます。例えば `Array(LowCardinality(String))` のレイアウトは、オフセットが先頭に来るのではなく、`[LowCardinality state prefix]` → `[array offsets]` → `[flattened LowCardinality element payload]` の順になります。
+
+内部プレフィックスフェーズを実行せずに先にオフセットを読み取るデコーダは、`LowCardinality`、`Variant`、`Dynamic`、`JSON` のいずれかを含む複合型で同期がずれます。内部型がすべて単純なリーフ型か、バージョンを持たない別の複合型である場合は、プレフィックスフェーズでバイトは出力されないため、以下で説明するオフセット先頭の記述がそのまま当てはまります。
+
+#### Nullable(T) {#nullable}
+
+型文字列: `Nullable(InnerType)`。例: `Nullable(UInt32)`、`Nullable(String)`、`Nullable(FixedString(16))`、`Nullable(DateTime('UTC'))`。
+
+他の複合型と同様に、`Nullable` は null マップを書き込む前に、[プレフィックスフェーズ](#composite-types)を内部型のシリアライゼーションに委譲します。内部型がバージョン付きの場合は、内部型の state prefix が**最初に**出力されます。したがって、`Nullable(Tuple(LowCardinality(String)))` は null マップからではなく、`LowCardinality` の state prefix から始まります。内部型が leaf 型、またはその他のバージョンなしの型である場合、プレフィックスフェーズでは 1 バイトも出力されません。
+
+ワイヤレイアウトは、内部型のプレフィックスフェーズ (内部型がバージョン付きでない限り空) の後に、2 つのストリームを連結したものが続く構成です。先頭は null マップです:
+
+```text
+[inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
+[null-map stream]             num_rows × UInt8
+[values stream]               inner type's encoding for num_rows values
+```
+
+null マップはちょうど `num_rows` バイトで、1 行につき 1 バイトです。
+
+| バイト値               | 意味                                           |
+| ------------------ | -------------------------------------------- |
+| `0x00`             | この行には値が存在します。                                |
+| 0 以外 (標準は `0x01`)  | 値は NULL です。values ストリーム内の対応するバイトはプレースホルダーです。 |
+
+values ストリームには、null の位置も含めた **すべての** `num_rows` 行について、内部型の標準エンコーディングが格納されます。デコーダは、ストリームを読み進めるために null の位置にあるプレースホルダーのバイトも読み取る必要がありますが、個々の値を解釈する前には必ず null マップを参照しなければなりません。送信側は null の位置に任意のバイトを書き込むことができるため、デコーダは特定のプレースホルダー値を前提としてはなりません。
+
+内部型ファミリーごとのプレースホルダー値:
+
+| 内部型ファミリー                               | null の位置のプレースホルダー     |
+| -------------------------------------- | --------------------- |
+| 固定幅 (UInt/Int/Float/DateTime/UUID など)  | 型の幅分のゼロ初期化されたバイト      |
+| `String`                               | 空文字列 — `0x00` の 1 バイト |
+| `FixedString(N)`                       | `N` バイトのゼロ            |
+| `Array(T)`                             | 空配列 — オフセットは進まない      |
+| `Tuple(T1, T2, ...)`                   | 各要素がそれぞれのプレースホルダーを使用  |
+
+`Nullable(T)` は `Array`、`Tuple`、`Map`、`Nested` の内部に記述でき、`Array(Nullable(T))` や `Tuple(Nullable(T1), T2)` はよく使われます。ただし Nullable を入れ子にすることはできず、`Nullable(Nullable(T))` はサーバーによって拒否されます。
+
+3 行 `[5, NULL, 9]` を持つ `Nullable(UInt8)` の例 (合計 6 バイト) :
+
+```text
+00 01 00                 null-map: present, null, present
+05 00 09                 values:   5, placeholder, 9
+```
+
+3 行 `["hello", NULL, "world"]` からなる `Nullable(String)`(合計 15 バイト):
+
+```text
+00 01 00                 null-map
+05 'h' 'e' 'l' 'l' 'o'   row 0: "hello"
+00                       row 1: placeholder (empty string)
+05 'w' 'o' 'r' 'l' 'd'   row 2: "world"
+```
+
+#### Array(T) {#array}
+
+型文字列: `Array(InnerType)`。例: `Array(UInt32)`、`Array(String)`、`Array(Nullable(UInt32))`、`Array(Array(UInt8))`。
+
+ワイヤレイアウトは、内部型の[プレフィックスフェーズ](#composite-types) (内部型がバージョン付きでない限り空) と、それに続く連結された 2 つのストリームで構成されます。ストリームはオフセットが先です:
+
+```text
+[inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
+[offsets stream]              num_rows × UInt64 LE
+[values stream]               inner type's encoding for offsets[num_rows - 1] values
+```
+
+offsets ストリームは、ちょうど `num_rows` 個のリトルエンディアン UInt64 値で構成されます。各値は、その行の要素を書き込んだ後の values ストリームにおける**累積終了位置**を表します。
+
+* 行 `N` の要素開始インデックス = `offsets[N - 1]`(`N == 0` の場合は `0`)。
+* 行 `N` の要素終了インデックス(この位置自体は含まない)= `offsets[N]`。
+* 行 `N` の要素数 = `offsets[N] - offsets[N - 1]`。
+
+したがって、`offsets[num_rows - 1]` は全行の要素の総数となり、values ストリームにはその数だけの内部値が隙間なく連結されて格納されます。
+
+オフセットは**単調非減少**です。連続するオフセットが等しい場合は空の行を表します。デコーダは、単調非減少でないオフセットを破損とみなして拒否する必要があります。空のカラム(`num_rows == 0`)では 1 バイトも書き込まれず、offsets ストリームも values ストリームも存在しません。内部型には他の複合型を含む任意の型を指定できます。`Array(Array(T))`、`Array(Tuple(...))`、`Array(Nullable(T))` はいずれも有効です。
+
+行 `[[10, 20, 30], [], [40, 50]]` を持つ `Array(UInt32)` の例(合計 44 バイト):
+
+```text
+Offsets (3 × UInt64 LE = 24 bytes):
+03 00 00 00 00 00 00 00      offsets[0] = 3
+03 00 00 00 00 00 00 00      offsets[1] = 3 (empty row)
+05 00 00 00 00 00 00 00      offsets[2] = 5
+
+Values (5 × UInt32 LE = 20 bytes):
+0A 00 00 00                  10
+14 00 00 00                  20
+1E 00 00 00                  30
+28 00 00 00                  40
+32 00 00 00                  50
+```
+
+各オフセットは、共有された values ストリーム内で各行が占める範囲の累積的な*終了位置*を表します。開始位置は直前のオフセット (行 0 の場合は `0`) です。連続するオフセットが同じ値の場合、その行は空になります。
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="オフセットによる行と共有 values ストリームの対応付け" width="1568" height="388" loading="lazy" />
+
+行 `[["a", "bb"], []]` を持つ `Array(String)` (合計 20 バイト) ：
+
+```text
+Offsets (2 × UInt64 LE = 16 bytes):
+02 00 00 00 00 00 00 00      offsets[0] = 2
+02 00 00 00 00 00 00 00      offsets[1] = 2 (empty row)
+
+Values (2 strings, 4 bytes total):
+01 'a'                       row's first string: "a"
+02 'b' 'b'                   row's second string: "bb"
+```
+
+`Array(Array(UInt32))` に行 `[[[1,2]], [], [[3], [4,5]]]` を格納すると、同じ構造が入れ子になります。
+
+* 外側のオフセット: `[1, 1, 3]` — 行 0 は内側の配列を 1 個、行 1 は 0 個、行 2 は 2 個持ちます。
+* 中間の `Array(UInt32)` は、オフセット `[2, 3, 5]` を使って 3 行をデコードします。
+* 最も内側の `UInt32` は、5 個の値 `[1, 2, 3, 4, 5]` をデコードします。
+
+合計は 24 (外側のオフセット) + 24 (中間のオフセット) + 20 (値) = 68 バイトです。
+
+#### Tuple(T1, T2, ...) {#tuple}
+
+型文字列: `Tuple(T1, T2, ..., Tn)`。例: `Tuple(UInt32, String)`、`Tuple(Int32)`、`Tuple(Array(UInt32), String)`、`Tuple(UInt8, Tuple(Int32, String))`。ClickHouse は `Tuple(a UInt32, b String)` の形式で**名前付きタプル**もサポートしています。名前は単なるメタデータであり、ワイヤ形式には影響しません。
+
+ワイヤレイアウトは、まず各要素の[プレフィックスフェーズ](#composite-types) (バージョン付きの要素はそれぞれ宣言順に自身の state prefix を出力し、バージョンなしの要素では空) があり、その後に要素型ごとに 1 つずつ、宣言順に連結された *N* 個のストリームが続きます:
+
+```text
+[element state prefixes]   in declaration order; empty unless an element type is versioned
+[stream for T1]    inner T1's encoding for num_rows values
+[stream for T2]    inner T2's encoding for num_rows values
+ ...
+[stream for Tn]    inner Tn's encoding for num_rows values
+```
+
+各ストリームは、ちょうど `num_rows` 個の値をエンコードします。長さプレフィックスやoffsets ストリームはなく、ストリーム間の区切り文字もありません。空のカラム (`num_rows == 0`) では、各ストリームに 0 バイトが書き込まれます。要素型には他の複合型を含め任意の型を使用できます。`Tuple(Tuple(...), ...)`、`Tuple(Array(...), ...)`、`Tuple(Nullable(T1), T2)` はいずれも有効です。
+
+要素数 0 のタプル `Tuple()` も有効で、`SELECT tuple()` や `CAST(x AS Tuple())` などの式から生成されます。要素ストリームを持たないため、代わりに [Nothing](#nothing) と同様の方法でシリアライズされます。つまり、**行ごとに 1 バイトのプレースホルダーバイト (`0x30`、ASCII `'0'`)** が書き込まれ、デシリアライザーはこれを読み捨てます。行数は `Nothing` の場合と同じく、ブロックヘッダーから取得されます。
+
+3 行 `(1,4), (2,5), (3,6)` を持つ `Tuple(UInt8, UInt8)`:
+
+```text
+Element 0 stream (3 × UInt8 = 3 bytes):
+01 02 03
+
+Element 1 stream (3 × UInt8 = 3 bytes):
+04 05 06
+```
+
+このレイアウトは行優先では**ありません**。raw bytes を読み戻すと、要素 0 には `[1, 2, 3]`、要素 1 には `[4, 5, 6]` が得られます。
+
+2 行 `(10, "a")`、`(20, "bb")` を持つ `Tuple(UInt32, String)` (合計 13 バイト) :
+
+```text
+Element 0 stream (2 × UInt32 LE = 8 bytes):
+0A 00 00 00                  10
+14 00 00 00                  20
+
+Element 1 stream (2 strings, 5 bytes total):
+01 'a'                       "a"
+02 'b' 'b'                   "bb"
+```
+
+#### Map(K, V) {#map}
+
+型文字列：`Map(KeyType, ValueType)`。例：`Map(String, UInt32)`、`Map(String, Array(UInt32))`、`Map(UInt8, Tuple(Int32, String))`、`Map(Array(String), Int8)`。ワイヤ形式ではどちらの型にも制約はなく、`K` と `V` には複合型を含め、サポートされている任意の型を指定できます。 (ClickHouse の SQL レベルで許容されるキー型のルールはリリースによって異なるため、対象とするサーバーバージョンの SQL ドキュメントを参照してください。)
+
+ワイヤレイアウトは `Array(Tuple(K, V))` とバイト単位で同一です。そのため、先頭には内部の[プレフィックスフェーズ](#composite-types)が置かれます (`K` または `V` がバージョン付きの型でない限り、これは空です) ：
+
+```text
+[K/V state prefixes]   from the inner Tuple's prefix phase; empty unless K or V is versioned
+[offsets stream]    num_rows × UInt64 LE                   ← from Array
+[keys stream]       K's encoding for total_pairs values    ┐ from Tuple's
+[values stream]     V's encoding for total_pairs values    ┘ per-element streams
+```
+
+ここで `total_pairs = offsets[num_rows - 1]`(`num_rows == 0` の場合は `0`)です。offsets ストリームのセマンティクスは [Array](#array) と同じです。キーは値と位置的に対応しており、ペア `i` は `(keys[i], values[i])` となります。
+
+ClickHouse における Map カラムのインメモリ表現はタプルの配列です。型システム上は、SQL で扱いやすくするため(`m['key']`、`mapKeys`、`mapValues`)に独立した型として提供されています。ワイヤ形式はこのストレージをそのままシリアライズしたものであるため、`Map` と `Array(Tuple(K, V))` はバイト単位で互換性があります。
+
+offsets は単調非減少であり、keys ストリームと values ストリームはいずれもちょうど `total_pairs` 個の値を含みます。空のカラムでは 1 バイトも書き込まれません。1 つの行の中でキーは通常一意ですが、これはセマンティクス上の規則であり、ワイヤ形式で強制されるものではありません。ワイヤ形式では重複キーもそのまま往復変換でき、重複はサーバー側のセマンティクスにより、Map 対応の関数がその行を消費する時点で初めて解決されます。
+
+2 行 `{1:10, 2:20}`、`{3:30}` を持つ `Map(UInt8, UInt8)`(合計 22 バイト):
+
+```text
+Offsets (2 × UInt64 LE = 16 bytes):
+02 00 00 00 00 00 00 00      offsets[0] = 2
+03 00 00 00 00 00 00 00      offsets[1] = 3
+
+Keys (3 × UInt8 = 3 bytes):
+01 02 03                     keys: 1, 2, 3
+
+Values (3 × UInt8 = 3 bytes):
+0A 14 1E                     values: 10, 20, 30
+```
+
+キーと値はインターリーブされず、それぞれ別のストリームとして格納されます。ペア `i` は、`keys[i]` と `values[i]` を組み合わせて読み取ることで復元されます。
+
+`{'a':1, 'b':2}` の 1 行を持つ `Map(String, UInt32)` (合計 20 バイト) ：
+
+```text
+Offsets (1 × UInt64 LE = 8 bytes):
+02 00 00 00 00 00 00 00      offsets[0] = 2
+
+Keys (2 strings, 4 bytes total):
+01 'a'                       "a"
+01 'b'                       "b"
+
+Values (2 × UInt32 LE = 8 bytes):
+01 00 00 00                  1
+02 00 00 00                  2
+```
+
+#### Nested(name1 T1, name2 T2, ...) {#nested}
+
+`Nested` のワイヤ上での表現はサーバー側の `flatten_nested` 設定によって異なり、次の 2 つのケースがあります。
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="フラット化の有無による複合カラムのレイアウト" width="1172" height="1068" loading="lazy" />
+
+**ケース A: `flatten_nested = 1` (サーバーのデフォルト) 。** テーブルがデフォルト設定で作成されている場合、`Nested` は **ワイヤ型ではありません**。サーバーはこのカラムを、**ドット区切りの名前** (`outer.field1`、`outer.field2` など) を持つ N 個の並列な `Array(T_i)` カラムとして格納し、提示します。フォーマット層にとって新たに考慮すべき点はなく、ドット区切りの各カラムは通常の [Array](#array) として扱われます。
+
+```text
+DESCRIBE TABLE t   -- t has column n Nested(a UInt8, b String)
+id     UInt8
+n.a    Array(UInt8)
+n.b    Array(String)
+```
+
+**ケース B: `flatten_nested = 0`。** テーブルが `flatten_nested = 0` で作成されている場合、このカラムは wire 上では型文字列 `Nested(name1 T1, name2 T2, ...)` を持つ単一のカラムとして表現され、型文字列以降のレイアウトは、内側の [プレフィックスフェーズ](#composite-types) も含めて **`Array(Tuple(T1, T2, ..., Tn))` とバイト単位で同一** です。そのため、バージョン付きのフィールド `T_i` がある場合は、オフセットより先にその state prefix が出力されます。以下の例ではバージョンなしのフィールドを使用しているため、プレフィックスフェーズは空になります。
+
+```text
+Nested(a UInt8, b String) bytes (after type string):
+  02 00 00 00 00 00 00 00       offsets[0] = 2
+  03 00 00 00 00 00 00 00       offsets[1] = 3
+  0A 14 1E                       UInt8 stream
+  01 'x' 01 'y' 01 'z'           String stream
+
+Array(Tuple(a UInt8, b String)) bytes (after type string):
+  02 00 00 00 00 00 00 00       offsets[0] = 2
+  03 00 00 00 00 00 00 00       offsets[1] = 3
+  0A 14 1E                       UInt8 stream
+  01 'x' 01 'y' 01 'z'           String stream
+```
+
+唯一の違いは型文字列のテキストです。`Nested` はフィールド名 (`a`、`b`) を保持しますが、`Array(Tuple)` はこれらを名前付きスロットとして保持しません。
+
+Case B の型文字列は、(名前, 型) のペアをカンマで区切って並べたリストです。名前と型は最初の空白文字で区切られます。型自体にも空白文字、カンマ、括弧が含まれる場合があるため、パースには `Tuple` と同じく、ネストの深さを考慮した分割処理が必要です。ワイヤレイアウトは次のとおりです。
+
+```text
+[offsets stream]    num_rows × UInt64 LE                       ← from Array
+[field1 stream]     T1's encoding for total_elements values    ┐ from Tuple's
+[field2 stream]     T2's encoding for total_elements values    │ per-element
+ ...                                                            │ streams
+[fieldn stream]     Tn's encoding for total_elements values    ┘
+```
+
+ここで、`total_elements = offsets[num_rows - 1]` (`num_rows == 0` の場合は `0`) です。オフセットは単調非減少であり、各フィールドのストリームには常に `total_elements` 個の値が格納されます。サーバーは INSERT 時に、1 つの行内のすべてのフィールドが同じ数の要素を持つよう強制します。空のカラムでは何も書き込まれません (0 バイト) 。
+
+`[(10,'x'),(20,'y')]` と `[(30,'z')]` の 2 行からなる `Nested(a UInt8, b String)` の例 (型文字列に続く 25 バイト) :
+
+```text
+Offsets (2 × UInt64 LE = 16 bytes):
+02 00 00 00 00 00 00 00      offsets[0] = 2
+03 00 00 00 00 00 00 00      offsets[1] = 3
+
+Field 'a' stream (3 × UInt8 = 3 bytes):
+0A 14 1E                     10, 20, 30
+
+Field 'b' stream (3 strings, 6 bytes):
+01 'x' 01 'y' 01 'z'         "x", "y", "z"
+```
+
+### 型の別名 {#type-aliases}
+
+いくつかの型は純粋な別名です。サーバーはカラムヘッダーで別名を送信しますが、その後に続くバイト列は基になる型のものです。デコーダは別名をその型に対応付け、その型のコーデックを再利用します。新たなワイヤ形式は関係しません。
+
+地理型は、ネストされた配列およびタプルの別名です。
+
+| 型文字列                               | 基になるワイヤ型                  |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
+
+したがって、`Point` カラムは `Tuple(Float64, Float64)` とまったく同じようにデコードされ (`(1,2)` と表示されます) 、`Ring` は `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`) としてデコードされます。階層の上位の型も同様です。
+
+`Geometry` も別名ですが、ネストされた配列ではなく [`Variant`](#variant) の別名です。そのペイロードは、上記 7 つの Geo 型からなるバリアントです。カラムヘッダーには型文字列 `Geometry` のみが含まれ、バリアントの構成は明記され**ません**。そのため、デコーダ側で展開する必要があります。ユーザーが記述した `Variant` とは異なり、`Geometry` の判別子は名前のソート順に**従いません**。判別子は互換性のために固定されており、新しい Geo 型は常に末尾に追加されます。対応は `0` = `LineString`、`1` = `MultiLineString`、`2` = `MultiPolygon`、`3` = `Point`、`4` = `Polygon`、`5` = `Ring`、`6` = `MultiPoint` です (`MultiPoint` は 26.7 で追加。古いサーバーからのストリームに判別子 `6` が含まれることはありません) 。選択された各値は、上記の対応する Geo 別名としてデコードされます (`NULL` には `Variant` の `NULL` 判別子 `255` が使用されます) 。
+
+`SimpleAggregateFunction(func, T)` は、その値の型 `T` の別名です。最終化済みの集約値を格納するため、ワイヤ上の形式と表示は `T` とまったく同じです (`SimpleAggregateFunction(sum, UInt64)` は `UInt64` としてデコードされます) 。このように別名として扱われるのは、値の型を 1 つだけ持つ形式に限られます。なお、基になる型自体は複合型でもかまいません。
+
+<Note>
+  関連する 2 つの型は別名では**ありません**。これらは有効な `Native` のカラム型であり、たとえばクライアントは `-State` コンビネータや分散集約から `AggregateFunction` カラムを受け取ることがあります。ただし、いずれも独自の専用ペイロードを持っており、その詳細は本ページの対象範囲外です:
+
+  * `AggregateFunction(func, ...)` は*中間*集約状態 (確定済みの値ではない) を保持します。そのバイナリレイアウトは集約関数とバージョンごとに固有です。関数名にはパラメータを付けることができ、各パラメータは `AggregateFunction(topK(3), UInt64)` のように SQL リテラルとして出力されます。一部の集約関数では、`AggregateFunction(topK('3'::Decimal32(0)), UInt64)` のように、パラメータに明示的な `::Type` サフィックスが付きます。これは、`Decimal` やワイド整数の値には、そのまま出力できる素のリテラル形式が存在しないためです。この挙動はフォーマットではなく各関数の性質によるものであるため、パラメータを検査するデコーダは両方の表記を受け入れる必要があります。引数の型のみを必要とするデコーダには影響しません。バージョン付きの集約関数では、0 以外の状態バージョンが型文字列の第 1 引数として明記されます (`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`) 。一方、バージョン `0` は出力されないため、型文字列は `AggregateFunction(quantileDeterministic, UInt64, UInt64)` のままです。ネゴシエーション済みの接続 (リビジョンが `0` より大きい) では、writer はプロトコルリビジョン**のみ**に基づいてバージョンを決定し、ローカルの型にたまたま固定されているバージョンを使うことはありません。バージョン `0` は、wire 上では「バージョンが通知されていない」状態と区別できないためです。そのため、同じ関数でも接続ごとに異なるバージョンを通知することがあり、reader は最新バージョンを前提とせず、型文字列からバージョンを取得する必要があります。リビジョン `0` では、バージョンを導出する基準となるピアが存在しません。ストリームは自己記述的であり、書き込んだ側自身が読み戻すからです。したがって、型に固定されたバージョンは `0` にダウングレードされることなく、ストリーム (および通知される型文字列) にそのまま残ります。`quantileDeterministic` (`quantilesDeterministic` および `medianDeterministic` の表記を含む) は、リビジョン `54491` からバージョン付きになります。バージョン `1` では状態の末尾に `UInt8 skip_degree` が追加されますが、それより前の部分はバージョン `0` とバイト単位で同一です。このリビジョン未満では writer はバージョン `0` の状態を出力するため、古いピアには影響しません。`uniq` は、リビジョン `54493` からバージョン付きになります。バージョン `1` では、バージョン `0` のレイアウトの先頭にフラグバイトが追加されます。さらにフラグのビット `0` が設定されている場合は、完全な 64 ビットハッシュから成る小規模な追加サンプルが末尾に付加されます (各値は定数 `0x9E3779B97F4A0000` と XOR されており、`UInt8 skip_degree`、`VarUInt count`、8 バイトの値の順に並びます) 。これにより、カーディナリティが 20 億を超えても推定精度が保たれます。バージョン `0` の状態は 32 ビットのメインサンプルのみを保持します。フラグのビット `1` は、64 ビットサンプルが*不完全*であることを示します。これは、状態がバージョン `0` の状態を取り込んだ場合に該当します (バージョン `0` の状態の要素は、64 ビットサンプルに一度も渡されていないためです) 。この場合、64 ビットサンプルは書き込まれず、reader は 32 ビットのメインサンプルのみから推定する必要があります (また、以降に書き込む状態でも引き続きこのビットを設定する必要があります) 。したがって 2 つのビットは相互に排他的であり、reader は両方が設定された状態を拒否する必要があります。その他のビットは定義されておらず、reader はいずれかが設定された状態を拒否する必要があります。以上の内容はすべて、コンテナ型の内部にネストされた状態にも同様に当てはまります。対象となるのは `Array`、`Tuple`、`Map`、`Nullable`、`Variant` (代替型に明記されたバージョンによって型文字列は変わりますが、判別子の順序は変わりません) 、および `Nested` / `SimpleAggregateFunction` ラッパーです。集約関数のコンビネータを適用した場合も同様です。バージョン付きの関数に対するパススルー型のコンビネータ (`uniqIf`、`uniqArray`、`uniqForEach`、`uniqMap`、`uniqArgMin` / `uniqArgMax`、`uniqOrNull` / `uniqOrDefault`、`uniqResample`、および暗黙的な `Nullable` 引数アダプタ) は、ペイロードに含まれるネストされた状態にバージョンを引き継ぎます。また、新たに生成された状態の型文字列には、通常の関数とまったく同じようにネストされた関数の現在のバージョンを明記し (`AggregateFunction(1, uniqIf, UInt64, UInt8)`) 、ネゴシエーション済みの接続では同じくプロトコルリビジョンからバージョンを導出します。ラッパーのカスタム名には引数の型のコピーがもう 1 つ含まれているため、writer はそのコピーも、ネゴシエーション済みの同じ集約状態バージョンで再構築する必要があります。そうしないと、バージョン `0` のペイロードに対して、ヘッダーがバージョン `1` を通知してしまう可能性があります。`Variant` には、wire 上でまったく表現できないコーナーケースが 1 つあります。明記された状態バージョンだけが異なる 2 つの代替型 (型文字列が異なるため、カラム型としては有効) がある場合、ネゴシエーション済みのリビジョンに合わせて両方のバージョンを付け直すと、同一の代替型に統合されてしまいます。そのため送信側は、ペイロードの実際の書き込みバージョンと異なるバージョンを通知するのではなく、転送を失敗させる必要があります。`Dynamic` は、リビジョンに基づくバージョン決定の意図的な例外です。`Dynamic` カラムは、自身の型リストと [バイナリ型エンコーディング](/ja/reference/data-types/data-types-binary-encoding) (その明示的なバージョンフィールドに、明記された状態バージョンが格納されます。共有バリアントの値は、保存時でもこの方法で型を埋め込みます) を通じて、ネストされた型を自ら通知します。これらの通知はカラム自体のデータの一部であり、どのピア・どの媒体でも同一であるため、ネゴシエーション済みのリビジョンに合わせて書き換えられることはありません。したがって、`Dynamic` 値の内部にネストされた状態は、どの接続・媒体においても、その型に明記されたバージョン (`-State` クエリの結果はバージョンを明記するため、新たに生成された状態はこれを保持しています) で書き込まれ、型にバージョンが明記されていない場合はバージョン `0` で書き込まれます。
+  * `QBit(T, N[, stride])` は、ベクトル検索ワークロード向けに、ビットプレーンを転置した形でベクトルを格納します。その wire 上のストリームレイアウト (グループ優先の `FixedString` ビットプレーンストリーム。明示的な `stride` を指定した場合は `element_size * (N / stride)` 個) およびバイナリ型エンコーディング (タグ `0x36`、または `stride != N` の場合は `0x37` `QBitWithStride`) は、[`QBit` データ型のページ](/ja/reference/data-types/qbit) および [バイナリ型エンコーディング](/ja/reference/data-types/data-types-binary-encoding) リファレンスに記載されています。そのため、`Native` reader が C++ のソースコードから仕様を読み解く必要はありません。
+</Note>
+
+### バージョン付き型 {#versioned-types}
+
+バージョン付き型は、wire 上でシリアル化バージョンのプレフィックスを持ち、これによって後続するエンコーディングがどのバリアントであるかを示します。また、(複合型と同様に)複数のストリームを使用する場合もあります。`Native` の wire では、プレフィックスおよび辞書はブロックごとに送られるため、これらの型がブロックをまたいで状態を保持することはありません(後述の[ブロック単位のプレフィックスに関する注記](#serialization-version-concept)を参照)。ブロックをまたぐシリアル化状態が存在するのは、MergeTree のディスク上のストリームのみです。
+
+これらの型は固定構造の複合型に比べてかなり複雑なため、単純な分析クエリを主な用途とするクライアントであれば、対応を後回しにしても構いません。
+
+#### シリアル化バージョン: 概念 {#serialization-version-concept}
+
+**シリアル化バージョン**とは、型ごと・カラムごとに付与される on-wire のバージョン番号で、送信側がその型のエンコーディングのうちどのバリアントを使用しているかを示します。これはカラムの state prefix の先頭に置かれるため、デコーダはまずこれを読み取り、カラムの残りの部分を処理する適切なパーサーにディスパッチします。
+
+シリアル化バージョンはプロトコルバージョンとは別物です:
+
+| 観点       | プロトコルバージョン       | シリアル化バージョン (このセクション)    |
+| -------- | ---------------- | ----------------------- |
+| スコープ     | 接続全体             | 型ごと・カラムごと               |
+| ネゴシエーション | あり (ハンドシェイク時)    | なし — 送信側が書き込み、受信側が読み取る  |
+| 制御対象     | どのパケットレベルの機能が有効か | 1 つの型のどの wire バリアントを使うか |
+| 読み取りの要否  | 必須               | 必須 (バージョン付きの各カラムで)      |
+
+バージョン付きの型の多くは、他の state prefix データより前に、バージョンを リトルエンディアン の UInt64 として書き込みます。一部の型では VarUInt または UInt8 を使用します。デコーダはまずバージョンを読み取り、未知の値であれば拒否する必要があります。より大きいバージョンは、デコーダが解釈できない新しい送信側フォーマットであることを意味し、誤ってパースすると以降のすべてのバイトが壊れてしまいます。
+
+state prefix は、**行数が 0 より大きいすべてのブロック**の先頭、つまりそのブロックのペイロードの直前に出力されます。
+
+Native の writer と reader は、ブロックをまたいで**シリアル化状態を保持しません**。`NativeWriter` は空でないカラムブロックを書き込むたびに新しいシリアライズ状態を作成して state prefix を書き込み、`NativeReader` は空でないブロックを読み取るたびに新しいデシリアライズ状態を作成して state prefix を読み取ります (どちらも `rows == 0` の場合は prefix を完全にスキップします)。
+
+そのため、ヘッダーブロック (rows = 0) と空のブロックでは何も出力されず、デコーダは空でないブロックごとに、その先頭で state prefix を改めて読み取る必要があります。prefix を一度しか読み取らず、以降のブロックをペイロードのみとして扱うデコーダは、次のブロックの prefix をデータとして読み取ってしまい、同期がずれてしまいます:
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="空でないブロックごとに繰り返される state prefix" width="1226" height="1162" loading="lazy" />
+
+#### シリアル化バージョンリファレンス {#serialization-version-reference}
+
+| 型                                                                                | フィールド幅    | 値   | 名前                                     | 意味                                                                       |
+| -------------------------------------------------------------------------------- | --------- | --- | -------------------------------------- | ------------------------------------------------------------------------ |
+| **Object** (JSON のベース)                                                           | UInt64 LE | `0` | `V1`                                   | 初期のエンコーディング。`max_dynamic_paths` パラメータと動的パスのリストを含みます。                     |
+|                                                                                  |           | `1` | `STRING`                               | Native フォーマットの互換性モード — Object は JSON テキストを格納した単一の `String` カラムとして送信されます。 |
+|                                                                                  |           | `2` | `V2`                                   | V1 のレイアウトから `max_dynamic_paths` パラメータを除いたものです。                           |
+|                                                                                  |           | `3` | `FLATTENED`                            | Native フォーマットの互換性モード — フラット化されたパス表現です。                                   |
+|                                                                                  |           | `4` | `V3`                                   | MergeTree パーツにのみ書き込まれ、wire 上に送信されることはありません。レイアウトについては本ページでは規定しません。       |
+| **Dynamic**                                                                      | UInt64 LE | `1` | `V1`                                   | 初期のエンコーディング。`max_dynamic_types` と実行時の Variant 型のリストを含みます。                |
+|                                                                                  |           | `2` | `V2`                                   | V1 から `max_dynamic_types` パラメータを除いたものです。                                 |
+|                                                                                  |           | `3` | `FLATTENED`                            | Native フォーマットの互換性モードです。                                                  |
+|                                                                                  |           | `4` | `V3`                                   | MergeTree パーツにのみ書き込まれ、wire 上に送信されることはありません。レイアウトについては本ページでは規定しません。       |
+| **Variant** discriminator モード                                                    | UInt64 LE | `0` | `BASIC`                                | すべての行の判別子がそのまま書き込まれます。                                                   |
+|                                                                                  |           | `1` | `COMPACT`                              | グラニュール内のすべての行が同じ判別子を持つ場合、単一の値とグラニュールマーカーのみが書き込まれます。                      |
+| **Variant** グラニュールフォーマット (モードが `COMPACT` の場合)                                    | UInt8     | `0` | `PLAIN`                                | グラニュール内に異なる判別子が混在しています。                                                  |
+|                                                                                  |           | `1` | `COMPACT`                              | グラニュール内のすべての行が 1 つの判別子を共有しています。                                          |
+| **LowCardinality** キーのシリアライゼーション                                                 | Int64     | `1` | `sharedDictionariesWithAdditionalKeys` | 現在定義されている唯一のバージョンです。                                                     |
+| **JSON-as-String** フォールバック (`output_format_native_write_json_as_string` が有効な場合)  | UInt64 LE | `1` | `JSONStringSerializationVersion`       | JSON カラムは、先頭にこのプレフィックスが付いた `String` カラムとして届きます。                          |
+
+この表について、注意すべき点がいくつかあります。
+
+* **値は連続していません。** `Dynamic` は `1`、`2`、`3`、`4` を使用し、`V3` が `4`、`FLATTENED` が `3` に割り当てられています。数値が大きいほど新しいとは限りません。
+* **一部の値は Native フォーマット専用です。** `Object::STRING`、`Object::FLATTENED`、`Dynamic::FLATTENED` は、Object/Dynamic を完全には実装していないクライアントとのネイティブプロトコル互換性を保つために存在します。これらが MergeTree のディスク上のストレージに現れることはありません。
+* **`V3` はディスク上専用です。** `Object::V3` と `Dynamic::V3` を記載しているのは、デコーダがこれらを受け取る可能性があるからではなく、値が割り当て済みで再利用してはならないためです。ClickHouse がこれらを `Native` で送信することはなく、`Native` 上で受け取った場合は `INCORRECT_DATA` で拒否します。これらが保持する情報 (`Object::V3` の shared-data サブバージョンや、そのバケットおよびグラニュールのレイアウト) はすべてBlockではなくパーツを記述するものであるため、本ページの対象外です。ネイティブ TCP プロトコルを消費するクライアントが受け取るのは `V1`、`V2`、`STRING`、`FLATTENED` のいずれかです。
+
+#### LowCardinality(T) {#lowcardinality}
+
+最も単純なバージョン付き型です。`N` 個の内部値からなるカラムを、一意な値からなる小さな辞書と、その辞書を指す `N` 個の索引で置き換えます。
+
+型文字列: `LowCardinality(InnerType)`。例: `LowCardinality(String)`、`LowCardinality(FixedString(4))`、`LowCardinality(Nullable(String))`。
+
+```text
+[per block with rows > 0]:
+  [8 bytes:  Int64 LE state prefix = 1]             ← repeated at the start of every non-empty block
+  [8 bytes:  UInt64 LE metadata]                    ← key type code (low byte) + flag bits
+  [8 bytes:  UInt64 LE dict_size]                   ← number of dict entries (incl. placeholder slot)
+  [N bytes:  dict values]                           ← inner type's encoding for dict_size values
+  [8 bytes:  UInt64 LE keys_count]                  ← number of values at this recursive level (see below)
+  [K bytes:  keys]                                  ← (1 << key_type_code) bytes per key
+```
+
+state prefix (Int64 LE = 1) は、唯一定義されているバージョン `sharedDictionariesWithAdditionalKeys` を表します。その他の値は予約されています。
+
+Blockごとのメタデータ UInt64 はビットフィールドです。
+
+| ビット範囲        | 意味                                                                                                                                                                                                                                                                                                                                 |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0..7         | キー型コード: `0` = UInt8、`1` = UInt16、`2` = UInt32、`3` = UInt64。`dict_size` 個のエントリを索引付けできる最小の型が選ばれます。                                                                                                                                                                                                                                   |
+| 8 (`0x100`)  | `NeedGlobalDictionaryBit` — 複数のBlockで共有される単一の Dictionary。**`Native` フォーマットでは決してセットされません**。Native writer は `low_cardinality_max_dictionary_size = 0` を使用し、Native reader はこのビットを拒否します (`native_format` は `INCORRECT_DATA` — &quot;cannot use global dictionary&quot; を送出します) 。このビットは MergeTree のディスク上のストリームで使われるものであり、wire 上では使われません。 |
+| 9 (`0x200`)  | `HasAdditionalKeysBit` — Blockに追加の辞書キー (索引の前に書き込まれる) が含まれる場合にセットされます。空でない `Native` Blockでは常にセットされます。                                                                                                                                                                                                                                 |
+| 10 (`0x400`) | `NeedUpdateDictionary` — Blockに Dictionary の更新が含まれる場合にセットされます。各Blockは自己完結した独自の Dictionary を送信するため、空でない `Native` Blockでは常にセットされます。                                                                                                                                                                                                     |
+
+カラムごとにデータBlockが 1 つだけの一般的なクエリレスポンスでは、メタデータは `0x600` (HasAdditionalKeys + NeedUpdateDictionary) になります。
+
+dict の値は、内部型 T でエンコードされた `dict_size` 個の値です。Dictionary は特殊な値のために先頭のスロットを予約します。非 Nullable のカラムでは 1 つを予約し (`dict[0]` には内部型のデフォルト値が格納されます。例: `String` の場合は `""`) 、実際の個別値は `dict[1]` から始まります。
+
+`LowCardinality(Nullable(T))` の場合も dict は通常の T としてエンコードされます (null マップのストリームはありません) が、予約されるスロットは **2 つ** になります。`dict[0]` は NULL マーカー、`dict[1]` は内部型のデフォルト値 (例: `String` の場合は `""`) で、実際の個別値は `dict[2]` から始まります。NULL の行のキーは `dict[0]` を指し、このスロットは wire 上では内部型のデフォルト値のバイト列として書き込まれます。
+
+キーは dict への索引です。各索引のサイズは `1 << key_type_code` バイト (1、2、4、8 のいずれか) で、値 `N` は `dict[keys[N]]` として復元されます。
+
+`keys_count` は **現在の再帰レベル** における `LowCardinality` の値の数であり、Blockの行数と一致するとは限りません。トップレベルの `LowCardinality` カラムであれば両者は一致します。しかし `LowCardinality` が複合型の内側にある場合は、複合型から渡されるフラット化後の値の数になります。たとえば、3 行で合計 5 個の要素を持つ `Array(LowCardinality(String))` では、`keys_count` は `3` ではなく `5` です。`Map(K, LowCardinality(V))` ではペアの総数になり、他の型も同様です。デコーダはBlockの行数を前提にせず、このフィールドから `keys_count` を読み取る必要があります。フラット化後の数がゼロの場合 (たとえば、すべての配列が空のBlock) 、`LowCardinality` のデータフェーズでは **何も書き込まれません**。存在するのは state prefix ([複合型のプレフィックスフェーズ](#composite-types)で出力される) のみで、その後にメタデータ、Dictionary、`keys_count` は続きません。
+
+state prefix は、行数が 0 より大きいすべてのBlockの先頭で読み取られます。ヘッダーBlock (rows = 0) および空のBlockでは何も出力されません。Block内では、`keys_count` は行数に等しく、`dict_size` は dict ストリーム内の値の数に等しくなります。また、各キーは `1 << key_type_code` バイトに収まります。
+
+<Note>
+  `Native` フォーマットでは、各Blockが**自己完結したBlockローカルな辞書**を個別に持ちます。Blockをまたいで保持される辞書の状態はありません。Native writer は `low_cardinality_max_dictionary_size = 0` を設定するため、`SerializationLowCardinality` が共有辞書を構築することはありません。空でないすべてのBlockは、`NeedGlobalDictionaryBit` を設定しない状態 (メタデータ `0x600`) で、キーをBlockローカルな追加キーとして書き込みます。また、Native reader は `native_format` が true の場合、`NeedGlobalDictionaryBit` を拒否します。したがって、デコーダはBlockごとに辞書をリセットし、そのBlockに含まれる `dict_size` 個のエントリを読み取る必要があります。前のBlockの辞書を引き継ぐと、次のBlockのキーを誤って解釈してしまいます。 (Blockをまたいだ LC 辞書の永続化は MergeTree のディスク上の表現に関わる事柄であり、Native のワイヤレイアウトとは無関係です。)
+</Note>
+
+値が `['a', 'b', 'a', 'c', 'b']` の `LowCardinality(String)`:
+
+```text
+01 00 00 00 00 00 00 00      state prefix Int64 = 1
+00 06 00 00 00 00 00 00      metadata UInt64 = 0x600
+04 00 00 00 00 00 00 00      dict_size = 4
+00                           dict[0] = "" (placeholder)
+01 'a'                       dict[1] = "a"
+01 'b'                       dict[2] = "b"
+01 'c'                       dict[3] = "c"
+05 00 00 00 00 00 00 00      keys_count = 5
+01 02 01 03 02               keys (UInt8): 1, 2, 1, 3, 2
+```
+
+復元結果: `dict[1], dict[2], dict[1], dict[3], dict[2]` = `["a", "b", "a", "c", "b"]`。
+
+値が `['a', NULL, '', 'b']` の `LowCardinality(Nullable(String))` の例では、2 つの予約されたスロットが両方とも使われています。`dict[0]` は NULL 用、`dict[1]` はデフォルト値である空文字列用です。
+
+```text
+01 00 00 00 00 00 00 00      state prefix Int64 = 1
+00 06 00 00 00 00 00 00      metadata UInt64 = 0x600
+04 00 00 00 00 00 00 00      dict_size = 4
+00                           dict[0] = "" → NULL marker
+00                           dict[1] = "" → inner default value
+01 'a'                       dict[2] = "a"
+01 'b'                       dict[3] = "b"
+04 00 00 00 00 00 00 00      keys_count = 4
+02 00 01 03                  keys (UInt8): 2, 0, 1, 3
+```
+
+復元結果: `dict[2]` = `"a"`、`dict[0]` = `NULL`、`dict[1]` = `""`、`dict[3]` = `"b"`、つまり `["a", NULL, "", "b"]` となります。`dict[0]` と `dict[1]` はいずれも wire 上では空のバイト列です。NULL かどうかはバイト列の内容ではなく、キーがスロット `0` を指しているかどうかで決まります。
+
+#### JSON (Tier 1: String fallback) {#json-tier-1-string-fallback}
+
+ClickHouse の `JSON` 型には複数のワイヤエンコーディングがあります ([シリアル化バージョンのリファレンス](#serialization-version-reference)を参照) 。Tier 1 は最も単純な方式です。クエリ単位の設定 `output_format_native_write_json_as_string = 1` が指定されている場合、サーバーはすべての JSON 値をシリアル化されたテキストに平坦化し、そのカラムをstate prefixマーカー付きの `String` として出力します。
+
+型文字列: `JSON`。
+
+```text
+[8 bytes:  Int64 LE state prefix = 1]        ← JSONStringSerializationVersion
+[per block with rows > 0]:
+  [N bytes: String column encoding for num_rows JSON text values]
+```
+
+この String fallback では、state prefix の値は `1` です。その他の値は、それぞれ異なる `JSON`/`Object` のエンコーディングを表します。`0` = V1、`2` = V2 (ネイティブ TCP プロトコルでのデフォルト)、`3` = FLATTENED、`4` = V3 です ([シリアル化バージョンリファレンス](#serialization-version-reference)を参照)。ここで `1` 以外の値を検出した場合、デコーダが読み取っているのは String fallback ではありません。プレフィックスは行数 &gt; 0 のすべての Block の先頭で読み取られ、values ストリームは `num_rows` 行分の標準的な [String](#string-type) カラムです。
+
+`JSON` 値 `'{"a":1}'` (1 行):
+
+```text
+01 00 00 00 00 00 00 00      state prefix Int64 = 1
+07 7B 22 61 22 3A 31 7D      String: 7 bytes {"a":1}
+```
+
+値はコンパクトな JSON テキスト (`{"a":1}`) として出力され、整数は整数のまま保持されます。このテキストは単なる `String` 値にすぎないため、クライアントは JSON を中身を解釈しないデータとして受け渡すことはできますが、個々のパスとその ClickHouse の型を復元することはできません。パスごとの型を正確に保持するには、後述の Tier 2 エンコーディングが必要です。
+
+#### Variant(T1, T2, ...) {#variant}
+
+判別共用体 (discriminated union) です。各行は、Variant 型のいずれか 1 つの型の値、または NULL を保持します。各行には型を選択する 1 バイトの **グローバル判別子** があり、型ごとの値は Variant 型ごとに 1 つの連続した領域にまとめて密に格納されます。
+
+型文字列: `Variant(T1, T2, ...)`。サーバーは型の順序を標準形に正規化します (Variant 型は名前順にソートされます) 。そのため、受信した型文字列では、型がすでに **グローバル判別子の順序** で並んでいます。判別子 `0` は最初の型、`1` は 2 番目の型を選択し、以降も同様です。`255` (`NULL_DISCRIMINATOR`) は、その行が NULL であることを示します。Variant の要素が `Nullable` になることはありません。NULL は判別子で表現されます。例: `Variant(String, UInt64)`、`Variant(Array(UInt8), String)`。
+
+state prefix には `UInt64 LE` の discriminator モードが格納されます。`0` = BASIC (すべての行の判別子をそのまま書き込む) 、`1` = COMPACT (グラニュール単位のランレングス符号化) です。ネイティブプロトコルでは、サーバーはデフォルトで BASIC を使用します (`use_compact_variant_discriminators_serialization = false`) 。本仕様では BASIC のみを規定します。
+
+```text
+[per block with rows > 0]:
+  [8 bytes:  UInt64 LE discriminators mode = 0]    ← state prefix, repeated at the start of every non-empty block;
+                                                     followed by each variant element's own state prefix
+                                                     (empty for leaf types)
+  [num_rows bytes: UInt8 discriminators]           ← one global discriminator per row; 255 = NULL
+  [for each variant type i, in declared order]:
+    [values for the rows whose discriminator == i] ← dense encoding in type i; count = #rows selecting i
+```
+
+再構築するには、型ごとの累積カウンターを保持しながら、判別子を左から右へ順に走査します。判別子 `d` (≠ 255) を持つ行 `r` は、Variant 型 `d` の値の並びから索引 `counter[d]` の位置にある値を取り出し、その後 `counter[d]` をインクリメントします。判別子が `255` の行は NULL であり、どの並びからも値を消費しません。そのため、型ごとのカウンターの合計は非 NULL 行の数と一致します。
+
+state prefix (モードを表す `UInt64`) は、行数が 0 より大きいすべてのBlockの先頭で読み取られます。ヘッダーBlockおよび空のBlockは何も出力しません。非 NULL の判別子はいずれも Variant 型の数より小さく、Variant 型 `i` は正確に `count[i]` 行分デコードされます。
+
+<Note>
+  Variant の要素のうち、それ自体がステートフルなもの (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) は、要素ごとの state prefix フェーズで、モードを表す `UInt64` の後に独自の state prefix を出力します。leaf 型および単純な複合型 (leaf 型からなる `Array`、`Tuple`、`Map`) は state prefix が空であるため、自由に組み合わせることができます。
+</Note>
+
+値 `[42, 'hi', NULL]` を持つ `Variant(String, UInt64)` の例 (標準の順序では `String` が `UInt64` より前にソートされるため、判別子 0 = String、1 = UInt64 となります) :
+
+```text
+00 00 00 00 00 00 00 00      state prefix: UInt64 discriminators mode = 0 (BASIC)
+01 00 FF                     discriminators (3 rows): 1 (UInt64), 0 (String), 255 (NULL)
+02 68 69                     String run (1 value): len=2 "hi"
+2A 00 00 00 00 00 00 00      UInt64 run (1 value): 42
+```
+
+復元結果: row 0 = UInt64 run[0] = `42`、row 1 = String run[0] = `"hi"`、row 2 = NULL。
+
+判別子ストリームが索引の役割を果たします。非 NULL の各判別子は、対応する型の密なランから次の値を取り出します。一方、`255` (NULL) は何も消費しません。[Dynamic](#dynamic) も同じ走査で復元でき、違いは NULL のエンコード方法のみです:
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="判別子が型ごとの密なランから値を選択する様子" width="1568" height="624" loading="lazy" />
+
+#### Dynamic {#dynamic}
+
+値の型が実行時に判明するカラムです。各行は、実行時に決定される型の集合のいずれかに属する値、または NULL を保持します。`Variant` とは異なり、型の集合はカラムの 型文字列 には含まれず、state prefix によって伝達されます。
+
+型文字列: `Dynamic` または `Dynamic(max_types=N)`。`max_types` パラメータは、カラムが追跡する異なる型の数の上限を指定しますが、以下のワイヤ形式には影響しません。
+
+`Dynamic` には `V1 = 1`、`V2 = 2`、`FLATTENED = 3`、`V3 = 4` の 4 つのエンコーディングがあります。サーバーがどれを出力するかは、チャネルとクエリ設定によって決まります。
+
+* `clickhouse-client` および HTTP の `FORMAT Native` 経由では、writer のリビジョンは (`client_protocol_version` で引き上げない限り) `0` であるため、デフォルトは **V1** です。
+* ネイティブ TCP プロトコル経由では、ネゴシエートされたリビジョンにおいてデフォルトは **V2** です。`Native` writer は統計情報を無効のままにするため、デフォルトの `V2` ペイロードにはバリアントごとの統計情報が含まれず、型リスト の直後にネストされた `Variant` のプレフィックスとデータが続きます。 (バリアントごとの統計情報は MergeTree のディスク上の表現に関わるものであり、Native の wire には含まれません。)
+* クエリ設定 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` を指定すると上記の両方がオーバーライドされ、リビジョンに関係なく **FLATTENED (version 3)** が出力されます。
+
+<Info>
+  **対象範囲**
+
+  このページでは **`FLATTENED`** レイアウトのみを規定します。フラット化されていない `V1`/`V2`/`V3` のバイナリレイアウトは内部表現／ディスク上の表現 (バイナリエンコードされた 型リスト、バリアントごとの統計情報) であり、ここでは規定**しません**。このページに基づいて `Dynamic` をデコードするクライアントは、`output_format_native_use_flattened_dynamic_and_json_serialization = 1` を設定して `FLATTENED` を要求する必要があります。以下のレイアウトはこの設定を前提としています。プレフィックスの先頭にバージョンバイトがあるため、デコーダは実際に受信したエンコーディングを判別でき、`FLATTENED` のみを実装している場合は `V1`/`V2`/`V3` を拒否できます。
+</Info>
+
+この設定によって選択される **FLATTENED (version 3)** レイアウトは次のとおりです。
+
+```text
+[per block with rows > 0]:
+  [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
+  [VarUInt num_types]                              ← number of runtime types
+  [num_types × type]                               ← type names, in wire order; each a String, or a binary
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1,
+                                                     except for a secondary query (see the type field note)
+  [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
+  [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
+                                                     NULL discriminator = num_types (one past the last type)
+  [for each type i, in wire order]:
+    [values for the rows whose discriminator == i] ← dense encoding in type i
+```
+
+判別子の幅は、`num_types` 個の型と NULL 用のスロットを合わせて索引付けできる最小の符号なし整数型です。`num_types ≤ 255` の場合は `UInt8` となり、それを超えると順に `UInt16`、`UInt32`、`UInt64` が使われます。NULL は判別子の値 `num_types` そのもので表されます。この点は、NULL が固定値 `255` で表される `Variant` とは異なります。復元処理は `Variant` と同じく密な走査で行います。型ごとにカウンターを保持し、判別子 `d` (≠ `num_types`) を持つ行 `r` は、型 `d` の並びから `counter[d]` 番目の値を取得します。
+
+state prefix (バージョン + 型リスト) は、行数 &gt; 0 のすべてのBlockの先頭で読み取られます。ヘッダーBlockおよび空のBlockでは何も出力されません。
+
+<Info>
+  **不正なカウント値**
+
+  `num_types` は、型名よりも前にストリームから読み取られます。デコーダはこの値を信頼できないものとして扱う必要があり、割り当てのサイズ決定に直接使用してはなりません。これは、`SIZE_MAX` に近いカウント値 (中間演算でオーバーフローを起こしたり、`DB::Exception` 以外の例外をスローしたりする可能性があります) であっても、`100000000` のように表現可能ではあるが大きいカウント値 (vector の `max_size()` よりはるかに小さいものの、型名を 1 つも読み取らないうちに数ギガバイトを割り当ててしまいます) であっても同様です。ClickHouse は、上限付きの事前割り当てヒントのみを使って型リストを 1 エントリずつ読み取ります。そのため、破損した `num_types` は `INCORRECT_DATA` (カウント値がコンテナーに格納可能な数を超える場合は &quot;`Dynamic` column has too many types&quot;) として、またはストリーム内の型エントリが尽きた時点で通常の読み取りエラーとして拒否され、メモリ不足による失敗になることは決してありません。
+
+  ただし、**フラット化**された `num_types` を `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (ClickHouse では `254`) で制限しては**なりません**。フラット化された型リストには、共有バリアントにあふれた型も含め、*すべての*異なるランタイム型が含まれるため、有効なフラット化Blockがこの値をはるかに超える数の型を列挙することも正当にあり得ます。`MAX_DYNAMIC_TYPES_LIMIT` による制限が適用されるのは、非フラットな `V1`/`V2`/`V3` プレフィックス内の `num_dynamic_types` カウントのみです。このカウントは通常バリアントのスロット数を表し、この上限によって制限されます (ClickHouse は、共有バリアント分の `+ 1` を加える前の段階でこの値を検証します) 。
+</Info>
+
+<Info>
+  **途中で切れたストリーム**
+
+  判別子の並びにはちょうど `num_rows` 個のエントリが含まれます。デコーダは、ストリームに含まれていた分をそのまま受け入れるのではなく、その数だけ読み取れたことを検証する必要があります。並びが短くても、後続のデータとの矛盾は生じないためです。型ごとの値のカウントは実際に読み取られた判別子から導出されるので値の並びと整合したままであり、すべて NULL マーカーで構成された並びであれば値のバイトはまったく必要ありません。ClickHouse は、短い判別子の並びを、型ごとのチェックを行う前に `INCORRECT_DATA` (&quot;Mismatch in flattened `Dynamic` column: N rows are expected, but the indexes stream contains only M rows&quot;) として拒否します。これは、再構築されたカラムが実際のサイズにかかわらず `num_rows` 行分として扱われるためです。
+</Info>
+
+<Note>
+  シリアライゼーションがステートフルなランタイム型 (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) は、型名リストの後にネストされた state prefix を持ちます。
+</Note>
+
+ランタイム型リストは通常、`Variant` の正規化に従います。つまり、通常バリアントのスロットは `DataTypeVariant` (型名) 順に書き込まれるため、wire上の順序は挿入順とは一致しません。ただし、常に全体がソートされているとは**限りません**。共有バリアントにあふれた型 (例えば `Dynamic(max_types=N)` の場合) は、通常スロットの後ろに初出順で追記されるため、リストの末尾では型名順が崩れることがあります。したがってデコーダは、送信された型リストを判別子の割り当ての基準として扱い、独自に再ソートしてはなりません。一方、リストに重複した型や `Nothing` が含まれていてはなりません。等しい 2 つのエントリは 1 つの判別子に対応付けられ、`Nothing` はそもそもバリアントではないため、いずれの場合もリストの一部に再構築先が存在しなくなるからです。ClickHouse はどちらも `INCORRECT_DATA` として拒否します。行 `[42::UInt64, "hi", NULL]` の場合、2 つの型は `String` と `UInt64` で、`"String"` は `"UInt64"` より前にソートされるため、判別子は `0` = String、`1` = UInt64、`2` = NULL となります。
+
+```text
+03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
+02                           VarUInt num_types = 2
+06 53 74 72 69 6E 67         type[0] = "String"
+06 55 49 6E 74 36 34         type[1] = "UInt64"
+01 00 02                     discriminators (3 rows): 1 (UInt64), 0 (String), 2 (NULL)
+02 68 69                     String run (type[0], 1 value): len=2 "hi"
+2A 00 00 00 00 00 00 00      UInt64 run (type[1], 1 value): 42
+```
+
+復元結果: 行 0 = UInt64 run[0] = `42`、行 1 = String run[0] = `"hi"`、行 2 = NULL。型ごとの run は、型リストと同じwire上の順序 (`String` が `UInt64` より先) で並びます。
+
+#### JSON (Tier 2: FLATTENED Object) {#json-tier-2-flattened-object}
+
+よりリッチな JSON エンコーディングです。すべての値をテキストにフラット化する (Tier 1) 代わりに、カラムを JSON パスごとに 1 つのサブカラムへ分割します。このエンコーディングは、フラット化シリアライゼーションのフラグを有効にした状態 (`output_format_native_use_flattened_dynamic_and_json_serialization = 1`) で、Tier 1 へのフォールバックを要求**しない** (`output_format_native_write_json_as_string = 0`) ことで選択されます。このとき、サーバーはシリアライゼーション**バージョン 3** を出力します。
+
+パスには 2 種類あります。
+
+* **型付きパス** は型文字列内で宣言され (例: `JSON(a UInt32, b String)`)、宣言された型でデコードされます。ドットを含むパス名は、型文字列内でバッククォートで囲みます。
+* **動的パス** は実行時に検出され、それぞれ [Dynamic](#dynamic) カラムとしてデコードされます。
+
+FLATTENED モードには **shared-data カラムがありません** (このオーバーフロー用の格納領域は、非フラットな V2/V3 Object エンコーディングで使われるものです)。すべてのパスは、`num_rows` 個の値を持つ完全なカラムです。
+
+```text
+[per block with rows > 0]:
+  -- prefix phase (repeated at the start of every non-empty block):
+  [8 bytes:  UInt64 LE version = 3]                ← state prefix
+  [VarUInt num_dynamic_paths]
+  [num_dynamic_paths × String]                     ← dynamic path names, in wire order
+  [per typed path: its column's state prefix]      ← empty for leaf types
+  [per dynamic path: a Dynamic state prefix]       ← version + type list (see Dynamic)
+  -- data phase:
+  [for each typed path:   its column's data]       ← num_rows values in the declared type
+  [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
+```
+
+この2フェーズ構成に注意してください。まず**すべての**パスの state prefix が現れ、その後に**すべての**パスのデータが続きます。そのため、動的パスの `Dynamic` プレフィックス (プレフィックスフェーズ内) は、そのデータ (データフェーズ内) とは離れた位置に置かれます。state prefix は行数 &gt; 0 のすべての Block の先頭で読み取られ、すべてのパスカラム (型付き・動的を問わず) はちょうど `num_rows` 個の値を保持します。行 `r` のオブジェクトは、各パスの索引 `r` の値を読み取ることで組み立てられます。その行で `Dynamic` 判別子が NULL である動的パスは、キーを生成しません。動的パス名はそれぞれ一意でなければならず、また型文字列ですでに型付きとして宣言されているパスと重複してはなりません。いずれの場合も、組み立てられたオブジェクトの1つのキーに2つの値が存在することになるため、ClickHouse はどちらも `INCORRECT_DATA` として拒否します。非フラットエンコーディングの動的パスリストにも同じことが当てはまります。
+
+<Info>
+  **不正なカウント**
+
+  ここで説明する FLATTENED レイアウトの `num_dynamic_paths`、および非フラットな `V1`/`V2` エンコーディングにおける動的パス数は、パス名より前にストリームから読み取られます (非フラットのプレフィックスには、フラット化パス用の独立したフィールドはありません。保持するのは動的パス数のみで、`V1` ではこれに加えて、読み取られた後に破棄される `max_dynamic_paths` の値が含まれます) 。[`Dynamic`](#dynamic) と同様に、デコーダはこれらのカウントを信頼できない値として扱い、その値をそのまま割り当てサイズに使用してはなりません。これは `SIZE_MAX` 系のカウントに限らず、表現可能な範囲内の大きなカウントについても同様です。ClickHouse は上限付きの事前割り当てヒントのみを用いてパス名を1エントリずつ読み取るため、破損したカウントは `INCORRECT_DATA` (コンテナーが保持できる量を超える場合は「JSON/Object column has too many paths」) として、またはストリーム中のパス名が尽きた時点で通常の読み取りエラーとして拒否されます。
+</Info>
+
+<Info>
+  **途中で切れたストリーム**
+
+  パスカラムごとの `num_rows` 個の値は上限ではなく、厳密に満たすべき要件です。デコーダは、ストリームが本来の位置で終わっていると信頼するのではなく、型付き・動的を問わずすべてのパスカラムを Block の行数と照合する必要があります。組み立てられたオブジェクトには照合に使える独立したサイズがなく、その行数はフラット化の解除結果に依存するだけです。そのため、値が不足しているパスカラムは後から検出できず、その行 `r` を読み取ると末尾を越えてしまいます。ClickHouse はこれを `INCORRECT_DATA` (「Unexpected size of typed path / flattened path *p* in flattened Object column」) として拒否します。動的パスの場合、このチェックはその [`Dynamic`](#dynamic) カラム内部での同等のチェックに加えて行われます。
+</Info>
+
+`JSON` 値 `{"a": 42, "b": "hi"}` (1行、両パスとも動的) 。JSON の整数は `Int64` として推論されます。
+
+```text
+03 00 00 00 00 00 00 00      version = 3 (Object)
+02                           num_dynamic_paths = 2
+01 61                        path "a"
+01 62                        path "b"
+03 00 00 00 00 00 00 00 01 05 49 6E 74 36 34      "a" Dynamic prefix: version 3, 1 type, "Int64"
+03 00 00 00 00 00 00 00 01 06 53 74 72 69 6E 67   "b" Dynamic prefix: version 3, 1 type, "String"
+00 2A 00 00 00 00 00 00 00   "a" data: discriminator 0, Int64 42
+00 02 68 69                  "b" data: discriminator 0, String "hi"
+```
+
+#### JSON 非フラット (V1/V2) {#json-non-flat}
+
+非フラット化された `Object` エンコーディングは、フラット化フラグがオフのときにサーバーが wire 上で送出する形式です。`clickhouse-client` / HTTP `FORMAT Native` (リビジョン `0`) では `V1`、ネイティブ TCP プロトコルでは `V2` が使われます。 (3 つ目の非フラットエンコーディングである `V3` は MergeTree パーツへの書き込み専用であり、wire 上では拒否されます。) これらは shared-data カラムを含み、本ページでは仕様を規定して**いません**。なお、これらは Native wire 上ではパスごとの統計情報を**含みません**。`NativeWriter` は統計情報を無効のままにするため、`Object` の構造プレフィックスには統計情報セクションがなく、その直後には typed/dynamic/shared-data の各プレフィックスとデータがそのまま続きます。統計情報が現れるのは、統計情報を有効にしている MergeTree のディスク上のパスに限られます。本ページの仕様に従って `JSON` カラムをデコードするには、クライアントは文書化されたいずれかのティアを選択する必要があります。[String フォールバック](#json-tier-1-string-fallback)を使う場合は `output_format_native_write_json_as_string = 1` を設定し、[FLATTENED Object](#json-tier-2-flattened-object) レイアウトを使う場合は `output_format_native_use_flattened_dynamic_and_json_serialization = 1` を (`output_format_native_write_json_as_string = 0` とあわせて) 設定します。
+
+## 圧縮フレーム {#compression-frame}
+
+ClickHouse は、`Native` ストリームのカラムデータを内部のフレームフォーマットで圧縮できます。以下の[フレームレイアウト](#frame-format)は**トランスポートに依存しません**。ネイティブ TCP プロトコルでも HTTP でも同じフレームが使われます。ただし、圧縮の要求方法や、フレームの前後に付く要素はトランスポートによって異なります。
+
+* **ネイティブ TCP プロトコル。** 圧縮はクエリ単位のオプトイン方式で、[Query パケット](/ja/resources/develop-contribute/native-protocol/protocol#query)の `compression` フラグで有効にします。有効な場合、`Data`、`Totals`、`Extremes`、`Log`、`ProfileEvents` の各パケットのボディ (`table_name` 文字列より後のバイト列) がフレームフォーマットでラップされます。パケットエンベロープ自体、つまりパケットタイプコードと `table_name` 文字列は圧縮**されず**、サーバーはこれらを生のストリームにそのまま書き込みます。`NativeWriter` が出力する内容はすべて圧縮ストリームに入るため、フレーム内では `BlockInfo` プレフィックスが先頭に置かれ、その後に次元とカラムが続きます。したがって、クライアントは `BlockInfo` を読み取る前にフレームを伸長する必要があります。
+* **HTTP。** `SELECT ... FORMAT Native&compress=1` は、`FORMAT Native` のバイトストリーム全体を同じフレームでラップします (サーバーは同じ内部 `CompressedWriteBuffer` を使用します) 。また `?decompress=1` を指定すると、`Native` の*入力*ボディが同じフレーム形式であることを前提に、対応する `CompressedReadBuffer` でデコードします。この経路には TCP のパケットタイプ、`table_name`、パケットエンベロープはなく、圧縮ペイロード全体はフレーム化された `Native` ブロックだけで構成されます (`BlockInfo` プレフィックスが含まれるのは、上記の非圧縮レイアウトと同様、ネゴシエートされたリビジョンが `0` より大きい場合のみです) 。この内部の `compress`/`decompress` フレーミングは、HTTP トランスポート圧縮 (`Content-Encoding: gzip`/`zstd`。`enable_http_compression` で有効化) とは別のものです。後者は HTTP レイヤーでレスポンスをラップする仕組みであり、以下のフレームフォーマットとは異なります。
+
+つまり、非圧縮の `FORMAT Native` レイアウトしか実装していないクライアントでも、圧縮された HTTP の `Native` レスポンスを読み取ったり、`decompress=1` のリクエストボディを送信したりするには、このフレームレイヤーを追加で実装する必要があります。
+
+### フレームフォーマット {#frame-format}
+
+```text
+[16 bytes: CityHash128 checksum over the 9-byte header + compressed body]
+[1 byte:   method]                 ← 0x82 = LZ4, 0x90 = ZSTD, 0x02 = NONE
+[4 bytes:  compressed_size LE u32] ← INCLUDES the 9-byte header, EXCLUDES the 16-byte checksum
+[4 bytes:  uncompressed_size LE u32]
+[N bytes:  compressed body]        ← N = compressed_size - 9
+```
+
+フレーム全体のサイズは `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size` です。ここでは 2 つの範囲の違いに注意してください。チェックサムの対象は 9 バイトのヘッダーとボディであり、`compressed_size` もヘッダーとボディを含みますが、チェックサム自体は**含みません**。
+
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="圧縮フレームのフィールドと compressed-size の境界" width="1568" height="206" loading="lazy" />
+
+### メソッドバイトの値 {#method-byte-values}
+
+以下の 3 つのコーデックは、ストリーム全体に対する `Native` フレーミングでサーバーが生成するものです。HTTP の `compress=1` 出力ではサーバーのデフォルトコーデック (`ZSTD(3)`) が使用され、ネイティブ TCP プロトコルでは `network_compression_method` に応じて `LZ4`、`ZSTD`、`NONE` のいずれかが使用されます。汎用的な `Native` クライアントは、これらを生成・処理できれば十分です。
+
+| Byte   | Method | ボディのエンコーディング                                                         |
+| ------ | ------ | -------------------------------------------------------------------- |
+| `0x02` | NONE   | ボディは raw bytes (圧縮なし) です。フレーム自体は出力され、受信側はチェックサムを検証します。               |
+| `0x82` | LZ4    | ボディは **LZ4 ブロックフォーマット** であり、LZ4 フレームフォーマットでは*ありません*。マジックナンバーは含まれません。 |
+| `0x90` | ZSTD   | ボディは生の zstd 単一フレームストリームです (標準の zstd マジックナンバーはボディに含まれます)。             |
+
+メソッドバイトは [カラムレベルのコーデック](/ja/reference/statements/create/table/codec) も表します。これらはストリーム全体のフレーミングではなく、MergeTree のディスク上のパスでカラムごとに適用されるものです。ただし、`decompress=1` の HTTP 入力パスでは各フレームのメソッドバイトからコーデックを判別するため、これらのバイトはいずれも正当な入力として現れる可能性があります。したがって、仕様に準拠するデコーダは割り当て済みの値の範囲全体を認識し、実装していないバイトについては、ボディを誤って解釈せずに拒否する必要があります。これらのボディの形式はコーデックごとに異なり、この汎用的なフレーム規約の対象外です。
+
+| Byte   | Method                                   |
+| ------ | ---------------------------------------- |
+| `0x91` | `Multiple` (ネストされたコーデックの数列をラップする複合コーデック) |
+| `0x92` | `Delta`                                  |
+| `0x93` | `T64`                                    |
+| `0x94` | `DoubleDelta`                            |
+| `0x95` | `Gorilla`                                |
+| `0x96` | `AES_128_GCM_SIV` (暗号化)                  |
+| `0x97` | `AES_256_GCM_SIV` (暗号化)                  |
+| `0x98` | `FPC`                                    |
+| `0x9a` | `GCD`                                    |
+| `0x9c` | `ALP`                                    |
+| `0x9d` | `SZ3`                                    |
+| `0x9e` | `Quantized`                              |
+| `0x9f` | `ZXC`                                    |
+
+`DoubleDelta` (`0x94`) は、2 階差分を MSB ファーストのプレフィックス/符号/絶対値ビットとして格納します。ワード単位でデコードしても、このエンコーディング、要素数、最終バイトのパディングは保持されます。
+
+`0x9c` (`ALP`) は、`Float32` および `Float64` 向けの **ベータ版** の可逆コーデック (アダプティブな可逆浮動小数点圧縮) です。`CODEC(ALP)` を指定したテーブルは `enable_alp_codec` 設定が有効な場合にのみ作成できますが、既存のデータを引き続き読み取れるよう、伸長時にはこのメソッドバイトが常に受け付けられます。`0x9d` (`SZ3`) は、`Float32`、`Float64`、およびそれらの型の `Array` 向けの **実験的** な誤差制限付き*非可逆*コーデックです。`CODEC(SZ3)` を指定したテーブルは `enable_sz3_codec` 設定が有効な場合にのみ作成できますが、既存のデータを引き続き読み取れるよう、伸長時にはこのメソッドバイトが常に受け付けられます。`0x9f` (`ZXC`) は **実験的** な非対称 LZ コーデックで、圧縮は低速ですが伸長は非常に高速であり、圧縮率は `LZ4` と `ZSTD` の中間です。`CODEC(ZXC)` を指定したテーブルは `enable_zxc_codec` 設定が有効な場合にのみ作成できますが、既存のデータを引き続き読み取れるよう、伸長時にはこのメソッドバイトが常に受け付けられます。バイト `0x99` (`DeflateQpl`) と `0x9b` (`ZSTD_QPL`) は、すでに削除されたコーデックに割り当てられていたもので、予約済みとして再利用されません。
+
+`0x9e` (`Quantized`) は、密なベクトルカラム (`Array(Float32)` など) 向けの **実験的** なカラムコーデックです。`NONE` と同様にパススルーであり、フル精度のボディはそのまま格納されます。ただし、このコーデックを指定すると、ベクトル検索を高速化するためのコンパクトな量子化済み補助ストリームを書き込むシリアライゼーションが付与されます。`CODEC(Quantized(...))` を指定したテーブルは `enable_quantized_codec` 設定が有効な場合にのみ作成でき、伸長時にはこのメソッドバイトが常に受け付けられます。
+
+### チェックサム {#checksum}
+
+ClickHouse が使用しているのは CityHash v1.0.2 (旧来のバリアント) であり、現行の Google CityHash では**ありません**。両者の出力は異なります。
+
+チェックサムは、9 バイトのヘッダー (method + compressed&#95;size + uncompressed&#95;size) と N バイトのボディ、つまりチェックサムの直後からフレームの末尾までのすべてを対象に計算されます。16 バイトの CityHash128 出力のうち、先頭 8 バイトが下位半分 (LE) 、続く 8 バイトが上位半分 (LE) です。デコーダは受信したヘッダーとボディから CityHash128 を再計算し、先頭の 16 バイトと比較します。一致しない場合はデータ破損とみなされ、デコーダはエラーになります。
+
+### ブロック単位の境界 {#per-block-boundaries}
+
+Block の圧縮ペイロードは**1 つ以上のフレームからなるストリーム**であり、単一のフレームであるとは限りません。送信側は、シリアル化されたブロックを `CompressedWriteBuffer` 経由で書き込みます。`CompressedWriteBuffer` は、内部バッファが満杯になるたび (約 1 MB、`DBMS_DEFAULT_BUFFER_SIZE`) にフレームを出力し、ブロックが flush された時点で最後のフレームを出力します。そのため、小さなブロックは 1 つのフレームに、大きなブロックは連続する複数のフレームになります。
+
+この不変条件は一方向にしか成り立ちません。送信側は各ブロックの終端で圧縮バッファを flush するため、**ブロックの終端は必ずフレーム境界と一致します**が、その逆は成り立ちません。ブロックの途中でバッファが満杯になって生じた中間のフレーム境界は、ブロックの*途中*に位置しており、ブロック境界ではありません。したがって、デコーダはブロック自身の次元 (`num_columns`/`num_rows`) を使ってブロックの終端を特定する必要があり、1 つのフレームが 1 つの完全なブロックであると想定してはいけません。
+
+受信側はフレームを順次読み込んで処理します。まず 16 + 9 バイトを読み取り、続いてボディを正確に `compressed_size - 9` バイト読み取り、正確に `uncompressed_size` バイトに伸長して、そのバイト列をブロックデコーダに渡します。デコーダが現在のフレームに含まれる以上のデータを必要とする場合は、次のフレームを取得します。送信側はブロックごとに flush するため、ブロックのデコードが完了した時点でフレームバッファは空になっており、次のブロックは新しいフレームの先頭から始まります。
+
+ネイティブ TCP プロトコルでは、パケットエンベロープ (パケットタイプを表す VarUInt と `table_name` 文字列) は圧縮ペイロードの外側、つまり**生**ストリームに書き込まれ、フレーム化されるのはブロックのボディ (BlockInfo + カラム) だけです。HTTP の `compress`/`decompress` パスにはこうしたエンベロープは存在せず、ストリーム全体がフレーム化されたブロックで構成されます。
+
+### ネゴシエーション {#compression-negotiation}
+
+ネイティブ TCP プロトコルでは、圧縮は接続単位ではなくクエリ単位で行われます。Query パケットの `compression: bool` フィールドを使うと、そのクエリに限って圧縮をリクエストできます。サーバーはこのリクエストに応じ、クエリが終了するまでの間、圧縮された `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` ボディを送出します (`Log`/`ProfileEvents` は v54481 以降のみ) 。また、クライアントから*送信される* Data ブロック (外部テーブル、データ終端を示す空のマーカー、INSERT の行) も同じ形式でフレーム化されていることを前提とします。同じ接続上の後続のクエリでは、圧縮の有無が異なっていても構いません。
+
+HTTP には Query パケットがありません。代わりに、`compress=1` クエリパラメータでそのリクエストの出力をフレーム化するよう指定し、`decompress=1` でリクエストボディがフレーム化されていることを宣言します。`compress=1` の出力は、`network_compression_method` ではなくサーバーのデフォルトコーデック (`ZSTD(3)`) で書き込まれます。一方、`decompress=1` の読み取り側は各フレームのメソッドバイトからコーデックを判別するため、入力ではどのコーデックでも受け付けられます。
+
+<Note>
+  圧縮が有効な場合、サーバーは 2 行以上を含むブロックについて、カラムを並列ブロックマーシャリング / `ColumnBLOB` パス (`PARALLEL_BLOCK_MARSHALLING`、v54478) 経由で処理することもあります。INSERT データを圧縮する実装では、ストリームの同期ずれを防ぐため、このパスに対応しておく (または明示的にオプトアウトする) 必要があります。
+</Note>
+
+## 用語集 {#glossary}
+
+**Block** — Native フォーマットにおけるデータ交換の単位です。カラム指向で格納された、自己記述的な行のまとまりです。[ブロックとカラムの構造](#block-and-column-structure)を参照してください。
+
+**BlockInfo** — TCP の Data パケット経路で Block の前に置かれるメタデータヘッダーです (接続のリビジョンが 0 より大きい場合は常に書き込まれます)。リビジョンによって有無が決まり、フィールド ID でタグ付けされたフィールドの並びで構成されます。リビジョン `0` でシリアライズする `Native` 出力フォーマットでは省略されます。[BlockInfo](#blockinfo)を参照してください。
+
+**カラムボディ** — カラムヘッダー (名前、型、has&#95;custom&#95;serialization バイト) に続く、実際の値を保持するカラムのバイト列です。レイアウトは型によって異なります。[カラムの wire レイアウト](#column-wire-layout)を参照してください。
+
+**複合型** — 1 つ以上の内部型から構成される型で、カラムごとに複数のストリームとしてエンコードされます。wire フォーマットは安定しており、バージョン管理の対象ではありません。[複合型](#composite-types)を参照してください。
+
+**Dictionary (LowCardinality)** — `LowCardinality(T)` カラムが整数インデックスを介して参照する、一意な値の配列です。[LowCardinality](#lowcardinality)を参照してください。
+
+**空ブロック** — `num_columns = 0` かつ `num_rows = 0` の Block です。番兵として使用され、クライアント側では入力終了マーカー、サーバー側ではストリーム境界マーカーとして機能します。[ブロックのバリアント](#block-variants)を参照してください。
+
+**ヘッダーブロック** — `num_columns > 0` かつ `num_rows = 0` の Block で、クエリ応答の最初の Data パケットとしてサーバーから送信されます。結果のスキーマを通知する役割を持ちます。[ブロックのバリアント](#block-variants)を参照してください。
+
+**内部型** — 複合型がラップする型です。`Array(UInt32)` の内部型は `UInt32`、`Nullable(T)` の内部型は `T` です。
+
+**オフセットストリーム** — `Array`、`Map`、`Nested` が行ごとの要素の境界を区切るために使用する、累積終了位置を表す UInt64 の配列です。[Array](#array)を参照してください。
+
+**プレースホルダー値** — `Nullable(T)` カラムの values ストリームで、NULL の位置に書き込まれるバイト列です。デコーダはストリームを読み進めるためにこれを読み取りますが、内容は無視します。[Nullable](#nullable)を参照してください。
+
+**結果ブロック** — `num_rows > 0` で、実際のクエリ結果の行を格納した Block です。[ブロックのバリアント](#block-variants)を参照してください。
+
+**スキーマブロック** — ヘッダーブロックの別名で、INSERT フェーズの説明で使用されます。スキーマブロックは、想定されるカラムの形状をクライアントに伝えます。
+
+**シリアル化バージョン** — バージョン付きの型が、後続するエンコーディングのバリアントを示すために使用する、型ごとの wire 上のバージョン番号です。プロトコルバージョンとは別物です。[シリアル化バージョン: 概念](#serialization-version-concept)を参照してください。
+
+**ステートプレフィックス** — バージョン付きの型で、ブロックごとのペイロードの前に置かれるバイト列です。シリアル化バージョンと、(LowCardinality の場合は) ブロックごとの Dictionary メタデータを含みます。行数が 0 より大きいすべてのブロックの先頭で出力され、ブロックをまたいで引き継がれることはありません。
+
+**ストリーム** — カラムボディ内の連続したバイト列で、1 つの論理的なサブコンポーネント (null マップ、オフセット配列、values ストリーム) をエンコードします。マルチストリーム型では、カラムごとに 2 つ以上のストリームが連結されます。

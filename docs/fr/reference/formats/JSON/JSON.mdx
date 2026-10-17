@@ -15,9 +15,7 @@ doc_type: 'reference'
 | ------ | ------ | ----- |
 | ✔      | ✔      |       |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Le format `JSON` lit et produit des données au format JSON.
 
@@ -40,14 +38,12 @@ Le type `JSON` est compatible avec JavaScript. Pour garantir cette compatibilit�
 * les caractères de contrôle ASCII sont échappés : retour arrière, saut de page, saut de ligne, retour chariot et tabulation horizontale sont remplacés par `\b`, `\f`, `\n`, `\r`, `\t`, et les octets restants dans la plage 00-1F le sont à l&#39;aide de séquences `\uXXXX`.
 * les séquences UTF-8 invalides sont remplacées par le caractère de remplacement � afin que le texte en sortie soit composé de séquences UTF-8 valides.
 
-Pour assurer la compatibilité avec JavaScript, les entiers Int64 et UInt64 sont, par défaut, entourés de guillemets doubles.
-Pour supprimer les guillemets, vous pouvez définir le paramètre de configuration [`output_format_json_quote_64bit_integers`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) sur `0`.
+Les entiers de 64 bits ou plus (comme `Int64`, `UInt64` ou `Int128`) sont, par défaut, produits sans guillemets.
+Pour assurer la compatibilité avec JavaScript, vous pouvez les entourer de guillemets doubles en définissant le paramètre de configuration [`output_format_json_quote_64bit_integers`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) sur `1`.
 
 ClickHouse prend en charge [NULL](/fr/reference/syntax), qui s&#39;affiche sous la forme `null` dans la sortie JSON. Pour activer les valeurs `+nan`, `-nan`, `+inf`, `-inf` dans la sortie, définissez [output&#95;format&#95;json&#95;quote&#95;denormals](/fr/reference/settings/formats/output-format#output_format_json_quote_denormals) sur `1`.
 
-<div id="example-usage">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#example-usage}
 
 Exemple :
 
@@ -105,16 +101,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div id="format-settings">
-  ## Paramètres de format
-</div>
+## Paramètres de format {#format-settings}
 
 Pour le format d&#39;entrée JSON, si le paramètre [`input_format_json_validate_types_from_metadata`](/fr/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) est défini sur `1`,
 les types issus des métadonnées des données d&#39;entrée seront comparés aux types des colonnes correspondantes de la table.
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * format [JSONEachRow](/fr/reference/formats/JSON/JSONEachRow)
 * réglage [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/fr/reference/settings/formats/output-format#output_format_json_array_of_rows)
