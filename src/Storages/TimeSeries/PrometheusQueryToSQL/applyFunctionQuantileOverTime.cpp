@@ -10,7 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getRangeVectorGroupKey.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/aggregateRangeVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -174,33 +174,36 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (range_argument.store_method != StoreMethod::VECTOR_GRID) && (range_argument.store_method != StoreMethod::RAW_DATA);
 
-    SelectQueryBuilder builder;
-
-    if (from_scalar)
-    {
-        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-    }
-    else
-    {
-        auto group_key = getRangeVectorGroupKey(range_argument, context);
-        builder.select_list.push_back(std::move(group_key.group_expression));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-        builder.group_by.push_back(std::move(group_key.group_by_key));
-    }
-
     /// timeSeriesQuantileToGrid(<start_timestamp>, <end_timestamp>, <step>, <staleness_window>)(<timestamps>, <values>, <phi>) AS values
     /// For each grid point it returns the phi-quantile of the values inside that window (NULL if the window is empty),
     /// with the Prometheus edge cases of `phi` (below 0 gives -Inf, above 1 gives +Inf, NaN gives NaN).
     /// `phi` is either one number or, for a quantile level varying with the evaluation time, an array with one number per
     /// grid point.
     aggregate_function_arguments.push_back(std::move(quantile_level.ast));
-    ASTPtr result_values = addParametersToAggregateFunction(
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesQuantileToGrid", std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    SelectQueryBuilder builder;
+    ASTPtr result_values;
+
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        result_values = std::move(aggregate_function);
+    }
+    else
+    {
+        auto aggregation = aggregateRangeVector(range_argument, std::move(aggregate_function), context);
+        builder.select_list.push_back(std::move(aggregation.group_expression));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.group_by.push_back(std::move(aggregation.group_by_key));
+        result_values = std::move(aggregation.aggregate_function);
+    }
 
     if (fixed_at_node)
         result_values = repeatFixedAtResultOverGrid(

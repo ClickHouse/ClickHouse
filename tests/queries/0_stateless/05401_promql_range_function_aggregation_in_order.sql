@@ -1,11 +1,11 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the pipeline checks below expect a single local read of the samples table.
--- Tag no-random-settings, no-random-merge-tree-settings: the memory limit below is calibrated for the default block sizes.
+-- Tag no-random-settings, no-random-merge-tree-settings: the pipeline checks below expect the default block and granule sizes.
 
 -- A function over a range vector (rate, increase, last_over_time, ...) aggregates the raw samples per series.
--- The samples table is sorted by (id, timestamp), so the aggregation runs in that order and holds the state
--- of one series at a time instead of the states of all series.
+-- The samples table is sorted by (id, timestamp), so the first level of the aggregation runs in that order
+-- and holds the state of one id at a time; the second level merges the ids of one set of tags.
 
 SET session_timezone = 'UTC';
 SET allow_experimental_time_series_table = 1;
@@ -108,8 +108,7 @@ DROP TABLE samples_table;
 DROP TABLE time_ranges_table;
 DROP TABLE tags_table;
 
--- Many series: the states of all series at once do not fit into the memory limit, the state of one series does.
--- Each series is a counter with one sample per second, so the rate of every series is 1 and the sum is the number of series.
+-- Many series: each series is a counter with one sample per second, so the rate of every series is 1 and the sum is the number of series.
 DROP TABLE IF EXISTS prometheus_big;
 CREATE TABLE prometheus_big ENGINE = TimeSeries;
 
@@ -125,12 +124,6 @@ FROM numbers(4000);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(900, 1200))
 FROM numbers(4000);
-
-SELECT '-- sum(rate(big[60s])) over 4000 series within a memory limit';
-SELECT count(), length(samples), arrayDistinct(arrayMap(x -> round(x.2, 6), samples))
-FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10)
-GROUP BY samples
-SETTINGS max_memory_usage = 110000000;
 
 -- The samples are split into one primary key range per thread. Each range is aggregated on its own thread
 -- and the streams are not merged, because the ranges hold disjoint series.

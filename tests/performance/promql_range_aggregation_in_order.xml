@@ -6,10 +6,10 @@
 
     <!--
         Benchmarks the functions over range vectors (rate, increase, last_over_time, ...) over many series.
-        They aggregate the raw samples per series in the order of the samples table (id, timestamp), so the
-        aggregation holds the state of one series at a time instead of the states of all series.
-        A regression here is either a plan which no longer aggregates in order (memory grows with the
-        number of series) or a slower in-order read of the samples table.
+        They aggregate the raw samples by id in the order of the samples table (id, timestamp), over one
+        primary key range per thread, before merging the ids of one set of tags.
+        A regression here is either a plan which no longer aggregates in order over primary key ranges
+        or a slower in-order read of the samples table.
     -->
 
     <create_query>
@@ -32,10 +32,10 @@
          so the two compared servers would otherwise merge a different number of streams in the in-order read. -->
     <fill_query>OPTIMIZE TABLE promql_in_order_ts FINAL</fill_query>
 
-    <!-- sum over all series at every step: the aggregation state is one series at a time -->
+    <!-- sum over all series at every step -->
     <query>SELECT * FROM prometheusQueryRange('promql_in_order_ts', 'sum(rate(cpu_seconds_total[1m]))', 1003600, 1054000, 300) SETTINGS max_threads = 4 FORMAT Null</query>
 
-    <!-- grouped sum: the per-series grids still flow one series at a time into the grouping -->
+    <!-- grouped sum -->
     <query>SELECT * FROM prometheusQueryRange('promql_in_order_ts', 'sum by (mode) (rate(cpu_seconds_total[1m]))', 1003600, 1054000, 300) SETTINGS max_threads = 4 FORMAT Null</query>
 
     <!-- no outer aggregation: the per-series grids are the result -->

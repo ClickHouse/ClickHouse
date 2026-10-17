@@ -39,7 +39,7 @@ namespace
         /// SELECT id, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>)
         ///
-        /// The group is calculated after the aggregation over `id` (see getRangeVectorGroupKey()): the samples table is
+        /// The group is calculated after the aggregation over `id` (see aggregateRangeVector()): the samples table is
         /// sorted by `(id, timestamp)` and the planner can aggregate in that order only if the key is the `id` column itself.
         SelectQueryBuilder builder;
 

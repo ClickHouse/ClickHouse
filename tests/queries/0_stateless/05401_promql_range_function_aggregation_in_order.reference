@@ -32,8 +32,6 @@
 -- sum by (host) (rate(m[20s])), range, UInt64 ids
 [('host','h1')]	[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]
 [('host','h2')]	[('1970-01-01 00:01:50.000',0.75),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]
--- sum(rate(big[60s])) over 4000 series within a memory limit
-1	115	[4000]
 -- the in-order aggregation runs over primary key ranges
 4	0
 1

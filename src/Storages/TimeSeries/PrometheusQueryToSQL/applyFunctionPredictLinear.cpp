@@ -11,7 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getRangeVectorGroupKey.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/aggregateRangeVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -224,27 +224,30 @@ SQLQueryPiece applyFunctionPredictLinear(
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (range_argument.store_method != StoreMethod::VECTOR_GRID) && (range_argument.store_method != StoreMethod::RAW_DATA);
 
-    SelectQueryBuilder builder;
-
-    if (from_scalar)
-    {
-        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-    }
-    else
-    {
-        auto group_key = getRangeVectorGroupKey(range_argument, context);
-        builder.select_list.push_back(std::move(group_key.group_expression));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-        builder.group_by.push_back(std::move(group_key.group_by_key));
-    }
-
-    ASTPtr regression = addParametersToAggregateFunction(
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesLinearRegressionToGrid", std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    SelectQueryBuilder builder;
+    ASTPtr regression;
+
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        regression = std::move(aggregate_function);
+    }
+    else
+    {
+        auto aggregation = aggregateRangeVector(range_argument, std::move(aggregate_function), context);
+        builder.select_list.push_back(std::move(aggregation.group_expression));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.group_by.push_back(std::move(aggregation.group_by_key));
+        regression = std::move(aggregation.aggregate_function);
+    }
 
     std::optional<HorizonShift> horizon_shift;
     if (fixed_at_node)

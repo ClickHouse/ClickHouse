@@ -52,9 +52,8 @@ enum class StoreMethod
     /// - `value` (Float64 or Float32, the type of the values in the table).
     /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
-    /// The rows come in the order of the samples table, `(id, timestamp)`. The consumers aggregate them `GROUP BY id`, in order
-    /// and holding the state of one series at a time, when the query is evaluated at several points and every set of tags
-    /// is stored under one id; otherwise they aggregate `GROUP BY timeSeriesIdToGroup(id)` (see getRangeVectorGroupKey()).
+    /// The rows come in the order of the samples table, `(id, timestamp)`, so the consumers can aggregate them `GROUP BY id`
+    /// in that order before merging the ids of one set of tags (see aggregateRangeVector()).
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
