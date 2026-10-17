@@ -643,8 +643,10 @@ public:
       */
     std::vector<AggregatedChunk> convertBlockToTwoLevel(const Columns & columns, size_t rows) const;
 
-    /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
+    /// For external aggregation. With `capture_kept_keys_seed` the flush first snapshots the
+    /// keys of the table into `AggregatedDataVariants::kept_keys_seed`, for a stream that has
+    /// stopped admitting keys (see `Params::SharedKeptKeysControl`).
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0, bool capture_kept_keys_seed = false) const;
 
     /// Flushes the table on request of the memory scheduler; returns the released bytes.
     /// Requires a two-level or convertible table and temporary data storage.
@@ -1083,13 +1085,14 @@ private:
         Arena * arena,
         bool use_compiled_functions) const;
 
-    void flushToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool reinitialize) const;
+    void flushToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool reinitialize, bool capture_kept_keys_seed) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryBlockStreamHolder & out) const;
+        TemporaryBlockStreamHolder & out,
+        bool capture_kept_keys_seed) const;
 
     /// Parameters for parallel merge workers for single level.
     struct ParallelMergeWorker
@@ -1455,9 +1458,9 @@ private:
     /// May permanently abandon the cutoff, so call it only when the spill would proceed.
     bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const;
 
-    /// Re-inserts the frozen kept keys, with empty states, into a table just emptied by a spill,
-    /// so the remaining rows of those keys keep being aggregated (see
-    /// `Params::SharedKeptKeysControl`). No-op unless the table is restricted to the kept keys.
+    /// Re-inserts the kept keys, with empty states, into a table just emptied by a spill, so the
+    /// remaining rows of those keys keep being aggregated instead of being dropped by the
+    /// `ANY` overflow mode. No-op unless the table is restricted to the kept keys.
     void reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const;
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
