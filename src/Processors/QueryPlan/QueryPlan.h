@@ -272,6 +272,8 @@ private:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
+        size_t subquery_nesting_depth = 0;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
