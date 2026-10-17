@@ -48,6 +48,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -571,6 +572,38 @@ static std::string_view reverseComparisonOperator(std::string_view op)
     return {};
 }
 
+
+static std::optional<KeyCondition::RPNElement::DirectComparison::Operator> directComparisonOperator(
+    std::string_view comparison)
+{
+    using Operator = KeyCondition::RPNElement::DirectComparison::Operator;
+    if (comparison == "equals" || comparison == "isNotDistinctFrom") return Operator::Equals;
+    if (comparison == "notEquals") return Operator::NotEquals;
+    if (comparison == "less") return Operator::Less;
+    if (comparison == "lessOrEquals") return Operator::LessOrEquals;
+    if (comparison == "greater") return Operator::Greater;
+    if (comparison == "greaterOrEquals") return Operator::GreaterOrEquals;
+    return std::nullopt;
+}
+
+static void setDirectComparison(
+    KeyCondition::RPNElement & element,
+    std::string_view comparison,
+    const Field & value,
+    const DataTypePtr & type)
+{
+    const auto op = directComparisonOperator(comparison);
+    if (!op || !type)
+        return;
+
+    /// `tryBuildComparisonAtom` does not build an atom from a NULL constant, so the constant needs
+    /// neither Nullable nor LowCardinality wrappers.
+    chassert(!value.isNull());
+    element.direct_comparison = KeyCondition::RPNElement::DirectComparison{
+        *op,
+        std::make_shared<ConstantValue>(value, removeLowCardinalityAndNullable(type)),
+    };
+}
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -1625,9 +1658,11 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    bool preserve_direct_comparisons_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
+    , preserve_direct_comparisons(preserve_direct_comparisons_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
@@ -1887,6 +1922,65 @@ KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
+}
+
+bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
+{
+    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf
+    /// owned by this condition. An owned leaf is any atom other than `FUNCTION_UNKNOWN` and the
+    /// `ALWAYS_TRUE` / `ALWAYS_FALSE` constants (those represent neither a per-granule predicate
+    /// this index evaluates nor a position it writes into the partial-disjunction bitset).
+    std::vector<bool> owns_leaf;
+    owns_leaf.reserve(rpn.size());
+
+    for (const auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::ALWAYS_TRUE:
+            case RPNElement::ALWAYS_FALSE:
+                owns_leaf.push_back(false);
+                break;
+
+            case RPNElement::FUNCTION_NOT:
+                /// Unary: ownership of the operand is unchanged.
+                if (owns_leaf.empty())
+                    return false;
+                break;
+
+            case RPNElement::FUNCTION_AND:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                owns_leaf.back() = a || b;
+                break;
+            }
+
+            case RPNElement::FUNCTION_OR:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                if (a || b)
+                    return false; /// A disjunction crosses an owned leaf.
+                owns_leaf.back() = false;
+                break;
+            }
+
+            default:
+                /// An owned atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.).
+                owns_leaf.push_back(true);
+                break;
+        }
+    }
+
+    return owns_leaf.size() == 1;
 }
 
 
@@ -5895,6 +5989,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                 if (const_value.isNull())
                     return std::nullopt;
+                const_type = key_expr_type_not_null;
                 /// This exact conversion preserves the candidate's relaxation state.
             }
         }
@@ -5934,6 +6029,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                         return std::nullopt;
 
                     const_value = converted;
+                    const_type = common_type;
 
                     /// Only an exact conversion preserves the candidate's precision.
                     if (!key_expr_type_not_null->equals(*common_type))
@@ -5997,6 +6093,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
     if (!atom_it->second(element, const_value))
         return std::nullopt;
+
+    if (preserve_direct_comparisons)
+        setDirectComparison(element, func_name, const_value, const_type);
 
     return element;
 }
