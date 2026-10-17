@@ -677,9 +677,10 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 }
 
 /// A capped step keeps fewer groups, and so does every aggregation above it: all caps in the subtree are part of the key.
+/// So is the cutoff of each cap: the kept-keys one trims the tables to the cap, the per-stream one keeps whole blocks.
 static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UInt64 key)
 {
-    std::vector<std::pair<UInt64, UInt8>> caps;
+    std::vector<std::tuple<UInt64, UInt8, bool>> caps;
     bool has_cap = false;
     std::vector<const QueryPlan::Node *> stack{&aggregating_node};
     while (!stack.empty())
@@ -691,11 +692,14 @@ static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UI
             const auto & params = aggregating->getParams();
             if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
             {
-                caps.emplace_back(params.max_rows_to_group_by, static_cast<UInt8>(params.group_by_overflow_mode));
+                caps.emplace_back(
+                    params.max_rows_to_group_by,
+                    static_cast<UInt8>(params.group_by_overflow_mode),
+                    params.shared_kept_keys_for_overflow_any);
                 has_cap = true;
             }
             else
-                caps.emplace_back(0, 0);
+                caps.emplace_back(0, 0, false);
         }
         for (auto child = node->children.rbegin(); child != node->children.rend(); ++child)
             stack.push_back(*child);
@@ -706,10 +710,11 @@ static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UI
 
     SipHash hash;
     hash.update(key);
-    for (const auto & [max_rows, mode] : caps)
+    for (const auto & [max_rows, mode, kept_keys_cutoff] : caps)
     {
         hash.update(max_rows);
         hash.update(mode);
+        hash.update(kept_keys_cutoff);
     }
     return hash.get64();
 }

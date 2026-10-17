@@ -20,3 +20,6 @@ q05406_5c_nested_inner_capped	0
 q05406_5d_nested_after	2400000
 q05406_5e_nested_cap_unreached	0
 q05406_5f_nested_cap_unreached_warm	2400000
+q05406_6a_any_block_warm	1200000
+q05406_6b_limit_same_cap	0
+q05406_6c_any_block_after_limit	1200000

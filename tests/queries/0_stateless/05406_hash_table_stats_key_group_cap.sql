@@ -48,6 +48,13 @@ SELECT s, count() FROM (SELECT k, sum(k) AS s FROM t_05406 GROUP BY k) GROUP BY 
 SELECT s, count() FROM (SELECT k, sum(k) AS s FROM t_05406 GROUP BY k SETTINGS max_rows_to_group_by = 2000000, group_by_overflow_mode = 'any') GROUP BY s FORMAT Null SETTINGS log_comment = 'q05406_5e_nested_cap_unreached';
 SELECT s, count() FROM (SELECT k, sum(k) AS s FROM t_05406 GROUP BY k SETTINGS max_rows_to_group_by = 2000000, group_by_overflow_mode = 'any') GROUP BY s FORMAT Null SETTINGS log_comment = 'q05406_5f_nested_cap_unreached_warm';
 
+-- The same cap from the settings and from the planner cutoff: the settings cap keeps the whole first block, the cutoff only 10 keys.
+-- The entries of `numbers` are shared by every database, so the cold run is not checked.
+SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any';
+SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6a_any_block_warm';
+SELECT number AS k, count() FROM numbers(1200000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS max_block_size = 1200000, log_comment = 'q05406_6b_limit_same_cap';
+SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6c_any_block_after_limit';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['AggregationPreallocatedElementsInHashTables']
