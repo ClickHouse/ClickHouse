@@ -1,0 +1,15 @@
+-- JSONStringsEachRow, array in a string into Array plus an unrelated fractional value for a numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONCompactStringsEachRow, array in a string into Array plus an unrelated fractional value for a numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONStringsEachRow, tuple and map in strings plus an unrelated fractional value for a numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONStringsEachRow, genuinely non-numeric text into a numeric column (explanation still fires)
+insert failed as expected
+explanation present
+-- JSONEachRow, array as a string token into Array (genuine mismatch, still flagged)
+insert failed as expected
+explanation present

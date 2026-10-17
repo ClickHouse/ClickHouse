@@ -39,6 +39,14 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read) override { underlying->setBucketsToRead(buckets_to_read); }
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
+    void setHeaderRowsReadBefore(size_t rows) override { underlying->setHeaderRowsReadBefore(rows); }
+    /// `generate` of this wrapper bypasses `IInputFormat::generate`, so the diagnostic has to be attached
+    /// by the underlying format, which parses the values and throws the parse errors.
+    void setParseErrorDiagnosticProvider(std::function<String(std::optional<size_t>)> provider) override
+    {
+        underlying->setParseErrorDiagnosticProvider(std::move(provider));
+    }
+    std::optional<size_t> getRowsReachedOnParseError() const override { return underlying->getRowsReachedOnParseError(); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }

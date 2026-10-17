@@ -104,6 +104,28 @@ class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);
 
+    /// The values are typed BSON elements; the parser rejects a non-string value for a `String`
+    /// destination column (see `readAndInsertString`), unlike the flat-text formats, which read
+    /// every field verbatim into a `String` column.
+    bool readsAnyValueIntoStringColumn() const override { return false; }
+
+    /// Only a BSON `Int32` element is read straight into an `IPv4` column; `readAndInsertIPv4`
+    /// rejects `Int64` and `Double` elements, which schema inference reports as `Int64` / `Float64`.
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::Int32Only; }
+
+    /// A BSON `Bool` is accepted by `readAndInsertInteger`, but not by the dedicated decimal,
+    /// floating-point, `DateTime64`, or `IPv4` readers.
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::IntegerBacked; }
+
+    /// A BSON `Double` element is accepted only into a `Float*` column (`readAndInsertDouble`
+    /// rejects every other element type), and the integer element types are rejected for the
+    /// `Float*` columns in turn (`readAndInsertInteger` handles only the integer-backed ones).
+    bool storesTypedNumericValues() const override { return true; }
+
+    /// The parser resolves field names through `CaseAwareBlockNameMap`, honoring
+    /// `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

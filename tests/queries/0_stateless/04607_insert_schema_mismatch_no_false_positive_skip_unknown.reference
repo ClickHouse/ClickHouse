@@ -1,0 +1,6 @@
+-- a skipped unknown field is not a mismatch; the parse fails only on the fractional value
+insert failed as expected
+explanation missing
+-- with skipping disabled the parse fails on the unknown field itself; the differing structure is explained
+insert failed as expected
+explanation present

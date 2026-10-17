@@ -75,7 +75,7 @@ public:
     void skipTypes() override { skipHeaderRow(); }
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
-    void skipPrefixBeforeHeader() override;
+    size_t skipPrefixBeforeHeader() override;
 
     bool checkForEndOfRow() override;
 
@@ -116,6 +116,8 @@ public:
 
 private:
     bool allowVariableNumberOfColumns() const override { return format_settings.csv.allow_variable_number_of_columns; }
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
     std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;

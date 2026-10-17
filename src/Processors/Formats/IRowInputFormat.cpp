@@ -268,7 +268,7 @@ Chunk IRowInputFormat::read()
                 /// Error while trying to obtain verbose diagnostic. Ok to ignore.
             }
 
-            e.addMessage(fmt::format("(at row {})\n", total_rows));
+            e.addMessage(fmt::format("(at row {})\n", getDataRowNum()));
             e.addMessage(verbose_diagnostic);
             throw;
         }
@@ -307,6 +307,7 @@ void IRowInputFormat::resetParser()
 {
     IInputFormat::resetParser();
     total_rows = 0;
+    header_rows_read_before = 0;
     num_errors = 0;
     got_connection_exception = false;
     block_missing_values.clear();

@@ -285,14 +285,16 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
-void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+size_t TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
-    for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+    size_t skipped_rows = 0;
+    for (; skipped_rows != format_settings.tsv.skip_first_lines; ++skipped_rows)
     {
         if (buf->eof())
             break;
         readRow();
     }
+    return skipped_rows;
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()

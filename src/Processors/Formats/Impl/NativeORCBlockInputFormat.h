@@ -136,6 +136,25 @@ public:
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
 
+    /// The parser reads only the requested columns and never touches the rest of the file,
+    /// regardless of `input_format_skip_unknown_fields`.
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
+    /// The parser reads an ORC `int` source column (inferred as `Int32`) straight into the
+    /// `UInt32`-backed `IPv4` destination through an explicit `Int32` -> `IPv4` read path. Any other
+    /// numeric column is cast to `IPv4`, and `CAST` from a signed integer or a floating-point type
+    /// into `IPv4` is not implemented (ORC has no unsigned integers), so it fails.
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::Int32Only; }
+
+    bool castsStringSourceColumns() const override { return true; }
+
+    /// The data carries named columns that the parser maps onto the destination by name.
+    bool mapsColumnsByName() const override { return true; }
+
+    bool allowsMissingNamedColumns() const override { return format_settings.orc.allow_missing_columns; }
+
+    bool usesCaseInsensitiveColumnMatching() const override { return format_settings.orc.case_insensitive_column_matching; }
+
 private:
     void initializeIfNeeded();
 

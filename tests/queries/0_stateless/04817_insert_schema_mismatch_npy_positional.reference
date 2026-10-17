@@ -1,0 +1,4 @@
+-- truncated Npy of Int64 into a matching Int64 column: a plain corruption error, no structure mismatch (even with skip_unknown_fields = 0)
+explanation missing
+-- truncated Npy of String into an Int64 column: the genuine type mismatch is explained positionally
+explanation present

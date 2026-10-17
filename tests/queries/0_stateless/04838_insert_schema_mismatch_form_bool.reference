@@ -1,0 +1,4 @@
+-- Form: a numeric value other than 0/1 for a Bool column is a genuine structure mismatch
+explanation present
+-- Form: the numeric literal 1 for a Bool column is valid (no false positive)
+explanation missing

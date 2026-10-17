@@ -1,0 +1,4 @@
+-- BSONEachRow: an int32 value for a String column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a string value for a String column, only another field fails (no false positive)
+explanation missing

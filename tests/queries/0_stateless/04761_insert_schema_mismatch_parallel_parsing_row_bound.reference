@@ -1,0 +1,12 @@
+-- the first row fails on a value; a later conflicting row is not sampled (no false positive)
+insert failed as expected
+explanation missing
+-- the failing row itself is sampled: text where a number is expected (explanation still fires)
+insert failed as expected
+explanation present
+-- the failing row is deep in a later parser unit; rows up to it are sampled (explanation still fires)
+insert failed as expected
+explanation present
+-- the failing row is deep in a later parser unit; a conflicting row after it is not sampled (no false positive)
+insert failed as expected
+explanation missing
