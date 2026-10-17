@@ -36,7 +36,8 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 "
 
 mkfifo "${proxy_dir}/ports"
-exec 3<> "${proxy_dir}/ports"
+# Let Bash allocate a descriptor: shell_config.sh uses fd 3 for CI tracing.
+exec {ports_fd}<> "${proxy_dir}/ports"
 # A native client's application version is independent of its protocol revision.
 # Negotiate revision 54460 (as in clickhouse-go 2.31.0) and replace only the
 # application version in `Hello` and `ClientInfo`. All query/settings/data bytes are
@@ -157,12 +158,12 @@ with open(sys.argv[3], "w") as ready:
 threading.Event().wait()
 PYTHON
 proxy_pid=$!
-if ! read -r -t 30 application_port old_server_port <&3
+if ! read -r -t 30 application_port old_server_port <&"${ports_fd}"
 then
     echo 'Timed out waiting for the native-protocol proxy' >&2
     exit 1
 fi
-exec 3>&-
+exec {ports_fd}>&-
 
 # Two shards require aggregate-state blocks. Repeating on pooled interserver
 # connections also exercises the previous-query-kind state of `TCPHandler`.
