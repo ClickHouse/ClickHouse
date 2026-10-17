@@ -535,7 +535,10 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
         auto element = make_intrusive<ASTOrderByElement>();
         element->children.push_back(key);
         element->direction = direction;
-        element->nulls_direction = direction;
+        /// A `null` or a missing value orders before every other value in Mongo: first in an
+        /// ascending sort and last in a descending one.
+        element->nulls_direction = -1;
+        element->nulls_direction_was_explicitly_specified = true;
         order_by->children.push_back(std::move(element));
         order.keys.emplace_back(std::move(key), direction);
     }
@@ -611,16 +614,25 @@ void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
     group_by->children.push_back(std::move(key));
     chain.group_by = std::move(group_by);
 
+    /** The sort is on the columns the grouping produces, so the grouping is closed off first: in the
+      * same select, `_id` and `count` would name the columns of the source - which a pipeline asks
+      * to win over the aliases (`prefer_column_name_to_alias`) - rather than the key and the size
+      * of each group.
+      */
+    chain.wrap();
+
     auto element = make_intrusive<ASTOrderByElement>();
     element->children.push_back(make_intrusive<ASTIdentifier>("count"));
     element->direction = -1;
     element->nulls_direction = -1;
     /// Mongo leaves the order of the groups with equal counts unspecified; sorting them by the
-    /// key keeps the result deterministic.
+    /// key keeps the result deterministic. The group of the documents without a key comes first,
+    /// as `null` does in a sort of Mongo.
     auto tiebreak = make_intrusive<ASTOrderByElement>();
     tiebreak->children.push_back(make_intrusive<ASTIdentifier>("_id"));
     tiebreak->direction = 1;
-    tiebreak->nulls_direction = 1;
+    tiebreak->nulls_direction = -1;
+    tiebreak->nulls_direction_was_explicitly_specified = true;
     auto order_by = make_intrusive<ASTExpressionList>();
     order_by->children.push_back(std::move(element));
     order_by->children.push_back(std::move(tiebreak));

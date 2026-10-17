@@ -1,6 +1,5 @@
 #include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 
-#include <set>
 #include <string_view>
 #include <unordered_set>
 
@@ -197,24 +196,50 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
             {
                 /** `$addToSet` appends each value the array does not hold yet, and a value repeated in
                   * its `$each` only once; what the array already holds stays as it is, duplicates
-                  * included. Once the repeated candidates are dropped, a candidate can only be held
-                  * by the original array - never by what this same operator appends before it - so
-                  * each one is tested against the field itself, and the expression grows with the
-                  * number of candidates rather than doubling with each of them. The candidates are
-                  * constants, and equal ones are the same tree.
+                  * included. The repeated candidates are dropped by `arrayDistinct`, which compares
+                  * them by value, as `has` does - `1` and `1.0` are one candidate, though they are
+                  * different literals. It also drops `NULL`, which Mongo appends like any other
+                  * value, so each candidate is wrapped into a tuple, which is never `NULL`. Once the
+                  * repeated candidates are dropped, a candidate can only be held by the original
+                  * array - never by what this same operator appends before it - so each one is tested
+                  * against the field itself, and the expression grows with the number of candidates.
                   */
-                auto concatenated = makeASTFunction("arrayConcat", field());
-                std::set<std::pair<UInt64, UInt64>> seen;
-                for (auto & value : values)
+                if (values.empty())
                 {
-                    const auto hash = value->getTreeHash(/* ignore_aliases = */ true);
-                    if (!seen.emplace(hash.low64, hash.high64).second)
-                        continue;
-                    auto is_held = makeASTFunction("has", field(), value->clone());
-                    concatenated->arguments->children.push_back(
-                        makeASTFunction("if", std::move(is_held), makeASTFunction("array"), makeASTFunction("array", value)));
+                    result = field();
                 }
-                result = std::move(concatenated);
+                else
+                {
+                    auto candidates = makeASTFunction("array");
+                    for (auto & value : values)
+                        candidates->arguments->children.push_back(std::move(value));
+
+                    auto make_lambda = [](const char * parameter, ASTPtr body)
+                    {
+                        return makeASTFunction(
+                            "lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>(parameter)), std::move(body));
+                    };
+                    auto wrapped = makeASTFunction(
+                        "arrayMap",
+                        make_lambda("__mongo_value", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_value"))),
+                        std::move(candidates));
+                    auto distinct = makeASTFunction(
+                        "arrayMap",
+                        make_lambda(
+                            "__mongo_candidate",
+                            makeASTFunction(
+                                "tupleElement",
+                                make_intrusive<ASTIdentifier>("__mongo_candidate"),
+                                make_intrusive<ASTLiteral>(Field(UInt64(1))))),
+                        makeASTFunction("arrayDistinct", std::move(wrapped)));
+                    auto appended = makeASTFunction(
+                        "arrayFilter",
+                        make_lambda(
+                            "__mongo_element",
+                            makeASTFunction("not", makeASTFunction("has", field(), make_intrusive<ASTIdentifier>("__mongo_element")))),
+                        std::move(distinct));
+                    result = makeASTFunction("arrayConcat", field(), std::move(appended));
+                }
             }
             assignments.push_back(makeAssignment(column, std::move(result)));
         }
@@ -238,7 +263,11 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                 auto constant = tryParseMongoConstant(it->value);
                 if (!constant)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a constant is supported as the argument of '$pull'");
-                predicate = makeASTFunction("notEquals", element, constant);
+                /// `has` compares a `NULL` element equal to a `NULL` value, and any other element unequal
+                /// to it, while `notEquals` with a `NULL` on either side is `NULL`, which `arrayFilter`
+                /// takes as false: it would drop every element for a `null` value, and an element that
+                /// is `null` for any value.
+                predicate = makeASTFunction("not", makeASTFunction("has", makeASTFunction("array", constant), element));
             }
             else
             {

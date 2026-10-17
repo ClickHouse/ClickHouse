@@ -39,7 +39,10 @@ bool ParserMongoOrderBy::parseImpl(ASTPtr & node)
         const int direction = static_cast<int>(it->value.GetInt64());
         auto element = make_intrusive<ASTOrderByElement>();
         element->direction = direction;
-        element->nulls_direction = direction;
+        /// A `null` or a missing value orders before every other value in Mongo: first in an
+        /// ascending sort and last in a descending one.
+        element->nulls_direction = -1;
+        element->nulls_direction_was_explicitly_specified = true;
         element->children.push_back(make_intrusive<ASTIdentifier>(it->name.GetString()));
         result->children.push_back(element);
     }

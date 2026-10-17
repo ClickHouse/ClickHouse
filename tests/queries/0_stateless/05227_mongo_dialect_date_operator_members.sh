@@ -5,7 +5,7 @@
 #
 # Each query runs on its own rather than in a `.sql` file with `-- { clientError ... }` hints: a
 # comment is part of the query text in the Mongo dialect, so an annotation would change the query
-# it annotates. Dates are answered as seconds since the epoch, because the text a date prints in is
+# it annotates. Dates are answered as milliseconds since the epoch, as `$toLong` converts them, because the text a date prints in is
 # the one of its own type and would hide the instant behind the time zone.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

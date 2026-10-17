@@ -198,9 +198,6 @@ void requireArgumentCount(std::string_view operator_name, const std::vector<ASTP
 /// Operators that map onto a ClickHouse function of the same arity, argument for argument.
 const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$toString", "toString"},
-    {"$toLong", "toInt64"},
-    {"$toInt", "toInt32"},
-    {"$toDouble", "toFloat64"},
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
     {"$toUpper", "upper"},
@@ -228,7 +225,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$lte", "lessOrEquals"},
     {"$gt", "greater"},
     {"$gte", "greaterOrEquals"},
-    {"$subtract", "minus"},
     {"$divide", "divide"},
     {"$mod", "modulo"},
     {"$pow", "pow"},
@@ -257,7 +253,6 @@ const std::unordered_map<std::string_view, std::pair<std::string, std::optional<
 
 /// Operators that fold their arguments into a tree of binary applications.
 const std::unordered_map<std::string_view, std::string> folded_functions = {
-    {"$add", "plus"},
     {"$multiply", "multiply"},
 };
 
@@ -278,8 +273,9 @@ const rapidjson::Value & requireMember(const rapidjson::Value & value, const cha
 void rejectUnknownMembers(
     const rapidjson::Value & value, std::string_view operator_name, const std::unordered_set<std::string_view> & supported)
 {
+    /// The members of the document are looked up after this check, which only a document has.
     if (!value.IsObject())
-        return;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a document", operator_name);
     for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
     {
         auto name = stringView(it->name);
@@ -619,6 +615,207 @@ ASTPtr makeToBool(ASTPtr argument)
             makeLiteral(Field(UInt64(1)))));
 }
 
+/** The BSON type of a value is the type it holds in each row, which `dynamicType` names for a value
+  * of any type cast to `Dynamic` - including a path of a stored document, whose type is `Dynamic` as a
+  * whole. The operators below dispatch on it, and none of their branches may throw for a value of the
+  * type of another branch: the branch that is not taken may still be computed.
+  */
+ASTPtr makeRowType(const ASTPtr & value)
+{
+    return makeASTFunction("dynamicType", makeASTFunction("CAST", value->clone(), makeLiteral(Field(String("Dynamic")))));
+}
+
+ASTPtr makeIsDate(const ASTPtr & value)
+{
+    return makeASTFunction("match", makeRowType(value), makeLiteral(Field(String("^Date"))));
+}
+
+/// The value as a date of milliseconds, for a value that is a date; anything else is the Unix epoch
+/// rather than an error, in the branch that is not taken for it.
+ASTPtr makeDateOrEpoch(const ASTPtr & value)
+{
+    return makeASTFunction("accurateCastOrDefault", value->clone(), makeLiteral(Field(String("DateTime64(3, 'UTC')"))));
+}
+
+/// The milliseconds since the Unix epoch of a value that is a date, which is the number a BSON date is.
+ASTPtr makeMillisecondsOfDate(const ASTPtr & value)
+{
+    return makeASTFunction("toUnixTimestamp64Milli", makeDateOrEpoch(value));
+}
+
+/// A number as a count of milliseconds to move a date by: a fractional one is rounded, and anything
+/// that is not a number - a date, in the branch that is not taken for it - reads as zero.
+ASTPtr makeNumberAsFloat(const ASTPtr & value)
+{
+    return makeASTFunction("toFloat64OrZero", makeASTFunction("toString", value->clone()));
+}
+
+bool isNumericLiteral(const ASTPtr & value)
+{
+    const auto * literal = value->as<ASTLiteral>();
+    if (!literal)
+        return false;
+    const auto type = literal->value.getType();
+    return type == Field::Types::Int64 || type == Field::Types::UInt64 || type == Field::Types::Float64;
+}
+
+/** The lowering of `$toInt` and `$toLong`. Mongo truncates a fractional number toward zero, reads a
+  * boolean as 0 or 1 and a string as the integer it spells, converts a date into its milliseconds
+  * for `$toLong`, and raises an error for a value outside of the range of the result. The functions
+  * `toInt32` and `toInt64` would instead wrap an integer that does not fit around and read a date as
+  * seconds. So the value is turned into the text of the integer it converts to, and that text is
+  * converted by `accurateCast`, which refuses a text that does not spell an integer of the range.
+  */
+ASTPtr makeToInteger(ASTPtr argument, bool is_long)
+{
+    const String target = is_long ? "Int64" : "Int32";
+
+    if (const auto * literal = argument->as<ASTLiteral>())
+    {
+        switch (literal->value.getType())
+        {
+            case Field::Types::Null: return makeNull();
+            case Field::Types::Bool:
+                return makeLiteral(Field(literal->value.safeGet<bool>() ? Int64(1) : Int64(0)));
+            case Field::Types::Int64:
+            case Field::Types::UInt64:
+            case Field::Types::String:
+                return makeASTFunction("accurateCast", std::move(argument), makeLiteral(Field(target)));
+            case Field::Types::Float64:
+                return makeASTFunction("accurateCast", makeASTFunction("trunc", std::move(argument)), makeLiteral(Field(target)));
+            default: break;
+        }
+    }
+
+    auto type = makeRowType(argument);
+    auto text = makeASTFunction("toString", argument->clone());
+    auto truncated = makeASTFunction("toString", makeASTFunction("trunc", makeASTFunction("toFloat64OrZero", text->clone())));
+    /// A date has no `int` in Mongo, and the text that says so is what `accurateCast` refuses.
+    ASTPtr of_date = is_long ? makeASTFunction("toString", makeMillisecondsOfDate(argument))
+                             : makeLiteral(Field(String("a date cannot be converted to an int")));
+    auto integer_text = makeASTFunction(
+        "multiIf",
+        makeASTFunction("equals", type, makeLiteral(Field(String("None")))),
+        makeNull(),
+        makeASTFunction("equals", type->clone(), makeLiteral(Field(String("Bool")))),
+        makeASTFunction(
+            "if",
+            makeASTFunction("equals", text, makeLiteral(Field(String("true")))),
+            makeLiteral(Field(String("1"))),
+            makeLiteral(Field(String("0")))),
+        makeASTFunction("match", type->clone(), makeLiteral(Field(String("^(Float|Decimal)")))),
+        std::move(truncated),
+        makeASTFunction("match", type->clone(), makeLiteral(Field(String("^Date")))),
+        std::move(of_date),
+        text->clone());
+    return makeASTFunction("accurateCast", std::move(integer_text), makeLiteral(Field("Nullable(" + target + ")")));
+}
+
+/// The lowering of `$toDouble`, which converts a date into its milliseconds, as `$toLong` does, and a
+/// boolean into 0 or 1; `toFloat64` would read a date as seconds.
+ASTPtr makeToDouble(ASTPtr argument)
+{
+    /// A literal is never a date: `{"$date": ...}` is a function (see `tryParseMongoConstant`).
+    if (argument->as<ASTLiteral>())
+        return makeASTFunction("toFloat64", std::move(argument));
+
+    auto type = makeRowType(argument);
+    return makeASTFunction(
+        "multiIf",
+        makeASTFunction("match", type, makeLiteral(Field(String("^Date")))),
+        makeASTFunction("toFloat64", makeMillisecondsOfDate(argument)),
+        makeASTFunction("equals", type->clone(), makeLiteral(Field(String("Bool")))),
+        makeASTFunction("toFloat64", makeASTFunction("equals", makeASTFunction("toString", argument->clone()), makeLiteral(Field(String("true"))))),
+        makeASTFunction("toFloat64", argument->clone()));
+}
+
+/** The lowering of `$add`. Mongo adds a number to a date as milliseconds, while a ClickHouse date
+  * plus a number adds seconds, so a sum that has a date among its terms - at most one, as in Mongo -
+  * moves that date by the sum of the other terms, in milliseconds. The type of a value is known in
+  * each row only, so both sums are computed, and the one of the date is cast to the type of the plain
+  * sum, which is the type of the date for a column of dates and `Dynamic` for a path of a document.
+  * A numeric literal is not a date, which keeps a sum of a field and constants small.
+  */
+ASTPtr makeAdd(const std::vector<ASTPtr> & arguments)
+{
+    if (arguments.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$add' takes at least one argument");
+
+    ASTPtr sum = arguments[0];
+    for (size_t i = 1; i < arguments.size(); ++i)
+        sum = makeASTFunction("plus", sum, arguments[i]);
+
+    ASTPtr any_date;
+    std::vector<ASTPtr> date_of_term;
+    ASTPtr offset;
+    for (const auto & argument : arguments)
+    {
+        ASTPtr milliseconds = isNumericLiteral(argument) ? argument->clone() : makeNumberAsFloat(argument);
+        offset = offset ? makeASTFunction("plus", std::move(offset), std::move(milliseconds)) : std::move(milliseconds);
+
+        if (isNumericLiteral(argument))
+            continue;
+        any_date = any_date ? makeASTFunction("or", std::move(any_date), makeIsDate(argument)) : makeIsDate(argument);
+        date_of_term.push_back(makeIsDate(argument));
+        date_of_term.push_back(makeDateOrEpoch(argument));
+    }
+
+    if (!any_date)
+        return sum;
+
+    /// The date among the terms: the last branch is the value of the last term that can be one.
+    date_of_term.erase(date_of_term.end() - 2);
+    ASTPtr date = date_of_term.size() == 1 ? std::move(date_of_term.front()) : makeFunction("multiIf", std::move(date_of_term));
+    auto moved = makeASTFunction(
+        "addMilliseconds", std::move(date), makeASTFunction("toInt64", makeASTFunction("round", std::move(offset))));
+    return makeASTFunction(
+        "if", std::move(any_date), makeASTFunction("CAST", std::move(moved), makeASTFunction("toTypeName", sum->clone())), sum);
+}
+
+/** The lowering of `$subtract`: the difference of two dates is the number of milliseconds between
+  * them, and a date minus a number is the date moved back by that many milliseconds; ClickHouse would
+  * answer seconds for both. The branches are cast to one type, as in `$add`: the difference of two
+  * columns of dates is an integer of milliseconds rather than the decimal seconds `minus` answers.
+  */
+ASTPtr makeSubtract(const std::vector<ASTPtr> & arguments)
+{
+    requireArgumentCount("$subtract", arguments, 2);
+    const auto & minuend = arguments[0];
+    const auto & subtrahend = arguments[1];
+
+    auto difference = makeASTFunction("minus", minuend, subtrahend);
+    if (isNumericLiteral(minuend))
+        return difference;
+
+    auto is_date_type = [](const ASTPtr & value)
+    {
+        return makeASTFunction(
+            "match", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String("^(Nullable\\()?Date"))));
+    };
+    ASTPtr type = makeASTFunction("toTypeName", difference->clone());
+    if (!isNumericLiteral(subtrahend))
+        type = makeASTFunction(
+            "if",
+            makeASTFunction("and", is_date_type(minuend), is_date_type(subtrahend)),
+            makeLiteral(Field(String("Nullable(Int64)"))),
+            std::move(type));
+    auto cast = [&](ASTPtr value) { return makeASTFunction("CAST", std::move(value), type->clone()); };
+
+    std::vector<ASTPtr> branches;
+    if (!isNumericLiteral(subtrahend))
+    {
+        branches.push_back(makeASTFunction("and", makeIsDate(minuend), makeIsDate(subtrahend)));
+        branches.push_back(cast(makeASTFunction("minus", makeMillisecondsOfDate(minuend), makeMillisecondsOfDate(subtrahend))));
+    }
+    branches.push_back(makeIsDate(minuend));
+    branches.push_back(cast(makeASTFunction(
+        "addMilliseconds",
+        makeDateOrEpoch(minuend),
+        makeASTFunction("negate", makeASTFunction("toInt64", makeASTFunction("round", makeNumberAsFloat(subtrahend)))))));
+    branches.push_back(cast(std::move(difference)));
+    return makeFunction("multiIf", std::move(branches));
+}
+
 /** An operator that takes a part of a date, in the time zone it names and in UTC when it names none,
   * as in Mongo. The argument is the date itself, an array holding it, or the document of a `date` and
   * a `timezone`.
@@ -663,6 +860,26 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         requireArgumentCount(name, arguments, 1);
         return makeToBool(arguments[0]);
     }
+
+    if (name == "$toInt" || name == "$toLong")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToInteger(arguments[0], /* is_long = */ name == "$toLong");
+    }
+
+    if (name == "$toDouble")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToDouble(arguments[0]);
+    }
+
+    if (name == "$add")
+        return makeAdd(parseArguments(argument));
+
+    if (name == "$subtract")
+        return makeSubtract(parseArguments(argument));
 
     if (auto it = folded_functions.find(name); it != folded_functions.end())
     {
@@ -854,9 +1071,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$trim" || name == "$ltrim" || name == "$rtrim")
     {
+        /// `requireMember` checks that the argument is a document before its members are looked up.
+        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         if (argument.FindMember("chars") != argument.MemberEnd())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'chars' of '{}' is not supported", name);
-        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         const char * function = name == "$trim" ? "trimBoth" : (name == "$ltrim" ? "trimLeft" : "trimRight");
         return makeASTFunction(function, std::move(input));
     }
@@ -918,7 +1136,9 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 1);
-        auto body = makeASTFunction("toBool", make_intrusive<ASTIdentifier>("__mongo_element"));
+        /// Each element is true or false by its type, as `$toBool` decides, so that every string is
+        /// true, and an element that is `null` is false.
+        auto body = makeASTFunction("ifNull", makeToBool(make_intrusive<ASTIdentifier>("__mongo_element")), makeLiteral(Field(false)));
         return makeASTFunction(
             name == "$anyElementTrue" ? "arrayExists" : "arrayAll", makeLambda("__mongo_element", std::move(body)), arguments[0]);
     }
@@ -1127,9 +1347,12 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
 namespace
 {
 
-/** The keys of a preceding `$sort` as one expression to compare the documents of a group by: the
-  * key itself for a single key, and a tuple of them for several, which compares lexicographically
-  * the way a multiple key sort does.
+/** The keys of a preceding `$sort` as one expression to compare the documents of a group by: a
+  * tuple of them, which compares lexicographically the way a multiple key sort does.
+  *
+  * A `null` or a missing key orders before every value in Mongo, while `argMin` and `argMax` skip
+  * a row whose key is `NULL` and `arraySort` puts it last. So each key is preceded by whether it
+  * has a value, which orders the documents without one first, and the tuple is never `NULL`.
   *
   * The direction has to be the same for every key, because a tuple has one order for the whole of
   * it: a sort by `{"a": 1, "b": -1}` is not the order of any tuple of `a` and `b`, so it is
@@ -1152,12 +1375,12 @@ std::pair<ASTPtr, int> makeGroupOrderKey(const MongoGroupOrder & order, std::str
                 "The accumulator '{}' after a '$sort' whose keys do not share one direction is not supported",
                 accumulator);
 
-    if (order.keys.size() == 1)
-        return {order.keys.front().first->clone(), direction};
-
     auto keys = makeASTFunction("tuple");
     for (const auto & key : order.keys)
+    {
+        keys->arguments->children.push_back(makeASTFunction("isNotNull", key.first->clone()));
         keys->arguments->children.push_back(key.first->clone());
+    }
     return {keys, direction};
 }
 
