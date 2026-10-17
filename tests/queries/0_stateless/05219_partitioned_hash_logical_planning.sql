@@ -8,6 +8,8 @@ SET allow_general_join_planning = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET enable_join_runtime_filters = 0, query_plan_join_swap_table = false, query_plan_merge_filter_into_join_condition = 0;
 SET optimize_extract_common_expressions = 1;
+-- The reference shows the one-sided condition as a `Prewhere filter column`.
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_phj_lp_l;
 DROP TABLE IF EXISTS t_phj_lp_r;
