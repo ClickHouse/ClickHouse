@@ -797,6 +797,17 @@ def test_merge_keeps_child_table_capabilities(started_cluster):
     assert int(total_rows) == 10, total_rows
     assert int(total_bytes) > 0, total_bytes
 
+    # optimize_functions_to_subcolumns must fire under FINAL through the wrapper: the nested table
+    # is a ReplacingMergeTree (row-selecting), so isNull(value) is rewritten to the `value.null`
+    # subcolumn for both a direct wrapper read and a Merge over it (Merge ANDs the child capability).
+    for source in (f"test_database.{table_name}", "merge_over_matpg"):
+        explain = instance.query(
+            "EXPLAIN QUERY TREE dump_ast = 1 "
+            f"SELECT isNull(value) FROM {source} FINAL "
+            "SETTINGS optimize_functions_to_subcolumns = 1"
+        )
+        assert "value.null" in explain, explain
+
     instance.query("DROP TABLE merge_over_matpg")
 
 
