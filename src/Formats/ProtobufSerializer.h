@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_PROTOBUF
@@ -41,7 +42,7 @@ public:
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,
         const DataTypes & data_types,
-        std::vector<size_t> & missing_column_indices,
+        VectorWithMemoryTracking<size_t> & missing_column_indices,
         const ProtobufSchemas::DescriptorHolder & descriptor,
         bool with_length_delimiter,
         bool with_envelope,

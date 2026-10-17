@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/BitHelpers.h>
 #include <Common/Logger.h>
@@ -38,7 +40,7 @@ namespace DB::Parquet
 
 void AtomicBitSet::resize(size_t bits)
 {
-    a = std::vector<std::atomic<UInt64>>((bits + 63) / 64);
+    a = VectorWithMemoryTracking<std::atomic<UInt64>>((bits + 63) / 64);
 }
 
 std::optional<size_t> AtomicBitSet::findFirst()
@@ -52,7 +54,7 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<VectorWithMemoryTracking<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
 
@@ -61,7 +63,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
 
     if (buckets_to_read_)
     {
-        row_groups_to_read = std::unordered_set<UInt64>{};
+        row_groups_to_read = UnorderedSetWithMemoryTracking<UInt64>{};
         for (auto rg : *buckets_to_read_)
             row_groups_to_read->insert(rg);
     }
@@ -247,7 +249,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     }
 
     /// Determine what stage to transition to and which columns are involved.
-    std::vector<Task> add_tasks;
+    VectorWithMemoryTracking<Task> add_tasks;
     while (true) // loop over skipped stages
     {
         chassert(stage < ReadStage::Deallocated);
@@ -372,7 +374,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         releaseTopKAdmission(row_group_idx, diff);
 }
 
-void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff)
+void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, VectorWithMemoryTracking<Task> add_tasks, MemoryUsageDiff & diff)
 {
     LOG_TEST(getLogger("ParquetReadManager"), "setTasksToSchedule: row_group_idx={}, stage={}, add_tasks={}", row_group_idx, static_cast<Int32>(stage), add_tasks.size());
     for (const auto & task : add_tasks)
@@ -398,7 +400,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
-    std::vector<Task> add_tasks;
+    VectorWithMemoryTracking<Task> add_tasks;
 
     while (true) // offset index, then data
     {
@@ -712,7 +714,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
     Stage & stage = stages.at(size_t(stage_idx));
     MemoryUsageDiff diff(stage_idx);
-    std::vector<Task> tasks;
+    VectorWithMemoryTracking<Task> tasks;
 
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
@@ -792,7 +794,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
         /// Group tiny tasks into batches to reduce scheduling overhead.
         /// TODO [parquet]: Try removing this (along with cost_estimate_bytes field).
-        std::vector<std::function<void()>> funcs;
+        VectorWithMemoryTracking<std::function<void()>> funcs;
         funcs.reserve(std::min(tasks.size(), limits.parsing_threads) + 1);
         size_t bytes_per_batch = size_t(diff.by_stage[size_t(stage_idx)]) / limits.parsing_threads;
         size_t tasks_per_batch = tasks.size() / limits.parsing_threads;
@@ -801,7 +803,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         {
             size_t bytes = 0;
             size_t n = 0;
-            std::vector<Task> batch;
+            VectorWithMemoryTracking<Task> batch;
             while (i < tasks.size() && bytes <= bytes_per_batch && n <= tasks_per_batch)
             {
                 batch.push_back(tasks[i]);
@@ -836,12 +838,12 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     }
 }
 
-void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks)
+void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks)
 {
     LOG_TEST(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
 
     /// Kick off prefetches and count estimated memory usage.
-    std::vector<PrefetchHandle *> prefetches;
+    VectorWithMemoryTracking<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
     ssize_t memory_before = diff.by_stage[size_t(diff.cur_stage)];
     if (task.column_idx != UINT64_MAX)
@@ -929,7 +931,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
     out_tasks.push_back(task);
 }
 
-void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
+void ReadManager::runBatchOfTasks(const VectorWithMemoryTracking<Task> & tasks) noexcept
 {
     ReadStage stage = tasks.at(0).stage;
     size_t column_idx = UINT64_MAX;

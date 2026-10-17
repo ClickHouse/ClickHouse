@@ -662,7 +662,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
 
         std::optional<ColumnsWithTypeAndName> header;
-        std::vector<Chunk> chunks;
+        Chunks chunks;
         Block block;
         while (executor.pull(block))
         {
@@ -1069,7 +1069,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
             auto header = getHeader(block.getColumnsWithTypeAndName());
             rows = block.rows();
             bytes = block.bytes();
-            std::vector<Chunk> chunks;
+            Chunks chunks;
             chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
             std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::calculateArrowTable(
                 header, "Arrow", chunks,
@@ -1118,7 +1118,7 @@ arrow::Status ArrowFlightServer::DoGet(
     auto impl = [&]
     {
         LOG_INFO(log, "DoGet is called for ticket {}", commandForLogging(request.ticket));
-        std::vector<Chunk> chunks;
+        Chunks chunks;
         std::shared_ptr<arrow::Table> table;
         bool should_cancel_ticket = false;
 

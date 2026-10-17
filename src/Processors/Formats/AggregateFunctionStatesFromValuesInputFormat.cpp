@@ -1,4 +1,5 @@
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -110,7 +111,7 @@ ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction 
     }
 
     /// The function is created for the argument types without LowCardinality, as usual for aggregation.
-    std::vector<const IColumn *> argument_column_ptrs;
+    VectorWithMemoryTracking<const IColumn *> argument_column_ptrs;
     argument_column_ptrs.reserve(argument_columns.size());
     for (auto & argument_column : argument_columns)
     {

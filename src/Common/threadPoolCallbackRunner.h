@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
@@ -421,7 +422,7 @@ public:
 
     void operator()(std::function<void()> f);
 
-    void bulkSchedule(std::vector<std::function<void()>> fs);
+    void bulkSchedule(VectorWithMemoryTracking<std::function<void()>> fs);
 
     /// Returns true if a task was run, false if queue is empty.
     bool runTaskInline();

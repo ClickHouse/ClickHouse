@@ -1,13 +1,15 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB::Parquet
 {
 
 struct AtomicBitSet
 {
-    std::vector<std::atomic<UInt64>> a;
+    VectorWithMemoryTracking<std::atomic<UInt64>> a;
 
     void resize(size_t bits);
 
@@ -40,7 +42,7 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_);
+    void init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<VectorWithMemoryTracking<size_t>> & buckets_to_read_);
 
     ~ReadManager();
 
@@ -101,7 +103,7 @@ private:
         /// So each pair <row group, stage> is a sequence of groups of tasks, and their scheduling
         /// doesn't need any mutexes.
         AtomicBitSet schedulable_row_groups;
-        std::vector<std::vector<Task>> row_group_tasks_to_schedule;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<Task>> row_group_tasks_to_schedule;
     };
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -113,11 +115,11 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
+    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
     /// Nullopt means that ReadManager reads all row groups
-    std::optional<std::unordered_set<UInt64>> row_groups_to_read;
+    std::optional<UnorderedSetWithMemoryTracking<UInt64>> row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
     struct TopKAdmission
@@ -131,7 +133,7 @@ private:
     };
     TopKAdmission top_k_admission;
 
-    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
+    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
     /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
     /// reader's memory high watermark minus what the `Dictionary` stage already holds (the decoded
@@ -142,7 +144,7 @@ private:
     /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
     /// `Reader::applyBloomAndDictionaryFilters`).
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
-    void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
+    void runBatchOfTasks(const VectorWithMemoryTracking<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
@@ -150,7 +152,7 @@ private:
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
-    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
+    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, VectorWithMemoryTracking<Task> add_tasks, MemoryUsageDiff & diff);
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void admitTopKRowGroups(MemoryUsageDiff & diff);

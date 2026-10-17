@@ -1,3 +1,4 @@
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/Hive/StorageHive.h>
 
 #if USE_HIVE
@@ -197,7 +198,7 @@ public:
         }
     }
 
-    FormatSettings updateFormatSettings(const std::unordered_set<int> & skip_splits)
+    FormatSettings updateFormatSettings(const UnorderedSetWithMemoryTracking<int> & skip_splits)
     {
         auto updated = format_settings;
         if (format == "HiveText")
@@ -749,7 +750,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     /// This set depends on the query filter, so it is kept query-local rather than stored on the shared
     /// cached file: an unfiltered read leaves it empty (read all splits), and concurrent queries with
     /// different filters do not interfere with each other's pruning.
-    std::unordered_set<int> skip_splits;
+    UnorderedSetWithMemoryTracking<int> skip_splits;
 
     if (filter_actions_dag && prune_level >= PruneLevel::File)
     {

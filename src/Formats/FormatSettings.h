@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <base/types.h>
@@ -411,7 +412,7 @@ struct FormatSettings
         bool enable_row_group_prefetch = true;
         bool verify_checksums = true;
         bool local_time_as_utc = true;
-        std::unordered_set<int> skip_row_groups = {};
+        UnorderedSetWithMemoryTracking<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t local_read_min_bytes_for_seek = 8192;
@@ -587,7 +588,7 @@ struct FormatSettings
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
-        std::unordered_set<int> skip_stripes = {};
+        UnorderedSetWithMemoryTracking<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool filter_push_down = true;
