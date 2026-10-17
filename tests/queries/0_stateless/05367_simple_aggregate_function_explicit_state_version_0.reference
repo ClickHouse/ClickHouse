@@ -1,0 +1,40 @@
+saf_v0	p0	AggregateFunction(quantileDeterministic, UInt64, UInt64)
+saf_v0	s0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0	sv	SimpleAggregateFunction(anyLast, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))
+saf_v0	t0	SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(quantileDeterministic, UInt64, UInt64), AggregateFunction(1, quantileDeterministic, UInt64, UInt64)))
+saf_v0	a0	Array(SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	n0	Nested(s SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	q0	AggregateFunction(uniq, UInt64)
+saf_v0	u0	SimpleAggregateFunction(any, AggregateFunction(uniq, UInt64))
+saf_v0	m0	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt8), Array(Decimal(9, 2))))
+saf_v0	ns0	SimpleAggregateFunction(anyLast, SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	c0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0_ctas	s0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0_variant	v	SimpleAggregateFunction(anyLast, Variant(AggregateFunction(1, quantileDeterministic, UInt64, UInt64), AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+0	1	1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1	1	1
+2	1	1	1	1	1	1	1	1	1
+saf_v0	p0	AggregateFunction(quantileDeterministic, UInt64, UInt64)
+saf_v0	s0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0	sv	SimpleAggregateFunction(anyLast, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))
+saf_v0	t0	SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(quantileDeterministic, UInt64, UInt64), AggregateFunction(1, quantileDeterministic, UInt64, UInt64)))
+saf_v0	a0	Array(SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	n0	Nested(s SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	q0	AggregateFunction(uniq, UInt64)
+saf_v0	u0	SimpleAggregateFunction(any, AggregateFunction(uniq, UInt64))
+saf_v0	m0	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt8), Array(Decimal(9, 2))))
+saf_v0	ns0	SimpleAggregateFunction(anyLast, SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+saf_v0	c0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0_ctas	s0	SimpleAggregateFunction(anyLast, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+saf_v0_variant	v	SimpleAggregateFunction(anyLast, Variant(AggregateFunction(1, quantileDeterministic, UInt64, UInt64), AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+0	13.5	13.5	13.5	13.5	13.5	13.5	13.5	10	([0,1],[60,75])	13.5
+1	14.5	14.5	14.5	14.5	14.5	14.5	14.5	10	([0,1],[80,65])	14.5
+2	15.5	15.5	15.5	15.5	15.5	15.5	15.5	10	([0,1],[70,85])	15.5
+0	13.5
+1	14.5
+2	15.5
+0	AggregateFunction(quantileDeterministic, UInt64, UInt64)	14.5
+1	AggregateFunction(1, quantileDeterministic, UInt64, UInt64)	14.5
+0	1	1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1	1	1
+2	1	1	1	1	1	1	1	1	1
