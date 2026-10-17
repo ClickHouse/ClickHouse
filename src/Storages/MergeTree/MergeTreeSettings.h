@@ -83,17 +83,17 @@ struct MergeTreeSettings
 
     MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    bool has(std::string_view name) const;
-    bool isChanged(std::string_view name) const;
+    [[nodiscard]] bool has(std::string_view name) const;
+    [[nodiscard]] bool isChanged(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
-    Field get(std::string_view name) const;
+    [[nodiscard]] Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
 
-    SettingsChanges changes() const;
+    [[nodiscard]] SettingsChanges changes() const;
     /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
-    SettingsChanges changesFrom(const MergeTreeSettings & base) const;
+    [[nodiscard]] SettingsChanges changesFrom(const MergeTreeSettings & base) const;
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     /// For the computations that derive a value from the settings a statement would leave behind, and
@@ -103,19 +103,19 @@ struct MergeTreeSettings
     /// disk, and the directory it created, behind. The settings update itself resolves it, see
     /// `MergeTreeData::changeSettings`.
     void applyChangesLeavingDiskUnresolved(const SettingsChanges & changes);
-    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     static std::vector<std::string_view> getAllAliasNames();
-    std::string_view getDescription(std::string_view name) const;
-    std::string_view getTypeName(std::string_view name) const;
-    String getDefaultValueString(std::string_view name) const;
-    SettingsTierType getTier(std::string_view name) const;
+    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
+    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
+    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
+    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
-    bool needSyncPart(size_t input_rows, size_t input_bytes) const;
+    [[nodiscard]] bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;

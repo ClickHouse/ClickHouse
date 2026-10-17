@@ -70,9 +70,9 @@ namespace
             }
         }
 
-        bool hasError() const { return !error_message.empty(); }
-        size_t getErrorPos() const { return error_pos; }
-        const String & getErrorMessage() const { return error_message; }
+        [[nodiscard]] bool hasError() const { return !error_message.empty(); }
+        [[nodiscard]] size_t getErrorPos() const { return error_pos; }
+        [[nodiscard]] const String & getErrorMessage() const { return error_message; }
 
     protected:
         void syntaxError(antlr4::Recognizer * /* recognizer */, antlr4::Token * offending_symbol,
@@ -101,7 +101,7 @@ namespace
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
         /// we need to convert them to a byte offset.
-        size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
+        [[nodiscard]] size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
             if (line != 1)
@@ -456,7 +456,7 @@ namespace
             return matcher;
         }
 
-        bool matcherMatchesEmptyString(const Matcher & matcher) const
+        [[nodiscard]] bool matcherMatchesEmptyString(const Matcher & matcher) const
         {
             switch (matcher.matcher_type)
             {

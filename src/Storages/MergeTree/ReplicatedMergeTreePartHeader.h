@@ -32,10 +32,10 @@ public:
     static ReplicatedMergeTreePartHeader fromString(const String & str);
 
     void write(WriteBuffer & out) const;
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
-    const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
-    const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
+    [[nodiscard]] const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
+    [[nodiscard]] const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
 
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)

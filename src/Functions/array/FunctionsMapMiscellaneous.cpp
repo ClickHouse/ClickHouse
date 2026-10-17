@@ -71,7 +71,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     static constexpr bool has_low_cardinality_specialization
         = requires(const ColumnsWithTypeAndName & args, const DataTypePtr & type, size_t rows)
@@ -82,7 +82,7 @@ public:
     /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h).
     /// Only adapters that implement executeWithLowCardinalityColumns have it, and only those
     /// functions are registered wrapped in the mixin.
-    ColumnPtr tryExecuteLowCardinality(
+    [[nodiscard]] ColumnPtr tryExecuteLowCardinality(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
         requires has_low_cardinality_specialization
     {
@@ -99,17 +99,17 @@ public:
     /// types follow the lambda (just like `arrayMap`).
     static constexpr bool preserve_nested_low_cardinality = Adapter::preserve_low_cardinality && !std::is_same_v<Impl, FunctionArrayMap>;
 
-    bool isVariadic() const override { return impl.isVariadic(); }
-    size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
-    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] bool isVariadic() const override { return impl.isVariadic(); }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         if constexpr (preserve_nested_low_cardinality)
             return false;
         return impl.useDefaultImplementationForLowCardinalityColumns();
     }
-    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
     /// Per-`Name` opt-in to declarative signatures:
     /// - `Name::signature` (authoritative): the DSL is used directly; the
@@ -120,7 +120,7 @@ public:
     ///   `system.functions` but the adapter override stays authoritative —
     ///   used when the result type depends on the wrapped `Impl`'s widening
     ///   logic or on a value-side dispatch (e.g. `mapConcat`, `mapApply`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;
@@ -134,7 +134,7 @@ public:
     /// An adapter may opt out via `Adapter::first_argument_is_lambda = false` when its
     /// user-facing first argument is not a lambda (for example, `MapLikeAdapter` accepts
     /// a Map and a string pattern, and synthesises the lambda internally).
-    bool isHigherOrderFunction() const override
+    [[nodiscard]] bool isHigherOrderFunction() const override
     {
         if constexpr (requires { Adapter::first_argument_is_lambda; })
             if (!Adapter::first_argument_is_lambda)
@@ -148,7 +148,7 @@ public:
         impl.getLambdaArgumentTypes(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// With `Name::signature` (authoritative) the base types-only path applies the DSL.
         if constexpr (requires { Name::signature; })
@@ -166,7 +166,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// When `Name::signature` (authoritative) is set, delegate to the base
         /// path so the DSL drives the result. Otherwise run the legacy adapter
@@ -219,7 +219,7 @@ public:
             return Adapter::wrapType(nested_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto nested_arguments = arguments;
         extractNestedTypesAndColumns(nested_arguments);
@@ -443,18 +443,18 @@ class FunctionMapKeyLike final : public IFunction
 {
 public:
     FunctionMapKeyLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
-    String getName() const override { return "mapKeyLike"; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return "mapKeyLike"; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypes new_arguments{arguments[1], arguments[0]};
         return impl.getReturnTypeImpl(new_arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName new_arguments{arguments[1], arguments[0]};
         return impl.executeImpl(new_arguments, result_type, input_rows_count);
@@ -471,18 +471,18 @@ class FunctionMapValueLike final : public IFunction
 {
 public:
 FunctionMapValueLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
-    String getName() const override { return "mapValueLike"; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return "mapValueLike"; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypes new_arguments{arguments[2], arguments[0]};
         return impl.getReturnTypeImpl(new_arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName new_arguments{arguments[2], arguments[0]};
         return impl.executeImpl(new_arguments, result_type, input_rows_count);
@@ -860,15 +860,15 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (!map_type)
@@ -883,7 +883,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         auto map_column = arguments[0].column->convertToFullColumnIfConst();
         const auto & map = assert_cast<const ColumnMap &>(*map_column);

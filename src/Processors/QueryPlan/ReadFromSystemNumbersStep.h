@@ -24,11 +24,11 @@ public:
         size_t max_block_size_,
         size_t num_streams_);
 
-    String getName() const override { return "ReadFromSystemNumbers"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemNumbers"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     Pipe makePipe();

@@ -77,7 +77,7 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
         /// NodePath is invalid.
         FullNode node;
 
-        const Node * get() const { return node.action == NodeAction::Remove ? nullptr : &node; }
+        [[nodiscard]] const Node * get() const { return node.action == NodeAction::Remove ? nullptr : &node; }
     };
 
     struct UncommittedNodeRef
@@ -86,7 +86,7 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
         /// Has digest. Has correct NodePath length and depth but likely invalidated NodePath::ptr.
         FullNode node;
 
-        const Node * get() const { return node.action == NodeAction::Remove ? nullptr : &node; }
+        [[nodiscard]] const Node * get() const { return node.action == NodeAction::Remove ? nullptr : &node; }
     };
 
     struct NodesReadView;

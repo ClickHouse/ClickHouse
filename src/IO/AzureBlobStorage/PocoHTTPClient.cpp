@@ -96,7 +96,7 @@ class EmptyBodyStream : public Azure::Core::IO::BodyStream
 public:
     EmptyBodyStream() = default;
 
-    int64_t Length() const override
+    [[nodiscard]] int64_t Length() const override
     {
         return 0;
     }
@@ -126,7 +126,7 @@ public:
     {
     }
 
-    int64_t Length() const override
+    [[nodiscard]] int64_t Length() const override
     {
         return length;
     }

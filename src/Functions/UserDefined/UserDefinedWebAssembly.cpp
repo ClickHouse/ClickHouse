@@ -113,9 +113,9 @@ public:
 
     /// Arguments and the result cross the boundary as WebAssembly values, so guest memory is
     /// never touched.
-    bool requiresGuestLinearMemory() const override { return false; }
+    [[nodiscard]] bool requiresGuestLinearMemory() const override { return false; }
 
-    bool serializesInputBlockToGuestMemory() const override { return false; }
+    [[nodiscard]] bool serializesInputBlockToGuestMemory() const override { return false; }
 
     void checkSignature() const
     {
@@ -234,10 +234,10 @@ public:
     {
     }
 
-    WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}, stop_token); }
+    [[nodiscard]] WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}, stop_token); }
     void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}, stop_token); }
 
-    std::span<uint8_t> getMemoryView(WasmPtr handle) const override
+    [[nodiscard]] std::span<uint8_t> getMemoryView(WasmPtr handle) const override
     {
         if (handle == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wasm buffer is nullptr");
@@ -270,9 +270,9 @@ public:
 
     /// The input block is serialized into a buffer the guest allocates, and the result read
     /// back from guest memory.
-    bool requiresGuestLinearMemory() const override { return true; }
+    [[nodiscard]] bool requiresGuestLinearMemory() const override { return true; }
 
-    bool serializesInputBlockToGuestMemory() const override { return true; }
+    [[nodiscard]] bool serializesInputBlockToGuestMemory() const override { return true; }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
     {
@@ -1087,7 +1087,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     struct SettingStringFromSet
     {
-        SettingDefinition withDefault(String default_value) const
+        [[nodiscard]] SettingDefinition withDefault(String default_value) const
         {
             return SettingDefinition(
                 [values_ = this->values](std::string_view name, Field & value) // NOLINT
@@ -1109,7 +1109,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     struct SettingBool
     {
-        SettingDefinition withDefault(bool default_value) const
+        [[nodiscard]] SettingDefinition withDefault(bool default_value) const
         {
             return SettingDefinition(
                 [](std::string_view name, Field & value)
@@ -1148,7 +1148,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"is_spatial_predicate", SettingBool{}.withDefault(false)},
     };
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         result.reserve(settings_def.size());
@@ -1165,7 +1165,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         it->second.normalize_and_check(name, value);
     }
 
-    Field getDefault(const String & name) const
+    [[nodiscard]] Field getDefault(const String & name) const
     {
         auto it = settings_def.find(name);
         if (it == settings_def.end())

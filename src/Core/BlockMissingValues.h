@@ -20,9 +20,9 @@ public:
     void init(size_t num_columns);
 
     /// Get mask for column, column_idx is index inside corresponding block
-    const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
+    [[nodiscard]] const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
     /// Check that we have to replace default value at least in one of columns
-    bool hasDefaultBits(size_t column_idx) const;
+    [[nodiscard]] bool hasDefaultBits(size_t column_idx) const;
     /// Set bit for a specified row in a single column.
     void setBit(size_t column_idx, size_t row_idx);
     /// Set bits for all rows in a single column.
@@ -30,8 +30,8 @@ public:
     void setBitsFromNullMap(size_t column_idx, const PaddedPODArray<UInt8> & null_map);
 
     void clear();
-    bool empty() const;
-    size_t getNumColumns() const;
+    [[nodiscard]] bool empty() const;
+    [[nodiscard]] size_t getNumColumns() const;
 
 private:
     using RowsMaskByColumnId = VectorWithMemoryTracking<RowsBitMask>;

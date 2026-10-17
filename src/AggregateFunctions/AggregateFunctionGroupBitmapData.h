@@ -63,8 +63,8 @@ private:
     }
 
 public:
-    bool isLarge() const { return roaring_bitmap != nullptr; }
-    bool isSmall() const { return roaring_bitmap == nullptr; }
+    [[nodiscard]] bool isLarge() const { return roaring_bitmap != nullptr; }
+    [[nodiscard]] bool isSmall() const { return roaring_bitmap == nullptr; }
 
     void add(T value)
     {
@@ -114,7 +114,7 @@ public:
         }
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         if (isSmall())
             return small.size();
@@ -198,7 +198,7 @@ public:
     /**
      * Get a new RoaringBitmap from elements of small
      */
-    std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
+    [[nodiscard]] std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
         std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)

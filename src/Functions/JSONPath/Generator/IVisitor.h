@@ -8,7 +8,7 @@ template <typename JSONParser>
 class IVisitor
 {
 public:
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
 
     /**
      * Applies this visitor to document and mutates its state

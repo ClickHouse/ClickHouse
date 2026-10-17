@@ -33,10 +33,10 @@ public:
     virtual size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) = 0;
 
     /// Upper bound on the encoded size of one block (1..BLOCK_SIZE values), in bytes.
-    virtual size_t maxBlockBytes() const = 0;
+    [[nodiscard]] virtual size_t maxBlockBytes() const = 0;
 
     /// The codec type recorded in each segment header.
-    virtual IPostingListCodec::Type type() const = 0;
+    [[nodiscard]] virtual IPostingListCodec::Type type() const = 0;
 };
 
 /// Creates the per-block payload codec for `type`. Throws for `None` (it has no blocks).

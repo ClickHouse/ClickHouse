@@ -143,27 +143,27 @@ public:
             regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return Impl::supports_start_pos || ImplSupportsEscape<Impl>::value; }
+    [[nodiscard]] bool isVariadic() const override { return Impl::supports_start_pos || ImplSupportsEscape<Impl>::value; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         if (Impl::supports_start_pos || ImplSupportsEscape<Impl>::value)
             return 0;
         return 2;
     }
 
-    bool useDefaultImplementationForConstants() const override { return Impl::use_default_implementation_for_constants; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return Impl::use_default_implementation_for_constants; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return Impl::getArgumentsThatAreAlwaysConstant();
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String elem = DataTypeNumber<typename Impl::ResultType>{}.getName();
         const String ret = (execution_error_policy == ExecutionErrorPolicy::Null)
@@ -182,7 +182,7 @@ public:
             return "(" + haystack + ") -> " + ret;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
@@ -224,7 +224,7 @@ public:
         return distinct_names;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto & haystack_argument = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         ColumnPtr column_haystack = haystack_argument.column;
@@ -300,7 +300,7 @@ public:
                             || enum_value_to_index[static_cast<size_t>(shifted)] == enum_undefined_index)
                         {
                             /// Throws `UNKNOWN_ELEMENT_OF_ENUM`, matching the `castColumn` behavior.
-                            enum_type.getNameForValue(enum_data[i]);
+                            (void)enum_type.getNameForValue(enum_data[i]);
                         }
                     }
 

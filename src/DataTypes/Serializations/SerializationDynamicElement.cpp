@@ -50,7 +50,7 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant{};
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;

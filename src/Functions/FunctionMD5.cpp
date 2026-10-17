@@ -102,15 +102,15 @@ class FunctionMD5Base : public IFunction
 public:
     static constexpr auto name = "MD5";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0])) [[unlikely]]
             throw Exception(
@@ -953,7 +953,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionMD5Impl>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }

@@ -279,7 +279,7 @@ TEST(BackupInfo, WithoutS3CredentialsRejectsNonLiteralExtraCredentialsValueWitho
     auto info = BackupInfo::fromString(
         "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = headers('Authorization' = 'SECRET')))");
 
-    EXPECT_THROW(info.withoutS3Credentials(), Exception);
+    EXPECT_THROW((void)info.withoutS3Credentials(), Exception);
 }
 
 TEST(BackupInfo, WithoutS3CredentialsStripsUnrecognizedTrailingFunction)

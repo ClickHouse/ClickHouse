@@ -83,27 +83,27 @@ public:
 
     void insert(std::string_view child);
     void erase(std::string_view child);
-    size_t size() const;
-    bool empty() const;
-    bool contains(std::string_view child) const;
+    [[nodiscard]] size_t size() const;
+    [[nodiscard]] bool empty() const;
+    [[nodiscard]] bool contains(std::string_view child) const;
     void clear();
     void reserve(size_t n);
 
-    ConstIterator begin() const;
-    ConstIterator end() const;
+    [[nodiscard]] ConstIterator begin() const;
+    [[nodiscard]] ConstIterator end() const;
 
     /// Returns the number of bytes allocated on the heap for this container.
     /// Zero for empty/single states (inline storage), approximate for set mode.
-    size_t heapSizeInBytes() const;
+    [[nodiscard]] size_t heapSizeInBytes() const;
 
 private:
-    bool isSet() const { return ptr != nullptr && name_size == 0; }
-    bool isSingle() const { return ptr != nullptr && name_size != 0; }
-    bool isEmpty() const { return ptr == nullptr; }
+    [[nodiscard]] bool isSet() const { return ptr != nullptr && name_size == 0; }
+    [[nodiscard]] bool isSingle() const { return ptr != nullptr && name_size != 0; }
+    [[nodiscard]] bool isEmpty() const { return ptr == nullptr; }
 
-    std::string_view asSingle() const { return {ptr, name_size}; }
+    [[nodiscard]] std::string_view asSingle() const { return {ptr, name_size}; }
 
-    const ChildrenSet * asSet() const
+    [[nodiscard]] const ChildrenSet * asSet() const
     {
         return reinterpret_cast<const ChildrenSet *>(ptr);
     }

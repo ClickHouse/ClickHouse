@@ -30,7 +30,7 @@ protected:
 
     size_t payload_size = 0;
 
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 

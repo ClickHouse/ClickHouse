@@ -136,7 +136,7 @@ public:
 
     /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
     /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
-    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+    [[nodiscard]] virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -452,7 +452,7 @@ class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 public:
     using ImplWithContext::ImplWithContext;
 
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+    [[nodiscard]] bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
@@ -475,7 +475,7 @@ public:
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
     /// with 0 (the default) meaning no limit.
-    UInt64 getLimitParam() const
+    [[nodiscard]] UInt64 getLimitParam() const
     {
         String limit_param = params->get("limit", "");
         if (limit_param.empty())
@@ -661,7 +661,7 @@ private:
     }
 
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
-    Int64 getMetadataLimitParam(const String & name) const
+    [[nodiscard]] Int64 getMetadataLimitParam(const String & name) const
     {
         String value = params->get(name, "");
         if (value.empty())

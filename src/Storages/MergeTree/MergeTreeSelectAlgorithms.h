@@ -17,8 +17,8 @@ public:
 
     virtual ~IMergeTreeSelectAlgorithm() = default;
 
-    virtual String getName() const = 0;
-    virtual bool needNewTask(const MergeTreeReadTask & task) const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
+    [[nodiscard]] virtual bool needNewTask(const MergeTreeReadTask & task) const = 0;
 
     virtual MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) = 0;
     virtual BlockAndProgress readFromTask(MergeTreeReadTask & task) = 0;
@@ -31,8 +31,8 @@ class MergeTreeThreadSelectAlgorithm : public IMergeTreeSelectAlgorithm
 public:
     explicit MergeTreeThreadSelectAlgorithm(size_t thread_idx_) : thread_idx(thread_idx_) {}
 
-    String getName() const override { return "Thread"; }
-    bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
+    [[nodiscard]] String getName() const override { return "Thread"; }
+    [[nodiscard]] bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override { return pool.getTask(thread_idx, previous_task); }
     BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }
@@ -46,8 +46,8 @@ class MergeTreeInOrderSelectAlgorithm : public IMergeTreeSelectAlgorithm
 public:
     explicit MergeTreeInOrderSelectAlgorithm(size_t part_idx_) : part_idx(part_idx_) {}
 
-    String getName() const override { return "InOrder"; }
-    bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
+    [[nodiscard]] String getName() const override { return "InOrder"; }
+    [[nodiscard]] bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
     MergeTreeReadTask::BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }
@@ -61,8 +61,8 @@ class MergeTreeInReverseOrderSelectAlgorithm : public IMergeTreeSelectAlgorithm
 public:
     explicit MergeTreeInReverseOrderSelectAlgorithm(size_t part_idx_) : part_idx(part_idx_) {}
 
-    String getName() const override { return "InReverseOrder"; }
-    bool needNewTask(const MergeTreeReadTask & task) const override { return chunks.empty() && task.isFinished(); }
+    [[nodiscard]] String getName() const override { return "InReverseOrder"; }
+    [[nodiscard]] bool needNewTask(const MergeTreeReadTask & task) const override { return chunks.empty() && task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
     BlockAndProgress readFromTask(MergeTreeReadTask & task) override;
@@ -75,8 +75,8 @@ private:
 class MergeTreeProjectionIndexSelectAlgorithm : public IMergeTreeSelectAlgorithm
 {
 public:
-    String getName() const override { return "ProjectionIndex"; }
-    bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
+    [[nodiscard]] String getName() const override { return "ProjectionIndex"; }
+    [[nodiscard]] bool needNewTask(const MergeTreeReadTask & task) const override { return task.isFinished(); }
 
     MergeTreeReadTaskPtr getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task) override;
     MergeTreeReadTask::BlockAndProgress readFromTask(MergeTreeReadTask & task) override { return task.read(); }

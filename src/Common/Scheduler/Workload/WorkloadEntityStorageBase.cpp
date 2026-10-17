@@ -201,7 +201,7 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
-    std::vector<IWorkloadEntityStorage::Event> toEvents() const
+    [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{getEntityType(before), name, {}}};

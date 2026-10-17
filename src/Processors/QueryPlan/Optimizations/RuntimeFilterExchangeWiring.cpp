@@ -447,7 +447,7 @@ private:
     }
 
     /// An inner level sends to its parent level; the root sends to every receiving task.
-    std::vector<MergeRuntimeFiltersStep::Output> levelOutputs(size_t level) const
+    [[nodiscard]] std::vector<MergeRuntimeFiltersStep::Output> levelOutputs(size_t level) const
     {
         if (level + 1 < level_sizes.size())
             return {{level_exchanges[level + 1], /*destination_buckets=*/{}}};
@@ -464,7 +464,7 @@ private:
         return outputs;
     }
 
-    DistributedQueryTask makeMergeTask(
+    [[nodiscard]] DistributedQueryTask makeMergeTask(
         size_t level, size_t index, const Strings & child_buckets, const std::vector<MergeRuntimeFiltersStep::Output> & outputs) const
     {
         const String bucket = toString(index);

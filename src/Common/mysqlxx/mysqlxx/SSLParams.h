@@ -32,7 +32,7 @@ struct SSLParams
     std::string cert_pem;
     std::string key_pem;
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return ca_path.empty() && cert_path.empty() && key_path.empty() && ca_pem.empty() && cert_pem.empty() && key_pem.empty();
     }
@@ -50,9 +50,9 @@ public:
     /// Materializes the PEM contents into temporary files. Throws if they cannot be written.
     explicit ResolvedSSLPaths(const SSLParams & params);
 
-    const std::string & getCA() const { return ca; }
-    const std::string & getCert() const { return cert; }
-    const std::string & getKey() const { return key; }
+    [[nodiscard]] const std::string & getCA() const { return ca; }
+    [[nodiscard]] const std::string & getCert() const { return cert; }
+    [[nodiscard]] const std::string & getKey() const { return key; }
 
 private:
     std::string ca;

@@ -235,7 +235,7 @@ class FiberLocal
     static_assert(static_cast<uintptr_t>(default_value) == fiberLocalSlotDefault(slot), "default_value must match fiberLocalSlotDefault");
 
 public:
-    T get() const requires FiberLocalStoredInline<T> { return FiberLocalStorage::load<T, slot>(); }
+    [[nodiscard]] T get() const requires FiberLocalStoredInline<T> { return FiberLocalStorage::load<T, slot>(); }
     operator T() const requires FiberLocalStoredInline<T> { return get(); } /// NOLINT(google-explicit-constructor)
     T operator->() const requires (FiberLocalStoredInline<T> && std::is_pointer_v<T>) { return get(); }
 
@@ -245,7 +245,7 @@ public:
         return *this;
     }
 
-    T & get() const requires (!FiberLocalStoredInline<T>) { return FiberLocalStorage::heapObject<T, slot>(); }
+    [[nodiscard]] T & get() const requires (!FiberLocalStoredInline<T>) { return FiberLocalStorage::heapObject<T, slot>(); }
     operator T &() const requires (!FiberLocalStoredInline<T>) { return get(); } /// NOLINT(google-explicit-constructor)
     T & operator*() const requires (!FiberLocalStoredInline<T>) { return get(); }
     T * operator->() const requires (!FiberLocalStoredInline<T>) { return &get(); }

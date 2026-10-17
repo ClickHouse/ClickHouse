@@ -10,7 +10,7 @@ class ReadFromQueryResultCacheStep : public ReadFromPreparedSource
 public:
     explicit ReadFromQueryResultCacheStep(Pipe pipe_);
 
-    String getName() const override { return "ReadFromQueryResultCacheStep"; }
+    [[nodiscard]] String getName() const override { return "ReadFromQueryResultCacheStep"; }
 };
 
 }

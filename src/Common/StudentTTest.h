@@ -29,12 +29,12 @@ private:
             squares_sum += value * value;
         }
 
-        double avg() const
+        [[nodiscard]] double avg() const
         {
             return sum / static_cast<double>(size);
         }
 
-        double var() const
+        [[nodiscard]] double var() const
         {
             return (squares_sum - (sum * sum / static_cast<double>(size))) / static_cast<double>(size - 1);
         }
@@ -55,5 +55,5 @@ public:
     void add(size_t distribution, double value);
 
     /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above. TODO: Trash - no separation of concepts in code.
-    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
+    [[nodiscard]] std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
 };

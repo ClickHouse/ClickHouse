@@ -212,7 +212,7 @@ struct IndexesSerializationType
                             "Expected ColumnUInt*, got {}", column.getName());
     }
 
-    DataTypePtr getDataType() const
+    [[nodiscard]] DataTypePtr getDataType() const
     {
         if (type == TUInt8)
             return std::make_shared<DataTypeUInt8>();
@@ -262,7 +262,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         return std::make_shared<DeserializeStateLowCardinality>(*this);
     }

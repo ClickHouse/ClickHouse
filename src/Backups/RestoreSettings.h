@@ -207,15 +207,15 @@ struct RestoreSettings
     SettingsChanges core_settings;
 
     /// Effective values: explicit setting takes priority, otherwise structure_only inverts the default.
-    bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
-    bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
-    bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
     /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
-    std::map<String, String> getSerializedSettings() const;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const;
 
     /// Returns only the non-restore-specific settings from a `RESTORE` query.
     /// In contrast to `fromRestoreQuery`, this helper does not touch the

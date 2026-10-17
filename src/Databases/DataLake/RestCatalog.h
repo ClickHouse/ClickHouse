@@ -111,7 +111,7 @@ public:
         /// (in filesystem or object storage).
         std::string default_base_location;
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /// Credentials together with the catalog configuration they resolve to

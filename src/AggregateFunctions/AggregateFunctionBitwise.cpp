@@ -192,14 +192,14 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
     {}
 
-    String getName() const override { return Data::name(); }
+    [[nodiscard]] String getName() const override { return Data::name(); }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -276,7 +276,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         auto return_type = this->getResultType();
         return canBeNativeType(*return_type);

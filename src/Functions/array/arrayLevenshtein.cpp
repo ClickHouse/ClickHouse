@@ -38,14 +38,14 @@ public:
     static constexpr auto name = T::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayLevenshtein<T>>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return T::arguments; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return T::arguments; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { T::signature; })
             return T::signature;
@@ -53,7 +53,7 @@ public:
             return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args_descriptors;
         args_descriptors = FunctionArgumentDescriptors{
@@ -89,7 +89,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
 
@@ -113,7 +113,7 @@ public:
         return execute(columns);
     }
 private:
-    ColumnPtr execute(VectorWithMemoryTracking<const ColumnArray *>) const
+    [[nodiscard]] ColumnPtr execute(VectorWithMemoryTracking<const ColumnArray *>) const
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -426,7 +426,7 @@ private:
         return (levenshteinString<Types, ResultColumn>(columns, res_values) || ...);
     }
 
-    ColumnPtr levenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    [[nodiscard]] ColumnPtr levenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
     {
         auto res = ColumnUInt32::create();
         ColumnUInt32::Container & res_values = res->getData();
@@ -458,7 +458,7 @@ private:
         return res;
     }
 
-    ColumnPtr weightedLevenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    [[nodiscard]] ColumnPtr weightedLevenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
     {
         for (size_t i = 0; i < 2; i++)
         {

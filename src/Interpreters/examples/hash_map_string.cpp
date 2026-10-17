@@ -50,9 +50,9 @@ struct CompactStringRef
     [[maybe_unused]] explicit CompactStringRef(const std::string & s) : CompactStringRef(s.data(), s.size()) {}
     CompactStringRef() = default;
 
-    const char * data() const { return reinterpret_cast<const char *>(reinterpret_cast<intptr_t>(data_mixed) & 0x0000FFFFFFFFFFFFULL); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(reinterpret_cast<intptr_t>(data_mixed) & 0x0000FFFFFFFFFFFFULL); }
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    [[nodiscard]] [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
 };
 
 inline bool operator==(CompactStringRef lhs, CompactStringRef rhs)
@@ -267,19 +267,19 @@ struct Grower : public HashTableGrower<>
     size_t max_fill = (1ULL << initial_size_degree) * 9 / 10;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const               { return 1ULL << size_degree; }
+    [[nodiscard]] size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return max_fill /*1 << (size_degree - 1)*/; }
-    size_t mask() const                  { return bufSize() - 1; }
+    [[nodiscard]] size_t maxFill() const               { return max_fill /*1 << (size_degree - 1)*/; }
+    [[nodiscard]] size_t mask() const                  { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const         { return x & mask(); }
+    [[nodiscard]] size_t place(size_t x) const         { return x & mask(); }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const        { ++pos; return pos & mask(); }
+    [[nodiscard]] size_t next(size_t pos) const        { ++pos; return pos & mask(); }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const    { return elems > maxFill(); }
+    [[nodiscard]] bool overflow(size_t elems) const    { return elems > maxFill(); }
 
     /// Increase the size of the hash table.
     void increaseSize()

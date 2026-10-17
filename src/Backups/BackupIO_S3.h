@@ -69,7 +69,7 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    std::map<String, String> getSerializedSettings() const override;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
 
 private:
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,

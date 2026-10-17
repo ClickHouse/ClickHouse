@@ -426,7 +426,7 @@ void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try
     {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
+        (void)getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
     }
     catch (const DB::HTTPException & e)
     {

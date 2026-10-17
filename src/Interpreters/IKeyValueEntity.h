@@ -19,7 +19,7 @@ public:
 
     /// Get primary key name that supports key-value requests.
     /// Primary key can constist of multiple columns.
-    virtual Names getPrimaryKey() const = 0;
+    [[nodiscard]] virtual Names getPrimaryKey() const = 0;
 
     /*
      * Get data from storage directly by keys.
@@ -45,7 +45,7 @@ public:
         IColumn::Offsets & out_offsets) const = 0;
 
     /// Header for getByKeys result
-    virtual Block getSampleBlock(const Names & required_columns) const = 0;
+    [[nodiscard]] virtual Block getSampleBlock(const Names & required_columns) const = 0;
 
 protected:
     /// Names of result columns. If empty then all columns are required.

@@ -171,11 +171,11 @@ OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_j
 class EmptyStatistics : public IOptimizerStatistics
 {
 public:
-    std::optional<UInt64> getCardinality(const String & /*table_name*/) const override { return std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> getCardinality(const String & /*table_name*/) const override { return std::nullopt; }
 
-    std::optional<UInt64> getNumberOfDistinctValues(const String & /*table_name*/, const String & /*column_name*/) const override { return std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> getNumberOfDistinctValues(const String & /*table_name*/, const String & /*column_name*/) const override { return std::nullopt; }
 
-    std::optional<Float64> getAvgRowBytes(const String & /*table_name*/) const override { return std::nullopt; }
+    [[nodiscard]] std::optional<Float64> getAvgRowBytes(const String & /*table_name*/) const override { return std::nullopt; }
 };
 
 OptimizerStatisticsPtr createEmptyStatistics()

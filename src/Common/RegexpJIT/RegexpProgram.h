@@ -31,7 +31,7 @@ struct CharSet
     std::array<uint64_t, 4> bitmap{};
 
     void add(uint8_t c) { bitmap[c >> 6] |= (1ULL << (c & 63u)); }
-    bool contains(uint8_t c) const { return (bitmap[c >> 6] >> (c & 63u)) & 1u; }
+    [[nodiscard]] bool contains(uint8_t c) const { return (bitmap[c >> 6] >> (c & 63u)) & 1u; }
 
     void addRange(uint8_t lo, uint8_t hi)
     {
@@ -51,7 +51,7 @@ struct CharSet
             bitmap[i] |= other.bitmap[i];
     }
 
-    bool intersects(const CharSet & other) const
+    [[nodiscard]] bool intersects(const CharSet & other) const
     {
         for (size_t i = 0; i < 4; ++i)
             if (bitmap[i] & other.bitmap[i])
@@ -59,7 +59,7 @@ struct CharSet
         return false;
     }
 
-    size_t count() const
+    [[nodiscard]] size_t count() const
     {
         size_t n = 0;
         for (auto word : bitmap)
@@ -69,7 +69,7 @@ struct CharSet
 
     /// True if every member is a single ASCII byte (no byte >= 0x80). Such a set matches the same span
     /// byte-wise as RE2 matches code-point-wise, so any quantifier (including fixed counts) is safe.
-    bool isAsciiOnly() const { return bitmap[2] == 0 && bitmap[3] == 0; }
+    [[nodiscard]] bool isAsciiOnly() const { return bitmap[2] == 0 && bitmap[3] == 0; }
 
     /// Fold ASCII case: if a letter is present, add its other case. Used for case-insensitive matching.
     void foldAsciiCase()

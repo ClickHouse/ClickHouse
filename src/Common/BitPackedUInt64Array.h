@@ -24,11 +24,11 @@ public:
     BitPackedUInt64Array() = default;
     explicit BitPackedUInt64Array(std::span<const UInt64> values);
 
-    UInt64 get(size_t idx) const;
+    [[nodiscard]] UInt64 get(size_t idx) const;
 
-    size_t size() const { return num_values; }
-    bool empty() const { return num_values == 0; }
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t size() const { return num_values; }
+    [[nodiscard]] bool empty() const { return num_values == 0; }
+    [[nodiscard]] size_t allocatedBytes() const;
 
 private:
     struct BlockInfo

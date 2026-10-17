@@ -54,8 +54,8 @@ public:
         const String & comment;
         bool is_restore_from_backup = false;
 
-        ContextMutablePtr getContext() const;
-        ContextMutablePtr getLocalContext() const;
+        [[nodiscard]] ContextMutablePtr getContext() const;
+        [[nodiscard]] ContextMutablePtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -96,7 +96,7 @@ public:
 
     using Storages = std::unordered_map<std::string, Creator>;
 
-    StoragePtr get(
+    [[nodiscard]] StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
         ContextMutablePtr local_context,
@@ -124,18 +124,18 @@ public:
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
 
-    const Storages & getAllStorages() const
+    [[nodiscard]] const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
     {
         auto it = storages.find(name);
         return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -144,7 +144,7 @@ public:
     }
 
     using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
-    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    [[nodiscard]] std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
     {
         std::vector<String> result;
         for (const auto& pair : storages)
@@ -153,9 +153,9 @@ public:
         return result;
     }
 
-    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
+    [[nodiscard]] std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+    [[nodiscard]] const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
 private:
     Storages storages;

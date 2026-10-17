@@ -33,7 +33,7 @@ struct ContingencyData : CrossTabAggregateData
     *   = sqrt(φ² / (φ² + 1)).
     **/
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -51,7 +51,7 @@ struct ContingencyWindowData : CrossTabPhiSquaredWindowData
         return ContingencyData::getName();
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();

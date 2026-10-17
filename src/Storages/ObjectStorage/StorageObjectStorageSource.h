@@ -122,9 +122,9 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        ObjectInfoPtr getObjectInfo() const { return object_info; }
-        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-        ReadBuffer * readBuffer() const { return read_buf.get(); }
+        [[nodiscard]] ObjectInfoPtr getObjectInfo() const { return object_info; }
+        [[nodiscard]] const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        [[nodiscard]] ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -348,26 +348,26 @@ public:
             IArchiveReader::FileInfo && file_info_,
             std::optional<size_t> archive_entry_index_);
 
-        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
+        [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile() const;
 
-        std::string getFileName() const override
+        [[nodiscard]] std::string getFileName() const override
         {
             return path_in_archive;
         }
 
-        std::string getPath() const override
+        [[nodiscard]] std::string getPath() const override
         {
             return archive_object->getPath() + "::" + path_in_archive;
         }
 
-        std::string getPathToArchive() const override
+        [[nodiscard]] std::string getPathToArchive() const override
         {
             return archive_object->getPath();
         }
 
-        bool isArchive() const override { return true; }
+        [[nodiscard]] bool isArchive() const override { return true; }
 
-        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+        [[nodiscard]] size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;

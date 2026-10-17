@@ -31,21 +31,21 @@ public:
 
     Chunk pull();
 
-    bool hasEnoughRows() const;
+    [[nodiscard]] bool hasEnoughRows() const;
 
-    size_t rowsToInsertBeforeFlush(
+    [[nodiscard]] size_t rowsToInsertBeforeFlush(
         const ColumnRawPtrs & raw_columns,
         size_t start_index,
         size_t max_rows,
         size_t block_size) const;
 
-    UInt64 mergedRows() const { return merged_rows; }
-    UInt64 totalMergedRows() const { return total_merged_rows; }
-    UInt64 totalChunks() const { return total_chunks; }
-    UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
-    UInt64 maxBlockSize() const { return max_block_size; }
+    [[nodiscard]] UInt64 mergedRows() const { return merged_rows; }
+    [[nodiscard]] UInt64 totalMergedRows() const { return total_merged_rows; }
+    [[nodiscard]] UInt64 totalChunks() const { return total_chunks; }
+    [[nodiscard]] UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
+    [[nodiscard]] UInt64 maxBlockSize() const { return max_block_size; }
 
-    IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
+    [[nodiscard]] IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
 
     /// Hint for the row-by-row insertion fast path. When the merge cannot receive any
     /// `ColumnReplicated` input (no source column is replicated, e.g. a plain sort with no JOIN),
@@ -54,7 +54,7 @@ public:
     /// algorithm that lowers this to `false` MUST raise it back to `true` before any replicated
     /// column can reach `insertRow` (e.g. from a late-arriving chunk in `consume`).
     void setMayHaveReplicatedColumns(bool value) { may_have_replicated_columns = value; }
-    bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
+    [[nodiscard]] bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
 
     virtual ~MergedData() = default;
 

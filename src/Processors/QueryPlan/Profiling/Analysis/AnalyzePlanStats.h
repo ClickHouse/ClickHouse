@@ -43,7 +43,7 @@ public:
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
     /// Empty when the work intervals were not collected, that is without the `time` setting.
-    std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
+    [[nodiscard]] std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
 private:
     void collectIOStats(const Processors & processors);

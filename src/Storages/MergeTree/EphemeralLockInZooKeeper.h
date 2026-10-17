@@ -50,12 +50,12 @@ public:
         return *this;
     }
 
-    bool isLocked() const
+    [[nodiscard]] bool isLocked() const
     {
         return zookeeper.get();
     }
 
-    String getPath() const
+    [[nodiscard]] String getPath() const
     {
         checkCreated();
         return path;
@@ -63,12 +63,12 @@ public:
 
     // In case of async inserts, we try to get locks for multiple inserts and need to know which insert is conflicted.
     // That's why we need this function.
-    String getConflictPath() const
+    [[nodiscard]] String getConflictPath() const
     {
         return conflict_path;
     }
 
-    UInt64 getNumber() const
+    [[nodiscard]] UInt64 getNumber() const
     {
         checkCreated();
         return number;
@@ -155,7 +155,7 @@ public:
         UInt64 number = 0;
     };
 
-    const std::vector<LockInfo> & getLocks() const { return locks; }
+    [[nodiscard]] const std::vector<LockInfo> & getLocks() const { return locks; }
 
     void unlock();
     void assumeUnlocked();
@@ -200,7 +200,7 @@ public:
 
     void assumeUnlocked();
     void getUnlockOps(Coordination::Requests & ops) const;
-    const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
+    [[nodiscard]] const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 
     void reset()
     {

@@ -71,7 +71,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    String getContainerEndpoint() const
+    [[nodiscard]] String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -92,7 +92,7 @@ struct Endpoint
         return url;
     }
 
-    String getServiceEndpoint() const
+    [[nodiscard]] String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -131,15 +131,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    [[nodiscard]] bool IsClientForDisk() const;
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
+    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
-    String GetBlobPath(const String & blob_name) const;
+    [[nodiscard]] BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -156,11 +156,11 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
-    String getContainer() const { return endpoint.container_name; }
-    String getConnectionURL() const;
+    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
+    [[nodiscard]] String getConnectionURL() const;
 
-    std::unique_ptr<ServiceClient> createForService() const;
-    std::unique_ptr<ContainerClient> createForContainer() const;
+    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
+    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);

@@ -27,7 +27,7 @@ public:
         registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<Parser>(); });
     }
 
-    const std::unordered_set<Creator> & getCreators() const { return creators; }
+    [[nodiscard]] const std::unordered_set<Creator> & getCreators() const { return creators; }
 
 private:
     std::unordered_set<Creator> creators;

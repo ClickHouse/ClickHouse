@@ -158,13 +158,13 @@ struct FunctionDocumentation
     /// always use braces when building the documentation field by field afterwards.
     const char * source = std::source_location::current().file_name();
 
-    String syntaxAsString() const;
-    String argumentsAsString() const;
-    String parametersAsString() const;
-    String returnedValueAsString() const;
-    String examplesAsString() const;
-    String introducedInAsString() const;
-    String categoryAsString() const;
+    [[nodiscard]] String syntaxAsString() const;
+    [[nodiscard]] String argumentsAsString() const;
+    [[nodiscard]] String parametersAsString() const;
+    [[nodiscard]] String returnedValueAsString() const;
+    [[nodiscard]] String examplesAsString() const;
+    [[nodiscard]] String introducedInAsString() const;
+    [[nodiscard]] String categoryAsString() const;
 
     /// Use as a placeholder for internal functions that have no public documentation
     static FunctionDocumentation INTERNAL_FUNCTION_DOCS;

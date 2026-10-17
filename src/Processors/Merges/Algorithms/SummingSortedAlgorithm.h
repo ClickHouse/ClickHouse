@@ -33,12 +33,12 @@ public:
         bool aggregate_all_columns,
         bool allow_tuple_element_aggregation);
 
-    const char * getName() const override { return "SummingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     struct AggregateDescription;
     struct MapDescription;
@@ -96,7 +96,7 @@ public:
         void startGroup(ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        bool isGroupStarted() const { return is_group_started; }
+        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
         void addRow(ColumnRawPtrs & raw_columns, size_t row); /// Possible only when group was started.
 
         Chunk pull();

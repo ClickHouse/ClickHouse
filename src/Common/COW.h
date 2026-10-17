@@ -205,7 +205,7 @@ protected:
         template <typename U>
         chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
 
-        const T * get() const { return value.get(); }
+        [[nodiscard]] const T * get() const { return value.get(); }
         T * get() { return &value->assumeMutableRef(); }
 
         const T * operator->() const { return get(); }

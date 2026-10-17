@@ -30,14 +30,14 @@ public:
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
-    String getName() const override { return "ReadFromParallelReplicas"; }
+    [[nodiscard]] String getName() const override { return "ReadFromParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
     void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
-    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+    [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
     Pipes addPipes(const SharedHeader & out_header);

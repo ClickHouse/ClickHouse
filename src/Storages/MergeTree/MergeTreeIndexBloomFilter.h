@@ -25,14 +25,14 @@ public:
 
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, const std::vector<HashSet<UInt64>> & column_hashes);
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
+    [[nodiscard]] const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 
 private:
     const size_t bits_per_row;
@@ -81,9 +81,9 @@ public:
         NameSet columns_shadowing_map_subcolumns_,
         JSONIndexArgumentTypes json_argument_types_);
 
-    bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const override
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
             return mayBeTrueOnGranule(bf_granule, update_partial_result_disjuntion_fn);
@@ -91,7 +91,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
 
-    std::string getDescription() const override { return ""; }
+    [[nodiscard]] std::string getDescription() const override { return ""; }
 
 private:
     const Block & header;
@@ -130,7 +130,7 @@ class MergeTreeIndexAggregatorBloomFilter final : public IMergeTreeIndexAggregat
 public:
     MergeTreeIndexAggregatorBloomFilter(size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_);
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
@@ -155,9 +155,9 @@ public:
         size_t bits_per_row_,
         size_t hash_functions_);
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 

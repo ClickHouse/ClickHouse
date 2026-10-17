@@ -305,7 +305,7 @@ std::shared_ptr<const QueryResultCacheOnDisk> QueryResultCacheOnDisk::getFromSet
 
     const String & codec_name = settings[Setting::query_cache_on_disk_codec].value;
     if (enable_writes)
-        CompressionCodecFactory::instance().get(codec_name); /// validate the codec early, a misconfiguration must fail the query
+        (void)CompressionCodecFactory::instance().get(codec_name); /// validate the codec early, a misconfiguration must fail the query
 
     return std::make_shared<const QueryResultCacheOnDisk>(
         file_cache, enable_reads, enable_writes, codec_name,

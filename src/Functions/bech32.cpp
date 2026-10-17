@@ -115,26 +115,26 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// Not injective: on any encoding error - most easily, data too long for a valid Bech32 string -
     /// the function returns an empty string, so arbitrarily many distinct inputs share that result.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, StringOrFixedString, [NativeUInt | String]) -> String";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool have_witness_version = false;
         bool have_encoding_variant = false;
@@ -397,26 +397,26 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBech32Representation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// Bech32 and Bech32m are each bijective, but since our decode function accepts either of them,
     /// then decode(bech32(input)) == decode(bech32m(input))
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, [String]) -> Tuple(String, String)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool raw_mode = false;
         if (arguments.size() == 2)

@@ -173,7 +173,7 @@ public:
         IteratorPtr iterator_,
         FileSegmentKeyType type);
 
-    EntryPtr getEntry() const override;
+    [[nodiscard]] EntryPtr getEntry() const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
     void remove() override;
@@ -186,17 +186,17 @@ public:
 
     void decrementSize(size_t size) override;
 
-    QueueEntryType getType() const override
+    [[nodiscard]] QueueEntryType getType() const override
     {
         return type == FileSegmentKeyType::Data
             ? QueueEntryType::SplitCache_Data
             : QueueEntryType::SplitCache_System;
     }
 
-    const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
+    [[nodiscard]] const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
     Iterator * getNestedOrThis() override { return iterator->getNestedOrThis(); }
 
-    CachePriorityGuard & getPriorityGuard() const override { return iterator->getPriorityGuard(); }
+    [[nodiscard]] CachePriorityGuard & getPriorityGuard() const override { return iterator->getPriorityGuard(); }
 
     const FileSegmentKeyType type;
 

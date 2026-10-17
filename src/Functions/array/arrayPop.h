@@ -21,18 +21,18 @@ class FunctionArrayPop : public IFunction
 public:
     FunctionArrayPop(bool pop_front_, const char * name_) : pop_front(pop_front_), name(name_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(T)) -> Array(T) OR (NULL) -> NULL";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & return_type = result_type;
 
@@ -60,8 +60,8 @@ public:
         return sink;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
     bool pop_front;

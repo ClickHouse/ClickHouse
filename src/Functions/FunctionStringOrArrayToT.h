@@ -32,17 +32,17 @@ public:
         return std::make_shared<FunctionStringOrArrayToT>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return is_suitable_for_short_circuit_arguments_execution;
     }
@@ -55,14 +55,14 @@ public:
         return false;
     }
 
-    bool isVolumeReducing() const override
+    [[nodiscard]] bool isVolumeReducing() const override
     {
         if constexpr (requires { Impl::is_volume_reducing; })
             return Impl::is_volume_reducing;
         return false;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a
         /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,
@@ -72,28 +72,28 @@ public:
         return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         if constexpr (requires { Impl::has_information_about_monotonicity; })
             return Impl::has_information_about_monotonicity;
         return false;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         if constexpr (requires(const IDataType & t, const Field & f) { Impl::getMonotonicityForRange(t, f, f); })
             return Impl::getMonotonicityForRange(type, left, right);
         return {};
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))

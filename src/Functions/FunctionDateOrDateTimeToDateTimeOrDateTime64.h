@@ -33,7 +33,7 @@ public:
     {
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// When extended results are enabled, Date32 and DateTime64 inputs get a DateTime64 return
         /// whose scale comes from the source (or default 3 for Date32). Other inputs return DateTime.
@@ -50,7 +50,7 @@ public:
             " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
         /// `DateTime(tz)` / `DateTime64(scale, tz)` type functions silently fall back to the
@@ -65,7 +65,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);

@@ -30,8 +30,8 @@ struct GroupConcatData
     void checkAndUpdateSize(UInt64 add, Arena * arena);
     void insertChar(const char * str, UInt64 str_size, Arena * arena);
 
-    UInt64 getSize(size_t i) const;
-    UInt64 getString(size_t i) const;
+    [[nodiscard]] UInt64 getSize(size_t i) const;
+    [[nodiscard]] UInt64 getString(size_t i) const;
 
     void insertString(std::string_view str, Arena * arena);
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
@@ -50,7 +50,7 @@ class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatDat
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_);
 
-    String getName() const override;
+    [[nodiscard]] String getName() const override;
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
@@ -64,7 +64,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;
 
-    bool allocatesMemoryInArena() const override;
+    [[nodiscard]] bool allocatesMemoryInArena() const override;
 };
 
 }

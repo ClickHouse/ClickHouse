@@ -194,7 +194,7 @@ private:
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(*this);
         }

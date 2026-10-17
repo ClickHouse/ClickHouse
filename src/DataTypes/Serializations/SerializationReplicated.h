@@ -90,9 +90,9 @@ private:
 
         explicit SubcolumnCreator(const ColumnPtr & indexes_) : indexes(indexes_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     template <typename Reader>

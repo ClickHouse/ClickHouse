@@ -28,7 +28,7 @@ class BuffersReader
 public:
     BuffersReader(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings_);
 
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
 
     /// Reads one block
     Block read();

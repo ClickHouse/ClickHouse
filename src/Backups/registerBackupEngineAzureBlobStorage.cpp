@@ -195,7 +195,7 @@ namespace
         /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 

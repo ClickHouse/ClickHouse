@@ -31,17 +31,17 @@ public:
     static constexpr auto name = "conv";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConv>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String | FixedString | NativeNumber, NativeInteger, NativeInteger) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
         if (!isString(arguments[0].type))

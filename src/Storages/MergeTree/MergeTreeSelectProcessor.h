@@ -106,7 +106,7 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
-    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+    [[nodiscard]] MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

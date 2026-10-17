@@ -166,7 +166,7 @@ struct BackupSettings
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
     /// Returns the backup-specific settings as a string map for observability (see `system.backups`).
-    std::map<String, String> getSerializedSettings() const;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const;
 
     static bool isAsync(const ASTBackupQuery & query);
 

@@ -77,23 +77,23 @@ private:
 
 public:
     static constexpr auto name = "arrayJaccardIndex";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
     explicit FunctionArrayJaccardIndex(ContextPtr context_)
         : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
         , array_uniq(FunctionFactory::instance().get("arrayUniq", context_))
     {
     }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(Array, Array) -> Float64"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array, Array) -> Float64"; }
 
     /// Route the types-only entry point through the resolver below as well, so it
     /// rejects element types without a common subtype instead of applying the bare
     /// signature. That resolver only looks at the argument types.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -107,7 +107,7 @@ public:
     /// the element types. Resolve it here so calls like
     /// `arrayJaccardIndex(['1','2'], [1,2])` are rejected at analyzer time
     /// with `NO_COMMON_TYPE` instead of silently returning `0`.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -132,7 +132,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto cast_to_array = [&](const ColumnWithTypeAndName & col) -> std::pair<const ColumnArray *, bool>
         {

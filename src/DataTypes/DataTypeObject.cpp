@@ -410,7 +410,7 @@ struct PathAndSubcolumn
     String remaining;
 
     /// Reconstruct the full subcolumn (type_hint + "." + remaining).
-    String fullSubcolumn() const
+    [[nodiscard]] String fullSubcolumn() const
     {
         if (type_hint.empty())
             return {};

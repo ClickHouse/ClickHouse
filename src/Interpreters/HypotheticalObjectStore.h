@@ -25,7 +25,7 @@ public:
     {
         StorageID table_id;
         IndexDescription index;
-        const String & name() const { return index.name; }
+        [[nodiscard]] const String & name() const { return index.name; }
     };
     std::vector<Entry> getAll() const;
 
@@ -40,7 +40,7 @@ public:
     {
         StorageID table_id;
         ProjectionDescription projection;
-        const String & name() const { return projection.name; }
+        [[nodiscard]] const String & name() const { return projection.name; }
     };
     std::vector<ProjectionEntry> getAllProjections() const;
 

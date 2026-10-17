@@ -50,7 +50,7 @@ public:
         forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return "min";
@@ -135,7 +135,7 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return singleValueSerializedSizeBound<Data>();
     }
@@ -156,7 +156,7 @@ public:
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -164,7 +164,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;

@@ -29,18 +29,18 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
-    bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
+    [[nodiscard]] bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
     bool canSkipMark(size_t mark) override;
 
-    bool canSkipAnyMark() const override;
+    [[nodiscard]] bool canSkipAnyMark() const override;
 
-    bool canSkipAnyMarkBesidesTopKPrimaryKey() const override;
+    [[nodiscard]] bool canSkipAnyMarkBesidesTopKPrimaryKey() const override;
 
-    size_t getResultColumnCount() const override { return 1; }
+    [[nodiscard]] size_t getResultColumnCount() const override { return 1; }
 
-    bool producesFilterOnly() const override { return true; }
-    bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr; }
+    [[nodiscard]] bool producesFilterOnly() const override { return true; }
+    [[nodiscard]] bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr; }
 
 private:
     /// Used to filter data during merge tree reading.

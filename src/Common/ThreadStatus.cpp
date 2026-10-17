@@ -121,7 +121,7 @@ struct ThreadStack
 
         return size;
     }
-    void * getData() const { return data; }
+    [[nodiscard]] void * getData() const { return data; }
 
 private:
     void * data = nullptr;

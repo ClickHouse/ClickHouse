@@ -53,7 +53,7 @@ public:
         const String & destination_path,
         WriteMode write_mode) override;
 
-    std::map<String, String> getSerializedSettings() const override;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
 
 private:
     const DataSourceDescription data_source_description;
@@ -83,7 +83,7 @@ public:
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
     /// `writeFileIfNotExists` writes with `If-None-Match: *`, so it cannot replace an existing blob.
-    bool supportsAtomicCreateIfNotExists() const override { return true; }
+    [[nodiscard]] bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(
         const String & path_in_backup,
@@ -100,7 +100,7 @@ public:
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
-    std::map<String, String> getSerializedSettings() const override;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;

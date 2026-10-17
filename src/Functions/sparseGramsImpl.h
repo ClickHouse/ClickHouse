@@ -82,22 +82,22 @@ private:
             return true;
         }
 
-        bool isEnd() const
+        [[nodiscard]] bool isEnd() const
         {
             return data + right_iterator >= end;
         }
 
-        std::pair<size_t, size_t> getNGramPositions() const
+        [[nodiscard]] std::pair<size_t, size_t> getNGramPositions() const
         {
             return {left_iterator, right_iterator};
         }
 
-        size_t getRightSymbol() const
+        [[nodiscard]] size_t getRightSymbol() const
         {
             return num_increments;
         }
 
-        size_t getNextPosition(size_t iterator) const
+        [[nodiscard]] size_t getNextPosition(size_t iterator) const
         {
             if constexpr (is_utf8)
                 return std::min(size_t(end - data), iterator + UTF8::seqLength(data[iterator]));

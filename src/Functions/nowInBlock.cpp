@@ -35,14 +35,14 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override { return name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; } /// Optional timezone argument.
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; } /// Optional timezone argument.
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (allow_nonconst_timezone_arguments)
             return
@@ -53,7 +53,7 @@ public:
             " OR () -> DateTime";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }

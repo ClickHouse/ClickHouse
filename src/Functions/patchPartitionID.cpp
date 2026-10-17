@@ -27,18 +27,18 @@ public:
     static constexpr auto name = "__patchPartitionID";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPatchPartitionID>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, const String) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * column_part_name = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!column_part_name)

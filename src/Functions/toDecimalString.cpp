@@ -29,23 +29,23 @@ public:
     static constexpr auto name = "toDecimalString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToDecimalString>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Number, const NativeInteger) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     /// For operations with Integer/Float
@@ -175,7 +175,7 @@ private:
     }
 
 public:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         switch (arguments[0].type->getTypeId())
         {
@@ -205,7 +205,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto * precision_col = checkAndGetColumn<ColumnVector<UInt8>>(arguments[1].column.get());
         const auto * precision_col_const = checkAndGetColumnConst<ColumnVector<UInt8>>(arguments[1].column.get());

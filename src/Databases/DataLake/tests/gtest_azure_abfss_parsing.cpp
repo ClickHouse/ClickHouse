@@ -226,7 +226,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointPathStyleRejec
     metadata.setLocation("s3://mybucket/path/to/table");
 
     EXPECT_THROW(
-        metadata.getLocationWithEndpoint("https://mybucket.s3.mycompany.com", DB::S3UriStyle::PATH),
+        (void)metadata.getLocationWithEndpoint("https://mybucket.s3.mycompany.com", DB::S3UriStyle::PATH),
         DB::Exception);
 }
 

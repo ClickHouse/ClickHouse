@@ -47,7 +47,7 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
         ALWAYS_INLINE Element() = default;
         ALWAYS_INLINE Element(const Value & value_) : ptr(&value_) {} /// NOLINT
 
-        ALWAYS_INLINE ElementType type() const
+        [[nodiscard]] ALWAYS_INLINE ElementType type() const
         {
             switch (ptr->GetType())
             {
@@ -61,22 +61,22 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
             }
         }
 
-        ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
-        ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
-        ALWAYS_INLINE bool isDouble() const { return ptr->IsDouble(); }
-        ALWAYS_INLINE bool isString() const { return ptr->IsString(); }
-        ALWAYS_INLINE bool isArray() const { return ptr->IsArray(); }
-        ALWAYS_INLINE bool isObject() const { return ptr->IsObject(); }
-        ALWAYS_INLINE bool isBool() const { return ptr->IsBool(); }
-        ALWAYS_INLINE bool isNull() const { return ptr->IsNull(); }
+        [[nodiscard]] ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
+        [[nodiscard]] ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
+        [[nodiscard]] ALWAYS_INLINE bool isDouble() const { return ptr->IsDouble(); }
+        [[nodiscard]] ALWAYS_INLINE bool isString() const { return ptr->IsString(); }
+        [[nodiscard]] ALWAYS_INLINE bool isArray() const { return ptr->IsArray(); }
+        [[nodiscard]] ALWAYS_INLINE bool isObject() const { return ptr->IsObject(); }
+        [[nodiscard]] ALWAYS_INLINE bool isBool() const { return ptr->IsBool(); }
+        [[nodiscard]] ALWAYS_INLINE bool isNull() const { return ptr->IsNull(); }
 
-        ALWAYS_INLINE Int64 getInt64() const { return ptr->GetInt64(); }
-        ALWAYS_INLINE UInt64 getUInt64() const { return ptr->GetUint64(); }
-        ALWAYS_INLINE double getDouble() const { return ptr->GetDouble(); }
-        ALWAYS_INLINE bool getBool() const { return ptr->GetBool(); }
-        ALWAYS_INLINE std::string_view getString() const { return {ptr->GetString(), ptr->GetStringLength()}; }
-        Array getArray() const;
-        Object getObject() const;
+        [[nodiscard]] ALWAYS_INLINE Int64 getInt64() const { return ptr->GetInt64(); }
+        [[nodiscard]] ALWAYS_INLINE UInt64 getUInt64() const { return ptr->GetUint64(); }
+        [[nodiscard]] ALWAYS_INLINE double getDouble() const { return ptr->GetDouble(); }
+        [[nodiscard]] ALWAYS_INLINE bool getBool() const { return ptr->GetBool(); }
+        [[nodiscard]] ALWAYS_INLINE std::string_view getString() const { return {ptr->GetString(), ptr->GetStringLength()}; }
+        [[nodiscard]] Array getArray() const;
+        [[nodiscard]] Object getObject() const;
 
     private:
         const Value * ptr = nullptr;
@@ -100,9 +100,9 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
         };
 
         ALWAYS_INLINE Array(const Value & value_) : ptr(&value_) {} /// NOLINT
-        ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
-        ALWAYS_INLINE Iterator end() const { return ptr->End(); }
-        ALWAYS_INLINE size_t size() const { return ptr->Size(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator end() const { return ptr->End(); }
+        [[nodiscard]] ALWAYS_INLINE size_t size() const { return ptr->Size(); }
         ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return *(ptr->Begin() + index); }
 
     private:
@@ -129,9 +129,9 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
         };
 
         ALWAYS_INLINE Object(const Value & value_) : ptr(&value_) {} /// NOLINT
-        ALWAYS_INLINE Iterator begin() const { return ptr->MemberBegin(); }
-        ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
-        ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator begin() const { return ptr->MemberBegin(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
+        [[nodiscard]] ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
         bool find(std::string_view key_, Element & result) const
         {

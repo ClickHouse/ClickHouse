@@ -106,7 +106,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -315,7 +315,7 @@ public:
     OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
 
     /// Content-Type to set when sending HTTP response with this output format.
-    String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
+    [[nodiscard]] String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 
     /// overload for formats that support object storage metadata
     SchemaReaderPtr getSchemaReader(
@@ -331,7 +331,7 @@ public:
         const ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    ExternalSchemaReaderPtr getExternalSchemaReader(
+    [[nodiscard]] ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
         const ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -374,7 +374,7 @@ public:
     /// `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
     /// format name is always a part of the result, because format names are registered as
     /// extensions of the format itself.
-    std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
+    [[nodiscard]] std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
     String getFormatFromFileName(String file_name);
     std::optional<String> tryGetFormatFromFileName(String file_name);
     String getFormatFromFileDescriptor(int fd);
@@ -395,41 +395,41 @@ public:
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
-    bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    [[nodiscard]] bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
-    bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    [[nodiscard]] bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
-    bool checkIfFormatHasSchemaReader(const String & name) const;
-    bool checkIfFormatHasExternalSchemaReader(const String & name) const;
-    bool checkIfFormatHasAnySchemaReader(const String & name) const;
-    bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
-    bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
-    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
+    [[nodiscard]] bool checkIfFormatHasSchemaReader(const String & name) const;
+    [[nodiscard]] bool checkIfFormatHasExternalSchemaReader(const String & name) const;
+    [[nodiscard]] bool checkIfFormatHasAnySchemaReader(const String & name) const;
+    [[nodiscard]] bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
+    [[nodiscard]] bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
+    [[nodiscard]] bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
     /// Whether reading `name` will seek instead of consuming the input from the start. A
     /// random-access format reads its footer at the tail first, but only while it is allowed to
     /// seek: with `input_format_allow_seeks = 0` it reads sequentially from the start instead.
-    bool checkIfFormatIsRandomAccessInput(
+    [[nodiscard]] bool checkIfFormatIsRandomAccessInput(
         const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
-    bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
+    [[nodiscard]] bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
-    const FormatsDictionary & getAllFormats() const
+    [[nodiscard]] const FormatsDictionary & getAllFormats() const
     {
         return dict;
     }
 
-    std::vector<String> getAllInputFormats() const;
+    [[nodiscard]] std::vector<String> getAllInputFormats() const;
 
-    bool isInputFormat(const String & name) const;
-    bool isOutputFormat(const String & name) const;
+    [[nodiscard]] bool isInputFormat(const String & name) const;
+    [[nodiscard]] bool isOutputFormat(const String & name) const;
 
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
-    bool exists(const String & name) const;
+    [[nodiscard]] bool exists(const String & name) const;
 
     FileBucketInfoPtr getFileBucketInfo(const String & format);
     void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
@@ -449,7 +449,7 @@ private:
     /// extension, so the lookup has to walk the aliases in both directions.
     std::unordered_map<String, std::set<String>> format_alias_groups;
 
-    const Creators & getCreators(const String & name) const;
+    [[nodiscard]] const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);
 
     // Creates a ReadBuffer to give to an input format. Returns nullptr if we should use `buf` directly.

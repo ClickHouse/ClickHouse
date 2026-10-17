@@ -19,7 +19,7 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
 protected:
     void updateOutputHeader() override {}

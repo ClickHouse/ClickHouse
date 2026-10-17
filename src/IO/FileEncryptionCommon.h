@@ -43,14 +43,14 @@ public:
     explicit InitVector(const UInt128 & counter_) { set(counter_); }
 
     void set(const UInt128 & counter_) { counter = counter_; }
-    UInt128 get() const { return counter; }
+    [[nodiscard]] UInt128 get() const { return counter; }
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
 
     /// Write 16 bytes of the counter to a string in big endian order.
     /// We need big endian because the used cipher algorithms treat an initialization vector as a counter in big endian.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Converts a string of 16 bytes length in big endian order to a counter.
     static InitVector fromString(const String & str_);
@@ -81,7 +81,7 @@ public:
     /// the initialization vector is increased by an index of the current block
     /// and the index of the current block is calculated from this offset.
     void setOffset(size_t offset_) { offset = offset_; }
-    size_t getOffset() const { return offset; }
+    [[nodiscard]] size_t getOffset() const { return offset; }
 
     /// Encrypts some data.
     /// Also the function moves `offset` by `size` (for successive encryptions).

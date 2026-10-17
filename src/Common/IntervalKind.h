@@ -25,51 +25,51 @@ struct IntervalKind
 
     IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
-    Kind getKind() const { return kind; }
+    [[nodiscard]] Kind getKind() const { return kind; }
 
     /// Decodes the interval kind byte of the binary type encoding.
     static IntervalKind fromBinary(UInt8 value);
 
-    UInt8 toBinary() const { return static_cast<UInt8>(kind); }
+    [[nodiscard]] UInt8 toBinary() const { return static_cast<UInt8>(kind); }
 
-    std::string_view toString() const;
+    [[nodiscard]] std::string_view toString() const;
 
     /// Returns number of nanoseconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.
-    Int64 toAvgNanoseconds() const;
+    [[nodiscard]] Int64 toAvgNanoseconds() const;
 
     /// Returns number of milliseconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of milliseconds.
-    Int64 toAvgMilliseconds() const;
+    [[nodiscard]] Int64 toAvgMilliseconds() const;
 
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
-    Int32 toAvgSeconds() const;
+    [[nodiscard]] Int32 toAvgSeconds() const;
 
     /// Returns exact number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function raises an error.
-    Float64 toSeconds() const;
+    [[nodiscard]] Float64 toSeconds() const;
 
     /// Chooses an interval kind based on number of seconds.
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Kind::Hour`.
     static IntervalKind fromAvgSeconds(Int64 num_seconds);
 
     /// Returns whether IntervalKind has a fixed number of seconds (e.g. Day) or non-fixed (e.g. Month)
-    bool isFixedLength() const;
+    [[nodiscard]] bool isFixedLength() const;
 
     /// Returns an uppercased version of what `toString` returns.
-    const char * toKeyword() const;
+    [[nodiscard]] const char * toKeyword() const;
 
-    const char * toLowercasedKeyword() const;
+    [[nodiscard]] const char * toLowercasedKeyword() const;
 
     /// Returns the string which can be passed to the `unit` parameter of `dateDiff`. For example, `Day` gives "day".
-    const char * toDateDiffUnit() const;
+    [[nodiscard]] const char * toDateDiffUnit() const;
 
     /// Returns the name of the function converting a number to the interval data type. For example, `Day` gives "toIntervalDay".
-    const char * toNameOfFunctionToIntervalDataType() const;
+    [[nodiscard]] const char * toNameOfFunctionToIntervalDataType() const;
 
     /// Returns the name of the function extracting time part from a date or a time. For example, `Day` gives "toDayOfMonth".
-    const char * toNameOfFunctionExtractTimePart() const;
+    [[nodiscard]] const char * toNameOfFunctionExtractTimePart() const;
 
     /// Inverse of `toNameOfFunctionExtractTimePart`: given a function name like
     /// "toYear", "toMonth", "toDayOfMonth", ... sets `result` to the matching

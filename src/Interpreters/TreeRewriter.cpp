@@ -206,7 +206,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
 
     const String & customized_func_suffix;
 
-    String moveSuffixAhead(const String & name) const
+    [[nodiscard]] String moveSuffixAhead(const String & name) const
     {
         auto prefix = name.substr(0, name.size() - customized_func_suffix.size());
 

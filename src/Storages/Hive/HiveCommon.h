@@ -74,7 +74,7 @@ public:
         explicit PartitionInfo(const Apache::Hadoop::Hive::Partition & partition_): partition(partition_) {}
         PartitionInfo(PartitionInfo &&) = default;
 
-        bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
+        [[nodiscard]] bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
     };
 
     class HiveTableMetadata;

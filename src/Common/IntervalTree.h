@@ -23,7 +23,7 @@ struct Interval
 
     Interval(IntervalStorageType left_, IntervalStorageType right_) : left(left_), right(right_) { }
 
-    bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
+    [[nodiscard]] bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
 };
 
 template <typename IntervalStorageType>
@@ -205,7 +205,7 @@ public:
     }
 
     /// Check if there is an interval intersecting point
-    bool has(IntervalStorageType point) const
+    [[nodiscard]] bool has(IntervalStorageType point) const
     {
         bool has_intervals = false;
 
@@ -250,13 +250,13 @@ public:
         return Iterator(end_index, last_interval_index, this);
     }
 
-    const_iterator begin() const
+    [[nodiscard]] const_iterator begin() const
     {
         size_t start_index = findFirstIteratorNodeIndex();
         return Iterator(start_index, 0, this);
     }
 
-    const_iterator end() const
+    [[nodiscard]] const_iterator end() const
     {
         size_t end_index = findLastIteratorNodeIndex();
         size_t last_interval_index = 0;
@@ -267,13 +267,13 @@ public:
         return Iterator(end_index, last_interval_index, this);
     }
 
-    const_iterator cbegin() const { return begin(); }
+    [[nodiscard]] const_iterator cbegin() const { return begin(); }
 
-    const_iterator cend() const { return end(); }
+    [[nodiscard]] const_iterator cend() const { return end(); }
 
-    size_t getIntervalsSize() const { return intervals_size; }
+    [[nodiscard]] size_t getIntervalsSize() const { return intervals_size; }
 
-    size_t getSizeInBytes() const
+    [[nodiscard]] size_t getSizeInBytes() const
     {
         size_t nodes_size_in_bytes = nodes.size() * sizeof(Node);
         size_t intervals_size_in_bytes = sorted_intervals.size() * sizeof(IntervalWithValue);
@@ -290,7 +290,7 @@ private:
 
         IntervalStorageType middle_element;
 
-        bool hasValue() const { return sorted_intervals_range_size != 0; }
+        [[nodiscard]] bool hasValue() const { return sorted_intervals_range_size != 0; }
     };
 
     using IntervalWithEmptyValue = Interval;
@@ -400,7 +400,7 @@ public:
             }
         }
 
-        const IntervalWithValue & getCurrentValue() const
+        [[nodiscard]] const IntervalWithValue & getCurrentValue() const
         {
             auto & current_node = tree->nodes[node_index];
             size_t interval_index = current_node.sorted_intervals_range_start_index + current_interval_index;
@@ -490,7 +490,7 @@ private:
         }
     }
 
-    size_t findFirstIteratorNodeIndex() const
+    [[nodiscard]] size_t findFirstIteratorNodeIndex() const
     {
         size_t nodes_size = nodes.size();
         size_t result_index = 0;
@@ -507,7 +507,7 @@ private:
         return result_index;
     }
 
-    size_t findLastIteratorNodeIndex() const
+    [[nodiscard]] size_t findLastIteratorNodeIndex() const
     {
         if (unlikely(nodes.empty()))
             return 0;

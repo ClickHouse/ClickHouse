@@ -80,7 +80,7 @@ struct WriteBufferFromS3::PartData
         return buffer;
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         return data_size == 0;
     }

@@ -289,7 +289,7 @@ namespace detail
                 adjust();
             }
 
-            bool isValid() const { return pos < end; }
+            [[nodiscard]] bool isValid() const { return pos < end; }
 
             void next()
             {
@@ -297,9 +297,9 @@ namespace detail
                 adjust();
             }
 
-            UInt64 count() const { return *pos; }
+            [[nodiscard]] UInt64 count() const { return *pos; }
 
-            UInt16 key() const
+            [[nodiscard]] UInt16 key() const
             {
                 return pos - begin < SMALL_THRESHOLD
                     ? static_cast<UInt16>(pos - begin)
@@ -407,7 +407,7 @@ namespace detail
 
 
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
-        UInt16 get(double level) const
+        [[nodiscard]] UInt16 get(double level) const
         {
             double pos = std::ceil(static_cast<double>(count) * level);
 
@@ -467,7 +467,7 @@ namespace detail
         }
 
         /// The same, but in the case of an empty state, NaN is returned.
-        float getFloat(double level) const
+        [[nodiscard]] float getFloat(double level) const
         {
             return count
                 ? get(level)

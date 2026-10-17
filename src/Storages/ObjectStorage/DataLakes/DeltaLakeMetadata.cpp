@@ -154,7 +154,7 @@ struct DeltaLakeMetadataImpl
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto metadata_file_suffix = ".json";
 
-    std::string withPadding(size_t version) const
+    [[nodiscard]] std::string withPadding(size_t version) const
     {
         /// File names are zero-padded to 20 digits.
         static constexpr auto padding = 20;
@@ -176,7 +176,7 @@ struct DeltaLakeMetadataImpl
         DeltaLakePartitionColumns partition_columns;
     };
 
-    DeltaLakeMetadata processMetadataFiles() const
+    [[nodiscard]] DeltaLakeMetadata processMetadataFiles() const
     {
         std::set<String> result_files;
         NamesAndTypesList current_schema;
@@ -389,7 +389,7 @@ struct DeltaLakeMetadataImpl
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
     }
 
-    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
+    [[nodiscard]] NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
     {
         NamesAndTypesList schema;
         const auto fields = metadata_json->get("fields").extract<Poco::JSON::Array::Ptr>();
@@ -418,7 +418,7 @@ struct DeltaLakeMetadataImpl
     /// `partitionColumns` carries logical names, while a parsed schema is keyed by physical
     /// ones, so the declared set is recovered from the schema fields rather than from it.
     /// Ordered, so that the name list reported on rejection is deterministic.
-    NameOrderedSet getDeclaredLogicalNames(const Poco::JSON::Object::Ptr & schema_json) const
+    [[nodiscard]] NameOrderedSet getDeclaredLogicalNames(const Poco::JSON::Object::Ptr & schema_json) const
     {
         NameOrderedSet declared;
         const auto fields = schema_json->get("fields").extract<Poco::JSON::Array::Ptr>();
@@ -465,7 +465,7 @@ struct DeltaLakeMetadataImpl
      *
      *  We need to get "version", which is the version of the checkpoint we need to read.
      */
-    size_t readLastCheckpointIfExists() const
+    [[nodiscard]] size_t readLastCheckpointIfExists() const
     {
         const auto last_checkpoint_file = std::filesystem::path(table_path) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))

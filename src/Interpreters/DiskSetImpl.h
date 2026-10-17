@@ -62,10 +62,10 @@ public:
     /// Probes of one call that fall into the same block share a single read of it.
     void containsBatch(const IColumn & keys, std::span<UInt8> found) const override;
 
-    size_t getTotalRowCount() const override { return rows; }
+    [[nodiscard]] size_t getTotalRowCount() const override { return rows; }
 
     /// The directory is all that the set keeps in memory.
-    size_t getTotalByteCount() const override { return directory.allocatedBytes(); }
+    [[nodiscard]] size_t getTotalByteCount() const override { return directory.allocatedBytes(); }
 
 private:
     /// Every block except the last holds this many bytes of keys. A lookup reads and decompresses whole
@@ -86,7 +86,7 @@ private:
         void addBlock(const Key & first_key, size_t offset) { entries.push_back({first_key, offset}); }
 
         /// Returns the only block that can hold `key`, or nothing when `key` is below the first block.
-        std::optional<size_t> findBlock(const Key & key) const
+        [[nodiscard]] std::optional<size_t> findBlock(const Key & key) const
         {
             const auto it = std::upper_bound(
                 entries.begin(), entries.end(), key, [](const Key & value, const Entry & entry) { return value < entry.first_key; });
@@ -96,10 +96,10 @@ private:
         }
 
         /// Returns the position of the compressed frame of `block` in the file.
-        size_t getOffset(size_t block) const { return entries[block].offset; }
+        [[nodiscard]] size_t getOffset(size_t block) const { return entries[block].offset; }
 
-        size_t size() const { return entries.size(); }
-        size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
+        [[nodiscard]] size_t size() const { return entries.size(); }
+        [[nodiscard]] size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
 
     private:
         struct Entry

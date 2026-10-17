@@ -66,7 +66,7 @@ struct SortedRun
 
     /// Copies the metadata and the array of SortedFilePtr-s (sharing the same SortedFile-s), so the
     /// copy can be published while the original keeps being modified.
-    SortedRunPtr shallowCopy() const;
+    [[nodiscard]] SortedRunPtr shallowCopy() const;
 
     void setMinPathCutoff(std::optional<NodePath> new_cutoff);
 

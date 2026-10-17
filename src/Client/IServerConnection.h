@@ -73,7 +73,7 @@ public:
         LOCAL
     };
 
-    virtual Type getConnectionType() const = 0;
+    [[nodiscard]] virtual Type getConnectionType() const = 0;
 
     virtual void setDefaultDatabase(const String & database) = 0;
 
@@ -89,7 +89,7 @@ public:
 
     virtual const String & getDescription(bool with_extra = false) const = 0;  /// NOLINT
 
-    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
+    [[nodiscard]] virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
@@ -113,7 +113,7 @@ public:
 
     /// Whether the client needs to read and send the data for the INSERT.
     /// False if the server will read the data through other means (in particular if clickhouse-local added input reading step directly into the query pipeline).
-    virtual bool isSendDataNeeded() const { return true; }
+    [[nodiscard]] virtual bool isSendDataNeeded() const { return true; }
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
@@ -129,7 +129,7 @@ public:
     virtual bool poll(size_t timeout_microseconds) = 0;
 
     /// Check, if has data in read buffer.
-    virtual bool hasReadPendingData() const = 0;
+    [[nodiscard]] virtual bool hasReadPendingData() const = 0;
 
     /// Checks if there is input data in connection and reads packet ID.
     virtual std::optional<UInt64> checkPacket(size_t timeout_microseconds) = 0;
@@ -143,7 +143,7 @@ public:
     /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
-    virtual bool isConnected() const = 0;
+    [[nodiscard]] virtual bool isConnected() const = 0;
 
     /// Check if connection is still active with ping request. The round trip also synchronizes the
     /// client with the server: after it returns, everything the server has already sent (including

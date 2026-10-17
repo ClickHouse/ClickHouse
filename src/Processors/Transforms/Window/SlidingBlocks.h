@@ -45,14 +45,14 @@ class SlidingBlocks
 {
 public:
     SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
-    const SlidingBlock & blockAt(int64_t block_number) const;
+    [[nodiscard]] const SlidingBlock & blockAt(int64_t block_number) const;
     void pop();
 
-    RowNumber begin() const;
-    RowNumber end() const;
-    RowNumber next(RowNumber row) const;
-    RowNumber prev(RowNumber row) const;
-    RowNumber move(RowNumber row, int64_t offset) const;
+    [[nodiscard]] RowNumber begin() const;
+    [[nodiscard]] RowNumber end() const;
+    [[nodiscard]] RowNumber next(RowNumber row) const;
+    [[nodiscard]] RowNumber prev(RowNumber row) const;
+    [[nodiscard]] RowNumber move(RowNumber row, int64_t offset) const;
 
 private:
     std::deque<SlidingBlock> blocks;

@@ -22,7 +22,7 @@ public:
     static void initialize();
     static void cleanup();
 
-    bool isFIPSEnabled() const;
+    [[nodiscard]] bool isFIPSEnabled() const;
 
 private:
     OpenSSLInitializer();

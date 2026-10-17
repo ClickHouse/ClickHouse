@@ -78,7 +78,7 @@ public:
         }
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         if (sk_union)
             return static_cast<UInt64>(sk_union->get_result().get_estimate());

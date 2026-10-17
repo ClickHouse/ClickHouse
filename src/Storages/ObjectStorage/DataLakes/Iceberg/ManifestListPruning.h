@@ -24,7 +24,7 @@ public:
         const DB::ActionsDAG * filter_dag,
         DB::ContextPtr context);
 
-    bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
+    [[nodiscard]] bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
 
 private:
     struct SpecCondition

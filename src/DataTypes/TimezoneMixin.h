@@ -25,8 +25,8 @@ public:
     {
     }
 
-    const DateLUTImpl & getTimeZone() const { return time_zone; }
-    bool hasExplicitTimeZone() const { return has_explicit_time_zone; }
+    [[nodiscard]] const DateLUTImpl & getTimeZone() const { return time_zone; }
+    [[nodiscard]] bool hasExplicitTimeZone() const { return has_explicit_time_zone; }
 
 protected:
     /// true if time zone name was provided in data type parameters, false if it's using default time zone.

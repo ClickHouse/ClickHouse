@@ -43,7 +43,7 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
+    [[nodiscard]] bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};

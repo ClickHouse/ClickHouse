@@ -240,7 +240,7 @@ VirtualColumnsDescription StorageRedis::createVirtuals()
 class ReadFromRedis : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromRedis"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromRedis"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;

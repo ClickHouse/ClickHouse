@@ -40,12 +40,12 @@ public:
     ExecutableFunctionJSONEmpty(bool negative_, const char * name_, bool skip_null_typed_paths_)
         : negative(negative_), function_name(name_), skip_null_typed_paths(skip_null_typed_paths_) {}
 
-    std::string getName() const override { return function_name; }
+    [[nodiscard]] std::string getName() const override { return function_name; }
 
 private:
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         const auto * object_column = typeid_cast<const ColumnObject *>(elem.column.get());

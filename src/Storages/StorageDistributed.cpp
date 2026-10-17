@@ -290,7 +290,7 @@ struct KeyColumns
     /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
     /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
     /// table's column).
-    bool none() const { return !unknown && names.empty(); }
+    [[nodiscard]] bool none() const { return !unknown && names.empty(); }
 };
 
 KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)

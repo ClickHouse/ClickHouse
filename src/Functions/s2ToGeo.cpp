@@ -39,23 +39,23 @@ public:
         return std::make_shared<FunctionS2ToGeo>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64) -> Tuple(Float64, Float64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)

@@ -23,7 +23,7 @@ struct StatsCollectingParams
     {
     }
 
-    bool isCollectionAndUseEnabled() const { return key != 0; }
+    [[nodiscard]] bool isCollectionAndUseEnabled() const { return key != 0; }
     void disable() { key = 0; }
 
     StatsCollectingParams & setKey(UInt64 key_)
@@ -45,13 +45,13 @@ struct HashJoinStatsCollectingParams
 
 struct AggregationEntry
 {
-    bool shouldBeUpdated(const AggregationEntry & new_entry) const
+    [[nodiscard]] bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
             || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
     }
 
-    std::string dump() const
+    [[nodiscard]] std::string dump() const
     {
         return fmt::format(
             "sum_of_sizes={}, median_size={}, adaptive_staging_repeat_dominated={}",
@@ -73,12 +73,12 @@ struct HashJoinEntry
     /// A stored size is kept until a run finds less than this fraction of it, so a hint may overstate the current size up to this factor.
     static constexpr size_t MAX_OVERESTIMATION_FACTOR = 2;
 
-    bool shouldBeUpdated(const HashJoinEntry & new_entry) const
+    [[nodiscard]] bool shouldBeUpdated(const HashJoinEntry & new_entry) const
     {
         return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
     }
 
-    std::string dump() const { return fmt::format("ht_size={}", ht_size); }
+    [[nodiscard]] std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
     size_t ht_size; // the size of the shared hash table
     size_t source_rows; // the number of rows in the source table
@@ -86,9 +86,9 @@ struct HashJoinEntry
 
 struct HashJoinMatchEntry
 {
-    bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
+    [[nodiscard]] bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
 
-    std::string dump() const { return fmt::format("matches={}", matches); }
+    [[nodiscard]] std::string dump() const { return fmt::format("matches={}", matches); }
 
     size_t matches; // number of hash-table matches for a specific hash join.
 };

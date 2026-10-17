@@ -55,7 +55,7 @@ struct JoinOperator
     void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
     static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 
@@ -152,7 +152,7 @@ struct JoinSettings
     /// The size limits count only where the older peer spills on them: a hash-family entry the step
     /// reaches, with a spill threshold, for a step `grace_hash` can run. Elsewhere - no threshold, a step
     /// `GraceHashJoin` declines, a merge algorithm, a CROSS join - they are hard caps on both sides.
-    bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
+    [[nodiscard]] bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
@@ -166,11 +166,11 @@ struct JoinSettings
     /// limits, and one without them resolves it to 0, so the answer here would depend on the node.
     /// Neither does `grace_hash` on a server without temporary storage (`tmp_path` / `tmp_policy`): there the
     /// join pickers refuse it instead of passing it over.
-    bool canRunGraceHash() const;
+    [[nodiscard]] bool canRunGraceHash() const;
 
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.
-    UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
+    [[nodiscard]] UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
     {
         return getMaxBytesBeforeExternalJoin(max_bytes_before_external_join, max_bytes_ratio_before_external_join);
     }

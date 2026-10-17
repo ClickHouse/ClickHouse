@@ -76,7 +76,7 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() const { return hdfs_builder; }
+    [[nodiscard]] hdfsBuilder * get() const { return hdfs_builder; }
 
     #if USE_KRB5
     void runKinit() const;

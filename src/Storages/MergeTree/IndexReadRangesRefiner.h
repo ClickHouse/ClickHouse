@@ -27,7 +27,7 @@ class IndexReadRangesRefiner : public IMergeTreeReadRangesRefiner
 public:
     IndexReadRangesRefiner(MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_);
 
-    MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
+    [[nodiscard]] MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
 private:
     const MergeTreeIndexBuildContextPtr index_build_context;

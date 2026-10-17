@@ -89,7 +89,7 @@ public:
     }
 
     void setBestDestination(char * to) { best_destination = to; }
-    char * getBestDestination() const { return best_destination; }
+    [[nodiscard]] char * getBestDestination() const { return best_destination; }
 
 private:
     bool isFree(const char * buffer, const char * in_use) const { return buffer != best_destination && buffer != in_use; }

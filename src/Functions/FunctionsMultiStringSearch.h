@@ -70,15 +70,15 @@ public:
         , reject_expensive_hyperscan_regexps(reject_expensive_hyperscan_regexps_)
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature — `Impl::ResultType` is one of `UInt8`, `UInt64` or
     /// `Array(UInt8)` depending on the variant (any-match / first-index /
     /// all-indices), driven by `Impl::is_column_array`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Impl::is_column_array)
             return "(String, Array(String)) -> Array(" + String(DataTypeNumber<typename Impl::ResultType>{}.getName()) + ")";
@@ -86,7 +86,7 @@ public:
             return "(String, Array(String)) -> " + String(DataTypeNumber<typename Impl::ResultType>{}.getName());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -98,7 +98,7 @@ public:
         return Impl::getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;
         const ColumnPtr & needles_ptr = arguments[1].column;

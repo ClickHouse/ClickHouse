@@ -58,7 +58,7 @@ public:
         has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_array_join)
             return false;
@@ -67,7 +67,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasArrayJoin() const
+    [[nodiscard]] bool hasArrayJoin() const
     {
         return has_array_join;
     }

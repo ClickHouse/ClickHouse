@@ -27,14 +27,14 @@ public:
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_);
 
-    String getName() const override { return "LazilyReadFromMergeTree"; }
+    [[nodiscard]] String getName() const override { return "LazilyReadFromMergeTree"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     size_t max_block_size;

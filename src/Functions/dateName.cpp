@@ -60,28 +60,28 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateNameImpl>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String, DateOrDateTime, [const String]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(
+    [[nodiscard]] ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count) const override
@@ -104,7 +104,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[1].column.get());
         if (!times)

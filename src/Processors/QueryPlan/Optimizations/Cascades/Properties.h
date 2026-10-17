@@ -26,7 +26,7 @@ struct DistributionDescription
     bool operator==(const DistributionDescription & other) const = default;
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 struct ExpressionProperties
@@ -36,13 +36,13 @@ struct ExpressionProperties
 
     bool operator==(const ExpressionProperties & other) const = default;
 
-    bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
+    [[nodiscard]] bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
 
     static bool isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing);
     static bool isDistributionSatisfiedBy(const DistributionDescription & required, const DistributionDescription & existing);
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 struct ExpressionPropertiesHash

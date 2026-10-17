@@ -29,18 +29,18 @@ public:
     using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix, const String & disk_name)>;
     void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator = {});
 
-    DiskSelectorPtr updateFromConfig(
+    [[nodiscard]] DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context) const;
 
     /// Get disk by name
-    DiskPtr get(const String & name) const;
+    [[nodiscard]] DiskPtr get(const String & name) const;
 
-    DiskPtr tryGet(const String & name) const;
+    [[nodiscard]] DiskPtr tryGet(const String & name) const;
 
     /// Get all disks with names
-    const DisksMap & getDisksMap() const;
+    [[nodiscard]] const DisksMap & getDisksMap() const;
 
     void addToDiskMap(const String & name, DiskPtr disk);
 

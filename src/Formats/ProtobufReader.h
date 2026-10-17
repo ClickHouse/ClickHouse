@@ -33,7 +33,7 @@ public:
     void readString(String & str);
     void readStringAndAppend(PaddedPODArray<UInt8> & str);
 
-    bool eof() const { return in->eof(); }
+    [[nodiscard]] bool eof() const { return in->eof(); }
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 

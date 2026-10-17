@@ -25,12 +25,12 @@ public:
     }
     ~ClientEmbeddedRunner();
 
-    bool hasStarted() const;
-    bool hasFinished() const;
-    int getExitCode() const;
+    [[nodiscard]] bool hasStarted() const;
+    [[nodiscard]] bool hasFinished() const;
+    [[nodiscard]] int getExitCode() const;
     IClientDescriptorSet::DescriptorSet getDescriptorsForServer();
     void closeStdIn() const;
-    bool hasPty() const { return client_descriptors->isPty(); }
+    [[nodiscard]] bool hasPty() const { return client_descriptors->isPty(); }
     // Sets new window size for tty. Works only if IClientDescriptorSet is pty
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 

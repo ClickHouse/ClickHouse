@@ -23,11 +23,11 @@ public:
         StoragePtr storage_,
         size_t max_block_size_);
 
-    String getName() const override { return "ReadFromSystemPrimes"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemPrimes"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     Pipe makePipe();

@@ -77,7 +77,7 @@ struct NodeBase
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     Node * clone(Arena * arena) const
     {
@@ -214,9 +214,9 @@ public:
     {
     }
 
-    String getName() const override { return "sequenceNextNode"; }
+    [[nodiscard]] String getName() const override { return "sequenceNextNode"; }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -445,7 +445,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 

@@ -366,14 +366,14 @@ public:
             asTwoLevel().writeAsSingleLevel(out);
     }
 
-    size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
+    [[nodiscard]] size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
     /// Hand out the two-level pointee for reading or merging. It is `const` and may run concurrently for the same
     /// source (ROLLUP/CUBE/GROUPING SETS merge one state into several destinations at once), so it must not mutate the
     /// buckets. Marking the pointee shared before it escapes lets `doDeepCopyIfNeeded` fork before any later in-place
     /// mutation, keeping the shared instance read-only. A freshly built pointee is solely owned by the caller, so it
     /// stays unshared and mutable in place.
-    std::shared_ptr<SharedTwoLevelSet> getTwoLevelSet() const
+    [[nodiscard]] std::shared_ptr<SharedTwoLevelSet> getTwoLevelSet() const
     {
         if (two_level_set)
         {
@@ -394,8 +394,8 @@ public:
         single_level_set.clear();
     }
 
-    bool isSingleLevel() const { return !two_level_set; }
-    bool isTwoLevel() const { return !!two_level_set; }
+    [[nodiscard]] bool isSingleLevel() const { return !two_level_set; }
+    [[nodiscard]] bool isTwoLevel() const { return !!two_level_set; }
 
 private:
     static constexpr size_t insert_prefetch_look_ahead = 16;
@@ -419,7 +419,7 @@ private:
     }
 
     SingleLevelSet & asSingleLevel() { return single_level_set; }
-    const SingleLevelSet & asSingleLevel() const { return single_level_set; }
+    [[nodiscard]] const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 
     TwoLevelSet & asTwoLevelChecked()
     {
@@ -428,7 +428,7 @@ private:
     }
 
     TwoLevelSet & asTwoLevel() { return two_level_set->set; }
-    const TwoLevelSet & asTwoLevel() const { return two_level_set->set; }
+    [[nodiscard]] const TwoLevelSet & asTwoLevel() const { return two_level_set->set; }
 
     /// Fork a private copy before mutating a pointee that may be shared (adopted by another `UniqExactSet` via the fast
     /// path in `merge`, or handed out for reading). Forks on the pointee's `is_shared` flag, not `shared_ptr::use_count()`,

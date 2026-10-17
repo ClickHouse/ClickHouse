@@ -84,7 +84,7 @@ public:
     ~SettingsConstraints();
 
     void clear();
-    bool empty() const { return constraints.empty(); }
+    [[nodiscard]] bool empty() const { return constraints.empty(); }
 
     void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & disallowed_values, SettingConstraintWritability writability);
     void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
@@ -148,8 +148,8 @@ public:
 
     /// `compatibility` gives a setting only a value that these constraints and `allow_feature_tier` accept,
     /// and leaves any other setting as it is. `restrictsCompatibility` tells whether any value can be refused.
-    bool restrictsCompatibility() const;
-    bool allowsValueFromCompatibility(std::string_view setting_name, const Field & value) const;
+    [[nodiscard]] bool restrictsCompatibility() const;
+    [[nodiscard]] bool allowsValueFromCompatibility(std::string_view setting_name, const Field & value) const;
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
     friend bool operator !=(const SettingsConstraints & left, const SettingsConstraints & right) { return !(left == right); }
@@ -251,15 +251,15 @@ private:
                                         const std::unordered_map<String, SettingConstraintWritability> & writability_map) const;
 
     /// True if the settings profile is defined in the server config (`users.xml`) rather than via SQL.
-    bool isProfileConfigDefined(const UUID & profile_id) const;
+    [[nodiscard]] bool isProfileConfigDefined(const UUID & profile_id) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+    [[nodiscard]] Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
 
-    Checker getMergeTreeChecker(std::string_view short_name) const;
+    [[nodiscard]] Checker getMergeTreeChecker(std::string_view short_name) const;
 
-    std::string_view resolveSettingNameWithCache(std::string_view name) const;
+    [[nodiscard]] std::string_view resolveSettingNameWithCache(std::string_view name) const;
 
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;

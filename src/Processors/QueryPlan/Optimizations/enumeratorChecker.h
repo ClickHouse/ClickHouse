@@ -24,7 +24,7 @@ public:
     DPTable & getDPTable() { return dp_table; }
     const DPTable & getDPTable() const { return dp_table; }
 
-    size_t numRelations() const { return nr_relations; }
+    [[nodiscard]] size_t numRelations() const { return nr_relations; }
 private:
     DPTable dp_table;
     const size_t nr_relations;
@@ -48,9 +48,9 @@ public:
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
     DPTable & getDPTable() { return dp_table; }
-    const DPTable & getDPTable() const { return dp_table; }
+    [[nodiscard]] const DPTable & getDPTable() const { return dp_table; }
 
-    size_t numRelations() const { return num_relations; }
+    [[nodiscard]] size_t numRelations() const { return num_relations; }
 private:
     DPTable dp_table;
     Optimizer & optimizer;

@@ -43,7 +43,7 @@ private:
         QuotaInfo(const QuotaPtr & quota_, const UUID & quota_id_) { setQuota(quota_, quota_id_); }
         void setQuota(const QuotaPtr & quota_, const UUID & quota_id_);
 
-        String calculateKey(const EnabledQuota & enabled_quota) const;
+        [[nodiscard]] String calculateKey(const EnabledQuota & enabled_quota) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
         boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
         void rebuildAllIntervals();

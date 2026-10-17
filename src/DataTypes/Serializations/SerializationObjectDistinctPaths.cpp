@@ -66,7 +66,7 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
     /// We want to insert dynamic and typed paths only once per deserialization.
     bool insert_dynamic_and_typed_paths = true;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDistinctPaths>(*this);
         new_state->object_structure_state = object_structure_state ? object_structure_state->clone() : nullptr;

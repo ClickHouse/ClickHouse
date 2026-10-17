@@ -14,7 +14,7 @@ public:
 
     CommonSubplanStep(const CommonSubplanStep &) = default;
 
-    String getName() const override { return "CommonSubplan"; }
+    [[nodiscard]] String getName() const override { return "CommonSubplan"; }
 
     void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
 
@@ -23,7 +23,7 @@ public:
         output_header = input_headers.front();
     }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<CommonSubplanStep>(*this);
     }

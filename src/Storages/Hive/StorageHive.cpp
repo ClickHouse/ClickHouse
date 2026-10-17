@@ -807,7 +807,7 @@ bool StorageHive::supportsSubsetOfColumns() const
 class ReadFromHive : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromHive"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromHive"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromHive(

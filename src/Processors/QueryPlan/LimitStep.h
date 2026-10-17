@@ -18,20 +18,20 @@ public:
         bool with_ties_ = false, /// Limit with ties.
         SortDescription description_ = {});
 
-    String getName() const override { return "Limit"; }
+    [[nodiscard]] String getName() const override { return "Limit"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    size_t getLimit() const { return limit; }
-    size_t getOffset() const { return offset; }
+    [[nodiscard]] size_t getLimit() const { return limit; }
+    [[nodiscard]] size_t getOffset() const { return offset; }
 
     /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
     /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
     /// representable bound to push down.
-    std::optional<size_t> getLimitWithOffset() const
+    [[nodiscard]] std::optional<size_t> getLimitWithOffset() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
             return {};
@@ -40,31 +40,31 @@ public:
     }
 
     /// 0 means unlimited, as everywhere in the sorting code.
-    size_t getLimitForSorting() const { return getLimitWithOffset().value_or(0); }
+    [[nodiscard]] size_t getLimitForSorting() const { return getLimitWithOffset().value_or(0); }
 
-    bool withTies() const { return with_ties; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
+    [[nodiscard]] bool withTies() const { return with_ties; }
+    [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void markAsShardLimit() { is_shard_limit = true; }
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
     /// Passes every column through, so it drops what its child drops and needs nothing more, except the
     /// columns `WITH TIES` compares rows by.
-    bool canRemoveUnusedColumns() const override { return true; }
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    [[nodiscard]] bool canRemoveUnusedColumns() const override { return true; }
+    [[nodiscard]] UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     /// A `Limit` at the replica-output boundary is a shard limit, so its output is replicated, not
     /// partitioned: every replica emits up to `limit` rows and ships all of them.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override

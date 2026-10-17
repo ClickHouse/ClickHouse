@@ -133,9 +133,9 @@ private:
             std::optional<OptimizedRegularExpression> source_table_regexp_,
             std::optional<DBToTableSetMap> source_databases_and_tables_);
 
-        DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
-        DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
     };
 
     DatabaseNameOrRegexp database_name_or_regexp;
@@ -177,7 +177,7 @@ class ReadFromMerge final : public SourceStepWithFilter
 {
 public:
     static constexpr auto name = "ReadFromMerge";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -203,10 +203,10 @@ public:
     /// Whether `requestReadingInOrder` accepts `direction`: every reading step of every child plan has to be
     /// a `ReadFromMergeTree` that accepts it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
     bool canReadInOrder(int direction);
-    const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+    [[nodiscard]] const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
-    bool hasChildPlans() const { return child_plans.has_value(); }
+    [[nodiscard]] bool hasChildPlans() const { return child_plans.has_value(); }
     /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
     /// optimization which probes the children before the filters are applied to this step (`applyFilters`):
     /// children created then would miss the filter on `_database` and `_table` (`getSelectedTables`), and
@@ -366,7 +366,7 @@ private:
         bool is_smallest_column_requested,
         const Names & column_names_read);
 
-    StorageMerge::StorageListWithLocks getSelectedTables(
+    [[nodiscard]] StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
 };
 

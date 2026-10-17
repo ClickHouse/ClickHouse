@@ -49,7 +49,7 @@ public:
         return promise.get_future();
     }
 
-    const HardlinkedFiles & getHardlinkedFiles() const;
+    [[nodiscard]] const HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 

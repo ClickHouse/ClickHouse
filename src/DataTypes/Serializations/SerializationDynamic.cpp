@@ -91,7 +91,7 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     VectorWithMemoryTracking<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
     ISerialization::DeserializeBinaryBulkStatePtr flattened_indexes_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
         new_state->variant_state = variant_state ? variant_state->clone() : nullptr;

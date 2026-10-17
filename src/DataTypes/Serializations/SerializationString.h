@@ -14,7 +14,7 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
     /// Whether full string data is required during deserialization
     bool need_string_data = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
 };
 
 class SerializationString final : public ISerialization

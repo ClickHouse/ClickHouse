@@ -162,7 +162,7 @@ protected:
             return address == r.address;
         }
 
-        size_t getWeight() const
+        [[nodiscard]] size_t getWeight() const
         {
             if (failed)
                 return 0;

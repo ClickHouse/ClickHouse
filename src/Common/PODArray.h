@@ -169,12 +169,12 @@ protected:
         c_end_of_storage = allocated + bytes - pad_right;
     }
 
-    bool isInitialized() const
+    [[nodiscard]] bool isInitialized() const
     {
         return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
 
-    bool isAllocatedFromStack() const
+    [[nodiscard]] bool isAllocatedFromStack() const
     {
         static constexpr size_t stack_threshold = TAllocator::getStackThreshold();
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
@@ -225,9 +225,9 @@ protected:
 #endif
 
 public:
-    bool empty() const { return c_end == c_start; }
-    size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
-    size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
+    [[nodiscard]] bool empty() const { return c_end == c_start; }
+    [[nodiscard]] size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
+    [[nodiscard]] size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
     /// This method is safe to use only for information about memory usage.
     size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; } /// NOLINT
@@ -388,7 +388,7 @@ public:
     }
 
     T * data() { return t_start(); }
-    const T * data() const { return t_start(); }
+    [[nodiscard]] const T * data() const { return t_start(); }
 
     /// The index is signed to access -1th element without pointer overflow.
     T & operator[] (ssize_t n)
@@ -406,15 +406,15 @@ public:
 
     T & front()             { return t_start()[0]; }
     T & back()              { return t_end()[-1]; }
-    const T & front() const { return t_start()[0]; }
-    const T & back() const  { return t_end()[-1]; }
+    [[nodiscard]] const T & front() const { return t_start()[0]; }
+    [[nodiscard]] const T & back() const  { return t_end()[-1]; }
 
     iterator begin()              { return t_start(); }
     iterator end()                { return t_end(); }
-    const_iterator begin() const  { return t_start(); }
-    const_iterator end() const    { return t_end(); }
-    const_iterator cbegin() const { return t_start(); }
-    const_iterator cend() const   { return t_end(); }
+    [[nodiscard]] const_iterator begin() const  { return t_start(); }
+    [[nodiscard]] const_iterator end() const    { return t_end(); }
+    [[nodiscard]] const_iterator cbegin() const { return t_start(); }
+    [[nodiscard]] const_iterator cend() const   { return t_end(); }
 
     /// Same as resize, but zeroes new elements.
     void resize_fill(size_t n) /// NOLINT

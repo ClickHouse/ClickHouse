@@ -51,29 +51,29 @@ private:
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
-    std::optional<UInt64> estimateCardinality(
+    [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
-    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Conflict-detector variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Dispatch used by the DPsub acceptor: routes to the per-operator conflict-detector check when
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
-    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    bool useConflictDetector() const
+    [[nodiscard]] bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
-    ConflictDetector conflictDetectorKind() const
+    [[nodiscard]] ConflictDetector conflictDetectorKind() const
     {
         return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }

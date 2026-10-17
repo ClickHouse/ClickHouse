@@ -174,7 +174,7 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObject>(*this);
 

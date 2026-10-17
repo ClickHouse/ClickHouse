@@ -35,22 +35,22 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const final;
-    TypeIndex getDataType() const final;
+    [[nodiscard]] const char * getFamilyName() const final;
+    [[nodiscard]] TypeIndex getDataType() const final;
 
-    bool isNumeric() const final { return false; }
-    bool canBeInsideNullable() const final { return true; }
-    bool isFixedAndContiguous() const final { return true; }
-    size_t sizeOfValueIfFixed() const final { return sizeof(T); }
+    [[nodiscard]] bool isNumeric() const final { return false; }
+    [[nodiscard]] bool canBeInsideNullable() const final { return true; }
+    [[nodiscard]] bool isFixedAndContiguous() const final { return true; }
+    [[nodiscard]] size_t sizeOfValueIfFixed() const final { return sizeof(T); }
     std::span<char> insertRawUninitialized(size_t count) final;
 
-    size_t size() const final { return data.size(); }
-    size_t byteSize() const final { return data.size() * sizeof(data[0]); }
-    size_t byteSizeAt(size_t) const final { return sizeof(data[0]); }
-    size_t allocatedBytes() const final { return data.allocated_bytes(); }
+    [[nodiscard]] size_t size() const final { return data.size(); }
+    [[nodiscard]] size_t byteSize() const final { return data.size() * sizeof(data[0]); }
+    [[nodiscard]] size_t byteSizeAt(size_t) const final { return sizeof(data[0]); }
+    [[nodiscard]] size_t allocatedBytes() const final { return data.allocated_bytes(); }
     void protect() final { data.protect(); }
     void reserve(size_t n) final { data.reserve_exact(n); }
-    size_t capacity() const final { return data.capacity(); }
+    [[nodiscard]] size_t capacity() const final { return data.capacity(); }
     void shrinkToFit() final { data.shrink_to_fit(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -88,17 +88,17 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    std::string_view getRawData() const final
+    [[nodiscard]] std::string_view getRawData() const final
     {
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const final
+    [[nodiscard]] std::string_view getDataAt(size_t n) const final
     {
         return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
     }
 
-    Float64 getFloat64(size_t n) const final;
+    [[nodiscard]] Float64 getFloat64(size_t n) const final;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) final;
     void updateHashWithValue(size_t n, SipHash & hash) const final;
@@ -106,46 +106,46 @@ public:
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const final;
     void updateHashFast(SipHash & hash) const final;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+    [[nodiscard]] int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #endif
     [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
+    [[nodiscard]] size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const final;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const final;
-    size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const final;
+    [[nodiscard]] size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const final;
 
 
-    MutableColumnPtr cloneResized(size_t size) const final;
+    [[nodiscard]] MutableColumnPtr cloneResized(size_t size) const final;
 
     Field operator[](size_t n) const final { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const final { res = (*this)[n]; }
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const final;
-    bool getBool(size_t n) const final { return bool(data[n].value); }
-    Int64 getInt(size_t n) const final { return Int64(data[n].value); }
-    UInt64 get64(size_t n) const final;
-    bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
+    [[nodiscard]] bool getBool(size_t n) const final { return bool(data[n].value); }
+    [[nodiscard]] Int64 getInt(size_t n) const final { return Int64(data[n].value); }
+    [[nodiscard]] UInt64 get64(size_t n) const final;
+    [[nodiscard]] bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
-    bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] bool hasOnlyTypeDefaults() const override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
+    [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;
     void expand(const IColumn::Filter & mask, bool inverted) final;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const final;
-    ColumnPtr index(const IColumn & indexes, size_t limit) const final;
+    [[nodiscard]] ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const final;
+    [[nodiscard]] ColumnPtr index(const IColumn & indexes, size_t limit) const final;
 
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
-    ColumnPtr replicate(const IColumn::Offsets & offsets) const final;
+    [[nodiscard]] ColumnPtr replicate(const IColumn::Offsets & offsets) const final;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const final;
 
-    bool structureEquals(const IColumn & rhs) const final
+    [[nodiscard]] bool structureEquals(const IColumn & rhs) const final
     {
         if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
             return scale == rhs_concrete->scale;
@@ -154,7 +154,7 @@ public:
 
     void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) final;
 
-    ColumnPtr compress(bool force_compression) const final;
+    [[nodiscard]] ColumnPtr compress(bool force_compression) const final;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -162,7 +162,7 @@ public:
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
-    UInt32 getScale() const { return scale; }
+    [[nodiscard]] UInt32 getScale() const { return scale; }
 
     void serializeAsComparable(size_t n, String & out) const final;
 

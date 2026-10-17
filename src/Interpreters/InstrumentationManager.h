@@ -72,7 +72,7 @@ public:
         String symbol;
         std::vector<InstrumentedArgument> arguments;
 
-        String toString() const;
+        [[nodiscard]] String toString() const;
         bool operator<(const InstrumentedPointInfo & other) const { return id < other.id; }
     };
 

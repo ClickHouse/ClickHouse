@@ -19,7 +19,7 @@ class FunctionIfBase : public IFunction
 {
 #if USE_EMBEDDED_COMPILER
 public:
-    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
         if (!canBeNativeType(result_type))
             return false;

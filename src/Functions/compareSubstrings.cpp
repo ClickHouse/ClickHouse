@@ -31,20 +31,20 @@ public:
     static constexpr auto name = "compareSubstrings";
     static FunctionPtr create(const ContextPtr /*context*/) { return std::make_shared<FunctionCompareSubstrings>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, StringOrFixedString, const UnsignedInteger, const UnsignedInteger, const UnsignedInteger) -> Int8";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt8>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt8>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto col_result = ColumnInt8::create();
 

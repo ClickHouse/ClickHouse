@@ -76,7 +76,7 @@ struct EntropyData
         }
     }
 
-    Float64 get() const
+    [[nodiscard]] Float64 get() const
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
@@ -107,14 +107,14 @@ public:
     {
     }
 
-    String getName() const override { return "entropy"; }
+    [[nodiscard]] String getName() const override { return "entropy"; }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

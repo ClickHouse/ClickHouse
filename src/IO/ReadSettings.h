@@ -194,7 +194,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
 #endif
 
-    ReadSettings adjustBufferSize(size_t file_size) const;
+    [[nodiscard]] ReadSettings adjustBufferSize(size_t file_size) const;
 
     /// Verification/metadata-read mode: disable every read-side cache (and the
     /// cache-stage logs that come with them). Used by `checkDataPart`,

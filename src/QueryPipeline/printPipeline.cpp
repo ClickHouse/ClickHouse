@@ -18,7 +18,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         const IQueryPlanStep * step;
         std::string name;
 
-        auto getTuple() const { return std::forward_as_tuple(group, step, name); }
+        [[nodiscard]] auto getTuple() const { return std::forward_as_tuple(group, step, name); }
 
         bool operator<(const Key & other) const
         {

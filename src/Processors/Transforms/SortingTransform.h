@@ -36,7 +36,7 @@ public:
         size_t max_block_rows, size_t preferred_block_bytes, size_t input_rows, size_t input_bytes);
 
     /// Returns the row limit, reduced by the optional byte target using the input's average row size.
-    size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
+    [[nodiscard]] size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
 
 private:
     Chunks chunks;
@@ -56,7 +56,7 @@ private:
     template <Mode merge_mode, typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
-    MutableColumns createMergedColumns() const;
+    [[nodiscard]] MutableColumns createMergedColumns() const;
 
 };
 

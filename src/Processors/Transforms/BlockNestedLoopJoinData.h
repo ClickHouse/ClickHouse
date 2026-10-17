@@ -85,7 +85,7 @@ struct BuildBlock
     /// The block's position in the store, which the global row numbering is built from.
     size_t index = 0;
 
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 /// Held by shared pointer because a block that was compressed or spilled is decompressed or read

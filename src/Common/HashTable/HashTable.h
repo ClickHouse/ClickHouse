@@ -168,17 +168,17 @@ struct HashTableCell
     HashTableCell(const Key & key_, const State &) : key(key_) {}
 
     /// Get the key (externally).
-    const Key & getKey() const { return key; }
-    VoidMapped getMapped() const { return {}; }
-    const value_type & getValue() const { return key; }
+    [[nodiscard]] const Key & getKey() const { return key; }
+    [[nodiscard]] VoidMapped getMapped() const { return {}; }
+    [[nodiscard]] const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    [[nodiscard]] bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -186,12 +186,12 @@ struct HashTableCell
     /// If the cell can store the hash value in itself, then return the stored value.
     /// It must be at least once calculated before.
     /// If storing the hash value is not provided, then just compute the hash.
-    size_t getHash(const Hash & hash) const { return hash(key); }
+    [[nodiscard]] size_t getHash(const Hash & hash) const { return hash(key); }
 
     /// Whether the key is zero. In the main buffer, cells with a zero key are considered empty.
     /// If zero keys can be inserted into the table, then the cell for the zero key is stored separately, not in the main buffer.
     /// Zero keys must be such that the zeroed-down piece of memory is a zero key.
-    bool isZero(const State & state) const { return isZero(key, state); }
+    [[nodiscard]] bool isZero(const State & state) const { return isZero(key, state); }
     static bool isZero(const Key & key, const State & /*state*/) { return ZeroTraits::check(key); }
 
     /// Set the key value to zero.
@@ -230,19 +230,19 @@ struct HashTableGrower
     static constexpr size_t max_size_degree = 23;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const               { return 1ULL << size_degree; }
+    [[nodiscard]] size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return 1ULL << (size_degree - 1); }
-    size_t mask() const                  { return bufSize() - 1; }
+    [[nodiscard]] size_t maxFill() const               { return 1ULL << (size_degree - 1); }
+    [[nodiscard]] size_t mask() const                  { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const         { return x & mask(); }
+    [[nodiscard]] size_t place(size_t x) const         { return x & mask(); }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const        { ++pos; return pos & mask(); }
+    [[nodiscard]] size_t next(size_t pos) const        { ++pos; return pos & mask(); }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const    { return elems > maxFill(); }
+    [[nodiscard]] bool overflow(size_t elems) const    { return elems > maxFill(); }
 
     /// Increase the size of the hash table.
     void increaseSize()
@@ -283,7 +283,7 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
     static constexpr size_t max_size_degree = 23;
 
 public:
-    UInt8 sizeDegree() const { return size_degree; }
+    [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
 
     void increaseSizeDegree(UInt8 delta)
     {
@@ -298,16 +298,16 @@ public:
     static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const { return 1ULL << size_degree; }
+    [[nodiscard]] size_t bufSize() const { return 1ULL << size_degree; }
 
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const { return x & precalculated_mask; }
+    [[nodiscard]] size_t place(size_t x) const { return x & precalculated_mask; }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
+    [[nodiscard]] size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table.
     void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree ? 1 : 2); }
@@ -372,8 +372,8 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
     }
 
 public:
-    UInt8 sizeDegree() const { return size_degree; }
-    bool isRobinHood() const { return robin_hood; }
+    [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
+    [[nodiscard]] bool isRobinHood() const { return robin_hood; }
 
     void increaseSizeDegree(UInt8 delta)
     {
@@ -387,16 +387,16 @@ public:
     static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const { return 1ULL << size_degree; }
+    [[nodiscard]] size_t bufSize() const { return 1ULL << size_degree; }
 
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const { return x & precalculated_mask; }
+    [[nodiscard]] size_t place(size_t x) const { return x & precalculated_mask; }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
+    [[nodiscard]] size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
     void increaseSize()
@@ -455,11 +455,11 @@ struct HashTableFixedGrower
 
     static constexpr auto performs_linear_probing_with_single_step = true;
 
-    size_t bufSize() const               { return 1ULL << key_bits; }
-    size_t place(size_t x) const         { return x; }
+    [[nodiscard]] size_t bufSize() const               { return 1ULL << key_bits; }
+    [[nodiscard]] size_t place(size_t x) const         { return x; }
     /// You could write UNREACHABLE(), but the compiler does not optimize everything, and it turns out less efficiently.
-    size_t next(size_t pos) const        { return pos + 1; }
-    bool overflow(size_t /*elems*/) const { return false; }
+    [[nodiscard]] size_t next(size_t pos) const        { return pos + 1; }
+    [[nodiscard]] bool overflow(size_t /*elems*/) const { return false; }
 
     void increaseSize() { UNREACHABLE(); }
     void set(size_t /*num_elems*/) {}
@@ -479,7 +479,7 @@ private:
     alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
-    bool hasZero() const { return has_zero; }
+    [[nodiscard]] bool hasZero() const { return has_zero; }
 
     void setHasZero()
     {
@@ -499,19 +499,19 @@ public:
     }
 
     Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
-    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
+    [[nodiscard]] const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
 
 template <typename Cell>
 struct ZeroValueStorage<false, Cell>
 {
-    bool hasZero() const { return false; }
+    [[nodiscard]] bool hasZero() const { return false; }
     void setHasZero() { throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashTable: logical error"); }
     void clearHasZero() {}
     void clearHasZeroFlag() {}
 
     Cell * zeroValue()             { return nullptr; }
-    const Cell * zeroValue() const { return nullptr; }
+    [[nodiscard]] const Cell * zeroValue() const { return nullptr; }
 };
 
 // The HashTable
@@ -556,7 +556,7 @@ protected:
 #endif
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
+    [[nodiscard]] size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
     {
         while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
         {
@@ -571,7 +571,7 @@ protected:
 
 
     /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findEmptyCell(size_t place_value) const
+    [[nodiscard]] size_t ALWAYS_INLINE findEmptyCell(size_t place_value) const
     {
         while (!buf[place_value].isZero(*this))
         {
@@ -585,7 +585,7 @@ protected:
     }
 
     /// Whether the hash table is in the Robin Hood mode, see `HashTableGrowerWithPrecalculationAndRobinHood`.
-    bool ALWAYS_INLINE isRobinHood() const
+    [[nodiscard]] bool ALWAYS_INLINE isRobinHood() const
     {
         if constexpr (GrowerWithRobinHood<Grower>)
             return grower.isRobinHood();
@@ -594,7 +594,7 @@ protected:
     }
 
     /// The distance of the element in the cell at place_value from its optimal position.
-    size_t ALWAYS_INLINE distanceFromOptimalPosition(const Cell & cell, size_t place_value) const
+    [[nodiscard]] size_t ALWAYS_INLINE distanceFromOptimalPosition(const Cell & cell, size_t place_value) const
     {
         return grower.place(place_value - grower.place(cell.getHash(*this)));
     }
@@ -633,7 +633,7 @@ protected:
     }
 
     /// Same as `findCellRobinHood`, but for a key that is known to be absent.
-    size_t ALWAYS_INLINE findInsertionPlaceRobinHood(size_t place_value) const
+    [[nodiscard]] size_t ALWAYS_INLINE findInsertionPlaceRobinHood(size_t place_value) const
     {
         for (size_t distance = 0;; ++distance)
         {
@@ -645,7 +645,7 @@ protected:
     }
 
     /// Find the cell with the key (it must not be zero). Return nullptr if the key is not found.
-    Cell * ALWAYS_INLINE findNonZeroCell(const Key & x, size_t hash_value) const
+    [[nodiscard]] Cell * ALWAYS_INLINE findNonZeroCell(const Key & x, size_t hash_value) const
     {
         size_t place_value = grower.place(hash_value);
         if (isRobinHood())
@@ -1100,10 +1100,10 @@ protected:
         auto & operator* () const { return *ptr; }
         auto * operator->() const { return ptr; }
 
-        auto getPtr() const { return ptr; }
-        size_t getHash() const { return ptr->getHash(*container); }
+        [[nodiscard]] auto getPtr() const { return ptr; }
+        [[nodiscard]] size_t getHash() const { return ptr->getHash(*container); }
 
-        size_t getCollisionChainLength() const
+        [[nodiscard]] size_t getCollisionChainLength() const
         {
             return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
         }
@@ -1137,7 +1137,7 @@ public:
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
 
-    size_t hash(const Key & x) const { return Hash::operator()(x); }
+    [[nodiscard]] size_t hash(const Key & x) const { return Hash::operator()(x); }
 
 
     HashTable()
@@ -1250,7 +1250,7 @@ public:
             return true;
         }
 
-        const value_type & get() const
+        [[nodiscard]] const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
@@ -1281,7 +1281,7 @@ public:
 
 
     template <bool prefetch = false>
-    auto begin() const
+    [[nodiscard]] auto begin() const
     {
         using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
         if (!buf)
@@ -1320,7 +1320,7 @@ public:
     }
 
     template <bool prefetch = false>
-    auto end() const
+    [[nodiscard]] auto end() const
     {
         using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
@@ -1344,7 +1344,7 @@ public:
 protected:
     const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
     iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
-    const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
+    [[nodiscard]] const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
     iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
 
 
@@ -1497,7 +1497,7 @@ public:
         __builtin_prefetch(&buf[place]);
     }
 
-    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
+    [[nodiscard]] bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         return buf[place].isZero(*this);
@@ -1622,7 +1622,7 @@ public:
         return findNonZeroCell(x, hash(x));
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x);
     }
@@ -1635,7 +1635,7 @@ public:
         return findNonZeroCell(x, hash_value);
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
@@ -1681,7 +1681,7 @@ public:
         return true;
     }
 
-    bool ALWAYS_INLINE has(const Key & x) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero();
@@ -1690,7 +1690,7 @@ public:
     }
 
 
-    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero();
@@ -1698,7 +1698,7 @@ public:
         return findNonZeroCell(x, hash_value) != nullptr;
     }
 
-    bool ALWAYS_INLINE contains(const Key & x) const
+    [[nodiscard]] bool ALWAYS_INLINE contains(const Key & x) const
     {
         return has(x);
     }
@@ -1793,12 +1793,12 @@ public:
     }
 
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return m_size;
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return 0 == m_size;
     }
@@ -1820,7 +1820,7 @@ public:
         free();
     }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
     }
@@ -1829,7 +1829,7 @@ public:
     /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
     /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
     /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys) const noexcept
     {
         auto projected_grower = grower;
         const size_t initial_bytes = getBufferSizeInBytes();
@@ -1860,7 +1860,7 @@ public:
         return peak_extra_bytes;
     }
 
-    size_t getBufferSizeInCells() const
+    [[nodiscard]] size_t getBufferSizeInCells() const
     {
         return grower.bufSize();
     }

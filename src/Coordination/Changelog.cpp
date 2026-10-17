@@ -2073,14 +2073,14 @@ struct ReadAheadReader
     LogEntryPtr popFrontLocked() TSA_REQUIRES(fill_serve_mutex);
     void resetToIndexLocked(uint64_t index) TSA_REQUIRES(fill_serve_mutex);
     /// Exclusive upper bound of indices the fill will produce unaided (pending cursors > resume > deque > front).
-    uint64_t fillCoverageEndLocked() const TSA_REQUIRES(fill_serve_mutex);
+    [[nodiscard]] uint64_t fillCoverageEndLocked() const TSA_REQUIRES(fill_serve_mutex);
 
     /// === Park/wake hysteresis (fill_serve_mutex held by caller) ===
     /// Fill parks at the full budget, wakes at half (hysteresis); all pop sites must agree on this.
-    size_t lowWaterMarkLocked() const TSA_REQUIRES(fill_serve_mutex) { return window_budget_bytes / 2; }
+    [[nodiscard]] size_t lowWaterMarkLocked() const TSA_REQUIRES(fill_serve_mutex) { return window_budget_bytes / 2; }
     /// Whether a pop from bytes_before crossed the low-water mark. Compare against decoded_bytes
     /// *before* the pop(s), not after.
-    bool crossedLowWaterLocked(size_t bytes_before) const TSA_REQUIRES(fill_serve_mutex)
+    [[nodiscard]] bool crossedLowWaterLocked(size_t bytes_before) const TSA_REQUIRES(fill_serve_mutex)
     {
         return bytes_before > lowWaterMarkLocked() && decoded_bytes <= lowWaterMarkLocked();
     }

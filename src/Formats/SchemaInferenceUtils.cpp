@@ -183,7 +183,7 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
+            [[nodiscard]] DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
                 if (nodes.empty())
                     return leaf_type;

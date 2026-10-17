@@ -54,7 +54,7 @@ struct AggregateFunctionTimeseriesMaxTraits
         ValueType value{};
         bool has_value = false;
 
-        bool empty() const { return !has_value; }
+        [[nodiscard]] bool empty() const { return !has_value; }
 
         void add(TimestampType sample_timestamp, ValueType sample_value)
         {
@@ -107,7 +107,7 @@ struct AggregateFunctionTimeseriesMaxTraits
         }
 
     private:
-        bool shouldReplace(TimestampType candidate_timestamp, ValueType candidate_value) const
+        [[nodiscard]] bool shouldReplace(TimestampType candidate_timestamp, ValueType candidate_value) const
         {
             if (!has_value)
                 return true;

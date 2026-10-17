@@ -77,7 +77,7 @@ private:
                 level = config.getInt64(config_prefix + ".level");
         }
 
-        bool check(size_t part_size, double part_size_ratio) const
+        [[nodiscard]] bool check(size_t part_size, double part_size_ratio) const
         {
             return part_size >= min_part_size
                 && part_size_ratio >= min_part_size_ratio;
@@ -103,7 +103,7 @@ public:
         }
     }
 
-    CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
+    [[nodiscard]] CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
     {
         const auto & factory = CompressionCodecFactory::instance();
 

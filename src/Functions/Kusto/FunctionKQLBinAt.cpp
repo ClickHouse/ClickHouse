@@ -47,13 +47,13 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLDateTimeBinAt>(std::move(context_)); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
             || !isDateTime64(removeNullable(arguments[2])))
@@ -66,7 +66,7 @@ public:
         return makeNullable(std::make_shared<DataTypeDateTime64>(result_scale, value_type));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
     {
         struct Operand
         {

@@ -89,29 +89,29 @@ public:
     }
 
     /// Keep canonical expression names distinct from floating-point `divide` in indexes and projections.
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
     /// Skip unused dictionary entries and rows masked by either input's null map before dividing.
-    bool canBeExecutedOnDefaultArguments() const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
     {
         return false;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr result;
         const bool matched = dispatch(arguments, [&]<typename A, typename B>()
@@ -124,7 +124,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
     {
         ColumnPtr result;
         const bool matched = dispatch({arguments[0].type, arguments[1].type}, [&]<typename A, typename B>()

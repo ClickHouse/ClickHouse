@@ -142,9 +142,9 @@ public:
     ReadFromMySQLStep(const ReadFromMySQLStep &) = default;
     ReadFromMySQLStep(ReadFromMySQLStep &&) = default;
 
-    String getName() const override { return "ReadFromMySQL"; }
+    [[nodiscard]] String getName() const override { return "ReadFromMySQL"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromMySQLStep>(*this);
     }

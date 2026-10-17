@@ -683,7 +683,7 @@ struct CivilTime
     unsigned second = 0;
     UInt32 nanosecond = 0;
 
-    Int64 toNanoseconds() const
+    [[nodiscard]] Int64 toNanoseconds() const
     {
         Int64 days = daysFromCivil(year, month, day);
         Int64 seconds = days * 86400 + hour * 3600 + minute * 60 + second;

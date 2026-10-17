@@ -1753,7 +1753,7 @@ public:
     /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
     /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
     /// A budget of 0 means unlimited, so the optimization is never stopped early.
-    bool andCompareChainHashBudgetExceeded() const
+    [[nodiscard]] bool andCompareChainHashBudgetExceeded() const
     {
         return and_compare_chain_max_hash_work != 0
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;

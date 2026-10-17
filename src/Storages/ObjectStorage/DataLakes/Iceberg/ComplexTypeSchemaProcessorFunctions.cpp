@@ -404,7 +404,7 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
-    size_t getDeleteIndex() const { return index_to_delete; }
+    [[nodiscard]] size_t getDeleteIndex() const { return index_to_delete; }
 
 private:
     IcebergDeletingOperation operation;

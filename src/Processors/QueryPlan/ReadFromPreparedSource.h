@@ -17,7 +17,7 @@ class ReadFromPreparedSource : public ISourceStep
 public:
     explicit ReadFromPreparedSource(Pipe pipe_);
 
-    String getName() const override { return "ReadFromPreparedSource"; }
+    [[nodiscard]] String getName() const override { return "ReadFromPreparedSource"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 protected:
@@ -29,13 +29,13 @@ class ReadFromStorageStep final : public ReadFromPreparedSource
 public:
     ReadFromStorageStep(Pipe pipe_, StoragePtr storage_, ContextPtr context_, const SelectQueryInfo & query_info_);
 
-    String getName() const override { return "ReadFromStorage"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorage"; }
 
-    const StoragePtr & getStorage() const { return storage; }
+    [[nodiscard]] const StoragePtr & getStorage() const { return storage; }
 
     void serialize(Serialization & ctx) const override;
     /// serialize is implemented only for StorageSystemOne.
-    bool isSerializable() const override;
+    [[nodiscard]] bool isSerializable() const override;
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

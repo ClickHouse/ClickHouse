@@ -133,7 +133,7 @@ private:
         {
         }
 
-        DeserializeBinaryBulkStatePtr clone() const override
+        [[nodiscard]] DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateBucketsInfo>(*this);
         }

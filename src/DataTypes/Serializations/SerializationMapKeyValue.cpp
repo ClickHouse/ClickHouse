@@ -47,7 +47,7 @@ struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::Deserializ
     /// Nested deserialization state for the selected bucket's sub-stream.
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeyValue>(*this);
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;

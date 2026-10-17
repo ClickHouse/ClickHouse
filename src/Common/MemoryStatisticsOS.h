@@ -37,7 +37,7 @@ public:
     ~MemoryStatisticsOS();
 
     /// Thread-safe.
-    Data get() const;
+    [[nodiscard]] Data get() const;
 
 private:
 #if defined(OS_LINUX)

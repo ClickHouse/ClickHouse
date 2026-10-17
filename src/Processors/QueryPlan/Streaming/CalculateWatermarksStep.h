@@ -18,10 +18,10 @@ class CalculateWatermarksStep : public ITransformingStep
 public:
     CalculateWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_settings_, Field initial_watermark_, ContextPtr context_);
 
-    String getName() const override { return "CalculateWatermarks"; }
+    [[nodiscard]] String getName() const override { return "CalculateWatermarks"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     const WatermarkSettingsPtr watermark_settings;

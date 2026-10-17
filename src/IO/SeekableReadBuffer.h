@@ -53,10 +53,10 @@ public:
     /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
     /// it first releases the buffer, and then do logging, and so other thread
     /// can already call seek() which will lead to data-race).
-    virtual size_t getFileOffsetOfBufferEnd() const;
+    [[nodiscard]] virtual size_t getFileOffsetOfBufferEnd() const;
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
-    virtual bool supportsRightBoundedReads() const { return false; }
+    [[nodiscard]] virtual bool supportsRightBoundedReads() const { return false; }
 
     /// Returns true if seek() actually works, false if seek() will always throw (or make subsequent
     /// nextImpl() calls throw).
@@ -110,10 +110,10 @@ public:
     /// any memory copy.
     ///
     /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
-    virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+    [[nodiscard]] virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
 
     /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
-    virtual bool supportsReadAtRetainCells() const { return false; }
+    [[nodiscard]] virtual bool supportsReadAtRetainCells() const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).

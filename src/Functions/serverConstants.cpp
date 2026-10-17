@@ -33,7 +33,7 @@ namespace
     {
     public:
         using FunctionConstantBase<Derived, T, ColumnT>::FunctionConstantBase;
-        bool isServerConstant() const override { return true; }
+        [[nodiscard]] bool isServerConstant() const override { return true; }
     };
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)

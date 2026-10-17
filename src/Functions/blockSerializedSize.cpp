@@ -22,20 +22,20 @@ public:
         return std::make_shared<FunctionBlockSerializedSize>();
     }
 
-    String getName() const override { return name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(...) -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt64 size = 0;
 

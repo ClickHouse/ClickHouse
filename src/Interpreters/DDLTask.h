@@ -53,15 +53,15 @@ struct HostID
 
     static HostID fromString(const String & host_port_str);
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const;
+    [[nodiscard]] String readableString() const;
 
-    bool isLocalAddress(UInt16 clickhouse_port) const;
-    bool isLoopbackHost() const;
+    [[nodiscard]] bool isLocalAddress(UInt16 clickhouse_port) const;
+    [[nodiscard]] bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -101,7 +101,7 @@ struct DDLLogEntry
     Strings initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parse(const String & data);
     void assertVersion() const;
 };

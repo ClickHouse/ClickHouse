@@ -226,16 +226,16 @@ public:
     static constexpr auto name = "arrayExcept";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayExcept>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Both array element types must be identical after stripping Nullable;
     /// the DSL doesn't model that "equal up to Nullable" relation, so the
     /// runtime enforces it. The result is the source array's type.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(A : Array, Array) -> A";
     }
@@ -243,7 +243,7 @@ public:
     /// The signature above is documentation-only, so the types-only entry point must not
     /// apply it directly: route it through the authoritative resolver below, which only
     /// looks at the argument types.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -252,7 +252,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
             {"source", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
@@ -295,7 +295,7 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);

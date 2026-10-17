@@ -20,7 +20,7 @@ public:
     /// @return false if the recovering failed and the batch should be started from scratch
     bool recoverBatch();
 
-    bool isEnoughSize() const;
+    [[nodiscard]] bool isEnoughSize() const;
     void send(const SettingsChanges & settings_changes, bool update_current_batch);
 
     size_t total_rows = 0;

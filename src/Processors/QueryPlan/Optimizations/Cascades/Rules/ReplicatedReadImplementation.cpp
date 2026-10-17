@@ -18,10 +18,10 @@ namespace DB
 class ReplicatedReadImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "ReplicatedRead"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 5000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "ReplicatedRead"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 5000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;

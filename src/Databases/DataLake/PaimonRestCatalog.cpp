@@ -517,7 +517,7 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
 {
     try
     {
-        createReadBuffer(
+        (void)createReadBuffer(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
     }
     catch (const DB::HTTPException & e)

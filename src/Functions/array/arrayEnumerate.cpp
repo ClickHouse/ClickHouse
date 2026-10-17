@@ -26,18 +26,18 @@ public:
         return std::make_shared<FunctionArrayEnumerate>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array) -> Array(UInt32)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array) -> Array(UInt32)"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
         {

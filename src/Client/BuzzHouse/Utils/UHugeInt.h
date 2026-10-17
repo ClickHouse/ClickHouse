@@ -29,7 +29,7 @@ public:
     UHugeInt & operator=(const UHugeInt & rhs) = default;
     UHugeInt & operator=(UHugeInt && rhs) = default;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Comparison operators
     bool operator==(const UHugeInt & rhs) const;

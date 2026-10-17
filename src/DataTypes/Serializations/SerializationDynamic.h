@@ -168,7 +168,7 @@ private:
         {
         }
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
         }

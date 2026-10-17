@@ -24,16 +24,16 @@ class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString) -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t allowed_max_length = 0;
 

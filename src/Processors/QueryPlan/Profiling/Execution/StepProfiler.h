@@ -25,7 +25,7 @@ public:
 
     StepWallClock * findClockForStep(const IQueryPlanStep * step, size_t group) const;
 
-    bool needCollectWorkIntervals() const;
+    [[nodiscard]] bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
     WorkIntervalsPerThread extractWorkIntervals(UInt64 execution_start_ns);
 

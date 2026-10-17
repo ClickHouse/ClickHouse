@@ -73,9 +73,9 @@ public:
           AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, result_type_),
           max_elems(max_elems_) {}
 
-    String getName() const override { return "groupUniqArray"; }
+    [[nodiscard]] String getName() const override { return "groupUniqArray"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// `final` devirtualizes the per-row call in addBatchSinglePlace (this class has subclasses).
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
@@ -144,12 +144,12 @@ struct AggregateFunctionGroupUniqArrayBitmapData
 {
     UInt64 bits[4] = {};
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return std::popcount(bits[0]) + std::popcount(bits[1]) + std::popcount(bits[2]) + std::popcount(bits[3]);
     }
 
-    bool contains(UInt8 idx) const { return bits[idx / 64] & (1ULL << (idx % 64)); }
+    [[nodiscard]] bool contains(UInt8 idx) const { return bits[idx / 64] & (1ULL << (idx % 64)); }
     void set(UInt8 idx) { bits[idx / 64] |= 1ULL << (idx % 64); }
 
     template <typename F>
@@ -185,9 +185,9 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupUniqArrayBitmap<T, LimitNumElems>>({argument_type}, parameters_, std::make_shared<DataTypeArray>(argument_type))
         , max_elems(max_elems_) {}
 
-    String getName() const override { return "groupUniqArray"; }
+    [[nodiscard]] String getName() const override { return "groupUniqArray"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -306,9 +306,9 @@ public:
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 
-    String getName() const override { return "groupUniqArray"; }
+    [[nodiscard]] String getName() const override { return "groupUniqArray"; }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }

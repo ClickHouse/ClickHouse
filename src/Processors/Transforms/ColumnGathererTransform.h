@@ -26,10 +26,10 @@ struct RowSourcePart
         setSkipFlag(skip_flag);
     }
 
-    size_t getSourceNum() const { return data & MASK_NUMBER; }
+    [[nodiscard]] size_t getSourceNum() const { return data & MASK_NUMBER; }
 
     /// In CollapsingMergeTree case flag means "skip this rows"
-    bool getSkipFlag() const { return (data & MASK_FLAG) != 0; }
+    [[nodiscard]] bool getSkipFlag() const { return (data & MASK_FLAG) != 0; }
 
     void setSourceNum(size_t source_num)
     {
@@ -64,7 +64,7 @@ public:
         std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
-    const char * getName() const override { return "ColumnGathererStream"; }
+    [[nodiscard]] const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -73,7 +73,7 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    [[nodiscard]] MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
 
 private:
     void updateStats(const IColumn & column);

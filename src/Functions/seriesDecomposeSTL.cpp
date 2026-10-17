@@ -32,20 +32,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesDecomposeSTL>(); }
 
-    std::string getName() const override { return name; }
+    [[nodiscard]] std::string getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array, NativeUInt) -> Array(Array(Float32))";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());

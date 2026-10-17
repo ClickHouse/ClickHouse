@@ -36,9 +36,9 @@ private:
     {
         explicit StorageData(const StorageInfo & storage_info, LoggerPtr log_);
 
-        size_t getColumnsNum() const { return table_description.sample_block.columns(); }
+        [[nodiscard]] size_t getColumnsNum() const { return table_description.sample_block.columns(); }
 
-        const Block & getSampleBlock() const { return table_description.sample_block; }
+        [[nodiscard]] const Block & getSampleBlock() const { return table_description.sample_block; }
 
         using ArrayInfo = UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo>;
 

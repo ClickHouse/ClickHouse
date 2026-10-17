@@ -61,7 +61,7 @@ struct AsynchronousMetricValue
         , documentation(documentation_), source(source_.file_name()) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
 
-    bool isMap() const { return key_label != nullptr; }
+    [[nodiscard]] bool isMap() const { return key_label != nullptr; }
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;

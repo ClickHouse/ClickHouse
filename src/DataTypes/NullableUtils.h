@@ -57,9 +57,9 @@ struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
 
     explicit NullableSubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
-    DataTypePtr create(const DataTypePtr & prev) const override;
-    SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
-    ColumnPtr create(const ColumnPtr & prev) const override;
+    [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+    [[nodiscard]] SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
+    [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
 };
 
 }

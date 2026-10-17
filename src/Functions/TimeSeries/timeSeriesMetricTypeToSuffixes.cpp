@@ -56,13 +56,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesMetricTypeToSuffixes>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"type", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -71,7 +71,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto * col_type = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col_type)

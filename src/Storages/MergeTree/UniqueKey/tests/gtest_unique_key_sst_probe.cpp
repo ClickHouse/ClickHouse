@@ -87,7 +87,7 @@ namespace
             std::filesystem::remove_all(tmp_path);
         }
 
-        std::string finalPath() const
+        [[nodiscard]] std::string finalPath() const
         {
             return storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
         }

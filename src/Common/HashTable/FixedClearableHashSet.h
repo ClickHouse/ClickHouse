@@ -17,17 +17,17 @@ struct FixedClearableHashTableCell
     FixedClearableHashTableCell(const Key &, const State & state) : version(state.version) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
-    VoidMapped getMapped() const { return {}; }
+    [[nodiscard]] VoidMapped getMapped() const { return {}; }
 
-    bool isZero(const State & state) const { return version != state.version; }
+    [[nodiscard]] bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
 
     struct CellExt
     {
         Key key;
         const VoidKey getKey() const { return {}; } /// NOLINT
-        VoidMapped getMapped() const { return {}; }
-        const value_type & getValue() const { return key; }
+        [[nodiscard]] VoidMapped getMapped() const { return {}; }
+        [[nodiscard]] const value_type & getValue() const { return key; }
         void update(Key && key_, FixedClearableHashTableCell *) { key = key_; }
     };
 };

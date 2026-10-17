@@ -64,7 +64,7 @@ private:
     size_t & visit_depth; /// shared with children
     const char * label;
 
-    String nodeId() const { return ast.getID(' '); }
+    [[nodiscard]] String nodeId() const { return ast.getID(' '); }
 
     void printNode() const
     {
@@ -125,8 +125,8 @@ private:
     bool root;
     const char * label;
 
-    String getASTId() const { return ast.getID(' '); }
-    String getNodeId(const IAST & a) const { return "n" + std::to_string(node_ids.try_emplace(&a, node_ids.size()).first->second); }
+    [[nodiscard]] String getASTId() const { return ast.getID(' '); }
+    [[nodiscard]] String getNodeId(const IAST & a) const { return "n" + std::to_string(node_ids.try_emplace(&a, node_ids.size()).first->second); }
 
     void printNode() const
     {

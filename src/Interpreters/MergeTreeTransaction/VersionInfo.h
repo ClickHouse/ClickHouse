@@ -27,13 +27,13 @@ struct VersionInfo
     /// Returns false if not visible (removed before snapshot, created after snapshot, or being removed by current transaction).
     /// Returns std::nullopt if visibility cannot be determined because the part is involved in an ongoing transaction
     /// that is neither creating nor removing it from the perspective of `current_tid`.
-    std::optional<bool> isVisible(CSN snapshot_version, TransactionID current_tid) const;
+    [[nodiscard]] std::optional<bool> isVisible(CSN snapshot_version, TransactionID current_tid) const;
     /// Returns true if the object creation is finalized (either non-transactional or committed).
-    bool isCreated() const;
+    [[nodiscard]] bool isCreated() const;
     /// Returns true if the object removal is finalized (either non-transactional, committed, or creation rolled back).
-    bool isRemoved() const;
+    [[nodiscard]] bool isRemoved() const;
     /// Returns true if the object was created, is being removed, or was removed by a transaction (not non-transactionally).
-    bool wasInvolvedInTransaction() const;
+    [[nodiscard]] bool wasInvolvedInTransaction() const;
 
     /// Clear an uncommitted `removal_tid`. Both return false when there is nothing to reset. The two
     /// differ only in whether a source this same transaction created is marked rolled back, which is
@@ -45,7 +45,7 @@ struct VersionInfo
     /// transactional holder), so marking its creation rolled back would kill a live part.
     bool resetRemovalForPeerTakeover();
 
-    String toString(bool one_line) const;
+    [[nodiscard]] String toString(bool one_line) const;
     void fromString(const String & content, bool one_line);
     void readFromBuffer(ReadBuffer & buf, bool one_line);
     void writeToBuffer(WriteBuffer & buf, bool one_line) const;

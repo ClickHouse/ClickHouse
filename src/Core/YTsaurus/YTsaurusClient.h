@@ -130,7 +130,7 @@ class YTsaurusTableLock
 {
 public:
     YTsaurusTableLock(YTsaurusClientPtr client_, const String& cypress_path_, size_t transaction_timeout_ms);
-    String getNodePath() const
+    [[nodiscard]] String getNodePath() const
     {
         return node_cypress_path;
     }

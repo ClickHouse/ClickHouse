@@ -93,7 +93,7 @@ struct ReverseIndexHashTableCell
 
     /// Special case when we want to compare with something not in index_column.
     /// When we compare something inside column default keyEquals checks only that row numbers are equal.
-    bool keyEquals(std::string_view object, size_t hash_ [[maybe_unused]], const State & state) const
+    [[nodiscard]] bool keyEquals(std::string_view object, size_t hash_ [[maybe_unused]], const State & state) const
     {
         auto index = key;
         if constexpr (has_base_index)
@@ -105,7 +105,7 @@ struct ReverseIndexHashTableCell
             return object == state.index_column->getDataAt(index);
     }
 
-    size_t getHash(const Hash & hash) const
+    [[nodiscard]] size_t getHash(const Hash & hash) const
     {
         auto index = key;
 
@@ -159,7 +159,7 @@ public:
 
 
     template <typename ObjectToCompareWith>
-    size_t ALWAYS_INLINE reverseIndexFindCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
+    [[nodiscard]] size_t ALWAYS_INLINE reverseIndexFindCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
     {
         while (!this->buf[place_value].isZero(*this) && !this->buf[place_value].keyEquals(x, hash_value, *this))
         {

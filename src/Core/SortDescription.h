@@ -147,7 +147,7 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    bool hasPrefix(const SortDescription & prefix) const;
+    [[nodiscard]] bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.

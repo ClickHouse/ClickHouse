@@ -20,7 +20,7 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    [[nodiscard]] ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateVariantElementNullMap>();
         new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;

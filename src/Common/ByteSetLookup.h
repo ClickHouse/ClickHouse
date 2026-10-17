@@ -82,7 +82,7 @@ public:
         high_nibble_table[high] = high_nibble_bit[high];
     }
 
-    ALWAYS_INLINE constexpr bool contains(char c) const
+    [[nodiscard]] ALWAYS_INLINE constexpr bool contains(char c) const
     {
         return table[static_cast<UInt8>(c)];
     }
@@ -178,7 +178,7 @@ private:
     }
 
     /// Tests the membership of 16 bytes at once: 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
-    ALWAYS_INLINE Int8x16 containsVector(UInt8x16 bytes) const
+    [[nodiscard]] ALWAYS_INLINE Int8x16 containsVector(UInt8x16 bytes) const
     {
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);

@@ -25,8 +25,8 @@ public:
         size_t memory_bound_merging_max_block_bytes_,
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
-    String getName() const override { return "MergingAggregated"; }
-    const Aggregator::Params & getParams() const { return params; }
+    [[nodiscard]] String getName() const override { return "MergingAggregated"; }
+    [[nodiscard]] const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -34,20 +34,20 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void applyOrder(SortDescription input_sort_description);
-    const SortDescription & getSortDescription() const override;
-    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
+    [[nodiscard]] const SortDescription & getSortDescription() const override;
+    [[nodiscard]] const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
-    bool memoryBoundMergingWillBeUsed() const;
+    [[nodiscard]] bool memoryBoundMergingWillBeUsed() const;
 
-    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
-    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+    [[nodiscard]] bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    [[nodiscard]] const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

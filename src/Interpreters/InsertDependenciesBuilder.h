@@ -53,11 +53,11 @@ private:
         void pushBack(StorageIDMaybeEmpty id);
         void popBack();
 
-        [[maybe_unused]] bool empty() const { return path.empty(); }
-        const StorageIDMaybeEmpty & back() const { return path.back(); }
-        const StorageIDMaybeEmpty & current() const { return back(); }
-        StorageIDMaybeEmpty parent(size_t inheritance) const;
-        String debugInfo() const;
+        [[nodiscard]] [[maybe_unused]] bool empty() const { return path.empty(); }
+        [[nodiscard]] const StorageIDMaybeEmpty & back() const { return path.back(); }
+        [[nodiscard]] const StorageIDMaybeEmpty & current() const { return back(); }
+        [[nodiscard]] StorageIDMaybeEmpty parent(size_t inheritance) const;
+        [[nodiscard]] String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<

@@ -35,7 +35,7 @@ public:
     {
     }
 
-    const char * getName() const override { return "LogsQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "LogsQL Statement"; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

@@ -89,9 +89,9 @@ struct SelectQueryOptions
     {
     }
 
-    SelectQueryOptions copy() const { return *this; }
+    [[nodiscard]] SelectQueryOptions copy() const { return *this; }
 
-    SelectQueryOptions subquery() const
+    [[nodiscard]] SelectQueryOptions subquery() const
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
@@ -108,7 +108,7 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions createParameterizedView() const
+    [[nodiscard]] SelectQueryOptions createParameterizedView() const
     {
         SelectQueryOptions out = *this;
         out.is_create_parameterized_view = true;

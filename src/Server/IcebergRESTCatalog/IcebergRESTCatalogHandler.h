@@ -49,7 +49,7 @@ private:
     static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
         const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response);
 
-    Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
     static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
 

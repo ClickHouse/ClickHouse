@@ -74,9 +74,9 @@ struct Documentation
     /// the documentation field by field afterwards (or set `source` explicitly).
     const char * source = std::source_location::current().file_name();
 
-    String syntaxAsString() const;
-    String examplesAsString() const;
-    String introducedInAsString() const;
+    [[nodiscard]] String syntaxAsString() const;
+    [[nodiscard]] String examplesAsString() const;
+    [[nodiscard]] String introducedInAsString() const;
 };
 
 }

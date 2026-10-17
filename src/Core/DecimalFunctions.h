@@ -78,7 +78,7 @@ struct DataTypeDecimalTrait
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
+    [[nodiscard]] T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");

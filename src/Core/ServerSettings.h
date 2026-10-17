@@ -53,15 +53,15 @@ struct ServerSettings
     ServerSettings(const ServerSettings & settings);
     ~ServerSettings();
 
-    Field get(std::string_view name) const;
+    [[nodiscard]] Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
 
-    std::vector<std::string_view> getAllRegisteredNames() const;
-    std::string_view getDescription(std::string_view name) const;
-    std::string_view getTypeName(std::string_view name) const;
-    String getDefaultValueString(std::string_view name) const;
-    SettingsTierType getTier(std::string_view name) const;
+    [[nodiscard]] std::vector<std::string_view> getAllRegisteredNames() const;
+    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
+    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
+    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
+    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
 
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -85,7 +85,7 @@ struct ServerSettings
     /// which still reflects only what was last loaded from the config.
     /// This function returns the live value (as a string) for such settings, or `std::nullopt` when the setting
     /// has no live-value override and the configured value in `*this` is authoritative.
-    std::optional<String> tryGetLiveValueAsString(ContextPtr context, std::string_view name) const;
+    [[nodiscard]] std::optional<String> tryGetLiveValueAsString(ContextPtr context, std::string_view name) const;
 
 private:
     std::unique_ptr<ServerSettingsImpl> impl;

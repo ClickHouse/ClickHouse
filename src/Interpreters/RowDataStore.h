@@ -54,14 +54,14 @@ public:
     static std::shared_ptr<RowDataStore> create(const RowLayoutPtr & layout, const Columns & columns);
 
     /// Scatter rows from the row-major buffer into columns in layout order.
-    MutableColumns scatterRows(size_t start, size_t length) const;
-    MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
+    [[nodiscard]] MutableColumns scatterRows(size_t start, size_t length) const;
+    [[nodiscard]] MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
 
-    const FieldLayout & getFieldLayout(size_t input_col_index) const;
+    [[nodiscard]] const FieldLayout & getFieldLayout(size_t input_col_index) const;
 
-    const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
-    size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
-    size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
+    [[nodiscard]] const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
+    [[nodiscard]] size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
+    [[nodiscard]] size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
 
 private:
     using Chars = PaddedPODArray<char>;

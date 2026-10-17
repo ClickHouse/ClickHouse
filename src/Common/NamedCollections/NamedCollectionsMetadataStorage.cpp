@@ -60,11 +60,11 @@ class NamedCollectionsMetadataStorage::INamedCollectionsStorage
 public:
     virtual ~INamedCollectionsStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
 
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
 
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -72,7 +72,7 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -94,9 +94,9 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -120,12 +120,12 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -133,7 +133,7 @@ public:
         return readHook(data);
     }
 
-    virtual std::string readHook(const std::string & data) const
+    [[nodiscard]] virtual std::string readHook(const std::string & data) const
     {
         return data;
     }
@@ -163,7 +163,7 @@ public:
         fs::rename(tmp_path, getPath(file_name));
     }
 
-    virtual std::string writeHook(const std::string & data) const
+    [[nodiscard]] virtual std::string writeHook(const std::string & data) const
     {
         return data;
     }
@@ -184,7 +184,7 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
@@ -393,7 +393,7 @@ public:
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
-    std::string readHook(const std::string & data) const override
+    [[nodiscard]] std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
 
@@ -423,7 +423,7 @@ public:
         return decrypted_buffer;
     }
 
-    std::string writeHook(const std::string & data) const override
+    [[nodiscard]] std::string writeHook(const std::string & data) const override
     {
         FileEncryption::Header header{
             .algorithm = algorithm,

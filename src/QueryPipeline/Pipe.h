@@ -50,21 +50,21 @@ public:
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
 
-    const Block & getHeader() const { return *header; }
-    const SharedHeader & getSharedHeader() const { return header; }
-    bool empty() const { return processors->empty(); }
-    size_t numOutputPorts() const { return output_ports.size(); }
-    size_t maxParallelStreams() const { return max_parallel_streams; }
-    OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
-    OutputPort * getTotalsPort() const { return totals_port; }
-    OutputPort * getExtremesPort() const { return extremes_port; }
+    [[nodiscard]] const Block & getHeader() const { return *header; }
+    [[nodiscard]] const SharedHeader & getSharedHeader() const { return header; }
+    [[nodiscard]] bool empty() const { return processors->empty(); }
+    [[nodiscard]] size_t numOutputPorts() const { return output_ports.size(); }
+    [[nodiscard]] size_t maxParallelStreams() const { return max_parallel_streams; }
+    [[nodiscard]] OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
+    [[nodiscard]] OutputPort * getTotalsPort() const { return totals_port; }
+    [[nodiscard]] OutputPort * getExtremesPort() const { return extremes_port; }
 
     /// The seal inputs of gated reads (see SealGatedReadTransform). They stay disconnected
     /// until a join marked as gating its probe side connects all of them to its build-side
     /// seal. Each gated read contributes exactly one (it fans the seal out to its streams
     /// with its own copy transform), but a probe subtree may unite several gated reads and
     /// unmarked joins carry the inputs of both of their children upward.
-    const InputPortRawPtrs & getPendingSealInputs() const { return pending_seal_inputs; }
+    [[nodiscard]] const InputPortRawPtrs & getPendingSealInputs() const { return pending_seal_inputs; }
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
@@ -126,7 +126,7 @@ public:
     /// Get processors from Pipe. Use it with caution, it is easy to lose totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return *std::move(pipe.processors); }
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
-    const Processors & getProcessors() const { return *processors; }
+    [[nodiscard]] const Processors & getProcessors() const { return *processors; }
 
     std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
 
@@ -158,7 +158,7 @@ private:
 
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.
-    bool isCompleted() const { return !empty() && output_ports.empty(); }
+    [[nodiscard]] bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
     void addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict);

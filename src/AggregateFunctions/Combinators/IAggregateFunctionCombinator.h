@@ -37,13 +37,13 @@ namespace ErrorCodes
 class IAggregateFunctionCombinator
 {
 public:
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
-    virtual bool isForInternalUsageOnly() const { return false; }
+    [[nodiscard]] virtual bool isForInternalUsageOnly() const { return false; }
 
     /** Does combinator supports nesting (of itself, i.e. ArrayArray or IfIf)
      */
-    virtual bool supportsNesting() const { return false; }
+    [[nodiscard]] virtual bool supportsNesting() const { return false; }
 
     /** Does this combinator transform argument types (like Merge, Array) rather than just adding logic?
       *
@@ -53,13 +53,13 @@ public:
       * If false (default), the combinator preserves the original aggregate function semantics,
       * and asterisk in count(*) can be safely removed.
       */
-    virtual bool transformsArgumentTypes() const { return false; }
+    [[nodiscard]] virtual bool transformsArgumentTypes() const { return false; }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).
       * If arguments are not suitable for combined function, throw an exception.
       */
-    virtual DataTypes transformArguments(const DataTypes & arguments) const
+    [[nodiscard]] virtual DataTypes transformArguments(const DataTypes & arguments) const
     {
         return arguments;
     }
@@ -68,7 +68,7 @@ public:
       *  get the parameters for nested function.
       * If arguments are not suitable for combined function, throw an exception.
       */
-    virtual Array transformParameters(const Array & parameters) const
+    [[nodiscard]] virtual Array transformParameters(const Array & parameters) const
     {
         return parameters;
     }
@@ -80,7 +80,7 @@ public:
       * Every combinator overrides this method, except combinators with `transformsMultipleNestedFunctions`,
       * which override `transformAggregateFunctionFromMultipleNestedFunctions` instead.
       */
-    virtual AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] virtual AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & /*nested_function*/,
         const AggregateFunctionProperties & /*properties*/,
         const DataTypes & /*arguments*/,
@@ -93,12 +93,12 @@ public:
     /** A combinator that wraps one nested function per argument list returned by
       * `transformArgumentsForMultipleNestedFunctions` (for example, -Tuple: one nested function per tuple element).
       */
-    virtual bool transformsMultipleNestedFunctions() const { return false; }
+    [[nodiscard]] virtual bool transformsMultipleNestedFunctions() const { return false; }
 
     /** From the arguments for the combined function, get one argument list per nested function.
       * If the arguments are not suitable for the combined function, throw an exception.
       */
-    virtual VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & /*arguments*/) const
+    [[nodiscard]] virtual VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & /*arguments*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Aggregate function combinator '{}' does not transform multiple nested functions", getName());
@@ -108,7 +108,7 @@ public:
       * list returned by `transformArgumentsForMultipleNestedFunctions`. `nested_name` is the canonical name of the nested
       * function (aliases resolved).
       */
-    virtual AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
+    [[nodiscard]] virtual AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
         const String & /*nested_name*/,
         VectorWithMemoryTracking<AggregateFunctionPtr> /*nested_functions*/,
         const AggregateFunctionProperties & /*properties*/,

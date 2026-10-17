@@ -11,10 +11,10 @@ namespace DB
 class ParserUseQuery : public IParserBase
 {
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const  override{ return "USE query"; }
+    [[nodiscard]] const char * getName() const  override{ return "USE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

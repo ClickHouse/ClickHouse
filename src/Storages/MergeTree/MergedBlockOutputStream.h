@@ -31,7 +31,7 @@ public:
         bool try_adaptive_codec,
         StreamBaseManifestPtr stream_base_manifest);
 
-    Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
+    [[nodiscard]] Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;

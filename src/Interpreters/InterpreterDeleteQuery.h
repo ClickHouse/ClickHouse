@@ -15,7 +15,7 @@ public:
 
     BlockIO execute() override;
 
-    bool supportsTransactions() const override { return true; }
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
 private:
     ASTPtr query_ptr;

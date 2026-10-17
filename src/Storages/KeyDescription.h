@@ -100,7 +100,7 @@ struct KeyDescription
         const ContextPtr & context,
         const std::optional<Names> & hint_columns = {});
 
-    ASTPtr getOriginalExpressionList() const;
+    [[nodiscard]] ASTPtr getOriginalExpressionList() const;
 
     KeyDescription() = default;
 

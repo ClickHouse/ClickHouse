@@ -34,13 +34,13 @@ public:
     /// ReplicatedMergeMutateTaskBase::executeStep()), but the exception should
     /// be throw, since there are some sanity assertions based on the
     /// std::uncaught_exceptions() (i.e. WriteBuffer::~WriteBuffer())
-    virtual bool printExecutionException() const { return true; }
+    [[nodiscard]] virtual bool printExecutionException() const { return true; }
 
     virtual void onCompleted() = 0;
     virtual void cancel() noexcept = 0;
-    virtual StorageID getStorageID() const = 0;
-    virtual String getQueryId() const = 0;
-    virtual Priority getPriority() const = 0;
+    [[nodiscard]] virtual StorageID getStorageID() const = 0;
+    [[nodiscard]] virtual String getQueryId() const = 0;
+    [[nodiscard]] virtual Priority getPriority() const = 0;
     virtual ~IExecutableTask() = default;
 };
 

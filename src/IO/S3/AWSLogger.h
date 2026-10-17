@@ -19,7 +19,7 @@ public:
 
     ~AWSLogger() final = default;
 
-    Aws::Utils::Logging::LogLevel GetLogLevel() const final;
+    [[nodiscard]] Aws::Utils::Logging::LogLevel GetLogLevel() const final;
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final; // NOLINT
 

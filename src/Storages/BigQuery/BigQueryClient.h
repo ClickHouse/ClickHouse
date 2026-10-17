@@ -26,10 +26,10 @@ public:
 
     String getToken(const ContextPtr & context, bool force_refresh);
     /// Whether requesting a fresh token can produce a different one (false for a static access token).
-    bool canRefresh() const { return configuration.credentials_kind != BigQueryConfiguration::CredentialsKind::AccessToken; }
+    [[nodiscard]] bool canRefresh() const { return configuration.credentials_kind != BigQueryConfiguration::CredentialsKind::AccessToken; }
 
 private:
-    std::pair<String, Int64> fetchTokenWithExpiration(const ContextPtr & context) const;
+    [[nodiscard]] std::pair<String, Int64> fetchTokenWithExpiration(const ContextPtr & context) const;
 
     const BigQueryConfiguration configuration;
 
@@ -55,7 +55,7 @@ public:
     BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_, std::shared_ptr<BigQueryTokenProvider> token_provider_);
 
     /// tables.get: the full table resource (schema, numRows, type).
-    Poco::JSON::Object::Ptr getTable() const;
+    [[nodiscard]] Poco::JSON::Object::Ptr getTable() const;
 
     struct TableDataPage
     {
@@ -69,7 +69,7 @@ public:
     /// (including the opaque `pageToken` that BigQuery returns from the second page onward) is validated against
     /// `max_request_uri_length` before the request is issued, so an overlong `pageToken` is rejected with a clear
     /// error rather than failing remotely mid-read.
-    TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
+    [[nodiscard]] TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
 
     /// The length of the encoded `path?query` of the `tabledata.list` request for `selected_fields`, measured
     /// for a first-page request (no `pageToken`). This is the actual number of bytes that goes over the wire,
@@ -77,7 +77,7 @@ public:
     /// whose request URL would exceed the HTTP front-end URL length limit up front instead of failing opaquely
     /// later. The `pageToken` cannot be measured here (it is unknown until a page is fetched); `listTableData`
     /// validates the actual URL of each paginated request, including the real token, against the same limit.
-    size_t tableDataRequestUriLength(const String & selected_fields, UInt64 max_results) const;
+    [[nodiscard]] size_t tableDataRequestUriLength(const String & selected_fields, UInt64 max_results) const;
 
     /// tabledata.insertAll (streaming insert). Throws if any row of this request is rejected.
     /// A single `INSERT` is split into several such requests, which are not atomic with respect to
@@ -86,7 +86,7 @@ public:
     void insertAll(const Poco::JSON::Array::Ptr & rows) const;
 
 private:
-    Poco::JSON::Object::Ptr requestJSON(
+    [[nodiscard]] Poco::JSON::Object::Ptr requestJSON(
         const String & method,
         const String & path,
         const Poco::URI::QueryParameters & params,
@@ -94,12 +94,12 @@ private:
 
     /// Assembles the request URI (base URL + path + encoded query parameters). Shared by `requestJSON` and
     /// `tableDataRequestUriLength` so that the length measured up front matches the URL actually sent.
-    Poco::URI buildRequestURI(const String & path, const Poco::URI::QueryParameters & params) const;
+    [[nodiscard]] Poco::URI buildRequestURI(const String & path, const Poco::URI::QueryParameters & params) const;
 
     /// The `tabledata.list` query parameters (shared by the request and its length estimation).
     static Poco::URI::QueryParameters listTableDataParams(const String & page_token, const String & selected_fields, UInt64 max_results);
 
-    String tablePath() const;
+    [[nodiscard]] String tablePath() const;
 
     BigQueryConfiguration configuration;
     ContextPtr context;

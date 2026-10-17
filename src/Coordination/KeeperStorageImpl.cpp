@@ -2363,7 +2363,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             else
                 *static_cast<Coordination::ZooKeeperResponsePtr *>(response) = std::move(r);
         }
-        const Coordination::Response * getResponse() const
+        [[nodiscard]] const Coordination::Response * getResponse() const
         {
             if (is_base_response_type)
                 return static_cast<Coordination::ResponsePtr *>(response)->get();

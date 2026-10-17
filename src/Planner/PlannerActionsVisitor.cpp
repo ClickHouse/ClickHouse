@@ -557,7 +557,7 @@ public:
     ActionsScopeNode & operator=(const ActionsScopeNode &) = delete;
     ActionsScopeNode & operator=(ActionsScopeNode &&) = delete;
 
-    const QueryTreeNodePtr & getScopeNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getScopeNode() const
     {
         return scope_node;
     }
@@ -746,7 +746,7 @@ private:
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        size_t max() const { return 64 - getLeadingZeroBits(mask); }
+        [[nodiscard]] size_t max() const { return 64 - getLeadingZeroBits(mask); }
 
     private:
         uint64_t mask = 0;

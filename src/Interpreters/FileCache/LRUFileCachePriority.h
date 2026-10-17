@@ -290,9 +290,9 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    EntryPtr getEntry() const override;
+    [[nodiscard]] EntryPtr getEntry() const override;
 
-    bool isValid(const CachePriorityGuard::WriteLock &) const override;
+    [[nodiscard]] bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
@@ -306,14 +306,14 @@ public:
 
     void decrementSize(size_t size) override;
 
-    QueueEntryType getType() const override { return QueueEntryType::LRU; }
+    [[nodiscard]] QueueEntryType getType() const override { return QueueEntryType::LRU; }
 
-    CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
+    [[nodiscard]] CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
 
-    LRUQueue::iterator get() const { return iterator; }
+    [[nodiscard]] LRUQueue::iterator get() const { return iterator; }
 
 private:
-    bool assertValid() const;
+    bool assertValid() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     void invalidateImpl() noexcept;
 

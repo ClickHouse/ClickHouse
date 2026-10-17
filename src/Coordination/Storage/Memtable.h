@@ -26,7 +26,7 @@ struct ChildrenSet2
         /// Normally only Create and Remove actions are used in children sets, there's nothing to "Update".
         NodeAction action = NodeAction::Remove;
 
-        std::string_view str() const { return std::string_view(ptr, static_cast<size_t>(len)); }
+        [[nodiscard]] std::string_view str() const { return std::string_view(ptr, static_cast<size_t>(len)); }
 
         /// Hash and comparison that look only at str() and ignore `action`.
         /// Also accept plain std::string_view, for heterogeneous lookup.
@@ -126,7 +126,7 @@ struct MemtableChildrenSet
         bool next(ChildrenSet2::Entry & out);
     };
 
-    ConstIterator iterate() const;
+    [[nodiscard]] ConstIterator iterate() const;
 
 private:
     union
@@ -144,13 +144,13 @@ private:
     NodeAction inline_action = NodeAction::Remove;
     Mode mode = Mode::Empty;
 
-    ChildrenSet2 * getSet() const
+    [[nodiscard]] ChildrenSet2 * getSet() const
     {
         chassert(mode == Mode::Set);
         return set;
     }
 
-    ChildrenSet2::Entry getInlineEntry() const
+    [[nodiscard]] ChildrenSet2::Entry getInlineEntry() const
     {
         chassert(mode == Mode::Inline);
         ChildrenSet2::Entry e;
@@ -223,7 +223,7 @@ struct Memtable
     /// Make an immutable memtable with all of this Memtable's nodes, suitable only for iterating
     /// over all nodes. `children` is not populated, listChildrenNames won't work.
     /// The latest (mutable) block is copied, other blocks are just referenced by BlockPtr.
-    MemtablePtr takeSnapshot() const;
+    [[nodiscard]] MemtablePtr takeSnapshot() const;
 };
 
 }

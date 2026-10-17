@@ -75,7 +75,7 @@ struct TopKAggregationHeapBase
     TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept = default;
     TopKAggregationHeapBase & operator=(TopKAggregationHeapBase &&) noexcept = default;
 
-    size_t size() const { return heap_indices.size(); }
+    [[nodiscard]] size_t size() const { return heap_indices.size(); }
 
     /// Runs once per processed block; also the moment the boundary is published to the
     /// threshold tracker (see `publishBoundary`), so that the publication costs nothing per row.
@@ -87,16 +87,16 @@ struct TopKAggregationHeapBase
             publishBoundary();
     }
 
-    bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
+    [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
 
-    bool needsTrim() const { return heap_indices.size() > next_trim_size; }
+    [[nodiscard]] bool needsTrim() const { return heap_indices.size() > next_trim_size; }
 
-    bool shouldFreeze() const;
+    [[nodiscard]] bool shouldFreeze() const;
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
     /// restart the profitability window once and so keep the heap active.
-    bool willBeInactive() const
+    [[nodiscard]] bool willBeInactive() const
     {
         if (frozen)
             return true;
@@ -107,7 +107,7 @@ struct TopKAggregationHeapBase
 
     /// A skip boundary exists once the local set has filled to K, or earlier if another
     /// thread has published a shared boundary this thread can borrow.
-    bool hasBoundary() const { return boundary_is_shared || boundary_row != invalid_row; }
+    [[nodiscard]] bool hasBoundary() const { return boundary_is_shared || boundary_row != invalid_row; }
 
     /// Publishes the local boundary if a trim tightened it since the last exchange, and
     /// re-reads the shared one if another thread has tightened it; one atomic load when
@@ -118,7 +118,7 @@ struct TopKAggregationHeapBase
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
     /// anything the numeric dispatch rejects), hence inline.
-    bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
+    [[nodiscard]] bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
         chassert(hasBoundary());
@@ -244,7 +244,7 @@ protected:
     /// in the derived per-row key array until `finishCompaction` runs.
     void trimToK();
 
-    const std::vector<size_t> & evictedRows() const { return evicted_rows; }
+    [[nodiscard]] const std::vector<size_t> & evictedRows() const { return evicted_rows; }
 
     /// Marks the surviving rows of `heap_column`. Returns false when nothing has to be
     /// compacted, in which case `finishCompaction` must not be called.
@@ -253,7 +253,7 @@ protected:
     /// Set for every row of `heap_column` between `startCompaction` and `finishCompaction`.
     /// The surviving rows keep their relative order, so a derived per-row array is compacted
     /// by copying its marked entries down in one forward pass.
-    const IColumn::Filter & survivingRows() const { return trim_filter; }
+    [[nodiscard]] const IColumn::Filter & survivingRows() const { return trim_filter; }
 
     /// Drops the dead rows from `heap_column` and remaps the row indices. The derived class
     /// must have compacted its own per-row key array first.
@@ -351,14 +351,14 @@ private:
     }
 
     /// The effective skip boundary: the shared one when it is strictly tighter than the local.
-    const IColumn & boundaryColumn() const { return boundary_is_shared ? *shared_cache_column : *heap_column; }
-    size_t boundaryRow() const { return boundary_is_shared ? 0 : boundary_row; }
+    [[nodiscard]] const IColumn & boundaryColumn() const { return boundary_is_shared ? *shared_cache_column : *heap_column; }
+    [[nodiscard]] size_t boundaryRow() const { return boundary_is_shared ? 0 : boundary_row; }
 
     /// Recomputes `boundary_is_shared` after either boundary moved.
     void updateBoundaryChoice();
 
     /// Ranked comparison of two single-key rows (composite-aware); negative when `lhs` is better.
-    int compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const;
+    [[nodiscard]] int compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const;
 
     void setK(size_t query_k);
 
@@ -386,13 +386,13 @@ private:
     /// than it.
     void publishBoundary();
 
-    bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
+    [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
     {
         const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
         return directions[0] * cmp > 0;
     }
 
-    bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
+    [[nodiscard]] bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(boundaryColumn());
         const size_t boundary_idx = boundaryRow();
@@ -405,9 +405,9 @@ private:
         return false;
     }
 
-    int compareHeapRowsComposite(size_t a, size_t b) const;
+    [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 
-    int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
+    [[nodiscard]] int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
@@ -495,7 +495,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         return trimAndCompact([](size_t) { });
     }
 
-    const Key & hashTableKeyAt(size_t heap_row) const { return hash_table_keys[heap_row]; }
+    [[nodiscard]] const Key & hashTableKeyAt(size_t heap_row) const { return hash_table_keys[heap_row]; }
 
 private:
     static constexpr bool keys_hold_pointers

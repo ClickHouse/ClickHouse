@@ -21,7 +21,7 @@ public:
     virtual void writePayload(WriteBuffer & buffer, uint8_t & sequence_id) const;
 
 protected:
-    virtual size_t getPayloadSize() const = 0;
+    [[nodiscard]] virtual size_t getPayloadSize() const = 0;
 
     virtual void writePayloadImpl(WriteBuffer & buffer) const = 0;
 };
