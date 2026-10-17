@@ -1,0 +1,19 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The second shard is never reachable. -->
+        <unavailable_shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </unavailable_shard>
+    </remote_servers>
+</clickhouse>
