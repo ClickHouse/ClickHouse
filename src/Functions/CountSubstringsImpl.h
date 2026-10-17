@@ -101,7 +101,7 @@ struct CountSubstringsImpl
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() <= begin + haystack_offsets[i])
+            if (const UInt8 * match_end = searcher.matchEnd(pos, begin + haystack_offsets[i]))
             {
                 const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
                 if (counted_row_begin != row_begin)
@@ -119,7 +119,7 @@ struct CountSubstringsImpl
                     ++res[i];
 
                 /// Intersecting substrings in haystack accounted only once
-                pos += needle.size();
+                pos = match_end;
             }
             else
             {
@@ -199,8 +199,11 @@ struct CountSubstringsImpl
                 while ((pos = searcher.search(beg, end)) < end)
                 {
                     budget.charge(pos - beg);
+                    const UInt8 * match_end = searcher.matchEnd(pos, end);
+                    if (!match_end)
+                        break;
                     ++res[i];
-                    beg = pos + needle_size;
+                    beg = match_end;
                 }
             }
 
@@ -261,8 +264,11 @@ struct CountSubstringsImpl
                     while ((pos = searcher.search(beg, end)) < end)
                     {
                         budget.charge(pos - beg);
+                        const UInt8 * match_end = searcher.matchEnd(pos, end);
+                        if (!match_end)
+                            break;
                         ++res[i];
-                        beg = pos + needle_size;
+                        beg = match_end;
                     }
                 }
             }

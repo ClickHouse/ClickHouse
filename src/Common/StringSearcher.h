@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <Poco/Unicode.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -60,6 +62,13 @@ public:
             return c == needle_end;
         }
         return sz_equal(pos_cptr, needle, needle_size);
+    }
+
+    /// Returns the end of the match that `search` found at `pos`, or `nullptr` if it does not fit before `haystack_end`.
+    ALWAYS_INLINE const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const
+    {
+        const size_t needle_size = needle_end - needle;
+        return static_cast<size_t>(haystack_end - pos) >= needle_size ? pos + needle_size : nullptr;
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
@@ -244,6 +253,13 @@ public:
         return false;
     }
 
+    /// Returns the end of the match that `search` found at `pos`, or `nullptr` if it does not fit before `haystack_end`.
+    ALWAYS_INLINE const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const
+    {
+        const size_t needle_size = needle_end - needle;
+        return static_cast<size_t>(haystack_end - pos) >= needle_size ? pos + needle_size : nullptr;
+    }
+
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
         if (needle == needle_end)
@@ -358,9 +374,42 @@ public:
 };
 
 
+/// Case-insensitive UTF-8 matching: a haystack code point `c` matches a needle code point `n` iff
+/// `utf8CaseFold(c) == utf8CaseFold(n)`. This is `Poco::Unicode::toLower`, except that the compatibility signs
+/// KELVIN SIGN, ANGSTROM SIGN, OHM SIGN and GREEK CAPITAL LETTER THETA SYMBOL are not folded to their letters:
+/// each of them matches only itself.
+inline int utf8CaseFold(int cp)
+{
+    switch (cp)
+    {
+        case 0x212A:
+        case 0x212B:
+        case 0x2126:
+        case 0x03F4: return cp;
+        default: return Poco::Unicode::toLower(cp);
+    }
+}
+
+/// The upper case counterpart of `cp` for the first-byte and SIMD filters, together with `utf8CaseFold(cp)`
+/// it covers every code point `c` with `utf8CaseFold(c) == utf8CaseFold(cp)`.
+/// Differs from `Poco::Unicode::toUpper` for the Greek letters whose upper case is a different code point there.
+inline int utf8CaseUpper(int cp)
+{
+    switch (cp)
+    {
+        case 0x212A:
+        case 0x212B:
+        case 0x2126:
+        case 0x03F4: return cp;
+        case 0x03B9: return 0x0399;
+        case 0x03BC: return 0x039C;
+        default: return Poco::Unicode::toUpper(cp);
+    }
+}
+
 /// Case-insensitive UTF-8 searcher, provided by the Default impl on every target (AVX2 on x86 when the
 /// build targets it, NEON on ARM, scalar otherwise). Folding is one code point at a time via
-/// `Poco::Unicode::toLower`, so results are identical across CPUs.
+/// `utf8CaseFold`, so results are identical across CPUs.
 
 /// Default (Poco-based) implementation. The SIMD cache path is used whenever AVX2 or ARM NEON is available
 /// at the build's baseline ISA, mirroring the ASCII searcher above; below that it is scalar.
@@ -421,13 +470,14 @@ public:
 
     bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos) const;
     bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const;
+    const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const;
     const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end) const;
 };
 
 }
 
 /// Case-insensitive UTF-8 searcher. The Default impl serves every target (AVX2 on x86, NEON on ARM,
-/// scalar otherwise) and folds one code point at a time via `Poco::Unicode::toLower`, so results are
+/// scalar otherwise) and folds one code point at a time via `utf8CaseFold`, so results are
 /// identical across CPUs. StringZilla is not used here: its UTF-8 case-insensitive routines apply full
 /// Unicode case folding (e.g. `ß` == `ss`, `ﬃ` == `ffi`) and can return matches whose byte length differs
 /// from the needle, which diverges from the one-code-point contract and breaks length-based callers.
@@ -446,6 +496,10 @@ public:
     {
         return impl.compare(haystack, haystack_end, pos);
     }
+
+    /// Returns the end of the match starting at `pos`, or `nullptr` if there is none. The match can be shorter
+    /// or longer than the needle in bytes.
+    const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const { return impl.matchEnd(pos, haystack_end); }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {

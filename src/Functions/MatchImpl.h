@@ -218,7 +218,9 @@ struct MatchImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + strstr_pattern.size() <= begin + haystack_offsets[i])
+                /// A match is at most four bytes per needle byte long, so it surely fits when that much is left in the row.
+                const UInt8 * row_end = begin + haystack_offsets[i];
+                if (static_cast<size_t>(row_end - pos) >= 4 * strstr_pattern.size() || searcher.matchEnd(pos, row_end) != nullptr)
                     res[i] = !negate;
                 else
                     res[i] = negate;
@@ -289,7 +291,8 @@ struct MatchImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + required_substring.size() <= begin + haystack_offsets[i])
+                const UInt8 * row_end = begin + haystack_offsets[i];
+                if (static_cast<size_t>(row_end - pos) >= 4 * required_substring.size() || searcher.matchEnd(pos, row_end) != nullptr)
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
@@ -299,7 +302,6 @@ struct MatchImpl
                     else if (isAnchoredLiteralMatchKind(match_kind))
                     {
                         const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
-                        const UInt8 * const row_end = begin + haystack_offsets[i];
 
                         res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
                     }
@@ -378,8 +380,8 @@ struct MatchImpl
             size_t i = 0;
             const UInt8 * next_pos = begin;
 
-            /// If needle is larger than string size - it cannot be found.
-            if (strstr_pattern.size() <= N)
+            /// If needle is larger than string size - it cannot be found (not for case-insensitive: the match can be shorter than the needle).
+            if (case_insensitive || strstr_pattern.size() <= N)
             {
                 Searcher searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
@@ -396,7 +398,7 @@ struct MatchImpl
                     next_pos += N;
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    if (pos + strstr_pattern.size() <= next_pos)
+                    if (static_cast<size_t>(next_pos - pos) >= 4 * strstr_pattern.size() || searcher.matchEnd(pos, next_pos) != nullptr)
                         res[i] = !negate;
                     else
                         res[i] = negate;
@@ -455,8 +457,8 @@ struct MatchImpl
             size_t i = 0;
             const UInt8 * next_pos = begin;
 
-            /// If required substring is larger than string size - it cannot be found.
-            if (required_substring.size() <= N)
+            /// If required substring is larger than string size - it cannot be found (not for case-insensitive: the match can be shorter).
+            if (case_insensitive || required_substring.size() <= N)
             {
                 Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
@@ -472,7 +474,7 @@ struct MatchImpl
                     }
                     next_pos += N;
 
-                    if (pos + required_substring.size() <= next_pos)
+                    if (static_cast<size_t>(next_pos - pos) >= 4 * required_substring.size() || searcher.matchEnd(pos, next_pos) != nullptr)
                     {
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)
@@ -541,7 +543,7 @@ struct MatchImpl
 
         if (is_like_or_similar_to && likePatternIsSubstring<is_similar_to>(needle, required_substr))
         {
-            if (required_substr.size() > haystack_length)
+            if (!case_insensitive && required_substr.size() > haystack_length)
                 return negate;
 
             Searcher searcher(required_substr.data(), required_substr.size(), haystack_length);

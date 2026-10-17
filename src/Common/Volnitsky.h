@@ -167,8 +167,8 @@ namespace VolnitskyTraits
                 }
                 else
                 {
-                    int l_u32 = Poco::Unicode::toLower(*u32);
-                    int u_u32 = Poco::Unicode::toUpper(*u32);
+                    int l_u32 = utf8CaseFold(*u32);
+                    int u_u32 = utf8CaseUpper(*u32);
 
                     /// symbol is case-independent
                     if (l_u32 == u_u32)
@@ -221,8 +221,8 @@ namespace VolnitskyTraits
 
                 if (first_u32)
                 {
-                    first_l_u32 = Poco::Unicode::toLower(*first_u32);
-                    first_u_u32 = Poco::Unicode::toUpper(*first_u32);
+                    first_l_u32 = utf8CaseFold(*first_u32);
+                    first_u_u32 = utf8CaseUpper(*first_u32);
                 }
 
                 /// second sequence always start immediately after u_pos
@@ -234,8 +234,8 @@ namespace VolnitskyTraits
 
                 if (second_u32)
                 {
-                    second_l_u32 = Poco::Unicode::toLower(*second_u32);
-                    second_u_u32 = Poco::Unicode::toUpper(*second_u32);
+                    second_l_u32 = utf8CaseFold(*second_u32);
+                    second_u_u32 = utf8CaseUpper(*second_u32);
                 }
 
                 /// both symbols are case-independent
@@ -486,6 +486,9 @@ public:
     {
         return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
+
+    /// Returns the end of the match that `search` found at `pos`, or `nullptr` if it does not fit before `haystack_end`.
+    const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const { return fallback_searcher.matchEnd(pos, haystack_end); }
 
 protected:
     void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset)

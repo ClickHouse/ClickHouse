@@ -1,0 +1,118 @@
+position
+A-bar to a-bar	1	1	1	1
+a-bar to A-bar	1	1	1	1
+A-bar shifted	2	2	2	2
+a-bar needle longer	0	0	0	0
+sharp s to capital	1	1	1	1
+capital to sharp s	1	1	1	1
+STRASSE	1	1	1	1
+sharp s vs ss	0	0	0	0
+kelvin vs k, first	0	0	0	0
+kelvin vs k, in match	0	0	0	0
+k vs kelvin, in needle	0	0	0	0
+kelvin to kelvin, first	1	1	1	1
+kelvin to kelvin, in match	3	3	3	3
+angstrom vs a-ring	0	0	0	0
+angstrom to angstrom	2	2	2	2
+ohm vs omega	0	0	0	0
+ohm to ohm	1	1	1	1
+theta symbol vs theta	0	0	0	0
+theta symbol to theta symbol	1	1	1	1
+IOTA to iota	1	1	1	1
+iota to IOTA	1	1	1	1
+MU to mu	1	1	1	1
+mu to MU	1	1	1	1
+micro vs mu	0	0	0	0
+mu vs micro	0	0	0	0
+micro to micro	1	1	1	1
+mu to MU, long	41	41	41	41
+micro vs mu, long	0	0	0	0
+ascii	7	7	7	7
+cyrillic	8	8	8	8
+empty needle	1	1	1	1
+needle longer	0	0	0	0
+position with start_pos
+kelvin to kelvin, skip first	4	4	4	4	4	4	4	4
+a-bar	3	3	3	3	3	3	3	3
+ascii	5	5	5	5	5	5	5	5
+count
+sharp s pairs	2	2	2	2
+a-bar pair	2	2	2	2
+a-bar triple, pair needle	1	1	1	1
+kelvin four, kk	0	0	0	0
+kelvin four, kelvin pair	2	2	2	2
+ascii	2	2	2	2
+count with start_pos
+a-bar from 3	2	2	2	2	2	2	2
+kelvin from 2	2	2	2	2	2	2	2
+ILIKE
+A-bar to a-bar	1	1	1	1
+STRASSE	1	1	1	1
+kelvin vs k	0	0	0	0
+kelvin to kelvin	1	1	1	1
+angstrom vs a-ring	0	0	0	0
+ohm vs omega	0	0	0	0
+theta symbol vs theta	0	0	0	0
+IOTA to iota	1	1	1	1
+mu to MU	1	1	1	1
+micro vs mu	0	0	0	0
+tail, K in haystack, needle ak, all 1
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+tail, greek MU in haystack, needle mu, all 1
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+tail, kelvin to kelvin, all 1
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+[1,1,1,1,1,1,1]
+tail, kelvin vs k, all 0
+[0,0,0,0,0,0,0]
+[0,0,0,0,0,0,0]
+[0,0,0,0,0,0,0]
+[0,0,0,0,0,0,0]
+neighbouring rows
+[0,0]
+[0,0]
+[1,0,0]
+[0,1]
+[0,0]
+[0,0]
+[1,0,0]
+[0,1]
+[0,0]
+[0,0]
+[1,0,0]
+[0,1]
+span advances the count
+[2,0,1,1]
+[2,1,1]
+[2,0,0]
+[0,0,2]
+rows of one block
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,0,2,0,0,0,0,0,0,0]	[1,0,0,0,1,0,2,0,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,0,2,0,0,0,0,0,0,0]	[1,0,0,0,1,0,2,0,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,0,2,0,0,0,0,0,0,0]	[1,0,0,0,1,0,2,0,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+[0,0,0,0,1,0,0,0,0,0,0,0,0]	[0,0,0,0,0,0,0,1,0,0,0,0,0]	[0,0,0,0,0,0,0,0,0,0,1,0,0]	[0,0,0,0,0,0,0,0,0,0,0,1,1]
+differential, the first line must print 1 and every other line 0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
