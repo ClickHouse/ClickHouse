@@ -269,7 +269,8 @@ public:
 
     /// Hash of the uncompressed data and of the number of rows in each mark: same-named parts can be read
     /// interchangeably by mark ranges only if it is equal. Like `ReplicatedMergeTree`'s comparison of
-    /// same-named parts, it ignores codecs and writer versions. `0` when checksums are not loaded.
+    /// same-named parts, it ignores codecs and writer versions, except for a compact part of a
+    /// non-replicated table, which must be byte-identical. `0` when checksums are not loaded.
     UInt128 getContentFingerprint() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).

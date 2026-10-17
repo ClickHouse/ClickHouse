@@ -1589,6 +1589,29 @@ void hashMarkLayout(const MergeTreeIndexGranularity & granularity, SipHash & has
     }
 }
 
+void hashString(const String & s, SipHash & hash)
+{
+    hash.update(s.size());
+    hash.update(s);
+}
+
+/// The uncompressed checksum of a compact `data.bin` combines one hash per codec stream, so it tells
+/// neither which column fills a stream nor their order. The compressed bytes and the columns do.
+void hashCompactColumnBinding(const IMergeTreeDataPart & part, SipHash & hash)
+{
+    for (const auto & column : part.getColumns())
+    {
+        hashString(column.name, hash);
+        hashString(column.type->getName(), hash);
+    }
+    const auto & files = part.checksums.files;
+    if (auto it = files.find(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION); it != files.end())
+    {
+        hash.update(it->second.file_size);
+        hash.update(it->second.file_hash);
+    }
+}
+
 }
 
 UInt128 IMergeTreeDataPart::getContentFingerprint() const
@@ -1599,6 +1622,9 @@ UInt128 IMergeTreeDataPart::getContentFingerprint() const
         SipHash hash;
         checksums.computeTotalChecksumDataOnly(hash);
         hashMarkLayout(*index_granularity, hash);
+        /// A replicated engine guarantees the content of same-named parts by itself.
+        if (getType() == MergeTreeDataPartType::Compact && !storage.supportsReplication())
+            hashCompactColumnBinding(*this, hash);
         content_fingerprint = hash.get128();
     }
     return content_fingerprint;

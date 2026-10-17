@@ -193,7 +193,8 @@ namespace
 ///      uncompressed contents of the part's data files (`computeTotalChecksumDataOnly`) and of the
 ///      number of rows in every mark. The fingerprint is computed over
 ///      the part's data and is therefore the strongest available cross-replica identity, while
-///      tolerating codec or server-version differences in how the same data was written. Two
+///      tolerating codec or server-version differences in how the same data was written (except
+///      in a compact part of a non-replicated table, see `getContentFingerprint`). Two
 ///      replicas that hold the same part agree on the fingerprint; two
 ///      replicas that hold genuinely different parts produce different fingerprints even when
 ///      `total_marks_in_part` happens to coincide (for example, two non-replicated `MergeTree`

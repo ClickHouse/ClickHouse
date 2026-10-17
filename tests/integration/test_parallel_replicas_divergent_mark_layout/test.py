@@ -62,17 +62,25 @@ def test_same_named_parts(node_settings, node_values, refused):
             f"SETTINGS min_bytes_for_wide_part = 0, {settings}"
         )
         node.query(f"INSERT INTO t SELECT {values} FROM numbers({ROWS})")
+    check_parallel_read(
+        "t", "count(), uniqExact(a)", f"{ROWS}\t{ROWS}\n", "Wide", refused
+    )
+
+
+def check_parallel_read(table, aggregates, expected, part_type, refused):
     parts = {
-        node.query("SELECT name, marks FROM system.parts WHERE table = 't' AND active")
+        node.query(
+            f"SELECT name, part_type, marks FROM system.parts WHERE table = '{table}' AND active"
+        )
         for node in nodes
     }
     assert len(parts) == 1
     (part,) = parts
-    assert part.startswith("all_1_1_0\t") and part.count("\n") == 1
+    assert part.startswith(f"all_1_1_0\t{part_type}\t") and part.count("\n") == 1
 
     # Small read tasks and a slow read keep ranges being assigned until every replica has announced
     # its part.
-    query = "SELECT count(), uniqExact(a) FROM t WHERE NOT ignore(sleepEachRow(0.00002))"
+    query = f"SELECT {aggregates} FROM {table} WHERE NOT ignore(sleepEachRow(0.00002))"
     query_ids = []
     for _ in range(3):
         query_id = str(uuid.uuid4())
@@ -82,7 +90,7 @@ def test_same_named_parts(node_settings, node_values, refused):
         if refused:
             assert "BAD_ARGUMENTS" in error
         else:
-            assert not error and answer == f"{ROWS}\t{ROWS}\n"
+            assert not error and answer == expected
             query_ids.append(query_id)
 
     if query_ids:
@@ -93,3 +101,48 @@ def test_same_named_parts(node_settings, node_values, refused):
             f"WHERE type = 'QueryFinish' AND query_id IN {tuple(query_ids)}"
         )
         assert used == "[3,3,3]\n"
+
+
+# A compact part keeps one stream per codec in `data.bin`. node1 holds different rows whose streams are
+# byte-for-byte those of the other nodes: the codecs and values of the columns are swapped, or, with a
+# single codec, the order of the columns and their values.
+TWO_CODECS = "a UInt64 CODEC(LZ4), b UInt64 CODEC(ZSTD)"
+ONE_CODEC = "a UInt64, b UInt64"
+COMPACT = (
+    "min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, "
+    "index_granularity = 512, index_granularity_bytes = 1000000000"
+)
+
+
+@pytest.mark.parametrize(
+    "columns, node1_columns, node1_values, refused",
+    [
+        (TWO_CODECS, TWO_CODECS, "number, number * 2", False),
+        (
+            TWO_CODECS,
+            "a UInt64 CODEC(ZSTD), b UInt64 CODEC(LZ4)",
+            "number * 2, number",
+            True,
+        ),
+        (ONE_CODEC, "b UInt64, a UInt64", "number, number * 2", True),
+    ],
+    ids=["same", "codecs_swapped", "order_swapped"],
+)
+def test_same_named_compact_parts(columns, node1_columns, node1_values, refused):
+    for node in nodes:
+        node_columns, values = (columns, "number, number * 2")
+        if node == nodes[1]:
+            node_columns, values = (node1_columns, node1_values)
+        node.query("DROP TABLE IF EXISTS tc SYNC")
+        node.query(
+            f"CREATE TABLE tc ({node_columns}) ENGINE = MergeTree ORDER BY tuple() "
+            f"SETTINGS {COMPACT}"
+        )
+        node.query(f"INSERT INTO tc SELECT {values} FROM numbers({ROWS})")
+    check_parallel_read(
+        "tc",
+        "count(), sum(a), sum(b)",
+        f"{ROWS}\t{ROWS * (ROWS - 1) // 2}\t{ROWS * (ROWS - 1)}\n",
+        "Compact",
+        refused,
+    )

@@ -46,7 +46,8 @@ struct RangesInDataPartDescription
     /// part's `.bin` files and of the number of rows in every mark. Two replicas that hold the same data
     /// produce the same fingerprint, even when they wrote it with different compression codecs or
     /// server versions (the same tolerance `ReplicatedMergeTree` applies when it compares checksums
-    /// of same-named parts), and it is independent of per-replica PK or skip-index analysis. Two replicas that
+    /// of same-named parts; a compact part of a non-replicated table must be byte-identical), and it
+    /// is independent of per-replica PK or skip-index analysis. Two replicas that
     /// hold genuinely different parts that happen to share a name (for example, two non-replicated
     /// `MergeTree` instances each created from independent local inserts that produced parts
     /// named `all_1_1_0`) will produce different fingerprints, even when their `total_marks_in_part`
