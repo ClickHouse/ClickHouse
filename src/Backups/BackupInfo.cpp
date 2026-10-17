@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -223,7 +224,8 @@ namespace
     }
 
     /// Removes the credentials embedded in the URL itself: the userinfo part and the authentication
-    /// query parameters of presigned URLs (the same set as recognized by `S3::URI`).
+    /// query parameters of presigned URLs (the set recognized by `S3::URI`; once the URL is presigned,
+    /// the `X-Amz-`/`X-Goog-` names in any case).
     /// Destination-significant parameters such as `versionId` are kept.
     /// Returns the URL unchanged if there is nothing to remove.
     String removeCredentialsFromS3URL(const String & url)
@@ -240,11 +242,25 @@ namespace
             changed = true;
         }
 
-        Poco::URI::QueryParameters kept_params;
-        for (const auto & [key, value] : uri.getQueryParameters())
+        auto is_presigned_name = [](std::string_view key)
         {
-            if (key == "AWSAccessKeyId" || key == "Signature" || key == "Expires" || key.starts_with("X-Amz-")
-                || key == "GoogleAccessId" || key.starts_with("X-Goog-"))
+            return key == "AWSAccessKeyId" || key == "Signature" || key == "Expires" || key.starts_with("X-Amz-")
+                || key == "GoogleAccessId" || key.starts_with("X-Goog-");
+        };
+        auto is_header_name = [](std::string_view key)
+        {
+            return equalsCaseInsensitive(key.substr(0, 6), "X-Amz-") || equalsCaseInsensitive(key.substr(0, 7), "X-Goog-");
+        };
+
+        const auto query_parameters = uri.getQueryParameters();
+        /// `S3::URI` ignores the query of a presigned URL, so its header-derived names go in any case
+        /// (SigV2 sends `x-amz-security-token`); any other query is part of the key and stays.
+        bool presigned = std::ranges::any_of(query_parameters, [&](const auto & parameter) { return is_presigned_name(parameter.first); });
+
+        Poco::URI::QueryParameters kept_params;
+        for (const auto & [key, value] : query_parameters)
+        {
+            if (is_presigned_name(key) || (presigned && is_header_name(key)))
                 changed = true;
             else
                 kept_params.push_back({key, value});
