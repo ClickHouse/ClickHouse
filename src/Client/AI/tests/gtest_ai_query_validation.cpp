@@ -703,6 +703,48 @@ TEST(AIQueryValidation, DetectsSettingChanges)
     EXPECT_FALSE(changesSettings("SELECT * FROM system.settings WHERE name = 'readonly'"));
 }
 
+TEST(AIQueryValidation, RejectsQueryParameters)
+{
+    /// The server substitutes a parameter after the validation, and an `Identifier` parameter names
+    /// the table or the database that is read.
+    EXPECT_FALSE(isAllowed("SELECT * FROM {t:Identifier} SETTINGS param_t = 'v'"));
+    EXPECT_FALSE(isAllowed("SELECT query FROM system.{t:Identifier} SETTINGS param_t = 'query_log'"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM {db:Identifier}.t"));
+    EXPECT_FALSE(isAllowed("SELECT 1 IN {t:Identifier}"));
+    EXPECT_FALSE(isAllowed("SHOW CREATE TABLE {t:Identifier}"));
+    EXPECT_FALSE(isAllowed("EXISTS TABLE {db:Identifier}.t"));
+    EXPECT_FALSE(isAllowed("SELECT {x:UInt8}"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM t"));
+}
+
+TEST(AIQueryValidation, RejectsFunctionsResolvingTablesFromStrings)
+{
+    EXPECT_FALSE(isAllowed("SELECT hasColumnInTable('pg_db', 't', 'c')"));
+    EXPECT_FALSE(isAllowed("SELECT joinGet('pg_db.t', 'c', 1)"));
+    EXPECT_FALSE(isAllowed("SELECT joinGetOrNull('pg_db.t', 'c', 1)"));
+    EXPECT_FALSE(isAllowed("SELECT JOINGET('pg_db.t', 'c', 1)"));
+}
+
+TEST(AIQueryValidation, RejectsQueryConstructionSettings)
+{
+    /// The server parses these settings into a part of the query after the validation.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS select = 'generateSerialID(''ai_series'')'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS select = 'file(''secret.txt'')'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS filter = '1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS order = '1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS sort = '1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS additional_result_filter = '1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS additional_table_filters = {'t': '1'}"));
+    EXPECT_FALSE(isAllowed("SELECT * SETTINGS implicit_table_at_top_level = 'v'"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM t SETTINGS database = 'remote_db'"));
+    /// Nested, under `EXPLAIN`, and reset to the default.
+    EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT 1 SETTINGS select = 'file(''secret.txt'')')"));
+    EXPECT_FALSE(isAllowed("EXPLAIN SELECT 1 SETTINGS filter = '1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS select = DEFAULT"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS database = DEFAULT"));
+    EXPECT_TRUE(isAllowed("SELECT 1 SETTINGS max_threads = 1"));
+}
+
 #endif
 
 TEST(AIQueryValidation, RejectsGetServerSetting)

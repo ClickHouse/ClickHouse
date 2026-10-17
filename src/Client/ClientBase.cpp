@@ -4696,6 +4696,41 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
                 "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
                 "does not allow changing settings. Use the run_query tool for this query");
 
+        /// The settings that the server turns into a part of the query after the validation above:
+        /// a `SETTINGS` clause of the query cannot change them, but the session can have them
+        /// already (`SET select = 'file(''secret.txt'')'`), and then every query of the session is
+        /// wrapped in the expression or reads the table they hold. They are not reset for the query
+        /// instead: `additional_table_filters` and `additional_result_filter` can be what restricts
+        /// the rows the user sees, so the tool refuses rather than loosening them. The value the
+        /// client changed itself travels with the query and is the effective one; otherwise a
+        /// settings profile can set it unseen (`apply_settings_from_server = 0`, a `SET profile`),
+        /// and then the server is asked, as for the limits below.
+        {
+            const Settings & session_settings = client_context->getSettingsRef();
+            const bool local_values_are_effective = !connection
+                || (session_settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile);
+            for (const auto * name : {"select", "filter", "order", "sort", "additional_table_filters", "additional_result_filter",
+                                      "implicit_table_at_top_level"})
+            {
+                bool is_set = false;
+                if (local_values_are_effective || session_settings.isChanged(name))
+                {
+                    const Field value = session_settings.get(name);
+                    is_set = value.getType() == Field::Types::Map ? !value.safeGet<Map>().empty() : !value.safeGet<String>().empty();
+                }
+                else if (const std::optional<String> value = serverEffectiveSettingValue(name))
+                {
+                    is_set = !value->empty() && *value != "{}";
+                }
+                if (is_set)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The session has the setting `{}`, which the server turns into a part of every query after the "
+                        "read-only tool has validated it. Use the run_query tool for this query",
+                        name);
+            }
+        }
+
         /// The isolation of an unconfirmed query is made of settings, and a setting only isolates
         /// anything on a server that knows it: `show_remote_databases_in_system_tables` and
         /// `show_data_lake_catalogs_in_system_tables` are not `IMPORTANT`, so a server that

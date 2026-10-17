@@ -12,6 +12,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -103,6 +104,24 @@ bool isFormatSchemaSetting(const String & name)
         || name == "format_avro_schema_registry_url";
 }
 
+/// The settings that carry SQL or a table name the server applies to the query after this
+/// validation, so they would hide what the query reads or calls: `select`, `filter`, `order` and
+/// `sort` wrap the query in another one parsed from the setting (`select = 'file(''secret.txt'')'`),
+/// `additional_table_filters` and `additional_result_filter` add filters parsed from it, and
+/// `implicit_table_at_top_level` reads a table the query does not name. `database` makes the
+/// unqualified names of the query resolve to another database than the one they were checked in.
+bool isQueryConstructionSetting(const String & name)
+{
+    return name == "select"
+        || name == "filter"
+        || name == "order"
+        || name == "sort"
+        || name == "additional_table_filters"
+        || name == "additional_result_filter"
+        || name == "implicit_table_at_top_level"
+        || name == "database";
+}
+
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
@@ -124,12 +143,22 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 "which is outside of what the read-only tool validates. Use the run_query tool for this query",
                 name);
         };
+        const auto reject_query_construction = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}`, which the server turns into a part of the query (an expression "
+                "or a table to read) after the read-only tool has validated it. Use the run_query tool for this query",
+                name);
+        };
         for (const auto & change : set_query->changes)
         {
             if (isProtectedSetting(change.name))
                 reject(change.name);
             if (isFormatSchemaSetting(change.name))
                 reject_format_schema(change.name);
+            if (isQueryConstructionSetting(change.name))
+                reject_query_construction(change.name);
         }
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
@@ -139,6 +168,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject(name);
             if (isFormatSchemaSetting(name))
                 reject_format_schema(name);
+            if (isQueryConstructionSetting(name))
+                reject_query_construction(name);
         }
     }
 
@@ -205,6 +236,12 @@ bool isDeniedScalarFunction(const String & name)
         "naivebayesclassifierwithallprobs",
         "predictxgboost",
         "assigncentroid",
+        /// The functions that resolve a table named by a string argument, which the collection of
+        /// the table names cannot see: resolving a table of a `PostgreSQL` or `MySQL` database
+        /// contacts it, even before the function finds out that the table does not suit it.
+        "hascolumnintable",
+        "joinget",
+        "joingetornull",
     };
     const String lowercase_name = Poco::toLower(name);
     return denied.contains(lowercase_name)
@@ -340,6 +377,23 @@ void checkNoExternalAccess(const IAST & ast)
 
     for (const auto & child : ast.children)
         checkNoExternalAccess(*child);
+}
+
+/// A query parameter is substituted by the server after this validation, and an `Identifier`
+/// parameter names a table or a database: `SELECT * FROM {t:Identifier} SETTINGS param_t = 'v'`
+/// reads `v`, while the validation sees a table without a name. The value of a parameter can also
+/// come from the session (`SET param_t = ...`), which the validation cannot see at all.
+void checkNoQueryParameters(const IAST & ast)
+{
+    if (ast.as<ASTQueryParameter>())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The query has a query parameter, which the server substitutes after the read-only tool has validated "
+            "the query, so it is not allowed for the read-only tool. Write the value into the query, or use the "
+            "run_query tool for this query");
+
+    for (const auto & child : ast.children)
+        checkNoQueryParameters(*child);
 }
 
 void checkNoSchemaAccess(const IAST & ast)
@@ -779,6 +833,7 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
             "INTO OUTFILE is not allowed for the read-only tool because it writes to the user's files. "
             "Use the run_query tool for this query");
 
+    checkNoQueryParameters(ast);
     checkNoProtectedSettingChanges(ast);
     checkNoExternalAccess(ast);
     if (!allow_schema_access)
