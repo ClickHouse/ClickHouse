@@ -276,6 +276,9 @@ class LogCluster:
             # chunks at once, and that peak is what crosses the shared cluster's
             # per-user memory limit when all Build variants upload at once.
             "input_format_parallel_parsing": 0,
+            # Cut parsed blocks by size: 26.8 and 26.9 servers count a JSON string
+            # together with the rest of its block against the 1 GiB string limit.
+            "max_insert_block_size_bytes": 256 * 1024 * 1024,
         }
         if db_name:
             params["database"] = db_name
