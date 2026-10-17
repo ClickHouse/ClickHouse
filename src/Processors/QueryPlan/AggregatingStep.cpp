@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Aggregator.h>
@@ -105,19 +106,14 @@ static bool memoryBoundMergingWillBeUsed(
 
 /// Whether a state of `function` can own memory outside its arenas. A state with a trivial destructor cannot
 /// own anything it would have to free, so its whole footprint is its `sizeOfData` bytes (allocated in an arena)
-/// plus whatever it allocates in the arena. A state with a non-trivial destructor that does not allocate in the
-/// arena keeps its payload on the heap instead (e.g. the hash set of `uniqExact`, grown through
-/// `HashTableAllocator`). Combinators are checked through their nested functions: e.g. `-ForEach` allocates its
-/// nested states in the arena, but a nested `uniqExact` state still grows its hash set on the heap.
+/// plus whatever it allocates in the arena. Any other state may keep part of its payload on the heap, even when
+/// `allocatesMemoryInArena` is true: e.g. the hash set of `uniqExact` grows through `HashTableAllocator`, and the
+/// array of a numeric `groupArray` uses `MixedAlignedArenaAllocator`, which switches to the ordinary allocator
+/// once it reaches 4096 bytes. There is no way to tell these apart from arena-only states, so all of them are
+/// treated as unaccountable. Combinators report a trivial destructor only if their nested functions do.
 static bool aggregateStateMayOwnMemoryOutsideArenas(const IAggregateFunction & function)
 {
-    if (!function.hasTrivialDestructor() && !function.allocatesMemoryInArena())
-        return true;
-
-    if (auto nested = function.getNestedFunction())
-        return aggregateStateMayOwnMemoryOutsideArenas(*nested);
-
-    return false;
+    return !function.hasTrivialDestructor();
 }
 
 /// Whether some column of `header` (at any nesting level, e.g. `Array(AggregateFunction(...))`) carries
@@ -139,6 +135,23 @@ static bool hasAggregateStatesWithMemoryOutsideArenas(const Block & header)
         column.column->forEachSubcolumnRecursively(check);
     }
     return result;
+}
+
+/// Whether some `GROUP BY` key can hold values that compare equal while hashing differently. The shuffle routes
+/// a row by `computeHashInto` of its keys, which hashes the stored bits, but the in-order aggregation finds
+/// group boundaries with `compareAt`. For floating-point keys these disagree (`+0.0` and `-0.0`, or NaNs with
+/// different payloads, are one group but get different hashes), so one group would be split between shards
+/// and finalized twice. `Dynamic` and `JSON` can hold floating-point values without exposing them in the type.
+static bool hasKeysWithHashInconsistentWithComparison(const Block & header, const Names & keys)
+{
+    return std::ranges::any_of(keys, [&](const String & key)
+    {
+        return anyInTypeTree(*header.getByName(key).type, [](const IDataType & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat() || which.isDynamic() || which.isObject();
+        });
+    });
 }
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
@@ -791,12 +804,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// aggregation used.
             && pipeline.getNumStreams() * max_threads < 100'000
             /// The buffer budget measures the columns of a buffered chunk and, for aggregate states, the arenas
-            /// they live in. A state that keeps its payload on the heap (e.g. `uniqExact` read from an
-            /// `AggregatingMergeTree`) can retain megabytes per state that neither is visible to, so the
-            /// budget would let such chunks accumulate without bound. Do not use the shuffle for them unless
-            /// the budget is disabled anyway.
+            /// they live in. A state that keeps its payload on the heap (e.g. `uniqExact` or a large numeric
+            /// `groupArray` read from an `AggregatingMergeTree`) can retain megabytes per state that neither is
+            /// visible to, so the budget would let such chunks accumulate without bound. Do not use the shuffle
+            /// for any state that may do so (any state with a non-trivial destructor) unless the budget is
+            /// disabled anyway.
             && (settings.aggregation_in_order_shuffle_max_buffered_bytes == 0
-                || !hasAggregateStatesWithMemoryOutsideArenas(pipeline.getHeader()));
+                || !hasAggregateStatesWithMemoryOutsideArenas(pipeline.getHeader()))
+            /// Every row of an in-order group must be routed to the same shard.
+            && !hasKeysWithHashInconsistentWithComparison(pipeline.getHeader(), transform_params->params.keys);
 
         if (use_shuffle_in_order)
         {
