@@ -31,6 +31,9 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    /// Not inherited: this is an `IStorageCluster`, not a `StorageObjectStorage`.
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
     bool isObjectStorage() const override { return true; }

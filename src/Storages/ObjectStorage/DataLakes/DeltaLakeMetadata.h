@@ -63,6 +63,9 @@ public:
 
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType);
 
+    /// Configurations are templated on this class, not the `DeltaLakeMetadataDeltaKernel` `create` returns.
+    static void checkInsertIsPossible(ContextPtr);
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,

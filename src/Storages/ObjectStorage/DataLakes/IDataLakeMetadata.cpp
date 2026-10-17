@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
@@ -75,6 +80,11 @@ ObjectIterator IDataLakeMetadata::createKeysIterator(
     UInt64 snapshot_version_) const
 {
     return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_, snapshot_version_);
+}
+
+void IDataLakeMetadata::checkInsertIsPossible(ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 }
 
 ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
