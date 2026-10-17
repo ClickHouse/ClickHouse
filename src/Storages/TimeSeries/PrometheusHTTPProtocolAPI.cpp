@@ -60,6 +60,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool promql_exact_rate;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -208,6 +209,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     evaluation_settings.time_scale = getPromQLResultTimestampScale(evaluation_settings.table_timestamp_type);
     evaluation_settings.time_zone = getPromQLResultTimeZone(evaluation_settings.table_timestamp_type);
+    evaluation_settings.exact_rate = getContext()->getSettingsRef()[Setting::promql_exact_rate];
     evaluation_settings.push_down_label_matchers = getContext()->getSettingsRef()[Setting::promql_push_down_label_matchers];
     const UInt32 time_scale = evaluation_settings.time_scale;
 
