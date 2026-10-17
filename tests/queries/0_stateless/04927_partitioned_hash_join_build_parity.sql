@@ -1,3 +1,4 @@
+-- Tags: long
 -- Result parity of `partitioned_hash` with `hash` and `parallel_hash` when the build is partitioned
 -- (more than one partition of the shared hash table), for every hash-table key type. The build side
 -- is large enough that every key type except the fixed-size ones (`UInt8`, `UInt16`) gets more than
@@ -13,6 +14,9 @@ SET max_bytes_in_join = 0;
 -- The ProfileEvents assertions below read this server's query_log; with parallel replicas the
 -- join builds (and their events) can land on other replicas.
 SET enable_parallel_replicas = 0;
+-- The planner's row estimate picks the build layout. A randomized join order or a reordering limit of 0 loses it.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 -- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
 SET max_threads = 4;
 
