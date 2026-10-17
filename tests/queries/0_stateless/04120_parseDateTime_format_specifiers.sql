@@ -87,6 +87,10 @@ SELECT parseDateTime('2024-11-06 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC');
 SELECT parseDateTime('2024-11-6 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime('2024-11-0: 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime('2024-11-/6 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('', '%d', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('6', '%d', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('a6', '%d', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('6a', '%d', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime('2024-11-6 10:00:00', '%Y-%m-%e %H:%i:%s', 'UTC') SETTINGS parsedatetime_e_requires_space_padding = 0;
 SELECT isNull(parseDateTimeOrNull('2024-11-6 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC'));
 SELECT parseDateTimeOrZero('2024-11-6 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC') = toDateTime('1970-01-01', 'UTC');
