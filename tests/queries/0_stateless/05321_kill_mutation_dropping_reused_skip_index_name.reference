@@ -1,0 +1,9 @@
+-- the kill is refused while another index holds the name
+-- the drop stayed pending, so the old granules are still kept out of the way
+1
+1
+-- a drop whose name nothing has taken is killed as before
+0
+-- re-adding a name whose killed drop left files behind is refused
+-- a name nothing left files under is unaffected
+1
