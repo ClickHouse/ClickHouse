@@ -5071,11 +5071,8 @@ struct ToNumberMonotonicity
   * and only costs pruning for a range that touches the very edges of the result type. The comparisons
   * are strict on top of that, which covers the truncation of a decimal bound below.
   *
-  * A range that may wrap is reported as monotonic only where the conversion is defined, which is
-  * weaker than `is_monotonic`: it still lets `KeyCondition` push a comparison constant through a
-  * sorting or partition key expression such as `PARTITION BY toDate(ts)`, where an unrepresentable
-  * constant is rejected by the dedicated guards in `applyFunctionChainToColumn`, while it stops
-  * `applyMonotonicFunctionsChainToRange` from mapping a key range through a wrapping conversion.
+  * A range that may wrap is reported as not monotonic: the stored values of a key expression such as
+  * `toDate(ts)` went through the same wrapping conversion, so they are not ordered like the argument.
   * Other argument types cannot wrap here and are always accepted: `DateTime` is narrower than every
   * result type by design, and a numeric argument goes through a saturating conversion instead.
   */
@@ -5219,7 +5216,7 @@ struct ToDateMonotonicity
             {
                 if (!dateTimeConversionRangeCannotWrap(
                         type, left, right, 0, (Int128(DATE_LUT_MAX_DAY_NUM) + 1) * DATE_SECONDS_PER_DAY - 1))
-                    return {.is_always_monotonic_where_defined = true};
+                    return {};
             }
 
             return {.is_monotonic = true, .is_always_monotonic = true};
@@ -5301,7 +5298,7 @@ struct ToDateTimeMonotonicity
             {
                 if (!dateTimeConversionRangeCannotWrap(
                         type, left, right, 0, Int128(std::numeric_limits<UInt32>::max())))
-                    return {.is_always_monotonic_where_defined = true};
+                    return {};
             }
 
             if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()

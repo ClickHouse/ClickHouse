@@ -81,7 +81,8 @@ INSERT INTO t_nullable SELECT if(number = 30, NULL, toDateTime('2026-01-09 00:00
 -- A `Nullable` column has the values of its nested type.
 {{ check('t_nullable', "ts >= '2026-01-10 00:00:00' AND ts < '2026-01-11 00:00:00'") }}
 
-CREATE TABLE t_datetime64 (ts DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY toDate(ts)
+-- `toDate` may wrap a `DateTime64`, so it does not carry a range condition; `toStartOfDay` does.
+CREATE TABLE t_datetime64 (ts DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY toStartOfDay(ts)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_datetime64 SELECT toDateTime64('2026-01-09 00:00:00', 3, 'UTC') + INTERVAL number HOUR FROM numbers(96);
 
