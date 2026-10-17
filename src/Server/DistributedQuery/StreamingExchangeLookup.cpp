@@ -64,11 +64,11 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto future_connection = connections->getConnection(query_id, stream_name);
-        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name);
+        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, advisory);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override
@@ -81,7 +81,8 @@ public:
         return std::make_shared<StreamingExchangeDeserializingTransform>(std::move(output_header), exchange_id);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto it = exchange_stream_sources.stream_hosts.find(stream_name);
@@ -91,7 +92,15 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "No streaming exchange port for exchange stream {} on host {}", stream_name, it->second.host);
         return std::make_shared<StreamingExchangeSource>(
-            output_header, query_id, stream_name, it->second.host, it->second.port, cancellation, auth_token, output_is_serialized);
+            output_header,
+            query_id,
+            stream_name,
+            it->second.host,
+            it->second.port,
+            cancellation,
+            auth_token,
+            output_is_serialized,
+            advisory);
     }
 
 private:

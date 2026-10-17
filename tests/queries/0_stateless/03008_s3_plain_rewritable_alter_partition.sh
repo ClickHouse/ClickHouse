@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-replicated-database
 # Tag no-shared-merge-tree: does not support replication
-# Tag no-distributed-cache: requires investigation
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

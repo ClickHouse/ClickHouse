@@ -3,9 +3,13 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Common/LoggingFormatStringHelpers.h>
+
+#include <expected>
+
 namespace DB
 {
 
-FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses);
+std::expected<FutureMergedMutatedPartPtr, PreformattedMessage> constructFuturePart(const MergeTreeData & data, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses);
 
 }
