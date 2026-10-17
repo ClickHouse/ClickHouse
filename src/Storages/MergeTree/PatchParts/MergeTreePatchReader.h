@@ -77,6 +77,7 @@ public:
 
 private:
     PatchJoinCache * patch_join_cache;
+    String block_structure_key;
 };
 
 /// V2 reader. Streams the patch part mark-range by mark-range in sort-key order.
