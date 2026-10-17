@@ -10,7 +10,11 @@ constinit UInt32 supported_archs = 0;
 namespace
 {
     /// Priority 101 runs before every constructor of default priority, so `supported_archs` is already
-    /// valid for any other static initializer. `getSupportedArchs` only executes CPUID and reads no globals.
+    /// valid for any other static initializer. On x86_64, `getSupportedArchs` only executes CPUID and reads
+    /// no globals. On AArch64, SVE detection reads the hardware capabilities (`AT_HWCAP`) via `getauxval`
+    /// (Linux) or `elf_aux_info` (FreeBSD), which read global state from the auxiliary vector that the kernel
+    /// passes to the process. This state is set up during process startup, before any constructor runs, so it
+    /// is already valid here.
     [[gnu::constructor(101)]] void initSupportedArchs()
     {
         supported_archs = getSupportedArchs();
@@ -97,6 +101,10 @@ UInt32 getSupportedArchs()
     if (CPU::haveGenuineIntel())
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
 
+    // ARM SVE support detection
+    if (CPU::haveSVE())
+        result |= static_cast<UInt32>(TargetArch::ARM_SVE);
+
     return result;
 }
 
@@ -112,6 +120,7 @@ String toString(TargetArch arch)
         case TargetArch::x86_64_sapphirerapids: return "x86-64-sapphirerapids";
         case TargetArch::GenuineIntel:          return "GenuineIntel";
         case TargetArch::x86_64_vaes:           return "x86-64-vaes";
+        case TargetArch::ARM_SVE:               return "arm-sve";
     }
 
     // This should never be reached. If it is, someone added a new TargetArch

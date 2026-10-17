@@ -813,7 +813,7 @@ struct ImplXXH3_128
     static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
@@ -913,7 +913,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -958,7 +958,7 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
 class FunctionAnyHash : public IFunction
@@ -1689,7 +1689,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 struct ImplWyHash64;
 

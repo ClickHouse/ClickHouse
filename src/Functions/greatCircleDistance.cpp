@@ -153,7 +153,7 @@ struct Impl
 
 template <typename T> Impl<T> impl;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 namespace
 {
@@ -343,7 +343,7 @@ private:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
