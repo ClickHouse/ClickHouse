@@ -244,10 +244,16 @@ ASTPtr makeToDecimal(ASTPtr argument)
                 scale = decimalScaleOfNumberDecimal(literal->value.safeGet<String>());
                 break;
             case Field::Types::Float64:
+            {
                 /// The shortest decimal text that reads back as the same double, which is what
-                /// Mongo preserves when it converts a double to a decimal.
-                scale = decimalScaleOfNumberDecimal(applyVisitor(FieldVisitorToString(), literal->value));
+                /// Mongo preserves when it converts a double to a decimal. The text is what gets
+                /// converted, not the double: `toDecimal128(1.15, 2)` multiplies in floating
+                /// point and truncates to `1.14`, while the text `1.15` is parsed exactly.
+                String text = applyVisitor(FieldVisitorToString(), literal->value);
+                scale = decimalScaleOfNumberDecimal(text);
+                argument = makeLiteral(Field(std::move(text)));
                 break;
+            }
             default:
                 break;
         }
