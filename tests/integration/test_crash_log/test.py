@@ -102,6 +102,9 @@ def test_crash_log_synchronous(started_node):
             "SELECT event_time, timestamp_ns, signal, signal_description, query "
             "FROM system.crash_log ORDER BY timestamp_ns FORMAT Vertical"
         )
+        if signal == "SEGV":
+            assert started_node.query("SELECT signal, fault_access_type FROM system.crash_log") == "11\t\n"
+            assert "Access: <not available>." in read_server_log(started_node)
 
         # A frame in the main executable is stored as its file offset, which is what keeps the row
         # resolvable after the restart a crash forces. Frames in other objects stay runtime
