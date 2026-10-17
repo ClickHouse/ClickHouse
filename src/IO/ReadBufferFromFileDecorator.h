@@ -36,6 +36,7 @@ public:
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override { return impl->readBigAt(to, n, offset, progress_callback); }
     bool supportsReadAtRetainCells() const override { return impl->supportsReadAtRetainCells(); }
     VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override { return impl->readBigAtRetainCells(n, offset); }
+    bool readsThroughPageCache() const override { return impl->readsThroughPageCache(); }
 
     /// The swap-based `nextImpl` calls `impl->next()` while `impl` may still have pending data,
     /// tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under set()+next(). Force the

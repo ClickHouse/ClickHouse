@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <span>
+#include <unordered_set>
 
 namespace DB
 {
@@ -56,6 +57,10 @@ public:
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
     void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
 
+    /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
+    /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
+    std::optional<size_t> startPrefetchWithinLimit(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory);
+
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
     /// If prefetch not started, reads the data right here.
@@ -67,6 +72,12 @@ public:
 
     size_t getFileSize() const { return file_size; }
     bool isLocalFile() const { return is_local_file; }
+
+    /// Whether started prefetches are read by background tasks that can run in parallel.
+    bool readsInBackground() const;
+
+    /// Whether reads go through the page cache, whose cells can be much larger than the ranges read.
+    bool readsThroughPageCache() const;
 
 private:
     friend class PrefetchHandle;
@@ -206,6 +217,8 @@ private:
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
+    /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
+    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);

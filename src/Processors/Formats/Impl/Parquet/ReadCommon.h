@@ -34,6 +34,9 @@ struct ReadOptions
     /// probability becomes very high. E.g. if bloom filter has 1% false positive probability,
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
+
+    /// The file is read from object storage or a URL.
+    bool is_remote_fs = false;
 };
 
 struct SharedResourcesExt
@@ -49,6 +52,7 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+    static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
 
