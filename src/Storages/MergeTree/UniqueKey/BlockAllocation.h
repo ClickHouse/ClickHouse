@@ -30,6 +30,8 @@ public:
 
     /// Block ids already in the dedup log: the block is a replay, and nothing is published.
     const std::vector<std::string> & dedupConflicts() const { return dedup_conflicts; }
+    /// The parts that already hold those block ids, in the same order.
+    const std::vector<MergeTreePartInfo> & dedupConflictParts() const { return dedup_conflict_parts; }
 
     void commit() { committed = true; }
 
@@ -38,6 +40,7 @@ private:
     MergeTreeDeduplicationLog * deduplication_log;
     MergeTreePartInfo part_info;
     std::vector<std::string> dedup_conflicts;
+    std::vector<MergeTreePartInfo> dedup_conflict_parts;
     bool registered = false;
     bool committed = false;
 };

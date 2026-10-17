@@ -342,9 +342,17 @@ void MergeTreeSink::finishDelayedChunk()
             /// own batched fsync (or that is still running), so it is synced together with the parts
             /// this query commits.
             auto * conflict_parts = partition.temp_part->needs_fsync_on_finish ? &committed_parts : nullptr;
-            auto outcome = metadata_snapshot->hasUniqueKey()
-                ? commitUniqueKeyPart(partition, deduplication_hashes)
-                : UniqueKeyInsertOutcome{.conflicting_blocks = commitPart(part, deduplication_hashes, conflict_parts)};
+            UniqueKeyInsertOutcome outcome;
+            if (metadata_snapshot->hasUniqueKey())
+            {
+                outcome = commitUniqueKeyPart(partition, deduplication_hashes);
+                if (conflict_parts)
+                    conflict_parts->insert(conflict_parts->end(), outcome.conflicting_parts.begin(), outcome.conflicting_parts.end());
+            }
+            else
+            {
+                outcome.conflicting_blocks = commitPart(part, deduplication_hashes, conflict_parts);
+            }
 
             /// Every row conflicted under IGNORE: nothing published, no retry.
             if (outcome.part_discarded)
