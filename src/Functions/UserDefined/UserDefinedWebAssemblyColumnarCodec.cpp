@@ -473,10 +473,11 @@ void writeColData(
         for (uint32_t i = 0; i < num_rows; ++i)
             disc_dst[i] = var_col->globalDiscriminatorAt(i);
 
-        uint32_t * offs_dst = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
+        /// The guest's allocation need not be aligned, so the frame offset says nothing about the host address.
+        uint8_t * offs_dst = buf.data() + desc.offsets_offset;
         const auto & row_offs = var_col->getOffsets();
         for (uint32_t i = 0; i < num_rows; ++i)
-            offs_dst[i] = static_cast<uint32_t>(row_offs[i]);
+            unalignedStore<uint32_t>(offs_dst + static_cast<uint64_t>(i) * 4u, static_cast<uint32_t>(row_offs[i]));
 
         uint8_t * block = buf.data() + desc.data_offset;
 

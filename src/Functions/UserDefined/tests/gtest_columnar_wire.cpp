@@ -24,6 +24,8 @@
 #include <limits>
 #include <vector>
 
+#include <base/unaligned.h>
+
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -465,6 +467,36 @@ TEST(ColumnarWire, VariantUInt64String)
 
     const char * str_chars = reinterpret_cast<const char *>(buf.data() + inner1.data_offset);
     EXPECT_EQ(std::string_view(str_chars, 2), "hi");
+}
+
+// A guest allocation need not be aligned: the encoder must not rely on the host address of a frame offset.
+TEST(ColumnarWire, VariantEncodesIntoUnalignedBuffer)
+{
+    auto u64_sub = ColumnUInt64::create();
+    u64_sub->getData() = {10, 20};
+    auto str_sub = ColumnString::create();
+    str_sub->insertData("hi", 2);
+    auto disc_col = ColumnVector<UInt8>::create();
+    disc_col->getData() = {0, 1, 0, ColumnVariant::NULL_DISCRIMINATOR};
+    auto offs_col = ColumnVector<UInt64>::create();
+    offs_col->getData() = {0, 0, 1, 0};
+    MutableColumns variants;
+    variants.push_back(std::move(u64_sub));
+    variants.push_back(std::move(str_sub));
+    auto var_col = ColumnVariant::create(std::move(disc_col), std::move(offs_col), std::move(variants));
+
+    const uint32_t num_rows = 4;
+    ColDescriptor desc{};
+    const uint64_t frame_size = buildColDescriptor(
+        var_col.get(), /*is_const=*/false, /*is_nullable=*/false, num_rows, FRAME_HEADER_BYTES + COL_DESC_BYTES, desc);
+
+    std::vector<uint64_t> storage(frame_size / sizeof(uint64_t) + 2, 0);
+    uint8_t * frame = reinterpret_cast<uint8_t *>(storage.data()) + 1;
+    writeColData(var_col.get(), /*is_nullable=*/false, num_rows, desc, {frame, frame_size});
+
+    const uint32_t expected[] = {0, 0, 1, 0};
+    for (uint32_t i = 0; i < num_rows; ++i)
+        EXPECT_EQ(unalignedLoad<uint32_t>(frame + desc.offsets_offset + i * 4u), expected[i]);
 }
 
 // ── Nullable string encodes with COL_IS_NULLABLE and a valid null_offset ──────
