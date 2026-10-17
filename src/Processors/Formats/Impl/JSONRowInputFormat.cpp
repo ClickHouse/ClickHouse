@@ -71,6 +71,13 @@ void JSONRowInputFormat::resetReadBuffer()
     JSONEachRowRowInputFormat::resetReadBuffer();
 }
 
+void JSONRowInputFormat::resetParser()
+{
+    JSONEachRowRowInputFormat::resetParser();
+    /// `readPrefix` decides again for the next input whether it is the `{"meta": ..., "data": [...]}` envelope.
+    parse_as_json_each_row = false;
+}
+
 JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool fallback_to_json_each_row_)
     : JSONRowSchemaReader(std::make_unique<PeekableReadBuffer>(in_), format_settings_, fallback_to_json_each_row_)
 {

@@ -1,5 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Formats/IRowInputFormat.h>
 
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -39,6 +41,12 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , total_chunks(total_chunks_)
 {
     connect(format->getPort(), port);
+
+    /// Without a defaults transform the rows need no per-chunk processing, so a row format can
+    /// append straight into `result_columns`, which `insertChunk` fills by position.
+    if (!adding_defaults_transform && blocksHaveEqualStructure(header, format->getPort().getHeader()))
+        if (auto * row_format = dynamic_cast<IRowInputFormat *>(format.get()); row_format && row_format->canReadInto())
+            row_input_format = row_format;
 
     for (size_t i = 0; i < result_columns.size(); ++i)
         checkpoints[i] = result_columns[i]->getCheckpoint();
@@ -100,6 +108,25 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     try
     {
         size_t new_rows = 0;
+
+        if (row_input_format)
+        {
+            while (true)
+            {
+                FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_in_executor);
+
+                if (is_cancelled && is_cancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Format streaming was cancelled");
+
+                size_t rows = row_input_format->readInto(result_columns);
+                if (!rows)
+                    break;
+                new_rows += rows;
+            }
+            format->resetParser();
+            return new_rows;
+        }
+
         port.setNeeded();
         while (true)
         {
