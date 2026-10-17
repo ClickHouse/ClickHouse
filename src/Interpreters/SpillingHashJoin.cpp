@@ -309,7 +309,8 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
 
         /// A build thread that got in before the state flipped is still inside the in-memory join,
         /// which is why this runs under the lock. Freeing the table scratch here also drops it before
-        /// the conversion peak.
+        /// the conversion peak. A thread that sees the new state converts the fill lanes, so this must
+        /// finish before the state flips.
         const auto hand_over_single_lane = [&]
         {
             partitioned_join->dropFillAuxiliary();
@@ -324,13 +325,15 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
             }
         };
 
+        if (partitioned_join)
+            hand_over_single_lane();
+
         /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
         /// the new join, so its `serial` context cannot overlap another insert into that join.
         if (spill_immediately)
         {
             if (partitioned_join)
             {
-                hand_over_single_lane();
                 tryConvertFillLanes(context);
             }
             else
@@ -342,9 +345,6 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
 
         state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
-
-        if (partitioned_join && !spill_immediately)
-            hand_over_single_lane();
     }
 
     if (spill_immediately)
