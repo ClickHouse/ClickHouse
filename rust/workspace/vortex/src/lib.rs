@@ -17,6 +17,7 @@
 #![allow(non_camel_case_types)]
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -218,26 +219,37 @@ impl HostRuntime {
     }
 }
 
-/// What `defer_drop` was given and `drop_deferred` did not drop yet.
-static DEFERRED_DROPS: Mutex<Vec<Box<dyn Send>>> = Mutex::new(Vec::new());
-static NUM_DEFERRED_DROPS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// What `defer_drop` was given on this thread and `drop_deferred` did not drop yet. Per thread,
+    /// so that a value is dropped on the way out of the very call that deferred it: ClickHouse
+    /// accounts the memory a thread frees to the query that thread runs, and a process-wide list
+    /// would let one query free, and be credited for, what another one allocated.
+    static DEFERRED_DROPS: RefCell<Vec<Box<dyn Send>>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Keeps `value` for `drop_deferred`, for a caller that cannot tell which locks are held around it.
 fn defer_drop(value: Box<dyn Send>) {
-    let mut deferred = DEFERRED_DROPS.lock().unwrap_or_else(|e| e.into_inner());
-    deferred.push(value);
-    NUM_DEFERRED_DROPS.store(deferred.len(), Ordering::Release);
+    let mut value = Some(value);
+    let _ = DEFERRED_DROPS.try_with(|deferred| deferred.borrow_mut().extend(value.take()));
+    // The thread is exiting and its list is already gone. Dropping here could take a lock that is
+    // held around this call, so the value is leaked instead.
+    if let Some(value) = value {
+        std::mem::forget(value);
+    }
 }
 
-/// Drops everything given to `defer_drop`, including what is deferred while dropping. Called on the
-/// way out of every FFI call, where no lock of the library is held.
+/// Drops everything given to `defer_drop` on this thread, including what is deferred while
+/// dropping. Called on the way out of every FFI call, where no lock of the library is held.
 fn drop_deferred() {
-    while NUM_DEFERRED_DROPS.load(Ordering::Acquire) > 0 {
-        let values = {
-            let mut deferred = DEFERRED_DROPS.lock().unwrap_or_else(|e| e.into_inner());
-            NUM_DEFERRED_DROPS.store(0, Ordering::Release);
-            std::mem::take(&mut *deferred)
+    loop {
+        let Ok(values) =
+            DEFERRED_DROPS.try_with(|deferred| std::mem::take(&mut *deferred.borrow_mut()))
+        else {
+            return;
         };
+        if values.is_empty() {
+            return;
+        }
         drop(values);
     }
 }
@@ -1144,6 +1156,8 @@ pub unsafe extern "C" fn vortex_ffi_scan_release(scan: *const FFI_VortexScan, co
     if scan.is_null() {
         return;
     }
+    // Taking a permit can wake a task of a runtime that is already gone.
+    let _drop_deferred = DropDeferredOnExit;
     let scan = unsafe { &*scan };
     for _ in 0..count {
         if scan.permits.try_recv().is_err() {
