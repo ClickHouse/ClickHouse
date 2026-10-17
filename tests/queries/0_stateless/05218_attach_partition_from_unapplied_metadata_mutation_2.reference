@@ -1,0 +1,12 @@
+the dropping table moved its metadata version	1
+the source part still holds the dropped column	1
+a part whose dropped column no schema has is cloned	10	45
+src reads the never-written renamed column	10	0
+the clone reads the renamed column the same way	10	0
+an independent dotted column survives its prefix being dropped	10	45
+src reads the default that the invalidated marker left	10	5550
+the clone reads that same default	10	5550
+src reads the cleared column as defaults	10	0
+after refused ATTACH FROM: clear dst parts	0
+clean source is cloned	10	10045
+a part behind only ALTER MODIFY COLUMN is cloned	10	10045
