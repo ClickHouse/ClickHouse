@@ -1,0 +1,4 @@
+(UPDATE n = n + 100 IN PARTITION ID \'1\' WHERE 1)
+1	101
+2	2
+0
