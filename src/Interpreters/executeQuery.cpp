@@ -57,6 +57,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
@@ -97,6 +98,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -138,6 +140,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -307,6 +312,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool use_query_cache;
+    extern const SettingsBool enable_full_text_index;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
@@ -1576,7 +1582,8 @@ bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
 /// The access `InterpreterCreateQuery::getRequiredAccess` checks on the statement's own destination — the
 /// database for `CREATE DATABASE`, the dictionary/view/table being created otherwise, plus the engine grant.
 /// The external `TO`/target tables are deliberately left out: the collector records them separately, with
-/// their own required access, so the generic access preflight covers them.
+/// their own required access, so the generic access preflight covers them. The privileges checked later,
+/// while the statement replaces an existing object or fills the new one, are included too.
 AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create, const String & database, const String & table)
 {
     AccessRightsElements required_access;
@@ -1607,6 +1614,21 @@ AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create,
         if (create.replace_table)
             required_access.emplace_back(AccessType::DROP_TABLE, database, table);
         required_access.emplace_back(AccessType::CREATE_TABLE, database, table);
+    }
+
+    if (create.table && !create.isTemporary())
+    {
+        /// A replacing form also checks the `DROP` privilege of the replaced object's own kind, which can
+        /// differ from the kind being created (`CREATE OR REPLACE VIEW` over a plain table needs
+        /// `DROP TABLE`). Require all kinds rather than look the replaced object up: over-requiring only
+        /// skips the randomization.
+        if (create.replace_table || create.create_or_replace || create.replace_view)
+            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW | AccessType::DROP_DICTIONARY, database, table);
+
+        /// `CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE` and `CREATE TABLE ... CLONE AS`
+        /// fill the new object, which the population checks as an `INSERT` into it.
+        if ((create.select && (!create.isView() || create.is_populate)) || create.is_clone_as)
+            required_access.emplace_back(AccessType::INSERT, database, table);
     }
 
     if (create.storage && create.storage->engine)
@@ -1939,8 +1961,17 @@ bool udfSubstitutionFails(const IAST & ast, const ContextPtr & context)
 /// persistent one there, while `InterpreterUpdateQuery` and `InterpreterDeleteQuery` resolve their target
 /// with an explicit `ResolveOrdinary`. Probing the wrong table would predict the fate of a statement that
 /// is not the one being executed.
+///
+/// The callers go on to probe the storage (`supportsDelete`, its metadata, ...), so the target must be one
+/// the user may already touch and one whose probing has no side effects of its own. `required_access` is
+/// the access the statement's interpreter checks on the target before it fetches the storage: a user
+/// lacking it gets `ACCESS_DENIED` from the interpreter without the storage ever being touched, and the
+/// probes must not touch it either. With `lazy_load_tables` the catalog holds a `StorageTableProxy` until
+/// the table is first used, and most probes forward to `StorageProxy::getNested`, which creates and starts
+/// up the real storage; such a target is treated as stopping the statement too.
 StoragePtr tryResolveMutationTarget(
-    const String & database_name, const String & table_name, Context::StorageNamespace resolve_namespace, const ContextPtr & context)
+    const String & database_name, const String & table_name, Context::StorageNamespace resolve_namespace,
+    const AccessFlags & required_access, const ContextPtr & context)
 {
     if (table_name.empty())
         return nullptr;
@@ -1951,11 +1982,20 @@ StoragePtr tryResolveMutationTarget(
     if (!resolved)
         return nullptr;
 
+    if (resolved.getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE
+        && !context->getAccess()->isGranted(required_access, resolved.getDatabaseName(), resolved.getTableName()))
+        return nullptr;
+
     if (const auto database = DatabaseCatalog::instance().tryGetDatabase(resolved.getDatabaseName());
         !database || !database->supportsDetachingTables())
         return nullptr;
 
-    return DatabaseCatalog::instance().tryGetTable(resolved, context);
+    auto table = DatabaseCatalog::instance().tryGetTable(resolved, context);
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+        proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
+        return nullptr;
+
+    return table;
 }
 
 /// The single `DELETE` mutation command `InterpreterDeleteQuery::execute` builds for its heavy
@@ -2043,7 +2083,7 @@ bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const Co
     if (udfSubstitutionFails(delete_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary, context);
+    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary, AccessType::ALTER_DELETE, context);
     if (!table)
         return true;
 
@@ -2299,7 +2339,7 @@ bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const Co
     if (udfSubstitutionFails(update_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary, context);
+    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary, requiredAccessForTableQuery(update_query), context);
     if (!table)
         return true;
 
@@ -2423,7 +2463,7 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
             return true;
     }
 
-    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), Context::ResolveAll, context);
+    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), Context::ResolveAll, requiredAccessForTableQuery(alter), context);
     if (!table)
         return true;
 
@@ -2553,7 +2593,7 @@ String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
     }
     else if (const auto * delete_query = ast.as<ASTDeleteQuery>())
     {
-        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), Context::ResolveOrdinary, context);
+        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), Context::ResolveOrdinary, AccessType::ALTER_DELETE, context);
         if (!target || target->supportsDelete())
             return {};
         return target->getStorageID().getDatabaseName();
@@ -2611,7 +2651,7 @@ bool insertQueryStopsBeforeSources(const ASTInsertQuery & insert, const ContextP
 
     /// `InterpreterInsertQuery::getTable` resolves the destination with the default `ResolveAll` (see the
     /// collector), and resolving it here has to stay side-effect free, exactly as for a mutation target.
-    const auto table = tryResolveMutationTarget(insert.getDatabase(), insert.getTable(), Context::ResolveAll, context);
+    const auto table = tryResolveMutationTarget(insert.getDatabase(), insert.getTable(), Context::ResolveAll, AccessType::INSERT, context);
     if (!table)
         return true;
 
@@ -2775,11 +2815,12 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     if (!ast)
         return;
 
-    /// `CREATE FUNCTION` and `CREATE`/`ALTER ROW POLICY` only validate and store their expressions
-    /// (the function body, the row filter) — the statement itself never reads the tables those name.
-    /// Collecting them would reattach a table the statement does not use and, since such a statement
-    /// checks its own access only in its interpreter, after the reattach.
-    if (ast->as<ASTCreateSQLFunctionQuery>() || ast->as<ASTCreateRowPolicyQuery>())
+    /// `CREATE FUNCTION`, `CREATE`/`ALTER ROW POLICY` and `CREATE`/`ALTER HANDLER` only validate and store
+    /// their expressions (the function body, the row filter, the query served for HTTP requests) — the
+    /// statement itself never reads the tables those name. Collecting them would reattach a table the
+    /// statement does not use and, since such a statement checks its own access only in its interpreter,
+    /// after the reattach.
+    if (ast->as<ASTCreateSQLFunctionQuery>() || ast->as<ASTCreateRowPolicyQuery>() || ast->as<ASTCreateHandlerQuery>())
         return;
 
     if (const auto * select = ast->as<ASTSelectQuery>())
@@ -3055,6 +3096,39 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// the access to that object only when it is built — `SELECT` on the `Join` table in
         /// `FunctionJoinGet::prepare`, `dictGet` on the dictionary in `FunctionDictHelper::getDictionary` —
         /// so collect the object here to keep an access-rejected query side-effect free.
+        ///
+        /// `predictXGBoost` and the dictionary form of `assignCentroid` also check `dictGet` on the dictionary
+        /// they name (`FunctionPredictXGBoost::checkAccess`, `FunctionDictHelper::getDictionary`), in their
+        /// first and second argument respectively. Unlike the functions above, they do not take an identifier
+        /// as a name, so only a string literal names a dictionary there.
+        else if ((function->name == "predictXGBoost" || function->name == "assignCentroid")
+            && function->arguments && function->arguments->children.size() > (function->name == "assignCentroid" ? 1 : 0))
+        {
+            const auto & name_argument = function->arguments->children[function->name == "assignCentroid" ? 1 : 0];
+            const auto * literal = name_argument->as<ASTLiteral>();
+            const auto * array_function = name_argument->as<ASTFunction>();
+            if (literal && literal->value.getType() == Field::Types::String)
+            {
+                auto object_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+                if (!object_name || object_name->table.empty())
+                {
+                    data.has_unverifiable_reference = true;
+                }
+                else
+                {
+                    if (object_name->database.empty() && !data.default_database.empty())
+                        data.dictionaries.push_back(QualifiedTableName{data.default_database, object_name->table});
+                    data.dictionaries.push_back(std::move(*object_name));
+                }
+            }
+            /// The inline centroids of `assignCentroid` name no dictionary; any other expression may
+            /// evaluate to a dictionary name that is not known here.
+            else if (!(function->name == "assignCentroid"
+                && ((literal && literal->value.getType() == Field::Types::Array) || (array_function && array_function->name == "array"))))
+            {
+                data.has_unverifiable_reference = true;
+            }
+        }
         else if ((functionIsJoinGet(function->name) || functionIsDictGet(function->name))
             && function->arguments && !function->arguments->children.empty())
         {
@@ -3102,6 +3176,20 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         collectTablesInQuery(child, data, active_ctes, active_aliases);
 }
 
+}
+
+/// Whether any `SETTINGS` clause of the query, including the ones of its subqueries, sets `use_query_cache`.
+static bool astMentionsUseQueryCache(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+        for (const auto & change : set_query->changes)
+            if (change.name == "use_query_cache")
+                return true;
+
+    for (const auto & child : ast.children)
+        if (astMentionsUseQueryCache(*child))
+            return true;
+    return false;
 }
 
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
@@ -3192,6 +3280,15 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     auto access = context->getAccess();
     for (const auto & table : data.tables)
         if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
+            return;
+
+    /// A granted `SELECT` does not guarantee the read is permitted: `joinGet`, a direct `JOIN` against a
+    /// `Join` table, and `IN` over a `Set` table throw `ACCESS_DENIED` when the user has a nontrivial row
+    /// policy on that table (see `StorageSet::checkNoRowPolicy`). Telling those shapes apart would require
+    /// resolving the storages, so any collected table with a nontrivial row policy skips the hook.
+    for (const auto & table : data.tables)
+        if (const auto row_policy_filter = context->getRowPolicyFilter(table.id.getDatabaseName(), table.id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+            row_policy_filter && !row_policy_filter->isAlwaysTrue())
             return;
 
     /// `FunctionDictHelper::getDictionary` checks `dictGet` on the database of the loaded dictionary, or on
@@ -3375,6 +3472,15 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             if (has_transactional_parts)
                 continue;
 
+            /// A transaction also keeps the storage referenced through a mutation it created, even one that
+            /// has no parts to process (e.g. an `ALTER TABLE ... UPDATE` on an empty table inside
+            /// `BEGIN TRANSACTION`), so the active parts above do not show it. The internal
+            /// `DETACH TABLE ... SYNC` would wait for that transaction indefinitely, and the recovery
+            /// `ATTACH` would be rejected while the transaction still holds the storage.
+            if (const auto storage_merge_tree = castStorage<const StorageMergeTree>(table, DeferredTable::Load);
+                storage_merge_tree && storage_merge_tree->hasMutationsOfUnfinishedTransactions())
+                continue;
+
             /// Tables with a TTL are not safe to reattach yet: `StorageMergeTree::scheduleDataProcessingJob`
             /// books a `max_number_of_merges_with_ttl_in_pool` slot when it selects a TTL merge, but the slot
             /// is released through the `MergeList` entry that `MergePlainMergeTreeTask::prepare` creates only
@@ -3514,6 +3620,27 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 }
             }
             if (defines_own_disk)
+                continue;
+        }
+
+        /// The internal `ATTACH` below runs with the server's default settings, and
+        /// `InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery` rejects a stored text index
+        /// with `SUPPORT_IS_DISABLED` unless `enable_full_text_index` is set — also for an `ATTACH`. A table
+        /// created with a query-level `enable_full_text_index = 1` while the default profile has it off would
+        /// be detached and then fail both the `ATTACH` back and the recovery `ATTACH`, so skip it.
+        if (!context->getGlobalContext()->getSettingsRef()[Setting::enable_full_text_index])
+        {
+            bool has_text_index = false;
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                if (index.type == TEXT_INDEX_NAME)
+                {
+                    has_text_index = true;
+                    break;
+                }
+            }
+            if (has_text_index)
                 continue;
         }
 
@@ -5393,8 +5520,11 @@ static BlockIO executeQueryImpl(
             bool is_on_cluster = query_on_cluster && !query_on_cluster->cluster.empty();
             /// A `SELECT` with `use_query_cache` may be answered from the query result cache below without
             /// touching its tables at all, so reattaching them would be a side effect the query never implies.
-            bool may_use_query_result_cache = settings[Setting::use_query_cache]
-                && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+            /// A subquery can opt in to the cache on its own (`shouldUseQueryCacheForSubquery`), and a cache
+            /// hit skips building its storage-reading plan, so any nested `use_query_cache` counts as well.
+            bool may_use_query_result_cache = (settings[Setting::use_query_cache]
+                && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>()))
+                || astMentionsUseQueryCache(*out_ast);
             if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache)
             {
                 bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];

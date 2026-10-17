@@ -148,6 +148,22 @@ DEST_USER="user_reattach_dest_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${DEST_USER} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.t_reattach_dest_src TO ${DEST_USER}"
+# `table_engines_require_grant` is on in the test configuration: without the engine grant the source
+# would not be a reattach candidate at all, and the check below would pass regardless of the guard.
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${DEST_USER}"
+
+# A control: the same user can make the hook reattach the source.
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${DEST_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT count() FROM t_reattach_dest_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_dest_src"; then
+    echo "OK"
+else
+    echo "FAIL (source not detached for a permitted query)"
+fi
 
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${DEST_USER}" \
     --reattach_tables_before_query_execution=1 \
@@ -191,6 +207,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_refresh_dst (a UInt64) ENG
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${DEST_USER} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${DEST_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${DEST_USER}"
 
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${DEST_USER}" \
     --reattach_tables_before_query_execution=1 \
