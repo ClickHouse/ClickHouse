@@ -51,7 +51,7 @@ SELECT t2.payload FROM oj_right_tbl AS t1 RIGHT JOIN oj_left_tbl AS t2 USING (ke
 DROP TABLE oj_left_tbl;
 DROP TABLE oj_right_tbl;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

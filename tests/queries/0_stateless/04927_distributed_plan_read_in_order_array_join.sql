@@ -12,7 +12,6 @@ INSERT INTO t_dist_rio_array_join SELECT number * 3 + 2, number FROM numbers(300
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0;
-SET automatic_parallel_replicas_mode = 0;
 
 -- optimize_read_in_order is randomized by the test runner, and with it off the rows below would be right
 -- while testing nothing. Pin it so the case always exercises the ordered read.

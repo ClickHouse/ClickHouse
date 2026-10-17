@@ -37,7 +37,7 @@ SELECT key, pad FROM t_autopr_set_source
 WHERE non_key IN (SELECT number FROM numbers(500) UNION ALL SELECT number FROM numbers(500, 500))
 FORMAT Null SETTINGS log_comment = '05043_autopr_set_source_leaf_steps_2_union';
 
-SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -28,7 +28,7 @@ SELECT key FROM t WHERE key = 42 FORMAT Null SETTINGS log_comment='04035_autopr_
 -- Parallel replicas should NOT be enabled.
 SELECT key FROM t WHERE key = 42 FORMAT Null SETTINGS log_comment='04035_autopr_no_pr_for_small_reads_query_1';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 
