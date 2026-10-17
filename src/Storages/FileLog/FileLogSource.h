@@ -38,6 +38,17 @@ protected:
     Chunk generate() override;
 
 private:
+    Chunk generateImpl();
+
+    struct ReadPosition
+    {
+        UInt64 offset;
+        StorageFileLog::FileStatus status;
+    };
+
+    /// Closes the files [start, end) without storing their read positions, and moves them back to `positions`.
+    void closeAndRestoreReadPositions(const std::vector<ReadPosition> & positions);
+
     StorageFileLog & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;

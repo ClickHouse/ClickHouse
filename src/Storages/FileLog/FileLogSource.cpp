@@ -73,11 +73,55 @@ void FileLogSource::close()
     storage.closeFilesAndStoreMeta(start, end);
 }
 
+void FileLogSource::closeAndRestoreReadPositions(const std::vector<ReadPosition> & positions)
+{
+    closed = true;
+    SCOPE_EXIT(storage.reduceStreams());
+
+    auto & file_infos = storage.getFileInfos();
+    for (size_t i = start; i < end; ++i)
+    {
+        auto & file_ctx = StorageFileLog::findInMap(file_infos.context_by_name, file_infos.file_names[i]);
+        if (file_ctx.reader && file_ctx.reader->is_open())
+            file_ctx.reader->close();
+
+        const auto & position = positions[i - start];
+        StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode).last_writen_position = position.offset;
+        file_ctx.status = position.status;
+    }
+}
+
 Chunk FileLogSource::generate()
 {
     /// Store metas of last written chunk into disk
     storage.storeMetas(start, end);
 
+    auto & file_infos = storage.getFileInfos();
+    std::vector<ReadPosition> stored_read_positions;
+    stored_read_positions.reserve(end - start);
+    for (size_t i = start; i < end; ++i)
+    {
+        const auto & file_ctx = StorageFileLog::findInMap(file_infos.context_by_name, file_infos.file_names[i]);
+        const auto & meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
+        stored_read_positions.push_back({meta.last_writen_position, file_ctx.status});
+    }
+
+    try
+    {
+        return generateImpl();
+    }
+    catch (...)
+    {
+        /// `FileLogConsumer` moves the read positions of the files as soon as it reads their records, before they are parsed.
+        /// Move them back to the ones just stored, so that the next read starts with the records of the failed chunk.
+        if (!closed)
+            closeAndRestoreReadPositions(stored_read_positions);
+        throw;
+    }
+}
+
+Chunk FileLogSource::generateImpl()
+{
     if (!consumer || consumer->noRecords())
     {
         /// There is no close for ISource, we call it
