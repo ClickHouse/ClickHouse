@@ -319,6 +319,8 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 يُمكِّن هذا الإعداد أو يعطِّل امتياز `SHOW NAMED COLLECTIONS SECRETS` للمستخدم، وهو ما يتيح له الاطلاع على القيم المخزَّنة في [named collections](/ar/concepts/features/configuration/server-config/named-collections)، على سبيل المثال في جدول [`system.named_collections`](/ar/reference/system-tables/named_collections).
 
+وهو مطلوب أيضًا لتجاوز قيمة مفتاح مخزَّن في named collection عند استخدام هذه المجموعة، مثل `url` في `s3(my_collection, url = '...')`، أو في عبارة `SETTINGS` الخاصة بمحرك الجدول، أو مفتاح في مصدر القاموس. أما إضافة مفتاح غير مخزَّن في المجموعة فلا تستلزم هذا الامتياز.
+
 وهو معطَّل افتراضيًا: فالقدرة على إدارة named collections لا تعني القدرة على قراءة بيانات الاعتماد المخزَّنة فيها.
 
 ولا يكون لهذا الإعداد أثر إلا مقترنًا بـ `named_collection_control`، إذ عند تعطيل `named_collection_control` تُلغى على أي حال جميع امتيازات named collections، بما فيها `SHOW NAMED COLLECTIONS SECRETS`.

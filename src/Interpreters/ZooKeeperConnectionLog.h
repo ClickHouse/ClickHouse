@@ -41,6 +41,8 @@ class ZooKeeperConnectionLog : public SystemLog<ZooKeeperConnectionLogElement>
 public:
     using SystemLog<ZooKeeperConnectionLogElement>::SystemLog;
 
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
+
     void addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
     void addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
 

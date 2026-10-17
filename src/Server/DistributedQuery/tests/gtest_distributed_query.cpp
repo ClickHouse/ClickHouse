@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <boost/core/noncopyable.hpp>
@@ -28,6 +29,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/JoinOperator.h>
@@ -55,7 +57,11 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 
@@ -590,8 +596,10 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     auto context = Context::createCopy(getContext().context);
     context->setSetting("distributed_plan_execute_locally", true);
 
+    /// In-memory exchanges are kept per query id for the whole process, so a fixed id would make a
+    /// repeated run read the exchange the previous run already used.
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        toString(UUIDHelpers::generateV4()), ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
         /*execute_locally=*/true, /*cancellation=*/ nullptr);
 
     auto header = std::make_shared<const Block>();
@@ -606,7 +614,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
         builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
         builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
         {
-            return exchange_lookup->createSink(sink_header, stream_id);
+            return exchange_lookup->createSink(sink_header, stream_id, /*advisory*/ false);
         });
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         CompletedPipelineExecutor executor(pipeline);
@@ -615,7 +623,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 
     size_t total_rows = 0;
     {
-        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false)));
+        QueryPipeline pipeline(
+            Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false, /*advisory=*/ false)));
         PullingPipelineExecutor executor(pipeline);
         Chunk chunk;
         while (executor.pull(chunk))
@@ -623,4 +632,91 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     }
 
     EXPECT_EQ(total_rows, 7u);
+}
+
+namespace DB::ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataTypePtr & type, const ExchangeStreamId & stream)
+{
+    RuntimeFilterReceiveDescriptor descriptor;
+    descriptor.filter_key = key;
+    descriptor.filter_name = "filter_" + key;
+    descriptor.key_column_type = type;
+    descriptor.geometry = RuntimeFilterGeometry{
+        .exact_values_limit = 100,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 2048,
+        .bloom_filter_hash_functions = 4,
+        .pass_ratio_threshold_for_disabling = 0.55,
+        .blocks_to_skip_before_reenabling = 7,
+        .max_ratio_of_set_bits_in_bloom_filter = 0.4,
+    };
+    descriptor.stream = stream;
+    return descriptor;
+}
+
+String serializeTaskWithDescriptors(std::vector<RuntimeFilterReceiveDescriptor> descriptors)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
+    description.initial_query_id = "q1";
+    description.task.task_id = "t0";
+    description.task.runtime_filter_descriptors = std::move(descriptors);
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    return out.str();
+}
+
+}
+
+/// The restored task serializes to the same bytes, so no field of a descriptor is lost on the way.
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
+{
+    auto first = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex1", "1", "0"));
+    auto second = makeDescriptor("key_b", std::make_shared<DataTypeString>(), ExchangeStreamId("ex2", "0", "1"));
+    second.geometry.pass_ratio_threshold_for_disabling = 0.25;
+    second.geometry.max_ratio_of_set_bits_in_bloom_filter = 0.15;
+    const String bytes = serializeTaskWithDescriptors({first, second});
+
+    ReadBufferFromString in(bytes);
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+
+    ASSERT_EQ(restored.task.runtime_filter_descriptors.size(), 2u);
+    EXPECT_EQ(restored.task.runtime_filter_descriptors[1].filter_key, "key_b");
+    EXPECT_EQ(serializeTaskWithDescriptors(restored.task.runtime_filter_descriptors), bytes);
+}
+
+/// `deserializeTask` rejects descriptors that a correct initiator never sends.
+TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
+{
+    auto valid = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex", "0", "0"));
+    auto without_key = valid;
+    without_key.filter_key.clear();
+
+    const std::vector<std::pair<const char *, std::vector<RuntimeFilterReceiveDescriptor>>> cases = {
+        {"an empty filter key", {without_key}},
+        {"a duplicate filter key", {valid, valid}},
+    };
+    for (const auto & [what, descriptors] : cases)
+    {
+        const String bytes = serializeTaskWithDescriptors(descriptors);
+        ReadBufferFromString in(bytes);
+        DistributedQueryTaskDescription restored;
+        try
+        {
+            deserializeTask(restored, in);
+            ADD_FAILURE() << what << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what;
+        }
+    }
 }
