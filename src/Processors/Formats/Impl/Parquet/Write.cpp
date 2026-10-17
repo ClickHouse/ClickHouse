@@ -1780,6 +1780,8 @@ void writeColumnChunkBody(
             break;
         }
         case TypeIndex::Int32:
+            /// The column of `Time` is a `ColumnInt32` of seconds, so it arrives here; it is written
+            /// as an INT64 Parquet `TIME` of microseconds, see `preparePrimitiveColumn`.
             if (s.type->getTypeId() == TypeIndex::Time)
                 writeColumnImpl<parquet::Int64Type>(
                     s,
