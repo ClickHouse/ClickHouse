@@ -1,0 +1,9 @@
+Tuple(UInt64, Array(String))
+DepBase
+DepList
+DepUser
+DepBase	UInt64	\N	CREATE TYPE DepBase AS UInt64
+Tuple(UInt64, Array(String))
+DepBase	String	\N	CREATE TYPE DepBase AS String
+Tuple(String, Array(Nullable(String)))
+Array(UInt8)

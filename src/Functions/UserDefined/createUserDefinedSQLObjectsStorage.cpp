@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorage(const ContextMutablePtr & global_context)
+std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorage(const ContextMutablePtr & global_context, UserDefinedSQLObjectType object_type)
 {
     const String zookeeper_path_key = "user_defined_zookeeper_path";
     const String disk_path_key = "user_defined_path";
@@ -33,12 +34,12 @@ std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorag
                 zookeeper_path_key,
                 disk_path_key);
         }
-        return std::make_unique<UserDefinedSQLObjectsZooKeeperStorage>(global_context, config.getString(zookeeper_path_key));
+        return std::make_unique<UserDefinedSQLObjectsZooKeeperStorage>(global_context, object_type, config.getString(zookeeper_path_key));
     }
 
     String default_path = fs::path{global_context->getPath()} / "user_defined" / "";
     String path = config.getString(disk_path_key, default_path);
-    return std::make_unique<UserDefinedSQLObjectsDiskStorage>(global_context, path);
+    return std::make_unique<UserDefinedSQLObjectsDiskStorage>(global_context, object_type, path);
 }
 
 }
