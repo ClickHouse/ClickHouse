@@ -96,6 +96,13 @@ private:
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         auto dynamic_serialization = SerializationDynamic::create();
+        /// With DEFAULT PATH TYPE T runtime paths are `Variant(T)` and shared data stores bare T values.
+        SerializationPtr default_path_serialization;
+        if (const auto & default_path_type = type_object.getDefaultPathType())
+        {
+            dynamic_serialization = DataTypeObject::getTypeOfRuntimePaths(default_path_type)->getDefaultSerialization();
+            default_path_serialization = default_path_type->getDefaultSerialization();
+        }
 
         VectorWithMemoryTracking<PathInfo> sorted_paths;
         sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
@@ -139,7 +146,10 @@ private:
                 }
 
                 /// Emit the shared data value.
-                emitSharedDataValue(shared_data_values->getDataAt(j), format_settings, result_data, shared_serializations_cache, shared_columns_cache);
+                if (default_path_serialization)
+                    serializeValueIntoResult(*default_path_serialization, *shared_data_values, j, format_settings, result_data);
+                else
+                    emitSharedDataValue(shared_data_values->getDataAt(j), format_settings, result_data, shared_serializations_cache, shared_columns_cache);
             }
 
             /// Emit remaining typed/dynamic paths after all shared data for this row.

@@ -624,6 +624,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
             size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
+            DataTypePtr merged_default_path_type = first.getDefaultPathType();
 
             for (size_t i = 1; i < types.size(); ++i)
             {
@@ -647,6 +648,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                     new_merged.emplace(path, std::move(common_type));
                 }
+                /// Keep DEFAULT PATH TYPE only if all types have the same one and the same set of typed paths,
+                /// otherwise values of a dropped typed path would have to be routed into the default path type.
+                if (merged_default_path_type
+                    && (!current.getDefaultPathType() || !merged_default_path_type->equals(*current.getDefaultPathType())
+                        || new_merged.size() != merged_typed_paths.size() || new_merged.size() != current_typed_paths.size()))
+                    merged_default_path_type = nullptr;
                 merged_typed_paths = std::move(new_merged);
 
                 /// Paths to skip intersection.
@@ -677,7 +684,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
                 std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
                 merged_max_dynamic_paths,
-                merged_max_dynamic_types);
+                merged_max_dynamic_types,
+                std::move(merged_default_path_type));
         }
     }
 

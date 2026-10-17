@@ -226,6 +226,10 @@ private:
         auto & offsets = offsets_column->getData();
         auto paths_column = ColumnString::create();
         auto types_column = ColumnString::create();
+        /// With DEFAULT PATH TYPE T all non-typed paths have type T.
+        std::optional<String> default_path_type_name;
+        if (type_object.hasDefaultPathType())
+            default_path_type_name = type_object.getDefaultPathType()->getName();
 
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
@@ -245,7 +249,7 @@ private:
                     const auto & column = dynamic_path_columns.find(path)->second;
                     if (!column->isNullAt(i))
                     {
-                        auto type = getDynamicValueType(column, i);
+                        auto type = default_path_type_name ? *default_path_type_name : getDynamicValueType(column, i);
                         paths_column->insertData(path.data(), path.size());
                         types_column->insertData(type.data(), type.size());
                     }
@@ -268,7 +272,7 @@ private:
                 size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
                 for (size_t j = start; j != end; ++j)
                 {
-                    if (auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j)))
+                    if (auto type_name = default_path_type_name ? default_path_type_name : getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j)))
                     {
                         paths_column->insertFrom(*shared_data_paths, j);
                         types_column->insertData(type_name->data(), type_name->size());
@@ -306,7 +310,7 @@ private:
             for (size_t j = start; j != end; ++j)
             {
                 auto shared_data_path = shared_data_paths->getDataAt(j);
-                auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
+                auto type_name = default_path_type_name ? default_path_type_name : getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
                 /// Skip NULL values.
                 if (!type_name)
                     continue;
@@ -322,7 +326,7 @@ private:
                             ++sorted_paths_index;
                             continue;
                         }
-                        type = getDynamicValueType(it->second, i);
+                        type = default_path_type_name ? *default_path_type_name : getDynamicValueType(it->second, i);
                     }
                     /// When skip_null_typed_paths is enabled, also skip typed paths with NULL values.
                     else if (skip_null_typed_paths)
@@ -350,7 +354,7 @@ private:
                     /// Skip NULL values.
                     if (it->second->isNullAt(i))
                         continue;
-                    type = getDynamicValueType(it->second, i);
+                    type = default_path_type_name ? *default_path_type_name : getDynamicValueType(it->second, i);
                 }
                 /// When skip_null_typed_paths is enabled, also skip typed paths with NULL values.
                 else if (skip_null_typed_paths)

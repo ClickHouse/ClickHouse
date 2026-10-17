@@ -592,6 +592,8 @@ For example, `Dynamic` with 5 rows `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello
 
 Unlike [RowBinary](/reference/formats/RowBinary/RowBinary#json) where each row is self-describing with path names and values, the Native format serializes `JSON` in a columnar structure. The encoding is complex and version-dependent: it consists of a structure prefix with the serialization version, dynamic path names, and shared data layout, followed by typed paths (each as a bulk column), dynamic paths (each as a [Dynamic](#dynamic) column), and shared data for overflow paths.
 
+For `JSON(DEFAULT PATH TYPE T)` the layout of non-typed paths is different: each dynamic path is a `Variant(T)` column (NULL means that the path is absent in the row) instead of a `Dynamic` column, and the values in shared data are the binary encoding of `T` without the type prefix of `Dynamic`.
+
 For simpler interoperability, consider using the setting `output_format_native_write_json_as_string=1`, which serializes JSON columns as plain JSON text strings (one `String` per row).
 )DOCS_MD"});
 }

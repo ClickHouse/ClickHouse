@@ -34,6 +34,227 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
 }
 
+TEST(ColumnObject, DefaultPathTypeStorage)
+{
+    for (const String & name : {"String", "Int64"})
+    {
+        SCOPED_TRACE(name);
+        auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, DEFAULT PATH TYPE " + name + ")");
+        auto column = type->createColumn();
+        auto & object = assert_cast<ColumnObject &>(*column);
+        const Field value = name == "String" ? Field(String("")) : Field(Int64(0));
+        object.insert(Object{{"a", value}, {"b", value}});
+        object.insert(Object{});
+        ASSERT_EQ(object.getDefaultPathType()->getName(), name);
+        /// Runtime paths are Variant(T) (NULL discriminator = missing path), shared data values are bare T.
+        ASSERT_EQ(object.getDynamicPaths().at("a")->getName(), "Variant(" + name + ")");
+        ASSERT_EQ(object.getSharedDataPathsAndValues().second->getName(), name);
+        ASSERT_EQ((*object.getSharedDataPathsAndValues().second)[0], value);
+        ASSERT_FALSE(object.getDynamicPaths().at("a")->isNullAt(0));
+        /// A missing path is a NULL discriminator regardless of the nullability of T.
+        ASSERT_TRUE(object.getDynamicPaths().at("a")->isNullAt(1));
+
+        auto check_structure = [&](const ColumnPtr & result)
+        {
+            const auto & result_object = assert_cast<const ColumnObject &>(*result);
+            ASSERT_TRUE(object.structureEquals(result_object));
+            ASSERT_EQ(result_object.getDefaultPathType()->getName(), name);
+            ASSERT_EQ(result_object.getSharedDataPathsAndValues().second->getName(), name);
+            ASSERT_EQ(result_object.getDynamicPaths().at("a")->getName(), "Variant(" + name + ")");
+        };
+        check_structure(object.cloneEmpty());
+        check_structure(object.cloneResized(3));
+        check_structure(object.filter(IColumn::Filter{1, 0}, 1));
+        check_structure(object.compress(true)->decompress());
+        for (const auto & part : object.scatter(2, IColumn::Selector{0, 1}))
+            check_structure(part->getPtr());
+
+        /// Move a real default value from shared storage to a runtime path and back.
+        auto other = type->createColumn();
+        auto & other_object = assert_cast<ColumnObject &>(*other);
+        other_object.setDynamicPaths(VectorWithMemoryTracking<String>{"b"});
+        other_object.insertFrom(object, 0);
+        ASSERT_EQ(other_object.getDynamicPaths().at("b")->getName(), "Variant(" + name + ")");
+        ASSERT_EQ(object.compareAt(0, 0, other_object, 1), 0);
+        SipHash hash1;
+        SipHash hash2;
+        object.updateHashWithValue(0, hash1);
+        other_object.updateHashWithValue(0, hash2);
+        ASSERT_EQ(hash1.get64(), hash2.get64());
+        UInt32 weak1 = 0;
+        UInt32 weak2 = 0;
+        object.computeHashInto(0, 1, &weak1, true);
+        other_object.computeHashInto(0, 1, &weak2, true);
+        ASSERT_EQ(weak1, weak2);
+
+        Arena arena;
+        const char * begin = nullptr;
+        auto bytes = object.serializeValueIntoArena(0, arena, begin, nullptr);
+        ReadBufferFromMemory buffer(bytes);
+        auto restored = type->createColumn();
+        restored->deserializeAndInsertFromArena(buffer, nullptr);
+        ASSERT_EQ(object.compareAt(0, 0, *restored, 1), 0);
+
+        /// Field insertion follows the same null-input rules as JSON parsing: a null value
+        /// is a missing path (NULL discriminator), which is never densified to default(T).
+        object.insert(Object{{"a", Field()}, {"b", Field()}});
+        ASSERT_TRUE(object.tryInsert(Object{{"a", Field()}, {"b", Field()}}));
+        ASSERT_TRUE(object.getDynamicPaths().at("a")->isNullAt(2));
+        ASSERT_TRUE(object.getDynamicPaths().at("a")->isNullAt(3));
+        ASSERT_EQ(object.getSharedDataOffsets()[1], object.getSharedDataOffsets()[3]);
+    }
+}
+
+TEST(ColumnObject, DefaultPathTypeVariantDensify)
+{
+    /// Verify the internal Variant(T) runtime path storage and the densification of a missing path.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=2, DEFAULT PATH TYPE Int64)");
+    auto column = type->createColumn();
+    auto & object = assert_cast<ColumnObject &>(*column);
+    object.insert(Object{{"a", Int64(42)}});
+    object.insert(Object{});
+    object.insert(Object{{"a", Int64(0)}, {"b", Int64(7)}});
+
+    const auto & path_a = assert_cast<const ColumnVariant &>(*object.getDynamicPaths().at("a"));
+    ASSERT_EQ(path_a.getName(), "Variant(Int64)");
+    /// Row 0: present; row 1: missing (NULL discriminator); row 2: explicit default value.
+    ASSERT_FALSE(path_a.isNullAt(0));
+    ASSERT_TRUE(path_a.isNullAt(1));
+    ASSERT_FALSE(path_a.isNullAt(2));
+
+    auto dense = DataTypeFactory::instance().get("Int64")->createColumn();
+    ColumnObject::densifyVariantInto(*dense, path_a);
+    ASSERT_EQ((*dense)[0], Field(Int64(42)));
+    ASSERT_EQ((*dense)[1], Field(Int64(0)));
+    ASSERT_EQ((*dense)[2], Field(Int64(0)));
+
+    /// A missing path must not appear in the materialized object, an explicit default must.
+    ASSERT_EQ(object[0], Field(Object{{"a", Int64(42)}}));
+    ASSERT_EQ(object[1], Field(Object{}));
+    ASSERT_EQ(object[2], Field(Object{{"a", Int64(0)}, {"b", Int64(7)}}));
+}
+
+TEST(ColumnObject, DefaultPathTypeVariantCloneResized)
+{
+    /// Variant(T) stores sparse nested values. Truncating to an earlier row must also truncate the
+    /// nested variant column according to the discriminators.
+    auto variant_type = DataTypeFactory::instance().get("Variant(Int64)");
+    auto variant = variant_type->createColumn();
+    auto & column = assert_cast<ColumnVariant &>(*variant);
+    column.insert(Int64(1));
+    column.insertDefault();
+    column.insert(Int64(3));
+    column.insert(Int64(4));
+
+    auto truncated = column.cloneResized(2);
+    const auto & truncated_variant = assert_cast<const ColumnVariant &>(*truncated);
+    ASSERT_EQ(truncated_variant.size(), 2);
+    ASSERT_EQ(truncated_variant.getVariantByGlobalDiscriminator(0).size(), 1);
+    truncated_variant.validateState();
+    ASSERT_EQ((*truncated)[0], Field(Int64(1)));
+    ASSERT_TRUE(truncated_variant.isNullAt(1));
+}
+
+TEST(ColumnObject, DefaultPathTypeGetName)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=20, DEFAULT PATH TYPE Int64, a UInt32)");
+    auto col = type->createColumn();
+    ASSERT_EQ(col->getName(), "Object(max_dynamic_paths=20, max_dynamic_types=10, DEFAULT PATH TYPE Int64, a UInt32)");
+    auto plain = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=20, a UInt32)")->createColumn();
+    ASSERT_NE(col->getName(), plain->getName());
+    ASSERT_FALSE(col->structureEquals(*plain));
+}
+
+TEST(ColumnObject, DefaultPathTypeInsertFieldMismatch)
+{
+    /// A value that cannot be converted to `T` must not leave subcolumns misaligned.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, DEFAULT PATH TYPE Int64, t UInt32)");
+    auto column = type->createColumn();
+    auto & object = assert_cast<ColumnObject &>(*column);
+    object.insert(Object{{"a", Int64(1)}, {"b", Int64(2)}, {"t", UInt64(1)}});
+
+    /// "a" is a dynamic path, "b" is in shared data, "c" is a new path that goes to shared data.
+    for (const auto & bad : {Object{{"a", String("x")}, {"t", UInt64(2)}}, Object{{"a", Int64(3)}, {"b", String("x")}, {"t", UInt64(2)}}, Object{{"c", String("x")}, {"t", UInt64(2)}}})
+    {
+        ASSERT_ANY_THROW(object.insert(bad));
+        ASSERT_FALSE(object.tryInsert(bad));
+        ASSERT_EQ(object.size(), 1);
+        ASSERT_EQ(object.getTypedPaths().at("t")->size(), 1);
+        ASSERT_EQ(object.getDynamicPaths().size(), 1);
+        ASSERT_EQ(object.getDynamicPaths().at("a")->size(), 1);
+        ASSERT_EQ(object.getSharedDataPathsAndValues().first->size(), 1);
+        ASSERT_EQ(object.getSharedDataPathsAndValues().second->size(), 1);
+    }
+
+    object.insert(Object{{"a", Int64(3)}, {"b", Int64(4)}});
+    ASSERT_EQ(object.size(), 2);
+    ASSERT_EQ(object[1], Field(Object{{"a", Int64(3)}, {"b", Int64(4)}, {"t", UInt64(0)}}));
+}
+
+TEST(ColumnObject, DefaultPathTypeInsertFieldConversion)
+{
+    /// Values of non-typed paths are converted to `T` like `CAST`, in dynamic paths and in shared data.
+    for (const auto & [name, value, expected] : {
+             std::tuple{"String", Field(UInt64(1)), Field(String("1"))},
+             std::tuple{"Float64", Field(UInt64(1)), Field(Float64(1))},
+             std::tuple{"Int64", Field(String("7")), Field(Int64(7))},
+             std::tuple{"Array(String)", Field(Array{UInt64(1), UInt64(2)}), Field(Array{String("1"), String("2")})}})
+    {
+        auto type = DataTypeFactory::instance().get(std::string("JSON(max_dynamic_paths=1, DEFAULT PATH TYPE ") + name + ")");
+        auto column = type->createColumn();
+        auto & object = assert_cast<ColumnObject &>(*column);
+        object.insert(Object{{"a", value}, {"b", value}});
+        ASSERT_TRUE(object.tryInsert(Object{{"a", value}, {"b", value}}));
+        ASSERT_EQ(object.getSharedDataPathsAndValues().second->size(), 2);
+        for (size_t row = 0; row != 2; ++row)
+            ASSERT_EQ(object[row], Field(Object{{"a", expected}, {"b", expected}})) << name;
+    }
+}
+
+TEST(ColumnObject, DefaultPathTypeInsertRangeFromDifferentLayouts)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, DEFAULT PATH TYPE Int64)");
+
+    /// Source: "a" is a dynamic path, "b" is in shared data.
+    auto src = type->createColumn();
+    auto & src_object = assert_cast<ColumnObject &>(*src);
+    src_object.insert(Object{{"a", Int64(1)}, {"b", Int64(2)}});
+    src_object.insert(Object{{"b", Int64(0)}});
+    src_object.insert(Object{});
+    src_object.insert(Object{{"a", Int64(0)}});
+
+    /// Destination: "b" is a dynamic path, "a" goes to shared data.
+    auto dst = type->createColumn();
+    auto & dst_object = assert_cast<ColumnObject &>(*dst);
+    dst_object.insert(Object{{"b", Int64(5)}});
+    dst_object.insertRangeFrom(src_object, 0, src_object.size());
+    dst_object.insertFrom(src_object, 0);
+
+    ASSERT_EQ(dst_object.size(), 6);
+    ASSERT_TRUE(dst_object.getDynamicPaths().contains("b"));
+    ASSERT_FALSE(dst_object.getDynamicPaths().contains("a"));
+    ASSERT_EQ(dst_object[0], Field(Object{{"b", Int64(5)}}));
+    for (size_t i = 0; i != src_object.size(); ++i)
+    {
+        ASSERT_EQ(dst_object[i + 1], src_object[i]);
+        ASSERT_EQ(dst_object.compareAt(i + 1, i, src_object, 1), 0);
+        SipHash dst_hash;
+        SipHash src_hash;
+        dst_object.updateHashWithValue(i + 1, dst_hash);
+        src_object.updateHashWithValue(i, src_hash);
+        ASSERT_EQ(dst_hash.get64(), src_hash.get64());
+    }
+    ASSERT_EQ(dst_object[5], src_object[0]);
+
+    /// Same layout: plain `ColumnVariant::insertRangeFrom` between `Variant(T)` dynamic paths.
+    auto same = type->createColumn();
+    same->insertRangeFrom(src_object, 0, src_object.size());
+    for (size_t i = 0; i != src_object.size(); ++i)
+        ASSERT_EQ((*same)[i], src_object[i]);
+    for (const auto & [_, path_column] : assert_cast<const ColumnObject &>(*same).getDynamicPaths())
+        assert_cast<const ColumnVariant &>(*path_column).validateState();
+}
+
 TEST(ColumnObject, HasOnlyTypeDefaults)
 {
     auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
@@ -63,7 +284,7 @@ TEST(ColumnObject, GetName)
     ASSERT_EQ(col->getName(), "Object(max_dynamic_paths=20, max_dynamic_types=10, a.b Array(String), b.d UInt32)");
 }
 
-static Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
+static Field deserializeFieldFromSharedData(IColumn * values, size_t n)
 {
     auto data = values->getDataAt(n);
     ReadBufferFromMemory buf(data);
@@ -562,12 +783,12 @@ TEST(ColumnObject, HashSharedDataNothingEntry)
     /// serialized NULL with no payload).
     auto [shared_data_paths, shared_data_values] = object.getSharedDataPathsAndValues();
     shared_data_paths->insertData("g", 1);
-    auto & shared_data_values_chars = shared_data_values->getChars();
+    auto & shared_data_values_chars = assert_cast<ColumnString &>(*shared_data_values).getChars();
     {
         WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
         encodeDataType(std::make_shared<DataTypeNothing>(), value_buf);
     }
-    shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
+    assert_cast<ColumnString &>(*shared_data_values).getOffsets().push_back(shared_data_values_chars.size());
     object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
     ASSERT_EQ(object.size(), 1u);

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesCache.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/castColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -32,7 +33,11 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int NO_COMMON_TYPE;
     extern const int TOO_DEEP_RECURSION;
     extern const int TYPE_MISMATCH;
 }
@@ -160,7 +165,10 @@ Metadata parseMetadata(std::string_view blob)
 struct DecodeContext
 {
     const Metadata & metadata;
-    size_t max_depth;
+    size_t max_depth = 0;
+    /// `type_json_skip_invalid_typed_paths`: a value of a non-typed path of `JSON(DEFAULT PATH TYPE T)`
+    /// that cannot be converted to `T` is skipped, the path is missing in this row.
+    bool skip_invalid_default_path_values = false;
 };
 
 void checkDepth(const DecodeContext & context, size_t depth)
@@ -463,14 +471,17 @@ void decodePrimitiveIntoColumn(std::string_view data, size_t pos, PrimitiveType 
         ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: unknown primitive type id {}", UInt16(type_id));
 }
 
-void decodeValueIntoTypedPath(
-    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, const DataTypePtr & typed_type, IColumn & target)
+/// Returns false, leaving `target` unchanged, if the value cannot be converted to `typed_type` and `skip_invalid` is set.
+/// A malformed value is an error regardless of `skip_invalid`.
+bool decodeValueIntoTypedPath(
+    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, const DataTypePtr & typed_type, IColumn & target,
+    bool skip_invalid = false)
 {
     const String type_name = getValueTypeName(data, pos);
     if (type_name == typed_type->getName())
     {
         decodeValueIntoColumn(data, pos, context, depth, target);
-        return;
+        return true;
     }
 
     /// TODO: Add a fast path for simple conversions (number -> number, string -> number,
@@ -479,8 +490,22 @@ void decodeValueIntoTypedPath(
     const DataTypePtr type = getDataTypesCache().getType(type_name);
     auto value_column = type->createColumn();
     decodeValueIntoColumn(data, pos, context, depth, *value_column);
-    const ColumnPtr casted = castColumn({std::move(value_column), type, ""}, typed_type);
+    ColumnPtr casted;
+    try
+    {
+        casted = castColumn({std::move(value_column), type, ""}, typed_type);
+    }
+    catch (const Exception & e)
+    {
+        const int code = e.code();
+        const bool is_conversion_error = isParseError(code) || code == ErrorCodes::CANNOT_PARSE_TEXT || code == ErrorCodes::CANNOT_CONVERT_TYPE
+            || code == ErrorCodes::TYPE_MISMATCH || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || code == ErrorCodes::NO_COMMON_TYPE;
+        if (!skip_invalid || !is_conversion_error)
+            throw;
+        return false;
+    }
     target.insertFrom(*casted, 0);
+    return true;
 }
 
 struct SharedDataValue
@@ -539,9 +564,10 @@ void insertObjectPaths(
             continue;
         }
 
-        ColumnDynamic * dynamic_column = nullptr;
+        IColumn * dynamic_column = nullptr;
         auto & dynamic_paths = column.getDynamicPathsPtrs();
-        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+        auto it = dynamic_paths.find(path);
+        if (it != dynamic_paths.end())
         {
             dynamic_column = it->second;
             if (dynamic_column->size() > prev_size)
@@ -549,10 +575,24 @@ void insertObjectPaths(
                     ErrorCodes::INCORRECT_DATA,
                     "Parquet variant object has the path '{}' more than once after flattening nested objects", path);
         }
-        else
+
+        /// With `DEFAULT PATH TYPE T` a dynamic path is `Variant(T)` and the value is converted to `T` like for a typed path.
+        /// The value is converted before adding a new dynamic path, so a skipped value doesn't take a slot of `max_dynamic_paths`.
+        const auto & default_path_type = column.getDefaultPathType();
+        if (default_path_type && (dynamic_column || column.canAddNewDynamicPath()))
         {
-            dynamic_column = column.tryToAddNewDynamicPath(path);
+            auto value_column = default_path_type->createColumn();
+            if (!decodeValueIntoTypedPath(
+                    data, value_pos, context, depth + 1, default_path_type, *value_column, context.skip_invalid_default_path_values))
+                continue;
+            if (!dynamic_column)
+                dynamic_column = column.tryToAddNewDynamicPath(path);
+            assert_cast<ColumnVariant &>(*dynamic_column).insertIntoVariantFrom(0, *value_column, 0);
+            continue;
         }
+
+        if (!dynamic_column)
+            dynamic_column = column.tryToAddNewDynamicPath(path);
 
         if (!dynamic_column)
         {
@@ -560,7 +600,7 @@ void insertObjectPaths(
             continue;
         }
 
-        decodeValueIntoDynamic(data, value_pos, context, depth + 1, *dynamic_column);
+        decodeValueIntoDynamic(data, value_pos, context, depth + 1, assert_cast<ColumnDynamic &>(*dynamic_column));
     }
 }
 
@@ -591,6 +631,16 @@ void decodeObjectIntoJSON(
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Parquet variant object has the path '{}' more than once after flattening nested objects", value.path);
+
+        /// With `DEFAULT PATH TYPE T` shared data stores bare `T` values.
+        if (const auto & default_path_type = column.getDefaultPathType())
+        {
+            if (decodeValueIntoTypedPath(
+                    data, value.pos, context, value.depth, default_path_type, *shared_data_values_column,
+                    context.skip_invalid_default_path_values))
+                shared_data_paths->insertData(value.path.data(), value.path.size());
+            continue;
+        }
 
         if (!tmp_dynamic_column)
             tmp_dynamic_column = ColumnDynamic::create(column.getMaxDynamicTypes());
@@ -779,7 +829,10 @@ void decodeVariantColumn(
                 column_name, metadata_missing ? "`value`" : "`metadata`", metadata_missing ? "`metadata`" : "`value`");
 
         const Metadata parsed_metadata = parseMetadata(metadata_blob);
-        const DecodeContext context{.metadata = parsed_metadata, .max_depth = format_settings.max_parser_depth};
+        const DecodeContext context{
+            .metadata = parsed_metadata,
+            .max_depth = format_settings.max_parser_depth,
+            .skip_invalid_default_path_values = format_settings.json.type_json_skip_invalid_typed_paths};
 
         if (output_dynamic)
         {

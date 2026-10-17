@@ -16,12 +16,12 @@ namespace ErrorCodes
 class SerializationSubObjectSharedData final : public SimpleTextSerialization
 {
 private:
-    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
+    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_ = nullptr);
 
 public:
-    static UInt128 getHash(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
+    static UInt128 getHash(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_ = nullptr);
 
-    static SerializationPtr create(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
+    static SerializationPtr create(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_ = nullptr);
 
     size_t allocatedBytes() const override;
 
@@ -77,6 +77,7 @@ private:
     String paths_prefix;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    DataTypePtr default_path_type;
     SerializationPtr serialization_map;
 };
 

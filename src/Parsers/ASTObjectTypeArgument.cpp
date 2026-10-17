@@ -59,6 +59,11 @@ ASTPtr ASTObjectTypeArgument::clone() const
         res->parameter = parameter->clone();
         res->children.push_back(res->parameter);
     }
+    else if (default_path_type)
+    {
+        res->default_path_type = default_path_type->clone();
+        res->children.push_back(res->default_path_type);
+    }
 
     return res;
 }
@@ -84,6 +89,11 @@ void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings 
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         ostr << indent_str << "SKIP REGEXP" << ' ';
         skip_path_regexp->format(ostr, settings, state, frame);
+    }
+    else if (default_path_type)
+    {
+        ostr << "DEFAULT PATH TYPE" << ' ';
+        default_path_type->format(ostr, settings, state, frame);
     }
 }
 
