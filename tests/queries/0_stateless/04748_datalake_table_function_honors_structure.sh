@@ -131,28 +131,28 @@ batch <<SQL
 SET allow_experimental_insert_into_iceberg = 1;
 CREATE TABLE ice17 (a Int64) ENGINE = IcebergLocal('${ICE}17/', 'Parquet');
 INSERT INTO ice17 SELECT number FROM numbers(3);
-ALTER TABLE ice17 ADD COLUMN c Nullable(UInt64);
+ALTER TABLE ice17 ADD COLUMN c Nullable(Int64);
 -- Iceberg fills an added column with NULL for rows written before it existed, and the table read is
 -- the authority on that. A declared DEFAULT must not override it, or one declaration would mean
 -- different values per file, so the row count is asserted alongside the NULL count.
 SELECT count(), countIf(c IS NULL) FROM ice17;
-SELECT count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42');
+SELECT count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(Int64) DEFAULT 42');
 -- Column a is declared Nullable and reads back as the lake's Int64, which is what a set-aside
 -- declaration means and what the values alone cannot show. It also makes the pin necessary rather than
 -- tidying: the cluster rewrite plans the initiator on the declared types while a worker reads the lake's.
-SELECT groupArray(a), count(), countIf(c IS NULL), any(toTypeName(a)) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64) DEFAULT 42') SETTINGS parallel_replicas_for_cluster_engines = 0;
+SELECT groupArray(a), count(), countIf(c IS NULL), any(toTypeName(a)) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(Int64) DEFAULT 42') SETTINGS parallel_replicas_for_cluster_engines = 0;
 -- A file written after the column was added carries real values, which the same declaration must
 -- still return: an evolution-added column is emitted by the lake's own transform, so its values come
 -- from the file whether or not the declaration also names a default.
 INSERT INTO ice17 SELECT number + 10, number + 500 FROM numbers(2);
-SELECT groupArray(c) FROM (SELECT c FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42') WHERE c IS NOT NULL ORDER BY c);
+SELECT groupArray(c) FROM (SELECT c FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(Int64) DEFAULT 42') WHERE c IS NOT NULL ORDER BY c);
 SELECT '-- iceberg: a filtered column declared at another nullability is read after schema evolution';
 -- The filter is on a column the file has while an evolution-added one is also returned, and WHERE
 -- and PREWHERE are both covered because only the latter is re-applied after the transform.
-SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64)') WHERE a < 3;
-SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64)') PREWHERE a < 3 SETTINGS parallel_replicas_for_cluster_engines = 0;
+SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(Int64)') WHERE a < 3;
+SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(Int64)') PREWHERE a < 3 SETTINGS parallel_replicas_for_cluster_engines = 0;
 -- The declared type matching the file's is the control: it shares this path but needs no conversion.
-SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Int64, c Nullable(UInt64)') WHERE a < 3;
+SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Int64, c Nullable(Int64)') WHERE a < 3;
 SELECT '-- iceberg: a declared DEFAULT is not applied to a table with deleted rows';
 -- A lake decides row-level deletion from its own metadata against the values that reach the filter,
 -- and a column default exists only where one reader's missing-value bitmask does, so the two cannot
