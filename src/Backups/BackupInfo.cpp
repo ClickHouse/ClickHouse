@@ -224,7 +224,7 @@ namespace
     }
 
     /// Removes the credentials embedded in the URL itself: the userinfo part and the authentication
-    /// query parameters of presigned URLs (the set recognized by `S3::URI`; once the URL is presigned,
+    /// query parameters of presigned URLs (the set recognized by `S3::URI`; once the URL is presigned or versioned,
     /// the `X-Amz-`/`X-Goog-` names in any case).
     /// Destination-significant parameters such as `versionId` are kept.
     /// Returns the URL unchanged if there is nothing to remove.
@@ -253,14 +253,16 @@ namespace
         };
 
         const auto query_parameters = uri.getQueryParameters();
-        /// `S3::URI` ignores the query of a presigned URL, so its header-derived names go in any case
-        /// (SigV2 sends `x-amz-security-token`); any other query is part of the key and stays.
-        bool presigned = std::ranges::any_of(query_parameters, [&](const auto & parameter) { return is_presigned_name(parameter.first); });
+        /// `S3::URI` reads no key from the query of a presigned or versioned URL, so its header-derived names go
+        /// in any case (SigV2 sends `x-amz-security-token`); any other query is part of the key and stays.
+        bool query_is_not_key = std::ranges::any_of(
+            query_parameters,
+            [&](const auto & parameter) { return parameter.first == "versionId" || is_presigned_name(parameter.first); });
 
         Poco::URI::QueryParameters kept_params;
         for (const auto & [key, value] : query_parameters)
         {
-            if (is_presigned_name(key) || (presigned && is_header_name(key)))
+            if (is_presigned_name(key) || (query_is_not_key && is_header_name(key)))
                 changed = true;
             else
                 kept_params.push_back({key, value});

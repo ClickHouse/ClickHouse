@@ -357,7 +357,7 @@ inline bool isPresignedURLSecretParameterName(std::string_view name)
   *
   * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,
   * `sr`, ...) states what that signature grants and stays visible. `BackupInfo::removeCredentialsFromS3URL`
-  * adds neither `sig` nor the decoded names: it REMOVES parameters from a locator that must stay openable on restore.
+  * does not add `sig`: it REMOVES parameters from a locator that must stay openable on restore.
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
