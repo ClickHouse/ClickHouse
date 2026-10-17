@@ -6,6 +6,7 @@
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -315,13 +316,58 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
         const auto & external_role_set = external_roles[i];
-        const auto & prefix = role_search_params[i].prefix;
+        const auto & role_mapping = role_search_params[i];
+        const auto & prefix = role_mapping.prefix;
 
         for (const auto & external_role : external_role_set)
         {
-            if (prefix.size() < external_role.size() && external_role.starts_with(prefix))
+            /// Pipeline: value -> [DN-form group match | `rdn_attribute` extraction -> plain group match] -> `prefix` -> role name.
+            String value;
+
+            bool matched_dn_group = false;
+            if (!role_mapping.dn_groups.empty())
             {
-                role_names.emplace(external_role, prefix.size());
+                if (const auto normalized_dn = LDAPClient::normalizeDN(external_role))
+                {
+                    const auto it = role_mapping.dn_groups.find(*normalized_dn);
+                    if (it != role_mapping.dn_groups.end())
+                    {
+                        value = it->second;
+                        matched_dn_group = true;
+                    }
+                }
+            }
+
+            if (!matched_dn_group)
+            {
+                value = external_role;
+
+                if (!role_mapping.rdn_attribute.empty())
+                {
+                    const auto rdn_value = LDAPClient::extractRDNValue(external_role, role_mapping.rdn_attribute);
+                    if (!rdn_value)
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not a DN with a '{}' RDN", external_role, role_mapping.rdn_attribute);
+                        continue;
+                    }
+                    value = *rdn_value;
+                }
+
+                if (!role_mapping.groups.empty())
+                {
+                    const auto it = role_mapping.plain_groups.find(toLowerCopyASCII(value));
+                    if (it == role_mapping.plain_groups.end())
+                    {
+                        LOG_TRACE(getLogger(), "Ignoring role mapping value '{}': not in the 'groups' list", external_role);
+                        continue;
+                    }
+                    value = it->second;
+                }
+            }
+
+            if (prefix.size() < value.size() && value.starts_with(prefix))
+            {
+                role_names.emplace(value, prefix.size());
             }
         }
     }
@@ -378,6 +424,14 @@ String LDAPAccessStorage::getStorageParamsJSON() const
         role_mapping_json.set("search_filter", role_mapping.search_filter);
         role_mapping_json.set("attribute", role_mapping.attribute);
         role_mapping_json.set("prefix", role_mapping.prefix);
+        role_mapping_json.set("rdn_attribute", role_mapping.rdn_attribute);
+
+        Poco::JSON::Array groups_json;
+        for (const auto & group : role_mapping.groups)
+        {
+            groups_json.add(group);
+        }
+        role_mapping_json.set("groups", groups_json);
 
         String scope;
         switch (role_mapping.scope)
@@ -405,6 +459,68 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 {
     std::lock_guard lock(mutex);
     return memory_storage.find(type, name);
+}
+
+
+std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const
+{
+    std::lock_guard lock(mutex);
+
+    auto id = memory_storage.find(type, name);
+
+    /// Only USER lookups go to LDAP; other entity types (roles, profiles, ...) live
+    /// elsewhere and are not resolvable through the LDAP directory.
+    if (!force_external_lookup || type != AccessEntityType::USER)
+        return id;
+
+    const bool has_role_mapping = !role_search_params.empty();
+
+    /// An entry may exist in memory yet have been materialized without resolving role
+    /// mapping -- notably the interserver `AlwaysAllowCredentials` path in distributed
+    /// `EXECUTE AS`, which caches the user with empty `external_roles`. Such incomplete
+    /// entries have fewer `users_external_roles[name]` entries than `role_search_params`
+    /// (a real login always leaves one per search param, even if empty); refresh them
+    /// via the service bind.
+    if (id && has_role_mapping)
+    {
+        const auto eit = users_external_roles.find(name);
+        const bool needs_refresh = (eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size());
+        if (needs_refresh)
+        {
+            LDAPClient::SearchResultsList external_roles;
+            if (access_control.getExternalAuthenticators().findLDAPUser(
+                    ldap_server_name,
+                    name,
+                    &role_search_params,
+                    &external_roles))
+            {
+                updateAssignedRolesNoLock(*id, name, external_roles);
+            }
+        }
+    }
+
+    if (id)
+        return id;
+
+    LDAPClient::SearchResultsList external_roles;
+    if (!access_control.getExternalAuthenticators().findLDAPUser(
+            ldap_server_name,
+            name,
+            has_role_mapping ? &role_search_params : nullptr,
+            has_role_mapping ? &external_roles : nullptr))
+    {
+        return {};
+    }
+
+    /// Materialize the user with the resolved role mapping. The shape mirrors the
+    /// already-tested first-login path in `authenticateImpl`, so the entry is
+    /// indistinguishable from one created by a real LDAP login.
+    auto new_user = std::make_shared<User>();
+    new_user->setName(name);
+    new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+    new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+    assignRolesNoLock(*new_user, external_roles);
+    return memory_storage.insert(new_user);
 }
 
 

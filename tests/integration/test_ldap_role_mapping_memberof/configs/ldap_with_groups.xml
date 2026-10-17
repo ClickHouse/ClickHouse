@@ -1,0 +1,50 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+            <!-- With attribute = dn the reverse group search returns full group DNs, the same shape as
+                 Active Directory memberOf values. The shared fixture has no memberOf overlay. -->
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>dn</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <!-- DN form: pins the container; letter case and whitespace do not matter. -->
+                    <group>CN=clickhouse-role_1, OU=groups, DC=example, DC=org</group>
+                    <!-- Plain form: matched case-insensitively against the extracted CN in any container. -->
+                    <group>clickhouse-role_2</group>
+                    <!-- Plain form matched against an unescaped RDN value. -->
+                    <group>clickhouse-grp, x</group>
+                </groups>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+            <!-- Legacy mapping without the new keys must keep working alongside. -->
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>legacy-</prefix>
+            </role_mapping>
+            <!-- An RDN that never yields a role: 'ou' values are container names without the prefix. -->
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>dn</attribute>
+                <rdn_attribute>ou</rdn_attribute>
+                <prefix>x-</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>

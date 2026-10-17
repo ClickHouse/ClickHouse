@@ -1,0 +1,54 @@
+<clickhouse>
+    <!-- Two LDAP user-directories backed by the same upstream OpenLDAP container.
+         `openldap_a`'s `bind_dn` template points at the wrong OU so login through
+         `ldap_a` fails for ordinary users, but the service-bind credentials
+         (`lookup_bind_dn`/`lookup_password`) and `user_dn_detection` are valid,
+         so a forced lookup against `ldap_a` resolves the user. `openldap_b` has
+         a correct `bind_dn` so login through `ldap_b` succeeds. The setup is
+         used to verify that the cache-refresh layer in
+         `InterpreterExecuteAsQuery::resolveImpersonationTargetUser` refreshes
+         only the storage that won pass 1 instead of starting a global
+         force_external_lookup that walks the directories from the start and
+         could materialize the same user in an earlier-but-empty LDAP storage,
+         silently changing which directory wins. -->
+    <ldap_servers>
+        <openldap_a>
+            <host>openldap</host>
+            <port>1389</port>
+            <!-- Wrong OU so password-bind fails for `janedoe`; login skips this storage. -->
+            <bind_dn>cn={user_name},ou=admins,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap_a>
+        <openldap_b>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap_b>
+    </ldap_servers>
+    <user_directories replace="replace">
+        <ldap>
+            <name>ldap_a</name>
+            <server>openldap_a</server>
+        </ldap>
+        <ldap>
+            <name>ldap_b</name>
+            <server>openldap_b</server>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
