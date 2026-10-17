@@ -105,6 +105,41 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
 
 `a !~* b` – `notMatchCaseInsensitive(a, b)` 함수(`a`가 정규식 `b`와 대소문자를 구분하지 않고 일치하지 않는지 확인합니다).
 
+### similarTo 함수 {#similarto-function}
+
+`a SIMILAR TO b` – `similarTo(a, b)` 함수입니다.
+
+### notSimilarTo 함수 {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – `notSimilarTo(a, b)` 함수입니다.
+
+`SIMILAR TO`는 SQL 표준 패턴 매칭 프레디케이트(predicate)입니다. 이 패턴은 `LIKE` 와일드카드인 `%`(임의의 문자 0개 이상)와 `_`(임의의 문자 1개)에 정규식 메타문자 `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[`, `]`를 함께 사용합니다. 메타문자 `^`, `$`, `.`는 `SIMILAR TO` 문법에 포함되지 **않으며**, 대괄호 표현식 바깥에서는 해당 문자 자체를 리터럴로 나타냅니다. 대괄호 표현식 안에서는 맨 앞의 `^`가 원래 의미대로 문자 클래스를 부정합니다. 예를 들어 `[^aeiou]`는 모음이 아닌 단일 문자와 일치합니다. 패턴은 왼쪽 피연산자의 부분 문자열이 아니라 왼쪽 피연산자 전체와 일치해야 합니다. `\`는 모든 메타문자와 `\` 자신을 이스케이프합니다.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### ESCAPE 절 {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO`, `NOT SIMILAR TO`의 끝에는 `ESCAPE 'c'` 절을 선택적으로 추가할 수 있습니다. 여기서 `c`는 단일 ASCII 문자입니다. 지정한 문자가 기본 이스케이프 문자인 백슬래시를 대체하며, 이때 백슬래시는 특수한 의미를 잃고 리터럴 백슬래시로 취급됩니다.
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+*사용자 정의* 이스케이프 문자 뒤에는 반드시 프레디케이트의 특수 문자나 이스케이프 문자 자신이 와야 합니다. 그 밖의 문자가 오면 오류가 발생하며, 여기에는 `^`, `$`, `.`, 백슬래시(대괄호 표현식 밖의 `SIMILAR TO`에서는 일반 문자)도 포함됩니다. 일반 문자 앞에 붙은 이스케이프는 아무런 효과가 없기 때문입니다. 이러한 엄격성은 사용자 정의 이스케이프 문자에만 적용됩니다. *기본* 백슬래시는 기존 `LIKE` 동작을 그대로 따르므로, 일반 문자 앞에 오면 리터럴 백슬래시를 나타냅니다. 따라서 `'\\mabc' SIMILAR TO '%\\mabc%'`는 `1`을 반환하지만 `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'`는 거부됩니다. `[...]`와 같은 대괄호 표현식 안에서는 POSIX 및 PostgreSQL 동작에 따라 이스케이프 문자가 특수 문자로 취급되지 않고 문자 그대로를 나타냅니다.
+
+`ESCAPE` 절은 [아래](#some-all-on-arrays)에서 설명하는 `SOME` / `ALL` 배열 한정자와 함께 사용할 수도 있습니다(예: `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`).
+
 ### BETWEEN 함수 {#between-function}
 
 `a BETWEEN b AND c` – `a >= b AND a <= c`와 동일합니다.
@@ -156,7 +191,7 @@ SELECT
 
 ## 데이터 세트 작업을 위한 연산자 {#operators-for-working-with-data-sets}
 
-[IN 연산자](/ko/reference/statements/in) 및 [EXISTS](/ko/reference/operators/exists) 연산자를 참조하십시오.
+[IN 연산자](/ko/reference/statements/in) 및 [`EXISTS`](/ko/reference/statements/exists)를 참조하십시오.
 
 ### in 함수 {#in-function}
 
@@ -237,9 +272,11 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 `SOME`은 존재 한정자입니다(`ANY`의 SQL 동의어). `=` 및 `<>`는 최적화된 구현이 있으므로 예외적으로 `has` / `NOT has`로 재작성됩니다. 일반 형식은 고차 함수인 `arrayExists` / `arrayAll`로 처리됩니다.
 
-배열 형식은 비교 연산자 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, 키워드 비교 프레디케이트 `IS DISTINCT FROM` 및 `IS NOT DISTINCT FROM`, 그리고 문자열 검색 프레디케이트 `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`에서 인식됩니다. 키워드 비교 프레디케이트와 문자열 검색 프레디케이트는 서브쿼리 형식이 아니라 배열 형식에서만 인식됩니다(서브쿼리 형식은 `IN`/`NOT IN`으로 변환됩니다). 배열 한정자 의미가 없는 연산자(예: `IN` 자체)는 **재작성되지 않으며** 원래 의미를 유지합니다.
+배열 형식은 비교 연산자 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, 키워드 비교 프레디케이트 `IS DISTINCT FROM` 및 `IS NOT DISTINCT FROM`, 그리고 문자열 검색 프레디케이트 `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, `NOT SIMILAR TO`에서 인식됩니다. 키워드 비교 프레디케이트와 문자열 검색 프레디케이트는 서브쿼리 형식이 아니라 배열 형식에서만 인식됩니다(서브쿼리 형식은 `IN`/`NOT IN`으로 변환됩니다). 배열 한정자 의미가 없는 연산자(예: `IN` 자체)는 **재작성되지 않으며** 원래 의미를 유지합니다.
 
-문자열 검색 프레디케이트가 작동하는 이유는 `MatchImpl`(`LIKE` / `ILIKE` / `REGEXP`의 기반 구현)이 비상수 needle과 함께 상수 haystack을 지원하기 때문입니다. 예를 들어 `'abc' LIKE SOME(['a%', 'b%'])`는 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`로 재작성되고, `'abc' NOT LIKE ALL(['x%', 'y%'])`는 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`로 재작성됩니다. 이는 하나의 문자열을 여러 패턴과 매칭합니다. 단일 결합 패스로 매칭하려면 `multiMatchAny`(정규식) 또는 `multiSearchAny`(substrings)와 같은 다중 패턴 검색 함수를 계속 사용할 수 있습니다.
+문자열 검색 프레디케이트가 작동하는 이유는 `MatchImpl`(`LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`의 기반 구현)이 비상수 needle과 함께 상수 haystack을 지원하기 때문입니다. 예를 들어 `'abc' LIKE SOME(['a%', 'b%'])`는 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`로 재작성되고, `'abc' NOT LIKE ALL(['x%', 'y%'])`는 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`로 재작성됩니다. 이는 하나의 문자열을 여러 패턴과 매칭합니다. 단일 결합 패스로 매칭하려면 `multiMatchAny`(정규식) 또는 `multiSearchAny`(부분 문자열)와 같은 다중 패턴 검색 함수를 계속 사용할 수 있습니다.
+
+[`ESCAPE` 절](#escape-clause)을 지원하는 프레디케이트는 배열 형식에서도 이 절을 그대로 사용할 수 있습니다. 한정자 뒤에 붙는 `ESCAPE 'c'`는 배열의 모든 패턴에 적용됩니다. 예를 들어 `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`는 `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`로 재작성됩니다.
 
 <Info>
   **배열 형식에서는 `ANY`가 지원되지 않습니다**

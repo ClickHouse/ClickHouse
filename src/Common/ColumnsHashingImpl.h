@@ -9,6 +9,7 @@
 #include <Common/HashTable/Prefetching.h>
 
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -60,6 +61,26 @@ struct LastElementCacheStats
         misses += num_misses;
     }
 };
+
+/// The rows of the block a hashing state will be asked about. A `SubRangeState` skips whole-column
+/// precomputation outside them, so a caller building one state per sub-range of a block does not pay
+/// whole-block work per sub-range; other states ignore it. `end` defaults to the whole block.
+struct RowRange
+{
+    size_t begin = 0;
+    size_t end = std::numeric_limits<size_t>::max();
+};
+
+/// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
+/// whole-block work in its constructor, so whole-block callers keep a key path that never checks a range.
+template <typename State>
+struct SubRangeStateOf
+{
+    using Type = State;
+};
+
+template <typename State>
+using SubRangeState = typename SubRangeStateOf<State>::Type;
 
 namespace columns_hashing_impl
 {
@@ -261,10 +282,8 @@ public:
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-                const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
-                return emplaceImpl<false>(key_holder, data, hashes[row]);
+                derived.prefetchByPrecomputedHash(data, row + derived.prefetch_look_ahead);
+                return emplaceImpl<false>(key_holder, data, derived.getPrecomputedHash(data, row));
             }
         }
         return emplaceImpl<true>(key_holder, data, 0);
@@ -307,11 +326,9 @@ public:
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-                const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+                derived.prefetchByPrecomputedHash(data, row + derived.prefetch_look_ahead);
 
-                if (data.isEmptyCell(hashes[row]))
+                if (data.isEmptyCell(derived.getPrecomputedHash(data, row)))
                 {
                     if constexpr (has_mapped)
                         return FindResult(nullptr, false, 0);
@@ -594,6 +611,11 @@ protected:
     const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
+    }
+
+    const ColumnRawPtrs & getNullMaps() const
+    {
+        return null_maps;
     }
 
     /// Create a bitmap that indicates whether, for a particular row,

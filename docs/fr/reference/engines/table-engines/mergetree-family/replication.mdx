@@ -136,9 +136,7 @@ Vous pouvez avoir autant de répliques des mêmes données que vous le souhaitez
 
 Le système surveille la synchronisation des données sur les répliques et est capable de récupérer après une défaillance. Le failover est automatique (pour de faibles écarts de données) ou semi-automatique (lorsque les données diffèrent trop, ce qui peut indiquer une erreur de configuration).
 
-<div id="creating-replicated-tables">
-  ## Création de tables répliquées
-</div>
+## Création de tables répliquées {#creating-replicated-tables}
 
 <Note>
   Dans ClickHouse Cloud, la réplication est gérée automatiquement.
@@ -148,9 +146,7 @@ Le système surveille la synchronisation des données sur les répliques et est 
   Évitez d’utiliser `ReplicatedMergeTree` ou de spécifier des paramètres de réplication, car celle-ci est gérée par la plateforme.
 </Note>
 
-<div id="replicatedmergetree-parameters">
-  ### Paramètres de Replicated*MergeTree
-</div>
+### Paramètres de Replicated*MergeTree {#replicatedmergetree-parameters}
 
 | Paramètre          | Description                                                                                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------------------- |
@@ -248,9 +244,7 @@ Si vous ajoutez une nouvelle réplique alors que la table contient déjà des do
 
 Pour supprimer une réplique, exécutez `DROP TABLE`. Cependant, une seule réplique est supprimée : celle qui se trouve sur le serveur sur lequel vous exécutez la requête.
 
-<div id="recovery-after-failures">
-  ## Récupération après des pannes
-</div>
+## Récupération après des pannes {#recovery-after-failures}
 
 Si ClickHouse Keeper n&#39;est pas disponible lorsqu&#39;un serveur démarre, les tables répliquées passent en mode lecture seule. Le système tente périodiquement de se connecter à ClickHouse Keeper.
 
@@ -274,9 +268,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Redémarrez ensuite le serveur. Au démarrage, le serveur supprime ces marqueurs et lance la procédure de récupération.
 
-<div id="recovery-after-complete-data-loss">
-  ## Récupération après une perte complète de données
-</div>
+## Récupération après une perte complète de données {#recovery-after-complete-data-loss}
 
 Si toutes les données et métadonnées ont disparu de l’un des serveurs, suivez ces étapes pour effectuer la récupération :
 
@@ -291,17 +283,15 @@ Une autre option de récupération consiste à supprimer de ClickHouse Keeper le
 
 Aucune limitation de bande passante réseau n’est appliquée pendant la récupération. Gardez-le à l’esprit si vous restaurez plusieurs répliques en même temps.
 
-<div id="converting-from-mergetree-to-replicatedmergetree">
-  ## Conversion de MergeTree vers ReplicatedMergeTree
-</div>
+## Conversion de MergeTree vers ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
 
 Nous utilisons le terme `MergeTree` pour désigner tous les moteurs de table de la famille `MergeTree`, comme pour `ReplicatedMergeTree`.
 
 Si vous avez une table `MergeTree` répliquée manuellement, vous pouvez la convertir en table répliquée. Vous pouvez avoir besoin de le faire si vous avez déjà accumulé une grande quantité de données dans une table `MergeTree` et souhaitez maintenant activer la réplication.
 
-L’instruction [ATTACH TABLE ... AS REPLICATED](/fr/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) permet d’attacher une table `MergeTree` détachée en tant que `ReplicatedMergeTree`.
+L’instruction [ATTACH TABLE ... AS REPLICATED](/fr/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) permet de rattacher une table `MergeTree` détachée en tant que `ReplicatedMergeTree`.
 
-Une table `MergeTree` peut être convertie automatiquement au redémarrage du serveur si l’option `convert_to_replicated` est définie dans le chemin de données de la table (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` pour une base de données `Atomic`).
+Une table `MergeTree` peut être convertie automatiquement au redémarrage du serveur si l’option `convert_to_replicated` est définie dans le répertoire de données de la table (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` pour une base de données `Atomic` ou `/data/database_name/table_name/` pour une base de données `Ordinary`).
 Créez un fichier vide `convert_to_replicated` et la table sera chargée en tant que table répliquée au prochain redémarrage du serveur.
 
 Cette requête peut être utilisée pour obtenir le chemin de données de la table. Si la table possède plusieurs chemins de données, vous devez utiliser le premier.
@@ -311,6 +301,10 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Notez que la table ReplicatedMergeTree sera créée à l’aide des valeurs des paramètres `default_replica_path` et `default_replica_name`.
+Pour une base de données `Ordinary`, la conversion génère un UUID et l’utilise pour développer une seule fois `default_replica_path`.
+Le chemin développé est stocké tel quel, et à chaque chargement, il est comparé au `default_replica_path` actuel afin de retrouver le znode nommé d’après l’UUID que `DROP TABLE` supprime en même temps que la table. Si `default_replica_path` est modifié par la suite, la table se charge toujours, mais `DROP TABLE` ne supprime que le znode propre à la table et laisse dans ZooKeeper le znode parent nommé d’après l’UUID, qu’il faut alors supprimer manuellement.
+`{database}` et `{table}` dans `default_replica_name` sont développés dans le nom de réplique stocké, de la même manière qu’avec `CREATE TABLE`, de sorte que la table puisse toujours être renommée.
+`{uuid}` dans `default_replica_name` n’est pris en charge pour aucune conversion.
 Pour créer une table convertie sur les autres répliques, vous devrez spécifier explicitement son chemin dans le premier argument du moteur `ReplicatedMergeTree`. La requête suivante peut être utilisée pour récupérer ce chemin.
 
 ```sql
@@ -323,11 +317,9 @@ Si les données diffèrent entre les répliques, synchronisez-les d’abord ou s
 
 Renommez la table MergeTree existante, puis créez une table `ReplicatedMergeTree` en lui redonnant l’ancien nom.
 Déplacez les données de l’ancienne table vers le sous-répertoire `detached` du répertoire contenant les données de la nouvelle table (`/var/lib/clickhouse/data/db_name/table_name/`).
-Exécutez ensuite `ALTER TABLE ATTACH PARTITION` sur l’une des répliques pour ajouter ces parties de données à l’ensemble actif.
+Exécutez ensuite `ALTER TABLE ATTACH PARTITION` sur l’une des répliques pour ajouter ces parts à l’ensemble actif.
 
-<div id="converting-from-replicatedmergetree-to-mergetree">
-  ## Conversion de ReplicatedMergeTree vers MergeTree
-</div>
+## Conversion de ReplicatedMergeTree vers MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
 Utilisez l’instruction [ATTACH TABLE ... AS NOT REPLICATED](/fr/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) pour rattacher une table `ReplicatedMergeTree` détachée en tant que `MergeTree` sur un seul serveur.
 
@@ -340,9 +332,7 @@ Si vous souhaitez supprimer une table `ReplicatedMergeTree` sans démarrer le se
 
 Après cela, vous pouvez démarrer le serveur, créer une table `MergeTree`, déplacer les données vers son répertoire, puis redémarrer le serveur.
 
-<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
-  ## Récupération en cas de perte ou d&#39;altération des métadonnées dans le cluster ClickHouse Keeper
-</div>
+## Récupération en cas de perte ou d&#39;altération des métadonnées dans le cluster ClickHouse Keeper {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 Si les données de ClickHouse Keeper ont été perdues ou endommagées, vous pouvez les préserver en les déplaçant vers une table non répliquée, comme décrit ci-dessus.
 
