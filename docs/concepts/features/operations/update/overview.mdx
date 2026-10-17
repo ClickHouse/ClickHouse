@@ -280,6 +280,19 @@ This approach uses the standard `UPDATE` syntax and creates patch parts immediat
 
 The trade-off is that `SELECT` queries incur overhead when applying patches, and patch parts count toward part limits. Beyond the ~10% threshold, patch-on-read overhead grows proportionally, making synchronous mutations more efficient for larger updates.
 
+Lightweight updates also support correlated scalar subqueries in assignment expressions. The subquery can use values from the current target row to look up values in another table. Multiple assignments and composite correlation keys are supported.
+
+```sql
+UPDATE target
+SET value =
+(
+    SELECT source.value
+    FROM source
+    WHERE source.id = target.id
+)
+WHERE target.id IN (SELECT id FROM source);
+```
+
 Read more: [Lightweight UPDATE](/reference/statements/update)
 
 ### On-the-fly mutations {#on-the-fly-mutations-summary}
