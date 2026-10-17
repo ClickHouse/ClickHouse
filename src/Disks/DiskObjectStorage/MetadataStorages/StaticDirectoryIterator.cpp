@@ -1,9 +1,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 
+#include <string_view>
+
 namespace DB
 {
 
-StaticDirectoryIterator::StaticDirectoryIterator(std::vector<std::filesystem::path> && dir_file_paths_)
+StaticDirectoryIterator::StaticDirectoryIterator(std::vector<std::string> && dir_file_paths_)
     : dir_file_paths(std::move(dir_file_paths_))
     , iter(dir_file_paths.begin())
 {
@@ -21,15 +23,25 @@ bool StaticDirectoryIterator::isValid() const
 
 std::string StaticDirectoryIterator::path() const
 {
-    return iter->string();
+    return *iter;
 }
 
 std::string StaticDirectoryIterator::name() const
 {
-    if (iter->filename().empty())
-        return iter->parent_path().filename();
+    /// These are logical metadata paths, not filesystem paths: `/` is their only separator, so the
+    /// last component is taken in string space rather than through `std::filesystem::path`, which
+    /// would re-encode a non-ASCII name through the active code page on Windows.
+    std::string_view path_view = *iter;
 
-    return iter->filename();
+    /// A trailing separator marks a directory; its name is the component before that separator.
+    while (path_view.ends_with('/'))
+        path_view.remove_suffix(1);
+
+    const auto separator_pos = path_view.rfind('/');
+    if (separator_pos != std::string_view::npos)
+        path_view.remove_prefix(separator_pos + 1);
+
+    return std::string(path_view);
 }
 
 }

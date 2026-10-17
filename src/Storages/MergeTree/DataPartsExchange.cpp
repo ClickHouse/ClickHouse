@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 
 #include "config.h"
@@ -356,7 +357,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception(
                 ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                 "Unexpected size of file {}, expected {} got {}",
-                std::string(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
+                pathToGenericString(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
                 desc.file_size, hashing_out.count());
 
         writePODBinary(hashing_out.getHash(), out);
@@ -671,7 +672,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     /// zero-copy download participate in the shutdown cancellation (`ReplicatedFetchList::cancelAll`):
     /// the callback aborts the fetch with `ABORTED` on the next buffer refill after the entry is cancelled.
     auto storage_id = data.getStorageID();
-    String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
+    String new_part_path = pathToGenericString(fs::path(data.getFullPathOnDisk(disk)) / part_name / "");
     auto entry = replicated_fetch_list.insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.getPartitionId(), part_name, new_part_path,
@@ -694,7 +695,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             auto output_buffer_getter = [](IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
             {
                 auto full_path = fs::path(part_storage.getFullPath()) / file_name;
-                return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
+                return std::make_unique<WriteBufferFromFile>(pathToGenericString(full_path), std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
             return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));

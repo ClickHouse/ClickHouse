@@ -29,12 +29,18 @@ if (NOT IS_DIRECTORY "${BUILTINS_SOURCE_DIR}")
     return()
 endif()
 
-# Only Linux and FreeBSD wire our in-tree compiler-rt into the link.
+# Only Linux, FreeBSD and Windows wire our in-tree compiler-rt into the link.
 # SunOS uses -lgcc_s (see cmake/sunos/default_libs.cmake), Darwin relies on
 # Apple's bundled compiler-rt. Building our targets unconditionally would
 # create unused archives on those platforms — and linking them via global-libs
 # would risk duplicate-runtime conflicts.
-if (NOT (OS_LINUX OR OS_FREEBSD))
+#
+# Windows needs it for the same reason Linux does: cmake/windows/default_libs.cmake
+# links with -nodefaultlibs, which drops the -lgcc/-lgcc_s that clang's mingw driver
+# would otherwise add, so the builtins have to come from here. Building them
+# ourselves also keeps the cross-build from depending on a compiler-rt for the
+# mingw target being installed next to the host clang, which it usually is not.
+if (NOT (OS_LINUX OR OS_FREEBSD OR OS_WINDOWS))
     return()
 endif()
 
@@ -120,6 +126,13 @@ if (ARCH_AMD64)
         x86_64/floatdixf.c
         x86_64/floatundixf.S
     )
+    if (OS_WINDOWS)
+        # `___chkstk_ms`, the stack-probe helper for frames larger than a page. GCC emits calls
+        # to it and normally supplies it from libgcc, so mingw-w64's own CRT objects reference
+        # it; with -nodefaultlibs we provide it from compiler-rt instead. Matches what upstream
+        # compiler-rt does for WIN32 (see llvm-project/compiler-rt/lib/builtins/CMakeLists.txt).
+        list (APPEND BUILTINS_ARCH_SOURCES x86_64/chkstk.S)
+    endif ()
 elseif (ARCH_AARCH64)
     set(BUILTINS_ARCH_SOURCES
         ${BUILTINS_GENERIC_SOURCES}

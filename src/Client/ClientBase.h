@@ -265,6 +265,9 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
+    /// Throws if `pager_command` is not empty on a platform where a pager cannot be started.
+    static void checkPagerIsSupported(const String & pager_command);
+
     /// The setting that the `--format` option and the `format` config key are mirrored into.
     /// In `clickhouse-local`, `--format` has always set both the default input and the default output
     /// format, so it maps to the bidirectional `format` setting. In `clickhouse-client` (including the

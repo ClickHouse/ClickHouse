@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
+#include <base/pathToString.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -26,7 +27,7 @@ NormalizedPath NormalizedPath::parent_path() const
 
 NormalizedPath normalizePath(std::string path)
 {
-    auto lexically_normal = std::filesystem::path(path).lexically_normal();
+    auto lexically_normal = pathFromString(path).lexically_normal();
 
 #ifndef NDEBUG
     if (isPathRelative(lexically_normal))
@@ -34,7 +35,7 @@ NormalizedPath normalizePath(std::string path)
 #endif
 
     /// Remove leftovers from the ends
-    auto filtered_path = lexically_normal.string();
+    auto filtered_path = pathToGenericString(lexically_normal);
     std::string_view normalized_path = filtered_path;
     while (normalized_path.ends_with('/') || normalized_path.ends_with('.'))
         normalized_path.remove_suffix(1);
@@ -42,7 +43,7 @@ NormalizedPath normalizePath(std::string path)
     while (normalized_path.starts_with('/') || normalized_path.starts_with('.'))
         normalized_path.remove_prefix(1);
 
-    return NormalizedPath{normalized_path};
+    return NormalizedPath{pathFromString(normalized_path)};
 }
 
 }

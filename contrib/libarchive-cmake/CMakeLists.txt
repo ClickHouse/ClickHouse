@@ -1,3 +1,10 @@
+option (ENABLE_LIBARCHIVE "Enable libarchive (reading .zip/.tar/... in the file, s3, ... table functions)" ON)
+
+if (NOT ENABLE_LIBARCHIVE)
+    message (STATUS "Not using libarchive")
+    return()
+endif ()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
 set(SRCS

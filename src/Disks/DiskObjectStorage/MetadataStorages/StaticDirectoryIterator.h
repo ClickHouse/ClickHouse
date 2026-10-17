@@ -3,7 +3,6 @@
 #include <Disks/DirectoryIterator.h>
 
 #include <vector>
-#include <filesystem>
 #include <string>
 
 namespace DB
@@ -12,7 +11,7 @@ namespace DB
 class StaticDirectoryIterator final : public IDirectoryIterator
 {
 public:
-    explicit StaticDirectoryIterator(std::vector<std::filesystem::path> && dir_file_paths_);
+    explicit StaticDirectoryIterator(std::vector<std::string> && dir_file_paths_);
 
     void next() override;
     bool isValid() const override;
@@ -20,8 +19,9 @@ public:
     std::string name() const override;
 
 private:
-    std::vector<std::filesystem::path> dir_file_paths;
-    std::vector<std::filesystem::path>::iterator iter;
+    /// Logical metadata paths, kept as UTF-8 strings: `/` is their only separator.
+    std::vector<std::string> dir_file_paths;
+    std::vector<std::string>::iterator iter;
 };
 
 }

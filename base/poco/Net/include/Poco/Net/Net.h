@@ -84,8 +84,13 @@ namespace Net
 //
 // Define POCO_NET_HAS_INTERFACE for platforms that have network interface detection implemented.
 //
-#if defined(POCO_OS_FAMILY_WINDOWS) || (POCO_OS == POCO_OS_LINUX) || (POCO_OS == POCO_OS_ANDROID) || defined(POCO_OS_FAMILY_BSD) \
-    || (POCO_OS == POCO_OS_SOLARIS) || (POCO_OS == POCO_OS_QNX)
+// Upstream Poco defines it for Windows too, but this fork does not build NetworkInterface.cpp
+// and MulticastSocket.cpp there (see base/poco/Net/CMakeLists.txt), so advertising the
+// capability would let Windows code compile against headers whose implementation is missing
+// from the library and fail at link time.
+//
+#if (POCO_OS == POCO_OS_LINUX) || (POCO_OS == POCO_OS_ANDROID) || defined(POCO_OS_FAMILY_BSD) || (POCO_OS == POCO_OS_SOLARIS) \
+    || (POCO_OS == POCO_OS_QNX)
 #    define POCO_NET_HAS_INTERFACE
 #endif
 

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
@@ -179,7 +180,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
             "Marks file '{}' doesn't exist",
-            std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
+            pathToGenericString(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
 
     std::unique_ptr<ReadBuffer> marks_reader;
     bool marks_compressed = index_granularity_info_.mark_type.compressed;
@@ -305,7 +306,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
                     getDataPartStorage().getRelativePath(),
-                    std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                    pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / file_path));
         }
 
         /// The marks alone do not prove that the data is there: checksums regenerated from the files on disk
@@ -328,7 +329,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty.",
                     getDataPartStorage().getRelativePath(),
-                    std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
+                    pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
             /// The size of compressed marks does not follow from the number of marks, so check their
             /// decompressed size instead. With marks for substreams, each granule has a mark per substream.
@@ -341,7 +342,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: bad size of marks in file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
-                    std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
+                    pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
                     marks_payload_size, expected_payload_size);
 
             checkDataFileCoversMarks(DATA_FILE_NAME_WITH_EXTENSION, mrk_file_name, num_marks_in_granule);

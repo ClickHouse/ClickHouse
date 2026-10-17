@@ -13,6 +13,7 @@
         "resources/develop-contribute/build/build",
         "resources/develop-contribute/build/build-osx",
         "resources/develop-contribute/build/build-cross-osx",
+        "resources/develop-contribute/build/build-cross-windows",
         "resources/develop-contribute/build/build-cross-arm",
         "resources/develop-contribute/build/build-cross-riscv",
         "resources/develop-contribute/build/build-cross-s390x",

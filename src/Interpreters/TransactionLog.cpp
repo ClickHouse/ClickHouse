@@ -1,7 +1,6 @@
 #include <Interpreters/TransactionLog.h>
 
 #include <algorithm>
-#include <filesystem>
 #include <limits>
 #include <numeric>
 
@@ -16,11 +15,11 @@
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/noexcept_scope.h>
-
-namespace fs = std::filesystem;
+#include <Common/timespanFromSeconds.h>
 
 namespace DB
 {
@@ -88,7 +87,7 @@ void TransactionLog::initTableNodes(const zkutil::ZooKeeperPtr & zookeeper)
 
 void TransactionLog::waitForUpdate(size_t milliseconds)
 {
-    log_updated_event->tryWait(milliseconds);
+    log_updated_event->tryWait(toPocoMilliseconds(milliseconds));
 }
 
 CSN TransactionLog::lookupGapCSN(const TIDHash & tid_hash) const
@@ -120,9 +119,9 @@ void TransactionLog::assertLoaded() const
     chassert(latest_snapshot == last_loaded_csn);
 }
 
-String TransactionLog::tableLastCommittedTidPath(Int64 cross_replica_id) const { return fs::path(zookeeper_path_tables_stamp) / std::to_string(cross_replica_id); }
+String TransactionLog::tableLastCommittedTidPath(Int64 cross_replica_id) const { return zkutil::joinZooKeeperPath(zookeeper_path_tables_stamp, std::to_string(cross_replica_id)); }
 
-String TransactionLog::tableProcessedCSNPath(Int64 cross_replica_id) const { return fs::path(zookeeper_path_tables_processed) / std::to_string(cross_replica_id); }
+String TransactionLog::tableProcessedCSNPath(Int64 cross_replica_id) const { return zkutil::joinZooKeeperPath(zookeeper_path_tables_processed, std::to_string(cross_replica_id)); }
 
 void TransactionLog::forgetDroppedTable(const zkutil::ZooKeeperPtr & zookeeper, Int64 cross_replica_id)
 {
@@ -154,7 +153,7 @@ std::optional<CSN> TransactionLog::loadEntries(const zkutil::ZooKeeperPtr & zook
     std::vector<std::string> entry_paths;
     entry_paths.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
+        entry_paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path_log, *it));
 
     auto entries = zookeeper->get(entry_paths);
 
@@ -678,7 +677,7 @@ CSN TransactionLog::resolveGapCSNFromKeeper(const GetZooKeeper & get_zookeeper, 
             CSN csn = Tx::deserializeCSN(name);
             if (csn > snapshot)
             {
-                gap_paths.emplace_back(fs::path(zookeeper_path_log) / name);
+                gap_paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path_log, name));
                 gap_csns.push_back(csn);
             }
         }

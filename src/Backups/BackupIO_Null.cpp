@@ -2,11 +2,9 @@
 
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupPathUtils.h>
 #include <Common/Exception.h>
 #include <IO/NullWriteBuffer.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -85,7 +83,7 @@ std::unique_ptr<ReadBuffer> BackupWriterNull::readFile(const String & file_name,
 
 bool BackupWriterNull::fileContentsEqual(const String & file_name, const String & /* expected_file_contents */, String & /* actual_file_contents */)
 {
-    if (fs::path{file_name}.filename() == ".lock")
+    if (backupPathBaseName(file_name) == ".lock")
         return true; /// To pass the check for the ".lock" file in BackupImpl::checkLockFile().
 
     throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found (Null backup is always empty)", file_name);

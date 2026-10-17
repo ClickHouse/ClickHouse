@@ -24,6 +24,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/times.h>
+#elif defined(POCO_OS_FAMILY_WINDOWS)
+#include "Poco/UnWindows.h"
 #endif
 
 
@@ -104,7 +106,22 @@ Timestamp Timestamp::fromUtcTime(UtcTimeVal val)
 
 void Timestamp::update()
 {
-#if   defined(POCO_HAVE_CLOCK_GETTIME)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+
+	ULARGE_INTEGER epoch; // UNIX epoch (1970-01-01 00:00:00) expressed in Windows NT FILETIME
+	epoch.LowPart  = 0xD53E8000;
+	epoch.HighPart = 0x019DB1DE;
+
+	ULARGE_INTEGER ts;
+	ts.LowPart  = ft.dwLowDateTime;
+	ts.HighPart = ft.dwHighDateTime;
+	ts.QuadPart -= epoch.QuadPart;
+	_ts = ts.QuadPart/10;
+
+#elif defined(POCO_HAVE_CLOCK_GETTIME)
 
 	struct timespec ts;
 	if (clock_gettime(CLOCK_REALTIME, &ts))
@@ -120,6 +137,42 @@ void Timestamp::update()
 
 #endif
 }
+
+
+#if defined(POCO_OS_FAMILY_WINDOWS)
+
+
+namespace
+{
+	/// The UNIX epoch (1970-01-01 00:00:00) expressed in Windows NT `FILETIME` (100 ns intervals since 1601-01-01).
+	/// The arithmetic around it is signed: a time before the UNIX epoch is a negative `Timestamp`.
+	constexpr Int64 unixEpochInFileTime = 0x019DB1DED53E8000LL;
+}
+
+
+Timestamp Timestamp::fromFileTimeNP(UInt32 fileTimeLow, UInt32 fileTimeHigh)
+{
+	Int64 fileTime = static_cast<Int64>((static_cast<UInt64>(fileTimeHigh) << 32) | fileTimeLow);
+	Int64 sinceEpoch = fileTime - unixEpochInFileTime;
+
+	/// Round towards negative infinity, so that a time before the epoch is not moved forward.
+	Int64 micros = sinceEpoch / 10;
+	if (sinceEpoch % 10 < 0)
+		--micros;
+
+	return Timestamp(micros);
+}
+
+
+void Timestamp::toFileTimeNP(UInt32& fileTimeLow, UInt32& fileTimeHigh) const
+{
+	UInt64 fileTime = static_cast<UInt64>(_ts * 10 + unixEpochInFileTime);
+	fileTimeLow  = static_cast<UInt32>(fileTime & 0xFFFFFFFFu);
+	fileTimeHigh = static_cast<UInt32>(fileTime >> 32);
+}
+
+
+#endif
 
 
 Timestamp  Timestamp::operator +  (const Timespan& span) const

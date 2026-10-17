@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <iostream>
 #include <filesystem>
 #include <optional>
@@ -829,7 +830,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 /// Override the default paths.
 
                 /// Data paths.
-                const std::string data_file = config_d / "data-paths.xml";
+                const std::string data_file = pathToGenericString(config_d / "data-paths.xml");
                 if (!fs::exists(data_file))
                 {
                     WriteBufferFromFile out(data_file);
@@ -846,7 +847,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 }
 
                 /// Logger.
-                const std::string logger_file = config_d / "logger.xml";
+                const std::string logger_file = pathToGenericString(config_d / "logger.xml");
                 if (!fs::exists(logger_file))
                 {
                     WriteBufferFromFile out(logger_file);
@@ -863,7 +864,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 }
 
                 /// User directories.
-                const std::string user_directories_file = config_d / "user-directories.xml";
+                const std::string user_directories_file = pathToGenericString(config_d / "user-directories.xml");
                 if (!fs::exists(user_directories_file))
                 {
                     WriteBufferFromFile out(user_directories_file);
@@ -881,7 +882,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 }
 
                 /// OpenSSL.
-                const std::string openssl_file = config_d / "openssl.xml";
+                const std::string openssl_file = pathToGenericString(config_d / "openssl.xml");
                 if (!fs::exists(openssl_file))
                 {
                     WriteBufferFromFile out(openssl_file);
@@ -1174,11 +1175,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
 
         /// Chmod and chown data and log directories
-        changeOwnership(log_path, user, group);
-        changeOwnership(pid_path, user, group);
+        changeOwnership(pathToGenericString(log_path), user, group);
+        changeOwnership(pathToGenericString(pid_path), user, group);
 
         /// Not recursive, because there can be a huge number of files and it will be slow.
-        changeOwnership(data_path, user, group, /* recursive= */ false);
+        changeOwnership(pathToGenericString(data_path), user, group, /* recursive= */ false);
 
         /// All users are allowed to read pid file (for clickhouse status command).
         fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
@@ -1198,9 +1199,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             createUser(DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
 
             if (fs::exists(odbc_bridge_path))
-                changeOwnership(odbc_bridge_path, DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
+                changeOwnership(pathToGenericString(odbc_bridge_path), DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
             if (fs::exists(library_bridge_path))
-                changeOwnership(library_bridge_path, DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
+                changeOwnership(pathToGenericString(library_bridge_path), DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
         }
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
@@ -1281,7 +1282,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", default_user_users_d.string());
                     fs::create_directories(default_user_users_d);
                 }
-                std::string password_file = default_user_users_d / "default-password.xml";
+                std::string password_file = pathToGenericString(default_user_users_d / "default-password.xml");
                 WriteBufferFromFile out(password_file);
 #if USE_SSL
                 std::vector<uint8_t> hash;
@@ -1352,7 +1353,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             if (ask("Allow server to accept connections from the network (default is localhost only), [y/N]: "))
             {
-                std::string listen_file = config_d / "listen.xml";
+                std::string listen_file = pathToGenericString(config_d / "listen.xml");
                 WriteBufferFromFile out(listen_file);
                 out << "<clickhouse>\n"
                     "    <listen_host>::</listen_host>\n"
@@ -1364,7 +1365,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
 
         /// Chmod and chown configs
-        changeOwnership(config_dir, user, group);
+        changeOwnership(pathToGenericString(config_dir), user, group);
 
         /// The server reads every XML users config together with its merge directories (`<name>.d` and `conf.d`, like `ConfigProcessor`),
         /// and they may live outside the config directory, so it needs to read them as well.
@@ -1537,7 +1538,7 @@ namespace
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
 
-            changeOwnership(pid_path, user);
+            changeOwnership(pathToGenericString(pid_path), user);
         }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",

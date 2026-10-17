@@ -8,7 +8,9 @@
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
 #include <base/EnumReflection.h>
+#if !defined(OS_WINDOWS)
 #include <sys/resource.h>
+#endif
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>

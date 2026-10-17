@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/timespanFromSeconds.h>
 
 
 namespace fs = std::filesystem;
@@ -89,7 +90,7 @@ void ConfigReloader::run()
     {
         try
         {
-            bool zk_changed = zk_changed_event->tryWait(std::chrono::milliseconds(reload_interval).count());
+            bool zk_changed = zk_changed_event->tryWait(toPocoMilliseconds(std::chrono::milliseconds(reload_interval).count()));
             if (quit)
                 return;
 

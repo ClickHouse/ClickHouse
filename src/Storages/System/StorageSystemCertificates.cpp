@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
@@ -95,17 +96,18 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
         /// A hash-named entry that cannot be parsed - a stale symlink, a zero-byte placeholder -
         /// must not make the whole table unreadable: this table exists to show what the trust store
         /// contains, and a single unreadable file would otherwise hide all of it.
+        const std::string path = pathToGenericString(dir_entry.path());
         try
         {
-            X509Certificate cert(dir_entry.path());
-            populateTable(cert, res_columns, dir_entry.path(), def, protocol);
+            X509Certificate cert(path);
+            populateTable(cert, res_columns, path, def, protocol);
         }
         catch (...)
         {
             LOG_WARNING(
                 getLogger("StorageSystemCertificates"),
                 "Cannot read the certificate {}: {}",
-                dir_entry.path().string(),
+                path,
                 getCurrentExceptionMessage(false));
         }
     }

@@ -1,3 +1,4 @@
+#include <base/memmem.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>

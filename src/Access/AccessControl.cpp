@@ -32,6 +32,7 @@
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <base/pathToString.h>
 #include <filesystem>
 #include <mutex>
 
@@ -526,7 +527,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         else if (type == UsersConfigAccessStorage::STORAGE_TYPE)
         {
             String path = config.getString(prefix + ".path");
-            if (std::filesystem::path{path}.is_relative() && std::filesystem::exists(config_dir + path))
+            if (pathFromString(path).is_relative() && std::filesystem::exists(pathFromString(config_dir + path)))
                 path = config_dir + path;
             bool allow_backup = config.getBool(prefix + ".allow_backup", false); /// We don't backup users.xml by default.
             addUsersConfigStorage(name, path, include_from_path, dbms_dir, get_zookeeper_function, allow_backup);
@@ -563,7 +564,7 @@ void AccessControl::addStoragesFromMainConfig(
     if (!disk_storage_dir.empty())
         addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
 
-    String config_dir = std::filesystem::path{config_path}.remove_filename().string();
+    String config_dir = pathToGenericString(pathFromString(config_path).remove_filename());
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "");
     bool has_user_directories = config.has("user_directories");
@@ -576,7 +577,7 @@ void AccessControl::addStoragesFromMainConfig(
         if (!has_user_directories)
             users_config_path = config_path;
     }
-    else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+    else if (pathFromString(users_config_path).is_relative() && std::filesystem::exists(pathFromString(config_dir + users_config_path)))
         users_config_path = config_dir + users_config_path;
 
     if (!users_config_path.empty())

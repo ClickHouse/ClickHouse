@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
@@ -72,37 +73,40 @@ DatabaseFilesystem::DatabaseFilesystem(
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+    fs::path user_files_path = is_local ? fs::path{} : fs::canonical(pathFromString(getContext()->getUserFilesPath()));
+    auto path_as_fs = pathFromString(path_);
 
-    if (fs::path(path).is_relative())
+    if (path_as_fs.is_relative())
     {
-        path = user_files_path / path;
+        path_as_fs = user_files_path / path_as_fs;
     }
 
-    path = fs::absolute(path).lexically_normal();
+    path_as_fs = fs::absolute(path_as_fs).lexically_normal();
 
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    if (!is_local && !pathStartsWith(path_as_fs, user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Path must be inside user-files path: {}", user_files_path.string());
+                        "Path must be inside user-files path: {}", pathToGenericString(user_files_path));
     }
 
-    if (!fs::exists(path))
+    if (!fs::exists(path_as_fs))
     {
         /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
         /// would make a directory removed since then enough to stop the server from starting. Tables resolve
         /// their file on access, so an unreachable path costs only the tables; the database still drops.
         if (!is_internal_metadata_replay)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", pathToGenericString(path_as_fs));
 
-        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", pathToGenericString(path_as_fs));
     }
+
+    path = pathToGenericString(path_as_fs);
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
 {
-    fs::path table_path = fs::path(path) / table_name;
-    return table_path.lexically_normal().string();
+    fs::path table_path = pathFromString(path) / pathFromString(table_name);
+    return pathToGenericString(table_path.lexically_normal());
 }
 
 StoragePtr DatabaseFilesystem::addTable(const std::string & cache_key, StoragePtr table_storage) const
@@ -133,14 +137,14 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     if (!containsGlobs(path_to_probe))
     {
         /// Check if the corresponding file exists.
-        if (!existsOrFileNameTooLong([&] { return fs::exists(path_to_probe); }))
+        if (!existsOrFileNameTooLong([&] { return fs::exists(pathFromString(path_to_probe)); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_to_probe);
             return false;
         }
 
-        if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(path_to_probe); }))
+        if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(pathFromString(path_to_probe)); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path_to_probe);
@@ -197,7 +201,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, co
     /// a cached table would then claim the name and read nothing instead of reporting a missing table.
     const auto [path_to_archive, path_in_archive] = splitToArchiveParts(getTablePath(name), context_);
     const String path_to_probe = path_to_archive.empty() ? path_in_archive : path_to_archive;
-    if (!existsOrFileNameTooLong([&] { return fs::exists(path_to_probe); })
+    if (!existsOrFileNameTooLong([&] { return fs::exists(pathFromString(path_to_probe)); })
         || (!path_to_archive.empty() && !archiveContainsFile(path_to_archive, path_in_archive)))
     {
         std::lock_guard lock(mutex);

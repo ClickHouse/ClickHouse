@@ -1,3 +1,39 @@
+/// Bridges a WebSocket to the embedded client's pseudo-terminal, multiplexing the two with `poll`.
+/// Windows has neither a `poll` for pipes nor `posix_openpt` (see `PtyClientDescriptorSet`), and
+/// the whole feature is server-side, so it reports that it was not ported.
+#if defined(OS_WINDOWS)
+
+#include <Server/WebTerminalRequestHandler.h>
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+void WebTerminalRequestHandler::serveHTML(HTTPServerRequest &, HTTPServerResponse &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The web terminal is not implemented on Windows");
+}
+
+void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest &, HTTPServerResponse &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The web terminal is not implemented on Windows");
+}
+
+void WebTerminalRequestHandler::handleRequest(HTTPServerRequest &, HTTPServerResponse &, const ProfileEvents::Event &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The web terminal is not implemented on Windows");
+}
+
+}
+
+#else
+
 #include <Server/WebTerminalRequestHandler.h>
 #include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -1018,3 +1054,5 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 }
 
 }
+
+#endif

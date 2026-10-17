@@ -20,7 +20,9 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/timespanFromSeconds.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <base/pathToString.h>
 
 namespace fs = std::filesystem;
 
@@ -99,7 +101,7 @@ public:
         : WithContext(context_)
         , root_path(path_)
     {
-        if (fs::exists(root_path))
+        if (fs::exists(pathFromString(root_path)))
             cleanup();
     }
 
@@ -107,25 +109,25 @@ public:
 
     std::vector<std::string> list() const override
     {
-        if (!fs::exists(root_path))
+        if (!fs::exists(pathFromString(root_path)))
             return {};
 
         std::vector<std::string> elements;
-        for (fs::directory_iterator it{root_path}; it != fs::directory_iterator{}; ++it)
+        for (fs::directory_iterator it{pathFromString(root_path)}; it != fs::directory_iterator{}; ++it)
         {
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
-                elements.push_back(it->path());
+                elements.push_back(pathToString(current_path));
             else
                 LOG_WARNING(getLogger("SQLDefinedHandlersLocalStorage"),
-                    "Unexpected file {} in handlers directory", current_path.filename().string());
+                    "Unexpected file {} in handlers directory", pathToString(current_path.filename()));
         }
         return elements;
     }
 
     bool exists(const std::string & file_name) const override
     {
-        return fs::exists(getPath(file_name));
+        return fs::exists(pathFromString(getPath(file_name)));
     }
 
     std::string read(const std::string & file_name) const override
@@ -140,10 +142,10 @@ public:
     {
         /// Local storage is single-node: the factory's mutex already serializes writes, so there is no
         /// version to check (`expected_root_version` is meaningful only for replicated storage).
-        if (!replace && fs::exists(getPath(file_name)))
+        if (!replace && fs::exists(pathFromString(getPath(file_name))))
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Metadata file for handler already exists: {}", file_name);
 
-        fs::create_directories(root_path);
+        fs::create_directories(pathFromString(root_path));
 
         auto tmp_path = getPath(file_name + ".tmp");
         WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -154,7 +156,7 @@ public:
             out.sync();
         out.close();
 
-        fs::rename(tmp_path, getPath(file_name));
+        fs::rename(pathFromString(tmp_path), pathFromString(getPath(file_name)));
         return true;
     }
 
@@ -166,28 +168,28 @@ public:
 
     bool removeIfExists(const std::string & file_name) override
     {
-        return fs::remove(getPath(file_name));
+        return fs::remove(pathFromString(getPath(file_name)));
     }
 
 private:
     std::string getPath(const std::string & file_name) const
     {
-        const auto file_name_as_path = fs::path(file_name);
+        const auto file_name_as_path = pathFromString(file_name);
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
-        return fs::path(root_path) / file_name_as_path;
+        return pathToString(pathFromString(root_path) / file_name_as_path);
     }
 
     void cleanup()
     {
         std::vector<std::string> files_to_remove;
-        for (fs::directory_iterator it{root_path}; it != fs::directory_iterator{}; ++it)
+        for (fs::directory_iterator it{pathFromString(root_path)}; it != fs::directory_iterator{}; ++it)
         {
             if (it->path().extension() == ".tmp")
-                files_to_remove.push_back(it->path());
+                files_to_remove.push_back(pathToString(it->path()));
         }
         for (const auto & file : files_to_remove)
-            fs::remove(file);
+            fs::remove(pathFromString(file));
     }
 };
 
@@ -245,7 +247,7 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::waitUpdate");
-        if (wait_event->tryWait(timeout))
+        if (wait_event->tryWait(toPocoMilliseconds(timeout)))
             return true;
 
         std::string res;
@@ -415,10 +417,11 @@ private:
 
     std::string getPath(const std::string & file_name) const
     {
-        const auto file_name_as_path = fs::path(file_name);
+        const auto file_name_as_path = pathFromString(file_name);
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
-        return fs::path(root_path) / file_name_as_path;
+        /// A Keeper path: `/`-separated by definition.
+        return pathToGenericString(pathFromString(root_path) / file_name_as_path);
     }
 };
 
@@ -434,7 +437,7 @@ static std::vector<std::string> handlerNamesFromPaths(const std::vector<std::str
     std::vector<std::string> handlers;
     handlers.reserve(paths.size());
     for (const auto & path : paths)
-        handlers.push_back(unescapeForFileName(fs::path(path).stem()));
+        handlers.push_back(unescapeForFileName(pathToString(pathFromString(path).stem())));
     return handlers;
 }
 
@@ -613,7 +616,7 @@ std::unique_ptr<SQLDefinedHandlersMetadataStorage> SQLDefinedHandlersMetadataSto
     {
         const auto path = config.getString(
             query_rules_storage_config_path + ".path",
-            fs::path(context_->getPath()) / "handlers");
+            pathToString(pathFromString(context_->getPath()) / "handlers"));
 
         LOG_TRACE(getLogger("SQLDefinedHandlersMetadataStorage"), "Using local storage for handlers at path: {}", path);
 

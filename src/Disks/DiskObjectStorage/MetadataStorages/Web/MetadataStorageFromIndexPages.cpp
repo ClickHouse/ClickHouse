@@ -324,9 +324,9 @@ DirectoryIteratorPtr MetadataStorageFromIndexPages::iterateDirectory(const std::
 {
     RelativePathsWithMetadata files;
     if (!tryListDirectory(path, files, std::nullopt, std::nullopt))
-        return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{});
+        return std::make_unique<StaticDirectoryIterator>(std::vector<std::string>{});
 
-    std::vector<std::filesystem::path> entries;
+    std::vector<std::string> entries;
     entries.reserve(files.size());
     for (const auto & file : files)
         entries.emplace_back(file->relative_path);

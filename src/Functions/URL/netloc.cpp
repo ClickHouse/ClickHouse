@@ -27,7 +27,7 @@ struct ExtractNetloc
         }
         else
         {
-            Pos scheme_end = data + std::min(size, 16UL);
+            Pos scheme_end = data + std::min(size, 16uz);
             for (++pos; pos < scheme_end; ++pos)
             {
                 if (!isAlphaNumericASCII(*pos))

@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
@@ -517,7 +518,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto quota_tracker = getContext()->getAIQuotaTracker();
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+    timeouts.receive_timeout = timespanFromSeconds(timeout_sec);
 
     const String query_id = getContext()->getCurrentQueryId();
     const String & initial_query_id = getContext()->getClientInfo().initial_query_id;

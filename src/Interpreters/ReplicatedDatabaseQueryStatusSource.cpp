@@ -7,6 +7,7 @@
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 namespace DB
 {
@@ -49,7 +50,7 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
     /// A present finished/<host_id> for a Replicated database always holds status 0; an absent one is the benign
     /// cleaner/retry race, not a remote error. This is a debug/sanitizer-only cross-check.
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    fs::path status_path = fs::path(node_path) / "finished" / host_id;
+    const String status_path = zkutil::joinZooKeeperPath(node_path, "finished", host_id);
     bool node_exists = true;
     ExecutionStatus status = getExecutionStatus(status_path, &node_exists);
     /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
@@ -63,12 +64,12 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
     /// (tryDeserializeText is atomic, so the sentinel survives) which the cross-check must still surface.
     if (!node_exists)
     {
-        LOG_DEBUG(log, "finished node {} is absent (benign cleaner/retry race), reporting success", status_path.string());
+        LOG_DEBUG(log, "finished node {} is absent (benign cleaner/retry race), reporting success", status_path);
         return ExecutionStatus{0};
     }
     if (status.code < 0)
         LOG_WARNING(log, "finished node {} is present but its status payload could not be deserialized, "
-                    "surfacing it via the cross-check", status_path.string());
+                    "surfacing it via the cross-check", status_path);
     return status;
 #else
     return ExecutionStatus{0};
@@ -110,7 +111,7 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
         node_to_wait = "synced";
     }
 
-    return {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
+    return {zkutil::joinZooKeeperPath(node_path, node_to_wait), zkutil::joinZooKeeperPath(node_path, "active")};
 }
 
 Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()

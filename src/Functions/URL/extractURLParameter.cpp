@@ -1,3 +1,4 @@
+#include <base/memmem.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearchToString.h>
 #include <base/find_symbols.h>

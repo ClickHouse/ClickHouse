@@ -48,13 +48,6 @@ private:
 
     struct Files : public std::map<String, FileDataPtr>
     {
-        auto find(const String & path, bool is_file) const
-        {
-            if (is_file)
-                return std::map<String, FileDataPtr>::find(path);
-            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
-        }
-
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)
@@ -66,11 +59,11 @@ private:
     mutable Files files;
     mutable SharedMutex metadata_mutex;
 
-    std::pair<FileDataPtr, std::vector<std::filesystem::path>>
+    std::pair<FileDataPtr, std::vector<String>>
     loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
 
     FileDataPtr tryGetFileInfo(const String & path) const;
-    std::vector<std::filesystem::path> listDirectoryInternal(const String & path) const;
+    std::vector<String> listDirectoryInternal(const String & path) const;
     FileDataPtr getFileInfo(const String & path) const;
 
     void assertExists(const std::string & path) const;

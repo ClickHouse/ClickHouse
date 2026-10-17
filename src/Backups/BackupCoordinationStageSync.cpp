@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Backups/BackupCoordinationStageSync.h>
 
 #include <base/chrono_io.h>
@@ -124,16 +125,16 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     // all_hosts.size() is added to max_attempts_after_bad_version since each host change the num_hosts node once, and it's a valid case
     , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version + all_hosts.size())
     , zookeeper_path(zookeeper_path_)
-    , root_zookeeper_path(zookeeper_path.parent_path().parent_path())
-    , operation_zookeeper_path(zookeeper_path.parent_path())
-    , operation_node_name(zookeeper_path.parent_path().filename())
-    , start_node_path(zookeeper_path / ("started|" + current_host))
-    , finish_node_path(zookeeper_path / ("finished|" + current_host))
-    , initiator_start_node_path(zookeeper_path / ("started|" + String{kInitiator}))
-    , num_hosts_node_path(zookeeper_path / "num_hosts")
-    , error_node_path(zookeeper_path / "error")
-    , alive_node_path(zookeeper_path / ("alive|" + current_host))
-    , alive_tracker_node_path(fs::path{root_zookeeper_path} / "alive_tracker")
+    , root_zookeeper_path(zkutil::parentZooKeeperPath(zkutil::parentZooKeeperPath(zookeeper_path)))
+    , operation_zookeeper_path(zkutil::parentZooKeeperPath(zookeeper_path))
+    , operation_node_name(zkutil::zooKeeperNodeName(operation_zookeeper_path))
+    , start_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "started|" + current_host))
+    , finish_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "finished|" + current_host))
+    , initiator_start_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "started|" + String{kInitiator}))
+    , num_hosts_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "num_hosts"))
+    , error_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "error"))
+    , alive_node_path(zkutil::joinZooKeeperPath(zookeeper_path, "alive|" + current_host))
+    , alive_tracker_node_path(zkutil::joinZooKeeperPath(root_zookeeper_path, "alive_tracker"))
     , zk_nodes_changed(std::make_shared<Poco::Event>())
 {
     initializeState();
@@ -221,7 +222,7 @@ void BackupCoordinationStageSync::startup()
 
 void BackupCoordinationStageSync::createRootNodes()
 {
-    if ((zookeeper_path.filename() != "stage") || !operation_node_name.starts_with(is_restore ? "restore-" : "backup-")
+    if ((zkutil::zooKeeperNodeName(zookeeper_path) != "stage") || !operation_node_name.starts_with(is_restore ? "restore-" : "backup-")
         || (root_zookeeper_path == operation_zookeeper_path))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path in ZooKeeper specified: {}", zookeeper_path);
@@ -410,10 +411,11 @@ void BackupCoordinationStageSync::checkConcurrency(Coordination::ZooKeeperWithFa
         if (found_operation.starts_with(is_restore ? "restore-" : "backup-") && (found_operation != operation_node_name))
         {
             Strings stages;
-            code = zookeeper->tryGetChildren(fs::path{root_zookeeper_path} / found_operation / "stage", stages);
+            const String stage_path = zkutil::joinZooKeeperPath(root_zookeeper_path, found_operation, "stage");
+            code = zookeeper->tryGetChildren(stage_path, stages);
 
             if (!((code == Coordination::Error::ZOK) || (code == Coordination::Error::ZNONODE)))
-                throw zkutil::KeeperException::fromPath(code, fs::path{root_zookeeper_path} / found_operation / "stage");
+                throw zkutil::KeeperException::fromPath(code, stage_path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -539,7 +541,7 @@ void BackupCoordinationStageSync::watchingThread()
         if (should_stop())
             return;
 
-        zk_nodes_changed->tryWait(sync_period_ms.count());
+        zk_nodes_changed->tryWait(toPocoMilliseconds(sync_period_ms.count()));
     }
 }
 
@@ -638,7 +640,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
             {
                 if (!host_info->started)
                 {
-                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
+                    host_info->version = parseStartNode(zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, zk_node)), host);
                     host_info->started = true;
                 }
             }
@@ -683,7 +685,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
                 String stage = host_and_stage.substr(separator_pos + 1);
                 if (auto * host_info = get_host_info(host))
                 {
-                    String result = zookeeper->get(fs::path{zookeeper_path} / zk_node);
+                    String result = zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, zk_node));
                     host_info->stages[stage] = std::move(result);
 
                     /// That old version didn't create the 'finish' node so we consider that a host finished its work
@@ -905,7 +907,7 @@ void BackupCoordinationStageSync::createStageNode(const String & stage, const St
 
 String BackupCoordinationStageSync::getStageNodePath(const String & stage) const
 {
-    return fs::path{zookeeper_path} / ("current|" + current_host + "|" + stage);
+    return zkutil::joinZooKeeperPath(zookeeper_path, "current|" + current_host + "|" + stage);
 }
 
 
@@ -1104,7 +1106,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
 
         /// Read the "finish" nodes related to the current host and other hosts and update the current state.
         /// We need to that here because after calling function finish() we usually call function allHostsFinished().
-        if (std::erase_if(unfinished_hosts, [&](const String & host) { return zookeeper->exists(zookeeper_path / ("finished|" + host)); }))
+        if (std::erase_if(unfinished_hosts, [&](const String & host) { return zookeeper->exists(zkutil::joinZooKeeperPath(zookeeper_path, "finished|" + host)); }))
         {
             std::lock_guard lock{mutex};
             for (auto & [host, host_info] : state.hosts)
@@ -1149,7 +1151,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
         {
             if (host != current_host)
             {
-                String node_path = zookeeper_path / ("finished|" + host);
+                String node_path = zkutil::joinZooKeeperPath(zookeeper_path, "finished|" + host);
                 non_existent_node_pos.emplace_back(requests.size(), node_path);
                 zkutil::addCheckNotExistsRequest(requests, *zookeeper, node_path);
             }

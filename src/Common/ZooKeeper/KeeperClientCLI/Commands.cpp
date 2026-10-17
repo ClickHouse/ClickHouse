@@ -469,14 +469,14 @@ struct TraversalTask : public std::enable_shared_from_this<TraversalTask<UserCtx
     };
 
 private:
-    const fs::path path;
+    const String path;
     const TraversalTaskPtr parent;
 
     Int64 child_tasks = 0;
     Int64 nodes_in_subtree = 1;
 
 public:
-    TraversalTask(const fs::path & path_, TraversalTaskPtr parent_)
+    TraversalTask(const String & path_, TraversalTaskPtr parent_)
         : path(path_)
         , parent(parent_)
     {
@@ -504,7 +504,7 @@ public:
             /// Schedule traversal of each child
             for (const auto & child : response.names)
             {
-                auto task = std::make_shared<TraversalTask>(path / child, this->shared_from_this());
+                auto task = std::make_shared<TraversalTask>(zkutil::joinZooKeeperPath(path, child), this->shared_from_this());
                 ctx.new_tasks.push_back(task);
             }
             child_tasks = response.names.size();
@@ -546,7 +546,7 @@ private:
 /// Traverses the tree in parallel and calls user callbacks
 /// Parallelization is achieved by sending multiple async getChildren requests to Keeper, but all processing is done in a single thread
 template <class UserCtx>
-void parallelized_traverse(const fs::path & path, KeeperClientBase * client, size_t max_in_flight_requests, UserCtx & ctx_)
+void parallelized_traverse(const String & path, KeeperClientBase * client, size_t max_in_flight_requests, UserCtx & ctx_)
 {
     typename TraversalTask<UserCtx>::Ctx ctx(client, ctx_);
 
@@ -610,18 +610,18 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
 
     struct
     {
-        bool onListChildren(const fs::path & path, const Strings & children, const KeeperClientBase * client_) const
+        bool onListChildren(const String & path, const Strings & children, const KeeperClientBase * client_) const
         {
             if (children.size() >= threshold)
             {
-                client_->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
+                client_->cout << path << "\t" << children.size() << "\n";
                 /// Do not traverse children of super nodes
                 return false;
             }
             return true;
         }
 
-        void onFinishChildrenTraversal(const fs::path &, Int64) const {}
+        void onFinishChildrenTraversal(const String &, Int64) const {}
 
         size_t threshold;
     } ctx {.threshold = threshold };
@@ -640,16 +640,18 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
         "You are going to delete all inactive backups in /clickhouse/backups.",
         [client]
         {
-            fs::path backup_root = "/clickhouse/backups";
+            String backup_root = "/clickhouse/backups";
             auto backups = client->zookeeper->getChildren(backup_root);
             std::sort(backups.begin(), backups.end());
 
             for (const auto & child : backups)
             {
-                auto backup_path = backup_root / child;
-                client->cout << "Found backup " << backup_path << ", checking if it's active\n";
+                auto backup_path = zkutil::joinZooKeeperPath(backup_root, child);
+                /// The quotes match what streaming an `fs::path` printed before the Windows port
+                /// turned these paths into plain strings; the tests pin this output.
+                client->cout << "Found backup \"" << backup_path << "\", checking if it's active\n";
 
-                String stage_path = backup_path / "stage";
+                String stage_path = zkutil::joinZooKeeperPath(backup_path, "stage");
                 auto stages = client->zookeeper->getChildren(stage_path);
 
                 bool is_active = false;
@@ -664,11 +666,11 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
 
                 if (is_active)
                 {
-                    client->cout << "Backup " << backup_path << " is active, not going to delete\n";
+                    client->cout << "Backup \"" << backup_path << "\" is active, not going to delete\n";
                     continue;
                 }
 
-                client->cout << "Backup " << backup_path << " is not active, deleting it\n";
+                client->cout << "Backup \"" << backup_path << "\" is not active, deleting it\n";
                 client->zookeeper->removeRecursive(backup_path);
             }
         });
@@ -700,11 +702,11 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
     {
         std::vector<std::tuple<Int64, String>> result;
 
-        bool onListChildren(const fs::path &, const Strings &, const KeeperClientBase *) const { return true; }
+        bool onListChildren(const String &, const Strings &, const KeeperClientBase *) const { return true; }
 
-        void onFinishChildrenTraversal(const fs::path & path, Int64 nodes_in_subtree)
+        void onFinishChildrenTraversal(const String & path, Int64 nodes_in_subtree)
         {
-            result.emplace_back(nodes_in_subtree, path.string());
+            result.emplace_back(nodes_in_subtree, path);
         }
     } ctx;
 
@@ -899,7 +901,7 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
 
-    std::queue<fs::path> queue;
+    std::queue<String> queue;
     queue.push(path);
     Coordination::Stat stat;
     client->zookeeper->get(path, &stat);
@@ -912,7 +914,7 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
 
         auto children = client->zookeeper->getChildren(next_path);
         for (auto & child : children)
-            child = next_path / child;
+            child = zkutil::joinZooKeeperPath(next_path, child);
         auto response = client->zookeeper->get(children);
 
         for (size_t i = 0; i < response.size(); ++i)
@@ -1013,7 +1015,7 @@ class CPMVROperation
             queue.pop();
 
             for (const auto & child : client->zookeeper->getChildren(next_path))
-                queue.emplace(fs::path(next_path) / child);
+                queue.emplace(zkutil::joinZooKeeperPath(next_path, child));
 
             Coordination::Stat stat;
             std::string data = client->zookeeper->get(next_path, &stat);
