@@ -17,6 +17,7 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/memcpySmall.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -40,6 +41,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationSpillDrains;
     extern const Event AdaptiveAggregationResidueReleases;
     extern const Event AdaptiveAggregationSharedTableSpills;
 }
@@ -314,7 +316,8 @@ void Aggregator::executeFrozen(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker * local_memory_tracker) const
 {
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
@@ -328,7 +331,8 @@ void Aggregator::executeFrozen(
             key_columns, \
             aggregate_instructions, \
             adaptive, \
-            all_keys_are_const);
+            all_keys_are_const, \
+            local_memory_tracker);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -352,7 +356,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction *,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker *) const
 {
     Arena scratch_pool;
 
@@ -371,6 +376,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
             adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
     };
+
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
 
     if (all_keys_are_const)
     {
@@ -433,7 +446,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker * local_memory_tracker) const
 {
     Arena scratch_pool;
 
@@ -463,6 +477,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     const bool bypass_local_probe = frozen.bypass_local_probe;
 
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
+
     if (all_keys_are_const)
     {
         auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
@@ -484,6 +506,11 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         {
             if (!is_simple_count && params.aggregates_size)
             {
+                /// Local state growth belongs to this table, even while staging uses the shared tracker.
+                std::optional<MemoryTrackerSwitcher> local_scope;
+                if (local_memory_tracker)
+                    local_scope.emplace(local_memory_tracker);
+
                 /// Apply the whole range to the single place, mirroring the ordinary
                 /// all-keys-are-const handling.
                 for (size_t i = 0; i < aggregate_functions.size(); ++i)
@@ -651,6 +678,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// With no local hits every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution. Bypassed blocks are always all-miss.
     if (hits != 0)
+    {
+        /// Keep the scratch allocations and staged records outside the local table's estimate.
+        std::optional<MemoryTrackerSwitcher> local_scope;
+        if (local_memory_tracker)
+            local_scope.emplace(local_memory_tracker);
+
         executeAggregateInstructions(
             aggregates_pool,
             row_begin,
@@ -662,6 +695,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             /*all_keys_are_const=*/false,
             /*all_places_are_non_null=*/false,
             /*use_compiled_functions=*/false);
+    }
 }
 
 template <typename SharedKey, typename State>
@@ -1542,11 +1576,11 @@ static Int64 currentThreadTrackedMemory()
 }
 
 /// The shared drain table's footprint for the part bound and the detached-bytes budget: the
-/// larger of what the table reports and what the drains into it were seen to allocate. Read
+/// larger of what the table reports and its tracked footprint estimate. Read
 /// under `pressure_sweep_mutex`.
 static size_t sharedDrainTableBytes(const AdaptiveAggregationSession & shared)
 {
-    return std::max(shared.early_drain_variants->allocatedBytes(), shared.early_drain_tracked_bytes);
+    return std::max(shared.early_drain_variants->allocatedBytes(), shared.early_drain_tracked_bytes.load(std::memory_order_relaxed));
 }
 
 /// Swaps an empty table in for the shared drain table and hands the full one back, with its
@@ -1555,7 +1589,7 @@ static AggregatedDataVariantsPtr detachSharedDrainTable(AdaptiveAggregationSessi
 {
     auto full = std::move(shared.early_drain_variants);
     shared.early_drain_variants = std::move(replacement);
-    shared.early_drain_tracked_bytes = 0;
+    shared.early_drain_tracked_bytes.store(0, std::memory_order_relaxed);
     return full;
 }
 
@@ -1936,8 +1970,10 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         /// its states own outside the arenas reaches the part bound above.
         const Int64 tracked_before_drain = currentThreadTrackedMemory();
         drained_records += drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
-        shared.early_drain_tracked_bytes
-            += static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+        const size_t tracked_bytes = shared.early_drain_tracked_bytes.load(std::memory_order_relaxed)
+            + static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+        shared.early_drain_tracked_bytes.store(
+            std::max(shared.early_drain_variants->allocatedBytes(), tracked_bytes), std::memory_order_relaxed);
         begin = end;
     }
 
@@ -1962,7 +1998,9 @@ size_t Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSessi
     {
         /// The claim that ends the sweep drains the tail, so its records count too.
         size_t batch_records = 0;
-        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(shared, places_scratch, batch_records);
+        size_t batch_bytes = 0;
+        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(
+            shared, places_scratch, batch_records, batch_bytes, /*only_over_trigger=*/ true);
         drained_records += batch_records;
         if (!claim_again)
             break;
@@ -1970,29 +2008,54 @@ size_t Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSessi
     return drained_records;
 }
 
+size_t Aggregator::drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const
+{
+    PaddedPODArray<AggregateDataPtr> places_scratch;
+
+    size_t released = 0;
+    while (released < at_least_bytes)
+    {
+        size_t batch_records = 0;
+        size_t batch_bytes = 0;
+        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(
+            shared, places_scratch, batch_records, batch_bytes, /*only_over_trigger=*/ false);
+        released += batch_bytes;
+        if (!claim_again)
+            break;
+    }
+    if (released)
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillDrains);
+    return released;
+}
+
 bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
-    AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch, size_t & drained_records_out) const
+    AdaptiveAggregationSession & shared,
+    PaddedPODArray<AggregateDataPtr> & places_scratch,
+    size_t & drained_records_out,
+    size_t & drained_bytes_out,
+    bool only_over_trigger) const
 {
     drained_records_out = 0;
+    drained_bytes_out = 0;
     const size_t part_bytes = adaptivePressurePartBytes();
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
     /// part's worth of records. Full batches are drained into a producer-local table and
     /// written entirely outside the lock, so the transformation and the writes of successive
     /// batches run in parallel across the producers that hit the trigger; only a tail too
-    /// small for a part is drained into the shared table under the lock, where its residue
-    /// keeps accumulating toward a part instead of fragmenting per producer.
+    /// small for a part is drained into the shared table under the lock. Threshold-driven drains
+    /// coalesce this residue; an explicit spill request writes it regardless of the part floor.
     std::vector<StagedChunkPtr> batch;
     size_t batch_records = 0;
     size_t estimated_bytes = 0;
     AggregatedDataVariants::Type routing_type = AggregatedDataVariants::Type::EMPTY;
     {
         std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
-        if (getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+        if (only_over_trigger && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
             return false;
 
         auto chunks = shared.backlog.takeAllForPressureDrain();
-        if (chunks.empty())
+        if (chunks.empty() && (only_over_trigger || !shared.early_drain_variants->hasData()))
             return false;
 
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
@@ -2012,12 +2075,17 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
         const size_t batch_staged_bytes = claim.staged_bytes;
         const size_t split = claim.end;
         batch_records = claim.records;
+        drained_bytes_out = claim.staged_bytes;
         batch.assign(std::make_move_iterator(chunks.begin()), std::make_move_iterator(chunks.begin() + split));
         for (size_t i = split; i < chunks.size(); ++i)
             shared.backlog.requeue(chunks[i]);
 
         if (!batch_is_full)
         {
+            /// A prior threshold-driven drain may have left resident state even with no chunks queued.
+            if (!only_over_trigger)
+                drained_bytes_out += shared.early_drain_tracked_bytes.load(std::memory_order_relaxed);
+
             /// The tail regime: too little for a part of reasonable size.
             while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
                 shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
@@ -2028,8 +2096,10 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
             const Int64 tracked_before_drain = currentThreadTrackedMemory();
             const size_t drained_records
                 = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
-            shared.early_drain_tracked_bytes
-                += static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+            const size_t tracked_bytes = shared.early_drain_tracked_bytes.load(std::memory_order_relaxed)
+                + static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+            shared.early_drain_tracked_bytes.store(
+                std::max(shared.early_drain_variants->allocatedBytes(), tracked_bytes), std::memory_order_relaxed);
             batch.clear();
 
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
@@ -2037,16 +2107,17 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
             drained_records_out = drained_records;
             LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
 
-            /// Tail drains can push the shared residue past the floor over time; detach it
-            /// under the lock and write it outside, like a producer-local table. The
-            /// reservation waits if it must: skipping here would let later tails grow the
+            /// An explicit request must reclaim the tail, not just move it to another resident table.
+            /// Otherwise, detach when accumulated residue reaches the part floor. Write outside
+            /// the lock, like a producer-local table. The reservation waits if it must:
+            /// skipping here would let later tails grow the
             /// shared table without bound, and waiting while holding the coordinator lock is
             /// safe because writers release their reservations through `detached_spill_mutex`
             /// alone. Only cancellation declines.
             AggregatedDataVariantsPtr detached_shared;
             AdaptiveAggregationSession::SpillReservation reservation;
             const size_t residue_bytes = sharedDrainTableBytes(shared);
-            if ((shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys || residue_bytes >= part_bytes)
+            if ((!only_over_trigger || shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys || residue_bytes >= part_bytes)
                 && reservation.reserveOrWait(shared, residue_bytes, adaptivePressureDetachedBytesBudget()))
             {
                 detached_shared = detachSharedDrainTable(shared, createAdaptiveDrainTable(shared.early_drain_variants->type));
@@ -2073,6 +2144,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
     {
         for (auto & chunk : batch)
             shared.backlog.requeue(chunk);
+        drained_bytes_out = 0;
         return false;
     }
 
@@ -2118,9 +2190,9 @@ std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregation
 
     std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
 
-    /// Read under the coordinator lock: the sweeps replace this pointer while holding it. They
-    /// detach only at the part bound, so a residue below it is never written by them and stays
-    /// resident until the merge.
+    /// Read under the coordinator lock: the sweeps replace this pointer while holding it.
+    /// Threshold-driven sweeps detach only at the part bound, so their residue can stay resident
+    /// until the merge unless a baseline producer or an explicit spill request releases it.
     while (shared.early_drain_variants->hasData())
     {
         /// Declared before the table so that reverse-order destruction frees the table first:
