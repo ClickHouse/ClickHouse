@@ -70,6 +70,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
     extern const Event DistributedConnectionConnectCount;
+    extern const Event NativeProtocolDataReceiveBytes;
 }
 
 namespace DB
@@ -1557,12 +1558,14 @@ Packet Connection::receivePacket()
         ensureConnected();
 
         Packet res;
+        size_t packet_start = in->count();
 
         /// Have we already read packet type?
         if (last_input_packet_type)
         {
             res.type = *last_input_packet_type;
             last_input_packet_type.reset();
+            packet_start -= getLengthOfVarUInt(res.type);
         }
         else
         {
@@ -1575,6 +1578,11 @@ Packet Connection::receivePacket()
             case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
+                /// Only a block with rows is query data for the client's IO meter, not the other packets of the server.
+                /// A chunked packet also has a 4-byte size before it and a 4-byte end marker after it.
+                if (res.block.rows() > 0)
+                    ProfileEvents::increment(ProfileEvents::NativeProtocolDataReceiveBytes,
+                        in->count() - packet_start + (proto_recv_chunked == "chunked" ? 8 : 0));
                 return res;
 
             case Protocol::Server::Exception:

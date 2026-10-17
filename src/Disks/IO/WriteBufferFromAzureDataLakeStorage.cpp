@@ -19,6 +19,7 @@
 namespace ProfileEvents
 {
     extern const Event AzureUpload;
+    extern const Event WriteBufferFromAzureBytes;
 }
 
 namespace DB
@@ -240,6 +241,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
     const int64_t offset_for_append = bytes_appended;
 
     ProfileEvents::increment(ProfileEvents::AzureUpload);
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, to_append);
 
     LOG_TRACE(log, "Entering Append for `{}`: offset={}, len={}", blob_path, offset_for_append, to_append);
     runWithRetries(
