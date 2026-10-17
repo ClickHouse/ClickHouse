@@ -49,6 +49,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
+    SkippingIndexCachePtr skipping_index_cache_,
     MergeTreeReaderSettings reader_settings_,
     DynamicPredicateBuilder dynamic_predicate_builder_,
     bool prune_primary_key_,
@@ -62,6 +63,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
+    , skipping_index_cache(std::move(skipping_index_cache_))
     , reader_settings(std::move(reader_settings_))
     , dynamic_predicate_builder(std::move(dynamic_predicate_builder_))
     , prune_primary_key(prune_primary_key_)
@@ -127,6 +129,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
+            skipping_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
             log);
@@ -213,6 +216,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     vector_similarity_index_cache.get(),
+                    skipping_index_cache.get(),
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
                     log);
@@ -258,7 +262,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             reader_settings,
             mark_cache.get(),
             uncompressed_cache.get(),
-            vector_similarity_index_cache.get());
+            vector_similarity_index_cache.get(),
+            skipping_index_cache.get());
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
     }
