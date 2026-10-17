@@ -79,6 +79,11 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Whether the exception being handled reports a commit whose metadata file may still be published.
+/// The caller must not clean up the files that metadata references then, or a reader that still sees it
+/// would find a corrupted snapshot.
+bool isUnknownCommitStatus();
+
 /// A freshly created `version-hint.text` is only useful if later commits can advance it under a
 /// compare-and-swap on its `ETag`, and that header is optional. Reads the tag back through the same
 /// read path later commits use and, when the object storage reports none, removes the hint together
@@ -91,8 +96,9 @@ bool writeMetadataFileAndVersionHint(
 /// (a commit that has already published its snapshot), a failed read or a failed removal of the hint
 /// returns normally: the snapshot stays published, and an error would make the caller clean up the
 /// files it references. A removal that throws counts as done only if the object is then known to be
-/// absent. If the hint is gone but a file may remain, the hint is restored and the function returns
-/// normally, so the publication is retained as a whole.
+/// absent. If the hint is gone but a file is known to remain, the hint is restored and the function
+/// returns normally, so the publication is retained as a whole. If the hint is gone and whether a file
+/// remains is unknown, throws `UNKNOWN_STATUS_OF_INSERT` (see `isUnknownCommitStatus`).
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,

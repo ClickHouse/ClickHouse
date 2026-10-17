@@ -31,6 +31,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int READONLY;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace
@@ -240,6 +241,9 @@ public:
     RemovalFailure hint_removal_failure = RemovalFailure::None;
     /// How every removal of the metadata file fails.
     RemovalFailure metadata_removal_failure = RemovalFailure::None;
+    /// Every existence check of the metadata file after an attempt to remove it fails, as a transient
+    /// network error would.
+    bool metadata_exists_fails_after_removal = false;
     /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
     /// this content before the commit reads it back.
     std::optional<std::string> advanced_by_another_writer_to;
@@ -287,6 +291,8 @@ public:
     {
         if (object.remote_path.ends_with(version_hint_name))
             return hint_present;
+        if (metadata_exists_fails_after_removal && metadata_removal_attempted)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot check {}", object.remote_path);
         return object.remote_path.ends_with(metadata_file_name) && metadata_present;
     }
 
@@ -344,6 +350,8 @@ public:
     {
         const bool is_hint = object.remote_path.ends_with(version_hint_name);
         const auto failure = is_hint ? hint_removal_failure : metadata_removal_failure;
+        if (!is_hint)
+            metadata_removal_attempted = true;
         if (failure == RemovalFailure::BeforeApplying)
             throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot remove {}", object.remote_path);
 
@@ -378,6 +386,7 @@ private:
     Race race;
     bool hint_present;
     bool metadata_present = false;
+    bool metadata_removal_attempted = false;
     std::string hint_content = "1";
 };
 
@@ -495,6 +504,49 @@ TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitTakesTheMetadataFile
     const auto & removed = commit.removed();
     ASSERT_EQ(removed.size(), 1u);
     EXPECT_EQ(removed[0], writes[0].path);
+}
+
+TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitKeepsAMetadataFileItCannotTakeBack)
+{
+    /// The same, but removing the published metadata file fails before it takes effect. The snapshot
+    /// stays visible to listing-based readers, so the commit must not fail in the ordinary way, which
+    /// would make its caller clean up the files that snapshot references: the status is reported as
+    /// unknown instead.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
+    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to report an unknown status, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
+        EXPECT_TRUE(Iceberg::isUnknownCommitStatus());
+    }
+
+    EXPECT_TRUE(commit.removed().empty());
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitWithAnUnconfirmedTakeBackReportsAnUnknownStatus)
+{
+    /// The removal of the metadata file takes effect, but its response and the existence check after
+    /// it are both lost. Whether the snapshot is published is unknown.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
+    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
+    commit.object_storage->metadata_exists_fails_after_removal = true;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to report an unknown status, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
+    }
 }
 
 TEST(IcebergCommitPropagation, HintCreatedAfterThePreCheckIsStillAdvancedByAWriterThatDoesNotCreateHints)
@@ -690,6 +742,31 @@ TEST(IcebergCommitPropagation, CreatedVersionHintWhoseMetadataFileRemovalLostIts
     EXPECT_EQ(commit.writes().size(), 2u);
     EXPECT_FALSE(commit.object_storage->hintPresent());
     EXPECT_FALSE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWhoseMetadataFileRemovalCannotBeConfirmedReportsAnUnknownStatus)
+{
+    /// The removal of the metadata file takes effect, but its response is lost, and so is the
+    /// existence check after it. The hint is gone, and whether the snapshot is still there is
+    /// unknown: success could acknowledge a snapshot that no longer exists, an ordinary failure would
+    /// make the caller clean up the files a still published snapshot references, and a restored hint
+    /// could point at nothing. The status is reported as unknown, and the hint is not restored.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
+    commit.object_storage->metadata_exists_fails_after_removal = true;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to report an unknown status, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
+    }
+
+    EXPECT_EQ(commit.writes().size(), 2u);
+    EXPECT_FALSE(commit.object_storage->hintPresent());
 }
 
 TEST(IcebergCommitPropagation, CreatedVersionHintOfCreateThatCannotBeRemovedKeepsItsMetadataFile)

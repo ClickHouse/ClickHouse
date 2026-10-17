@@ -86,6 +86,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -434,6 +435,61 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
+namespace
+{
+
+enum class RemovalOutcome
+{
+    /// The object is known to be gone.
+    Removed,
+    /// The removal failed and the object is known to be still there.
+    Kept,
+    /// The removal failed and whether it took effect is unknown.
+    Unknown,
+};
+
+/// A removal that throws may still have taken effect before its response was lost, so it is
+/// followed by an existence check, and only an object known to be absent counts as removed.
+RemovalOutcome removeObjectAndReconcile(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+{
+    try
+    {
+        object_storage->removeObjectIfExists(StoredObject(path));
+        return RemovalOutcome::Removed;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    try
+    {
+        return object_storage->exists(StoredObject(path)) ? RemovalOutcome::Kept : RemovalOutcome::Removed;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return RemovalOutcome::Unknown;
+    }
+}
+
+}
+
+bool isUnknownCommitStatus()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_INSERT;
+}
+
+[[noreturn]] static void throwUnknownCommitStatus(const std::string & storage_metadata_path, const std::string & reason)
+{
+    throw Exception(
+        ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+        "Unknown status of the commit of {}: {}. The metadata file may still be published, so the files it "
+        "references are kept",
+        storage_metadata_path,
+        reason);
+}
+
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
@@ -444,43 +500,35 @@ void takeBackVersionHintWithoutETag(
 {
     /// Remove the hint first and the files it references only after that. If the hint cannot be
     /// removed it may still point at the metadata file, so the files must stay: removing them would
-    /// leave a published hint that resolves to nothing. A removal that throws may still have taken
-    /// effect before its response was lost, so a failed removal is followed by an existence check,
-    /// and only a file known to be absent counts as taken back.
+    /// leave a published hint that resolves to nothing. Only a file known to be absent counts as
+    /// taken back (see `removeObjectAndReconcile`).
     enum class TakeBack
     {
         /// The hint and all the files are known to be gone.
         Done,
         /// The hint may still be there; the files were not touched.
         HintKept,
-        /// The hint is gone, but some of the files may still be there.
+        /// The hint is gone, and some of the files are known to be still there.
         Incomplete,
-    };
-
-    auto remove = [&](const std::string & path)
-    {
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(path));
-            return true;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        return isKnownAbsent(object_storage, path);
+        /// The hint is gone, and whether some of the files are still there is unknown.
+        Unknown,
     };
 
     auto take_back = [&]
     {
-        if (!remove(storage_version_hint_path))
+        if (removeObjectAndReconcile(object_storage, storage_version_hint_path) != RemovalOutcome::Removed)
             return TakeBack::HintKept;
 
-        bool all_removed = true;
+        auto result = TakeBack::Done;
         for (const auto & path : files_to_take_back)
-            if (!remove(path))
-                all_removed = false;
-        return all_removed ? TakeBack::Done : TakeBack::Incomplete;
+        {
+            const auto removal = removeObjectAndReconcile(object_storage, path);
+            if (removal == RemovalOutcome::Unknown)
+                result = TakeBack::Unknown;
+            else if (removal == RemovalOutcome::Kept && result == TakeBack::Done)
+                result = TakeBack::Incomplete;
+        }
+        return result;
     };
 
     /// A commit has already published its snapshot by the time it gets here: the metadata file and
@@ -546,9 +594,21 @@ void takeBackVersionHintWithoutETag(
         return;
     }
 
+    if (outcome == TakeBack::Unknown && !no_concurrent_writer)
+    {
+        /// The hint is gone, and the metadata file it pointed at may or may not be there. Neither
+        /// success (the snapshot may not exist) nor an ordinary failure (the caller would clean up the
+        /// files a still published metadata file references) is right. Restoring the hint is not right
+        /// either: it could point at nothing. Report the status as unknown, so the caller keeps the
+        /// referenced files.
+        throwUnknownCommitStatus(
+            files_to_take_back.empty() ? storage_version_hint_path : files_to_take_back.front(),
+            "taking back a version hint without an ETag removed the hint, but whether the files it pointed at are gone is unknown");
+    }
+
     if (outcome == TakeBack::Incomplete && !no_concurrent_writer)
     {
-        /// The hint is gone, but the metadata file it pointed at may still be there. Reporting the
+        /// The hint is gone, but the metadata file it pointed at is still there. Reporting the
         /// commit as successful in this state would leave readers with `iceberg_use_version_hint = 1`
         /// unable to open the table, and reporting it as failed would make the caller clean up the
         /// files that metadata references while listing-based readers can still see it. Put the
@@ -686,15 +746,14 @@ bool tryWriteVersionHintFile(
             /// so there the hint was created concurrently after that check. The new metadata file
             /// is already published, and this commit is about to fail, so take it back first -
             /// otherwise listing-based readers would observe a snapshot that no command ever
-            /// committed.
-            try
-            {
-                object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            /// committed. If the metadata file may remain, the snapshot may still be visible to them,
+            /// and an ordinary failure would make the caller clean up the files it references: report
+            /// the status as unknown instead, so the caller keeps them.
+            if (removeObjectAndReconcile(object_storage, storage_metadata_path) != RemovalOutcome::Removed)
+                throwUnknownCommitStatus(
+                    storage_metadata_path,
+                    fmt::format("{} was created without an ETag during the commit, and the metadata file could not be taken back",
+                        storage_version_hint_path));
             throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
         }
 
