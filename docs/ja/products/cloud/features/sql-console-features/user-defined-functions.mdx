@@ -2,9 +2,9 @@
 sidebarTitle: 'ユーザー定義関数'
 slug: /cloud/features/user-defined-functions
 title: 'Cloud のユーザー定義関数'
-description: 'Cloud で独自の実行可能 Python 関数を追加する'
+description: 'ClickHouse Cloud に、Python またはコンパイル済みバイナリで独自の実行可能関数を追加する'
 doc_type: 'guide'
-keywords: ['user defined function', 'UDF']
+keywords: ['user defined function', 'UDF', 'executable UDF', 'Python UDF', 'Native runtime']
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
@@ -13,14 +13,14 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Cloud では、ユーザー定義関数を作成および管理する方法がいくつかあります。
 
-1. SQL を使用する
-2. UI と独自のコードを使用する (公開ベータ)
+1. [SQL](#sql-udfs) を使用する
+2. [コンソールと独自のコード](#ui-udfs) を使用する
 3. [Cloud API](#manage-udfs-with-the-cloud-api) を使用する (ベータ)
 4. [Terraform](#manage-udfs-with-terraform) を使用する (ベータ)
 
-<div id="sql-udfs">
-  ## SQL ユーザー定義関数
-</div>
+実行可能 UDF は AWS、GCP、Azure で利用できます。すべての組織であらかじめ有効になっているため、有効化の操作は必要ありません。また、別途課金されることもありません。UDF プロセスはサービスのポッド内で実行され、そのサービス自体の CPU とメモリを消費します。
+
+## SQL ユーザー定義関数 {#sql-udfs}
 
 SQL UDF は、ラムダ式を使って [`CREATE FUNCTION`](/ja/reference/statements/create/function) ステートメントで作成できます。
 
@@ -66,20 +66,16 @@ DROP FUNCTION isBusinessHours
 * ユーザープロファイルの設定は UDFs に継承されません
 * クエリレベルの設定は UDF の実行中には適用されません
 
-<div id="ui-udfs">
-  ## UI で作成するユーザー定義関数
-</div>
+## 実行可能ユーザー定義関数 {#ui-udfs}
 
-<BetaBadge />
-
-ClickHouse Cloud では、UI からユーザー定義関数を作成できます。
+実行可能 UDF は、サービスの各レプリカと並行して動作するサンドボックス化されたプロセス内でコードを実行します。`python3.11` ランタイム上で動作する Python スクリプト、または [Native ランタイム](#native-runtime) 上で動作するプリコンパイル済みのバイナリをアップロードできます。
 
 この例では、特定の `timestamp` が通常の営業時間内かどうかを判定する、前回と同じシンプルな実行可能ユーザー定義関数 `isBusinessHours` を作成します。
-前回は SQL を使って作成しましたが、今回は Python で実装し、UI から設定します。
+前回は SQL を使って作成しましたが、今回は Python で実装し、コンソールから設定します。
 
 <Steps>
-  <Step title="Python ファイルを作成する" id="create-python-file">
-    ローカルで新しいファイル `main.py` を作成します。
+  <Step title="Pythonファイルを作成する" id="create-python-file">
+    ローカルに新しいファイル `main.py` を作成します:
 
     ```python
     cat > main.py << 'EOF'
@@ -94,7 +90,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     EOF
     ```
 
-    Python スクリプトでサードパーティ製パッケージをインポートする場合は、それらを `requirements.txt` ファイルに記載すれば、ClickHouse Cloud がインストールしてくれます。代わりに依存関係を ZIP に直接含めることもできますが、その場合は両方の CPU アーキテクチャ向けにキャッシュ済みのパッケージを含める必要があるため、`requirements.txt` を使うほうが簡単です。たとえば、次のようになります。
+    Python のランタイムは `python3.11` です。Python スクリプトでサードパーティ製パッケージをインポートする場合は、それらを `requirements.txt` ファイルに記載してください。ClickHouse Cloud が稼働する 2 つの CPU アーキテクチャ (x86-64 と ARM64) の両方に対して、ClickHouse Cloud がパッケージを自動でインストールします。依存関係を ZIP に直接同梱することもできますが、その場合は両方の CPU アーキテクチャ向けにキャッシュ済みパッケージを含める必要があります。そのため、`requirements.txt` を使う方が簡単です。例:
 
     ```text
     requests>=2.28.0
@@ -102,19 +98,25 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     ```
 
     <Note>
-      ClickHouse Cloud では、次の手順で UI からアップロードする zip ファイル内に `main.py` が含まれていることを想定しています。
-      別のファイル名にすると、エラーが発生します。
+      ClickHouse Cloud は、次の手順でコンソールからアップロードする zip ファイル内に `main.py` が含まれていることを前提としています。
+      ファイル名を別の名前にすると、エラーが発生します。
     </Note>
   </Step>
 
-  <Step title="依存関係パッケージとローカルファイルをまとめる" id="bundle-dependencies">
-    依存関係パッケージや追加のローカルファイル (wheel ファイル、設定ファイル、データファイルなど) を含めるには、`main.py` と `requirements.txt` と同じディレクトリに配置します。ZIP アーカイブを作成する際は、すべてのファイルを含めてください。
+  <Step title="依存関係とローカルファイルをまとめる" id="bundle-dependencies">
+    このチュートリアルでは依存関係や追加ファイルがないため、アーカイブには `main.py` だけを含めれば十分です:
 
     ```bash
-    zip is_business_hours.zip main.py requirements.txt
+    zip is_business_hours.zip main.py
     ```
 
-    Python コードでは、`os.path.dirname(os.path.abspath(__file__))` を使って、ローカルにバンドルされた path のベース directory を参照できます。これにより、ZIP アーカイブ内で `main.py` が配置されている directory の絶対 path が返され、バンドルされたほかのファイルにアクセスできるようになります。
+    依存パッケージや追加のローカルファイル (`requirements.txt`、wheel ファイル、設定ファイル、データファイルなど) を含める場合は、それらを `main.py` と同じディレクトリに配置したうえで、そのディレクトリ内で `zip` を実行し、`main.py` がアーカイブのルートに配置されるようにします。
+
+    ```bash
+    zip -r ../is_business_hours.zip .
+    ```
+
+    Python コード内では、`os.path.dirname(os.path.abspath(__file__))` を使用して、ローカルにバンドルされたパスのベースディレクトリを参照できます。これは ZIP アーカイブ内で `main.py` が置かれているディレクトリの絶対パスを返すため、同梱されている他のバンドルファイルにもアクセスできます：
 
     ```python
     import os
@@ -126,77 +128,243 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
 
     これは、次のような場合に便利です:
 
-    * UDF に含まれている構成ファイルにアクセスする
-    * カスタム依存関係の wheel パッケージを読み込む
+    * UDF に同梱した設定ファイルにアクセスする
+    * カスタム依存関係用の wheel パッケージを読み込む
     * 追加のスクリプトやデータファイルを参照する
-
-    次に、ファイルを ZIP アーカイブに圧縮します:
-
-    ```bash
-    zip is_business_hours.zip main.py
-    ```
 
     <Warning>
       **シンボリックリンクは使用できません**
 
-      ClickHouse Cloud では、シンボリックリンクを含む UDF アーカイブは受け付けられません。ZIP バンドルには通常のファイルとディレクトリだけを含めてください。シンボリックリンクを含むアップロードは検証に通りません。
+      ClickHouse Cloud では、シンボリックリンクを含む UDF アーカイブは受け付けられません。ZIP バンドルには通常のファイルとディレクトリのみを含めてください。シンボリックリンクを含むアップロードは検証に失敗します。
     </Warning>
   </Step>
 
-  <Step title="UI で UDF を作成する" id="create-udf-via-ui">
-    1. Cloud コンソールのホームページで、左下のメニューにある組織名をクリックします。
-    2. メニューから **ユーザー定義関数** を選択します。
-    3. ユーザー定義関数ページで **UDF を設定** をクリックします。画面右側に設定パネルが開きます。
+  <Step title="コンソールで UDF を作成する" id="create-udf-via-ui">
+    1. Cloud console のホームページで、左下のメニューにある組織名をクリックします。
+    2. メニューから **User-defined functions** を選択します。
+    3. ユーザー定義関数のページで **Set up a UDF** をクリックします。画面右側に設定パネルが開きます。
     4. 関数名を入力します。この例では `isBusinessHours` を使用します。
-    5. 関数タイプとして **Executable pool** または **Executable** を選択します。
-       * **Executable pool**: 永続的なプロセスのプールが維持され、読み取り時にはそのプールからプロセスが割り当てられます。
-       * **Executable**: スクリプトはクエリごとに実行されます。
-    6. この例では、デフォルト設定を使用します。設定パラメーターの一覧については、[Executable user-defined functions](/ja/reference/functions/regular-functions/udf#executable-user-defined-functions) を参照してください。
-    7. **ファイルを参照** をクリックして、このチュートリアルの冒頭で作成した `.zip` ファイルをアップロードします。
-    8. 新しい引数を追加します。この例では、型 `DateTime` の引数 `timestamp` を追加します。
-    9. 戻り値の型を選択します。この例では `Bool` を選択します。
-    10. **UDF を作成** をクリックします。現在のビルドステータスを示すダイアログが表示されます。
+    5. 関数の種別として、**Executable pool** または **Executable** のいずれかを選択します。
+       * **Executable pool**: 長時間稼働するプロセスのプールを一度だけ起動し、ブロックやクエリをまたいで再利用します。ほぼすべてのワークロードでこちらを推奨します。
+       * **Executable**: 処理するデータブロックごとに新しいプロセスを起動します。呼び出し間でプロセスに状態を保持させてはならない場合にのみ使用してください。
+    6. **Runtime type** を選択します。この例では `python3.11` のままにします。プリコンパイル済みのバイナリをアップロードする場合は、代わりに **Native** を選択します。詳細は [Native runtime](#native-runtime) を参照してください。
+    7. この例では、デフォルトの設定を使用します。設定パラメーターの完全な一覧と Cloud でのデフォルト値については、[設定リファレンス](#configuration-reference) を参照してください。
+    8. **Browse File** をクリックし、このチュートリアルの冒頭で作成した `.zip` ファイルをアップロードします。
+    9. 新しい引数を追加します。この例では、型が `DateTime` の引数 `timestamp` を追加します。
+    10. 戻り値の型を選択します。この例では `Bool` を選択します。
+    11. **Create UDF** をクリックします。現在のビルドステータスを示すダイアログが表示されます。
         * 問題がある場合、ステータスは **error** に変わります。
-        * 問題がなければ、ステータスは **building** から **provisioning** に進みます。プロビジョニングを完了するには、サービスが稼働中である必要があります。サービスがアイドル状態の場合は、サービス名の横にある **UDF details** パネルで **Wake Up Service** をクリックします。
+        * 問題がなければ、ステータスは **building** から **provisioning** へと進みます。プロビジョニングを完了するには、サービスが起動している必要があります。サービスがアイドル状態の場合は、**UDF details** パネルでサービス名の横にある **Wake Up Service** をクリックしてください。
         * 完了すると、ステータスは **deployed** に変わります。
   </Step>
 
-  <Step title="UDFをテストする" id="test-your-udf">
-    1. ページ左上の **Settings - return to your service view** をクリックして、**SQL Console** のホーム画面に戻ります
+  <Step title="UDF をテストする" id="test-your-udf">
+    1. ページ左上の **Settings - return to your service view** をクリックして、SQL Console のホームページに戻ります
     2. 左側のメニューで **SQL Console** をクリックします
-    3. 次のクエリを入力します:
+    3. 次のクエリを入力します。
 
     ```sql
     SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
     ```
 
-    以下の結果が表示されるはずです。
+    次のような結果が表示されます。
 
     ```response
     true    false
     ```
   </Step>
 
-  <Step title="新しいバージョンを作成する" id="create-new-version">
-    UDF のコードを変更するには、新しいバージョンを作成します。**Edit** パネルで管理できるのは、UDF をどのサービスに割り当てるかだけです。そこでファイルをアップロードしても、デプロイ済みのコードは置き換えられません。
+  <Step title="新しいバージョンを作成" id="create-new-version">
+    UDF のコードや設定を変更するには、新しいバージョンを作成します。バージョンはイミュータブル (変更不可) です。**Edit** パネルで管理できるのは UDF をどのサービスに割り当てるかのみです。そこでファイルをアップロードしても、デプロイ済みのコードは置き換えられません。
 
-    1. Cloud Console のホーム画面で、左下のメニューにある組織名をクリックします。
+    1. Cloud console のホームページで、左下のメニューにある組織名をクリックします。
     2. メニューから **User-defined functions** を選択します。
-    3. `isBusinessHours` UDF の **Actions** にある 3 点メニューを選択し、**Create new version** をクリックします
-    4. 変更したコードを含む zip をアップロードするか、設定を変更してから **Create new version** をクリックします
+    3. `isBusinessHours` UDF の **Actions** の下にある三点メニューを選択し、**Create new version** をクリックします。
+    4. 変更したコードを含む zip をアップロードするか設定を変更し、新しいバージョンを適用するサービスを選択してから、**Create new version** をクリックします。
 
-    これで、UI から最初のユーザー定義関数を追加し、それが実行されることを確認し、必要に応じて新しいバージョンを作成する方法も確認できました。
+    新しいバージョンには、以前のバージョンのサービスへの割り当ては引き継がれません。新しいバージョンのパネルにはサービスセレクターがあるため、特定のサービスでバージョンをテストし、サービスごとにロールフォワードやロールバックを行えます。1 つのサービスに同時に割り当てられる関数のバージョンは 1 つだけです。
+
+    `executable_pool` UDF の場合、長時間稼働する pool プロセスは、pool がリロードされるまで以前のバージョンを実行し続けます。UDF パネルでサービスの横にある **Reload UDF** アクションを使用してください。このアクションは、そのサービス上で `SYSTEM RELOAD FUNCTION ON CLUSTER default isBusinessHours` を実行します。
+
+    これで、コンソールから最初のユーザー定義関数を追加して動作を確認し、必要に応じて新しいバージョンを作成する方法も確認できました。
   </Step>
 </Steps>
 
-<div id="manage-udfs-with-the-cloud-api">
-  ## Cloud API を使用して UDF を管理する
-</div>
+### Native ランタイム (コンパイル済みバイナリ) {#native-runtime}
+
+Native ランタイムを使用すると、Python スクリプトの代わりにプリコンパイル済みのバイナリをアップロードできます。UDF の作成時に **ランタイム種別** を **Native** に設定してください (API では `runtime: native`) 。サンドボックスには何もインストールされないため、バイナリが必要とするものはすべて事前にコンパイルして組み込んでおく必要があります。
+
+現在サポートされているのは、Rust、Go、C++、および Bun でバイナリにコンパイルした JavaScript です。Bun はバージョン 1.4.0 および 1.4.2 で動作確認済みであり、それ以外のバージョンでは動作しない可能性があります。
+
+アーカイブには、CPU アーキテクチャごとに実行可能ファイルを 1 つずつ、それぞれ個別のフォルダに格納する必要があります。
+
+```text
+my-udf.zip
+├── amd64/
+│   ├── main            # linux/amd64 executable
+│   └── my_data.json    # optional data files
+└── arm64/
+    ├── main            # linux/arm64 executable
+    └── my_data.json
+```
+
+ClickHouse Cloud サービスは両方のアーキテクチャ上で稼働するため、両方のアーキテクチャ向けのバイナリが必要です。実行可能ファイルの名前は正確に `main` とする必要があり、引数なしで実行されます。モードやサブコマンドを指定したい場合は、通常の関数引数として渡してください。
+
+静的リンクされたバイナリの使用を強く推奨します。静的リンクされたバイナリはホストのシステムライブラリに依存しないためです (システムライブラリが発行するシステムコールはサーバーのバージョンによって異なる場合があります) 。また、サンドボックスのシステムコールポリシーも静的リンクされたバイナリを前提に調整されています。動的リンクされたバイナリは、glibc のみにリンクし、かつ glibc 2.35 以前でビルドされている場合に限り動作します。Bun でコンパイルされた JavaScript は常に動的リンクになります。
+
+<Warning>
+  **データファイルは実行可能ファイルを基準に解決する**
+
+  アーキテクチャフォルダ内のファイルはバイナリと同じ場所にデプロイされますが、プロセスはそのディレクトリで起動されるわけではありません。これらのファイルは作業ディレクトリではなく、必ず実行可能ファイル自身のパスを基準に解決してください。Go では `filepath.Dir(os.Args[0])` または `os.Executable()` を、Rust では `std::env::current_exe()` を使用します。必要なファイルが見つからない場合は、暗黙のうちに代替動作へ切り替えるのではなく、stderr にメッセージを出力し、0 以外の終了コードで終了してください。
+</Warning>
+
+Native UDF ではネットワークアクセスを有効にできません。アウトバウンドのネットワークアクセスを利用できるのは Python ランタイムのみです。[ネットワークアクセス](#network-access)を参照してください。
+
+両方のアーキテクチャ向けにバイナリをビルドします。Rust の場合は、まず両方のターゲットを一度だけ追加し、それぞれビルドします。
+
+```bash
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release --target aarch64-unknown-linux-musl
+```
+
+Go の場合:
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o amd64/main .
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o arm64/main .
+```
+
+フォルダを zip 圧縮する前に、各出力を `amd64/main` と `arm64/main` にコピーしてください。
+
+wire protocol は Python ランタイムと同じです。プロセスは stdin から引数を読み取り、設定されたフォーマットで結果を stdout に書き込みます。詳しくは [フォーマットと chunk ヘッダー](#formats-and-chunk-headers) を参照してください。[`llm-token-udf`](https://github.com/ClickHouse/llm-token-udf) リポジトリには、Rust および Go で実装された Native UDF とビルドスクリプトが含まれています。
+
+### 設定リファレンス {#configuration-reference}
+
+以下の設定は、コンソールおよび API で指定できます。デフォルト値は ClickHouse Cloud のものであり、一部はオープンソース版のデフォルトと異なります。
+
+| 設定                    | 適用対象              | デフォルト          | 備考                                                                                                                                                                                                                |
+| --------------------- | ----------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 種別                    | 両方                | -              | `executable_pool` または `executable`                                                                                                                                                                                |
+| ランタイム種別               | 両方                | -              | `python3.11` または `Native`                                                                                                                                                                                         |
+| フォーマット                | 両方                | `TabSeparated` | 任意の ClickHouse [入出力フォーマット](/ja/reference/formats/index)。`Native` および `JSONEachRow` フォーマットでは、引数名と戻り値名もシリアライズされます。                                                                                                     |
+| 戻り値名                  | 両方                | 未設定            | 戻り値の名前です (API では `returnName`、Terraform では `return_name`) 。`Native` および `JSONEachRow` フォーマットでは、プロセスは結果カラムにこの名前を付ける必要があります。未設定の場合は、オープンソース版のデフォルトである `result` が適用されます。                                               |
+| プールサイズ                | `executable_pool` | 3              | レプリカごとの常駐プロセス数です。`executable` には該当しません。                                                                                                                                                                           |
+| 最大コマンド実行時間 (秒)        | `executable_pool` | 10             | 1 つのデータBlockの処理に許容される最大時間です。`executable` でも指定できますが、効果はありません。                                                                                                                                                       |
+| コマンド読み取りタイムアウト (ミリ秒)  | 両方                | 10000          | コマンドの stdout からの読み取りタイムアウトです。                                                                                                                                                                                     |
+| コマンド書き込みタイムアウト (ミリ秒)  | 両方                | 10000          | コマンドの stdin への書き込みタイムアウトです。                                                                                                                                                                                       |
+| Send chunk header         | 両方                | false          | 各 chunk の前に行数を送信します。[フォーマットと chunk ヘッダー](#formats-and-chunk-headers)を参照してください。                                                                                                                                    |
+| 決定論的                  | 両方                | false          | この関数を呼び出すクエリの結果をクエリキャッシュに保存できるようにします。[決定論的関数とクエリキャッシュ](#deterministic-functions-and-the-query-cache)を参照してください。                                                                                                    |
+| メモリ制限 (MiB)           | 両方                | サンドボックスのデフォルト  | サンドボックスプロセスあたりの最大メモリです。[メモリ制限](#memory-limit)を参照してください。                                                                                                                                                           |
+| ネットワークアクセス            | Python ランタイム      | コンソールでは有効      | パブリックエンドポイントへのアウトバウンド接続です。コンソールで作成した Python UDF は、常にこれが有効な状態でビルドされます。API および Terraform では、`sandboxType` で `netenable` または `basic` を選択します。Native UDF ではネットワークアクセスを有効にできません。[ネットワークアクセス](#network-access)を参照してください。 |
+
+以下のオープンソース版の設定は ClickHouse Cloud 側で管理されており、UDF ごとに変更することはできません：`command_termination_timeout`、`lifetime`、`stderr_reaction`、`check_exit_code`、`execute_direct`。`pool_size` のデフォルトは、オープンソース版では 16 ですが、Cloud では 3 です。オープンソース版の設定の完全な一覧については、[実行可能ユーザー定義関数](/ja/reference/functions/regular-functions/udf#executable-user-defined-functions)を参照してください。
+
+関数名は `^[A-Za-z][A-Za-z0-9_]*$` に一致し、組織内で一意である必要があります。また、ClickHouse の組み込み関数と同じ名前は使用できず、予約名は API によって拒否されます。すべての引数には同じパターンに従う名前を付ける必要があり、API および Terraform ではフォーマットを問わずこれが必須です。シンボリックリンクを含むアーカイブは拒否されます。
+
+### フォーマットと chunk ヘッダー {#formats-and-chunk-headers}
+
+[`TabSeparated`](/ja/reference/formats/TabSeparated/TabSeparated) はデフォルトのフォーマットであり、最も単純なフォーマットでもあります。双方でタブ、改行、バックスラッシュをエスケープする必要があります。[`RowBinary`](/ja/reference/formats/RowBinary/RowBinary) はバイナリセーフで、ClickHouse 側でのテキストのフォーマットやパースが不要になります。大きな文字列を扱う場合はこちらを推奨します。
+
+**Send chunk header** を有効にすると、ClickHouse は各 chunk の前に行数を 10 進数のテキストで書き込み、その後に `\n` を続け、さらに設定されたフォーマットで行を書き込みます。プロセスはちょうどその行数だけ読み取り、同じ数の結果を書き込んで、1 回だけ flush する必要があります。このヘッダーがない場合、`TabSeparated`、`RowBinary`、`JSONEachRow` などの行指向フォーマットを読み取り、出力をバッファリングするプロセスには、Blockの終わりを判断する手段がありません。その結果、クエリは読み取りタイムアウトに達するまでハングします。行ごとに flush しない UDF では、必ずこの設定を有効にしてください。`Native` フォーマットはBlock境界の情報をもともと含んでいるため、`Native` を使用する UDF はヘッダーなしでも、1 つのBlockを読み取り、1 つのBlockを書き込んで flush できます。
+
+### ネットワークアクセス {#network-access}
+
+ネットワークアクセスは Python ランタイムでのみ利用できます。Native UDF ではネットワークアクセスを有効にできません。コンソールで作成した Python UDF はネットワークアクセスが有効な状態でビルドされ、コンソール上にこれを切り替える設定はありません。API では、`sandboxType` で、アウトバウンド接続を許可する `netenable` と許可しない `basic` のいずれかを選択します。Terraform プロバイダーでは、同じ選択肢が `sandbox_type` として提供されています。
+
+ネットワークアクセスを有効にすると、パブリックインターネット上のエンドポイントへのアウトバウンド接続が許可されます。プライベートネットワーク、リンクローカルアドレス、内部アドレスへの接続はブロックされます。サンドボックスにはクラウドのアイデンティティがありません。インスタンスロールもメタデータエンドポイントもなく、環境変数も継承されないため、UDF が使用できるのはユーザーが明示的に渡した認証情報のみです。ネットワークアクセスは UDF のバージョンをビルドする時点で適用されます。そのため、ネットワークアクセスなしで作成した既存のバージョンで利用するには、新しいバージョンを作成する必要があります。
+
+現時点では、UDF 用のシークレットストアはありません。設定ファイルを zip にバンドルし、`__file__` からの相対パスで読み込んでください。キーは決して SQL に記述しないでください。
+
+### メモリ制限 {#memory-limit}
+
+**メモリ制限**は、各サンドボックスプロセスが使用できるメモリの上限を MiB 単位で設定します。未設定の場合は、サンドボックスのデフォルト値である 4 GiB が適用されます。
+
+この制限は常駐メモリではなく仮想アドレス空間に対して適用されます。そのため、大きなアドレス範囲を予約するランタイムでは、実際の使用量を大きく上回るヘッドルームを確保する必要があります。たとえば Go は、起動時に 1 GiB を大きく超えるアドレス空間を予約します。プロセスが制限を超えると、プロセス内でメモリの割り当てが失敗します。Python UDF の場合は `MemoryError` のトレースバックを出力して終了し、クエリはその stderr の内容をエラーメッセージに含めて失敗します。
+
+### 決定論的関数とクエリキャッシュ {#deterministic-functions-and-the-query-cache}
+
+デフォルトでは、UDF は非決定論的として扱われます。[`use_query_cache = 1`](/ja/reference/settings/session-settings/use-query#use_query_cache) を指定して UDF を呼び出すクエリは、[`query_cache_nondeterministic_function_handling`](/ja/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling) を変更しない限り、`QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS` エラーで失敗します。
+
+**決定論的** は、関数が同じ引数に対して常に同じ結果を返す場合にのみ有効にしてください。有効にすると、その関数を呼び出すクエリの結果を[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)に保存し、キャッシュから返せるようになります。ただし、同じクエリ内に `now`、`today`、`rand` などの他の非決定論的関数が含まれている場合は、デフォルトの `throw` ではやはりキャッシュされません。`query_cache_nondeterministic_function_handling = 'save'` を指定するとそのようなクエリもキャッシュされ、`'ignore'` を指定するとキャッシュせずに実行されます。
+
+### サービスの再起動 {#service-restarts}
+
+<Warning>
+  **最初のアタッチ時にサービスが再起動されます**
+
+  サービスに最初の UDF をアタッチすると、サービスのポッドにヘルパーコンテナーが追加され、ローリング再起動が実行されます。2 つ目以降の UDF をアタッチしても再起動は発生しません。また、サービスから最後の UDF を削除した場合も、再度ローリング再起動が実行されます。最初のアタッチは、この点を考慮したうえで計画的に実施してください。
+</Warning>
+
+### 監視 {#monitoring}
+
+ClickHouse 26.6 以降では、実行可能 UDF のリソース使用量が 8 つのカウンターに記録されます。これらのカウンター名にはすべて `ExecutableUserDefinedFunction` というプレフィックスが付きます。クエリ単位では、[`system.query_log`](/ja/reference/system-tables/query_log) の `ProfileEvents` Map カラムのエントリとして記録されます。サーバー全体では、サーバー起動以降の累積値として [`system.events`](/ja/reference/system-tables/events) の行に、また時系列でサンプリングされた値として [`system.metric_log`](/ja/reference/system-tables/metric_log) の `ProfileEvent_<name>` カラムに記録されます。カウンターの接尾辞は次のとおりです。
+
+| カウンター                                            | 意味                                |
+| ------------------------------------------------ | --------------------------------- |
+| `Invocations`                                    | UDF プロセスに送信された chunk 1 つにつき 1 回加算 |
+| `ElapsedMicroseconds`                            | UDF 呼び出しに要した実経過時間                 |
+| `PoolWaitMicroseconds`                           | pool 内のプロセスが空くまでの待機時間             |
+| `UserTimeMicroseconds`, `SystemTimeMicroseconds` | 子プロセスの CPU 時間                     |
+| `PeakMemoryByteSeconds`                          | プロセスごとのピークメモリを実経過時間で積分した値         |
+| `InputBytes`, `OutputBytes`                      | パイプに書き込んだバイト数およびパイプから読み取ったバイト数    |
+
+[`system.asynchronous_metrics`](/ja/reference/system-tables/asynchronous_metrics) には `ExecutableUserDefinedFunctionProcesses` と `ExecutableUserDefinedFunctionMemoryResidentBytes` があります。後者は生存中の UDF プロセスの `VmRSS` を合計した値です。共有ページはプロセスごとに重複してカウントされるため、この値は上限値となります。
+
+```sql
+SELECT
+    event_time,
+    query_duration_ms,
+    ProfileEvents['ExecutableUserDefinedFunctionInvocations']                              AS udf_invocations,
+    round(ProfileEvents['ExecutableUserDefinedFunctionElapsedMicroseconds'] / 1e6, 2)     AS udf_wall_s,
+    round(ProfileEvents['ExecutableUserDefinedFunctionPoolWaitMicroseconds'] / 1e6, 2)    AS udf_pool_wait_s,
+    round((ProfileEvents['ExecutableUserDefinedFunctionUserTimeMicroseconds']
+         + ProfileEvents['ExecutableUserDefinedFunctionSystemTimeMicroseconds']) / 1e6, 2) AS udf_cpu_s
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND ProfileEvents['ExecutableUserDefinedFunctionInvocations'] > 0
+ORDER BY event_time DESC
+LIMIT 20;
+```
+
+<Note>
+  `system.query_log.memory_usage` の対象は ClickHouse サーバープロセスのみで、UDF プロセスのメモリ使用量は含まれません。
+</Note>
+
+### パフォーマンスに関するガイダンス {#performance-guidance}
+
+`executable_pool` を使用してください。`executable` ではデータのBlockごとに新しいプロセスが起動されるため、Blockのたびに起動コストが発生します。
+
+呼び出しのたびに固定コストがかかります。処理された行数に比べて `ExecutableUserDefinedFunctionInvocations` が非常に大きい場合は、そのクエリの [`preferred_block_size_bytes`](/ja/reference/settings/session-settings/preferred#preferred_block_size_bytes) を引き上げ、1 つのBlockにより多くの行が含まれるようにしてください。
+
+1 つのクエリが同時に使用するプールプロセスは最大で [`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 個です。そのため、プールサイズを `max_threads` より大きくしても、そのクエリには効果がありません。まずは小さい値から始め、`ExecutableUserDefinedFunctionPoolWaitMicroseconds` が無視できない値になったらプールサイズを引き上げてください。
+
+すべての行がプロセス境界を越えて受け渡されます。UDF は SQL では表現できないロジックに使うものであり、組み込み関数や SQL UDF で済む単純な行単位の処理に使うべきではありません。
+
+### トラブルシューティング {#troubleshooting}
+
+UDF が失敗すると、クエリはエラーコード `754` (`UDF_EXECUTION_FAILED`) で失敗します。子プロセスの stderr はエラーメッセージに含まれるため、診断情報は stderr に出力し、0 以外の終了コードで終了するようにしてください。
+
+```text
+Code: 754. DB::Exception: User defined function 'isBusinessHours' failed. Command: '...', Arguments: [...]. Original error: ... Child process was exited with return code 1: Stderr: <...>
+```
+
+よくあるケース:
+
+* **クエリがハングした後、タイムアウトで失敗する**: **Send chunk header** を有効にしないまま、プロセスが行指向フォーマットで出力をバッファリングしています。この設定を有効にして chunk ごとに 1 回 flush するか、`Native` フォーマットを使用している場合は Block ごとに 1 回 flush してください。
+* **リターンコード 1 で終了し、`MemoryError` のトレースバックが出力される (Python)**: メモリ制限を超過しています。**メモリ制限** を引き上げるか、プロセスあたりのメモリ使用量を削減してください。
+* **高負荷時に種別 `executable` の関数が断続的に失敗する**: `executable_pool` に切り替えてください。
+* **ビルドのステータスが error になる**: zip のルートに `main.py` (Python) または `amd64/main` と `arm64/main` (Native) が存在しないか、アーカイブにシンボリックリンクが含まれています。
+* **関数を作成できない**: 関数名が組み込み関数と重複しています。
+
+## Cloud API を使用して UDF を管理する {#manage-udfs-with-the-cloud-api}
 
 <BetaBadge />
 
-UI で利用できるすべての機能は、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を通じてプログラムからも利用できます。
-UDF エンドポイントを使用すると、ソースアーカイブのアップロード、関数とバージョンの作成、サービスへのアタッチ、削除まで、UDF のライフサイクル全体をスクリプトで自動化できます。
+{/* @zach.naimon に要確認: GA 時に Cloud API と Terraform のベータバッジおよび「コントラクトは変更される可能性があります」という注記を削除することを PMM が希望しているかどうか。 */}
+
+コンソールのライフサイクル操作は、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を通じてプログラムからも利用できます。
+UDF エンドポイントを使用すると、ソースアーカイブのアップロード、関数とバージョンの作成、サービスへのアタッチとデタッチ、バージョンと関数の削除をスクリプトで自動化できます。API にはリロード操作がありません。`executable_pool` UDF の新しいバージョンをサービスにアタッチした後は、そのサービス上で SQL により `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` を実行し、プールのプロセスに新しいバージョンを読み込ませてください。
 
 <Note>
   これらのエンドポイントはベータ版であり、API コントラクトは変更される可能性があります。
@@ -207,6 +375,19 @@ API を介した UDF の作成とデプロイの一般的なワークフロー�
 1. 署名付き `application/zip` アップロード URL を取得するために[アップロード URL を作成](/ja/products/cloud/api-reference/udf/udf-upload-session-create)し、その URL に ZIP アーカイブをアップロードします。各アップロード ID は、作成またはバージョン作成の 1 回の試行にのみ使用できます。再試行する場合は、新しいアップロード URL をリクエストしてください。
 2. アップロードしたアーカイブから [UDF を作成](/ja/products/cloud/api-reference/udf/udf-create)し、関数名、ランタイム、引数、戻り値の型を指定します。
 3. [UDF をサービスにアタッチ](/ja/products/cloud/api-reference/udf/udf-attach)します。バージョンを省略した場合は、最新の準備完了バージョンがアタッチされます。サービスは実行中である必要があります。アイドル状態のサービスは事前に起動できます。
+
+上記の各機能は、次のリクエストフィールドで指定します。
+
+| リクエストフィールド                                                                | 値                                                                                                             | 指定対象                                                 |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [`runtime`](/ja/products/cloud/api-reference/udf/udf-create)                 | `python3.11` または `native`                                                                                     | [ランタイム種別](#native-runtime)                          |
+| [`sandboxType`](/ja/products/cloud/api-reference/udf/udf-create)             | `netenable` または `basic`。API はどちらのランタイムでもこのフィールドを受け付けますが、有効なのは `python3.11` のみです。Native UDF ではネットワークを有効にできません。 | [ネットワークアクセス](#network-access)                        |
+| [`memoryLimitMib`](/ja/products/cloud/api-reference/udf/udf-create)          | 整数。サンドボックスのデフォルトを使用する場合は null                                                                                 | [メモリ制限](#memory-limit)                               |
+| [`deterministic`](/ja/products/cloud/api-reference/udf/udf-create)           | `true` または `false` (デフォルト)                                                                                    | [決定論的](#deterministic-functions-and-the-query-cache) |
+| [`sendChunkHeader`](/ja/products/cloud/api-reference/udf/udf-create)         | `true` または `false` (デフォルト)                                                                                    | [chunk ヘッダー](#formats-and-chunk-headers)             |
+| [`format`](/ja/products/cloud/api-reference/udf/udf-create)                  | 任意のフォーマット名。デフォルトは `TabSeparated`                                                                              | [フォーマット](#formats-and-chunk-headers)                 |
+| [`poolSize`](/ja/products/cloud/api-reference/udf/udf-create)                | 整数。デフォルトは 3。`executable` の場合は省略するか `null` にする必要があります                                                          | プールサイズ                                             |
+| [`maxCommandExecutionTime`](/ja/products/cloud/api-reference/udf/udf-create) | 秒数。デフォルトは 10                                                                                                  | コマンドの最大実行時間。`executable` では効果がありません                  |
 
 エンドポイントの一覧は次のとおりです。
 
@@ -227,9 +408,7 @@ API を介した UDF の作成とデプロイの一般的なワークフロー�
 
 リクエストおよびレスポンスのスキーマについては、[UDF API リファレンス](/ja/products/cloud/api-reference/udf/udf-create)を参照してください。
 
-<div id="manage-udfs-with-terraform">
-  ## Terraform で UDF を管理する
-</div>
+## Terraform で UDF を管理する {#manage-udfs-with-terraform}
 
 <BetaBadge />
 
@@ -266,4 +445,26 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-アタッチは準備完了のバージョンに対してのみ成功し、完了まで数分かかる場合があります。アイドル状態のサービスは自動的に起動します。`clickhouse_udf` リソースを削除すると、関数のすべてのバージョンが削除され、すべてのサービスからデタッチされます。
+上記の必須属性に加えて、`clickhouse_udf` リソースは `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`sandbox_version`、`return_name`、`fail_on_build_error` も受け付けます。完全なスキーマについては、[リソースのドキュメント](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)を参照してください。
+
+新しいバージョンを本番環境に反映する前に開発用サービスでテストするには、一方のアタッチメントは最新バージョンに追従させ、もう一方は変数でバージョンを固定します。開発用のアタッチメントは新しいビルドのたびに自動的に追従し、本番用のアタッチメントは `var.prod_udf_version` を変更したときにのみ更新されます。
+
+```terraform
+resource "clickhouse_udf_attachment" "dev" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.dev_service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+
+resource "clickhouse_udf_attachment" "prod" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.prod_service_id
+  version       = var.prod_udf_version
+}
+```
+
+<Note>
+  `deterministic` とメモリ制限は、プロバイダーではまだサポートされていません。どちらもバージョンの作成時に設定する項目であるため、プロバイダーでパブリッシュしたバージョンにはこれらを設定できません。これらを使用する場合は、コンソールまたは API からバージョンを作成してください。
+</Note>
+
+アタッチは準備完了のバージョンに対してのみ成功し、完了まで数分かかる場合があります。アイドル状態のサービスは自動的に起動します。また、プロバイダーは pool のリロードも行いません。`executable_pool` UDF の場合は、アタッチメントのバージョンを変更した後に、サービス上で `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` を実行してください。`clickhouse_udf` リソースを削除すると、関数のすべてのバージョンが削除され、すべてのサービスからデタッチされます。

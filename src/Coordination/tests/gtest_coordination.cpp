@@ -130,41 +130,6 @@ TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
     EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
-TEST(CoordinationKeeperContext, WaitLocalLogsPreprocessedOrShutdown)
-{
-    const auto make_context = []
-    { return std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>()); };
-
-    /// The caller is a thread of the Raft event loop, so the wait has to end on its own deadline
-    /// and report that the logs are still not preprocessed.
-    {
-        auto ctx = make_context();
-        Stopwatch watch;
-        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(50));
-        EXPECT_GE(watch.elapsedMilliseconds(), 50);
-    }
-
-    /// Already preprocessed: returns without waiting, and says so.
-    {
-        auto ctx = make_context();
-        ctx->setLocalLogsPreprocessed();
-        Stopwatch watch;
-        EXPECT_TRUE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
-        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
-    }
-
-    /// Shutdown ends the wait as well, but that is not the same thing as the logs being
-    /// preprocessed: reporting true here would have the caller log `preprocessed=true` for a
-    /// replay that never finished.
-    {
-        auto ctx = make_context();
-        ctx->setShutdownCalled();
-        Stopwatch watch;
-        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
-        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
-    }
-}
-
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 {
     auto load = [](const std::string & xml)
@@ -1663,6 +1628,9 @@ public:
         return dispatcher.new_session_id_requests.count(internal_id);
     }
 
+    /// The internal id that getSessionID gives to its next request.
+    static int64_t nextInternalSessionID(KeeperDispatcher & dispatcher) { return dispatcher.internal_session_id_counter.load(); }
+
     static void interruptibleSleep(KeeperDispatcher & dispatcher, std::chrono::milliseconds period)
     {
         dispatcher.interruptibleSleep(period);
@@ -2120,6 +2088,47 @@ TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
     }
 
     EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// After an unclean restart a server commits again the SessionID entries that its previous process
+/// wrote, while it already serves clients. Such an entry must not answer a request of the new process.
+TEST(KeeperDispatcher, SessionIDFromBeforeRestartDoesNotAnswerNewRequest)
+{
+    DispatcherFixture fixture;
+
+    DB::KeeperDispatcher before_restart;
+    DB::KeeperDispatcher after_restart;
+    fixture.dispatcher.reset();
+    DispatcherAccessor::setServer(after_restart, std::move(fixture.server));
+
+    const int64_t old_internal_id = DispatcherAccessor::nextInternalSessionID(before_restart);
+    const int64_t new_internal_id = DispatcherAccessor::nextInternalSessionID(after_restart);
+
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(after_restart, new_internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    auto router = DispatcherAccessor::router(after_restart);
+    /// Built the way KeeperStateMachine::commit builds the response of a committed SessionID entry.
+    auto commit_session_id = [&](int64_t internal_id, int64_t session_id)
+    {
+        auto request = makeSessionIDRequest(/*server_id=*/ 1, internal_id);
+        auto response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(request.request->makeResponse());
+        response->session_id = session_id;
+        DB::KeeperResponseForSession response_for_session;
+        response_for_session.session_id = DB::keeper_internal_get_session_id;
+        response_for_session.response = response;
+        response_for_session.request = request.request;
+        ASSERT_TRUE(router(response_for_session));
+    };
+
+    commit_session_id(old_internal_id, /*session_id=*/ 8);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "a SessionID entry written before the restart answered a request made after it";
+
+    commit_session_id(new_internal_id, /*session_id=*/ 21);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_EQ(future.get(), 21);
 }
 
 /// A request accepted before the shutdown flag was set is discarded without a response: the drains

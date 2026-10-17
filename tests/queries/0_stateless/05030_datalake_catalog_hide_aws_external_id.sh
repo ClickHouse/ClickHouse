@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no DataLakeCatalog, whose settings it then does not mask
 # Regression test: aws_external_id is the shared secret of the AWS AssumeRole triple, and
 # aws_role_session_name can be one too (a trust policy can require a specific value through the
 # sts:RoleSessionName condition), so both must be redacted as [HIDDEN] when a DataLakeCatalog CREATE
