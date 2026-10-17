@@ -32,11 +32,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char merge_tree_sequential_source_sleep_before_read[];
+    extern const char merge_tree_sequential_source_throw_before_read[];
 }
 
 namespace Setting
@@ -245,6 +247,10 @@ try
     /// Used in tests to emulate a merge whose single reading step is very slow
     /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
     fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
+    fiu_do_on(FailPoints::merge_tree_sequential_source_throw_before_read,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before reading in MergeTreeSequentialSource");
+    });
 
     /// past a gap between ranges the reader resumes at the next range, not at the next mark
     if (readers_chain.isCurrentRangeFinished() && !mark_ranges.empty() && current_mark < mark_ranges.front().begin)
