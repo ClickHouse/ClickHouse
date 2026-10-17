@@ -145,10 +145,13 @@ private:
     static std::vector<Target> findTargets(const ASTCreateQuery & create_query);
 
     /// Initializes information about the target tables and creates the inner ones (unless this is an ATTACH query).
+    /// Each inner table it creates is added to `created_inner_tables` once its `CREATE` succeeds, so that a caller can
+    /// drop them all if this or anything after it fails, and never drops a table that existed before.
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
         const StorageID & table_id,
-        const ContextPtr & local_context, LoadingStrictnessLevel mode);
+        const ContextPtr & local_context, LoadingStrictnessLevel mode,
+        std::vector<StorageID> & created_inner_tables);
 
     /// Returns the target of the given kind or null if this table has no such target.
     const Target * tryGetTarget(ViewTarget::Kind target_kind) const;
