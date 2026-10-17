@@ -16,6 +16,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -277,6 +278,15 @@ protected:
         return StorageID{full_name};
     }
 
+    /// Finding the table means reading its definition, so the `SHOW COLUMNS` privilege is checked before the lookup,
+    /// which could otherwise reveal whether the table exists and what its engine is.
+    StoragePtr checkAccessAndGetTable()
+    {
+        auto table_id = getTimeSeriesTableID();
+        context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+        return DatabaseCatalog::instance().getTable(table_id, context);
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -324,7 +334,7 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table = checkAccessAndGetTable();
         PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;
@@ -377,7 +387,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table = checkAccessAndGetTable();
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -514,7 +524,7 @@ public:
                 return;
             }
 
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            auto table = checkAccessAndGetTable();
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()

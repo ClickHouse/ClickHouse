@@ -30,6 +30,7 @@
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -521,6 +522,13 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 }
 
 
+ContextMutablePtr PrometheusHTTPProtocolAPI::checkAccessAndMakeQueryContext(const Strings & columns) const
+{
+    getContext()->checkAccess(AccessType::SELECT, time_series_storage->getStorageID(), columns);
+    return time_series_storage->getSQLSecurityOverriddenContext(getContext());
+}
+
+
 ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const Strings & match_params,
     const String & start_param,
@@ -592,6 +600,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
+    auto query_context = checkAccessAndMakeQueryContext({TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags});
+
     /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
     if (match_params.empty())
         throw Exception(
@@ -613,7 +623,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto query_context = Context::createCopy(getContext());
     StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
@@ -690,7 +699,8 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     Int64 limit_per_metric,
     QueryFinishCallback query_finish_callback)
 {
-    const auto time_series_storage_id = time_series_storage->getStorageID();
+    auto query_context = checkAccessAndMakeQueryContext(
+        {TimeSeriesColumnNames::MetricFamily, TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit, TimeSeriesColumnNames::Help});
 
     const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage->getVersion());
 
@@ -725,15 +735,12 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     metadata_entries->setAlias("metadata");
 
     /// SELECT ifNull(toString(metric_family), '') AS __metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family = metric]
+    /// FROM <metric families target table> [WHERE metric_family = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
     builder.select_list.push_back(std::move(metadata_entries));
-    builder.from_table_function = makeASTFunction(
-        "timeSeriesMetricFamilies",
-        make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
-        make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
+    builder.from_table_id = time_series_storage->getTargetTableID(ViewTarget::MetricFamilies, getContext());
 
     /// Filter on the raw column so the primary key of the metric families target table can be used.
     if (!metric_param.empty())
@@ -754,7 +761,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
     try
     {
@@ -918,6 +925,8 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
+    auto query_context = checkAccessAndMakeQueryContext({TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags});
+
     /// Unlike /api/v1/series, the `match[]` selectors are optional here: without them the endpoint
     /// returns the label names (or the label values) of all the time series stored in the table.
     Strings selectors = match_params;
@@ -932,7 +941,6 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto query_context = Context::createCopy(getContext());
     StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 

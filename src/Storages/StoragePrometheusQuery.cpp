@@ -1,5 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -106,6 +107,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+
+    /// Only the definition of the TimeSeries table is read here, so the `SHOW COLUMNS` privilege is checked before the table
+    /// is found. The data is read by `timeSeriesSelector` in the generated SQL, which checks the `SELECT` privilege on the read columns.
+    context->checkAccess(AccessType::SHOW_COLUMNS, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
