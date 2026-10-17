@@ -417,15 +417,16 @@ Comme le type de disque `s3_plain`, il ne nécessite pas de stockage supplément
 fichiers de métadonnées. À la place, les métadonnées sont stockées dans S3.
 Contrairement au type de disque `s3_plain`, `s3_plain_rewritable` permet d’exécuter des merges
 et prend en charge les opérations `INSERT`.
-Les [mutations](/fr/reference/statements/alter/index#mutations) et la réplication des tables ne sont pas prises en charge.
+La réplication des tables n’est pas prise en charge.
+Les [mutations](/fr/reference/statements/alter/index#mutations) et les opérations `ALTER`
+ne sont prises en charge que si le disque est configuré avec `enable_hard_links`, voir ci-dessous.
 
 Un cas d’usage de ce type de disque concerne les tables `MergeTree` non répliquées. Bien que
 le type de disque `s3` convienne aux tables `MergeTree` non répliquées, vous pouvez opter pour
 le type de disque `s3_plain_rewritable` si vous n’avez pas besoin de métadonnées locales
-pour la table et acceptez un ensemble d’opérations limité. Cela peut
-être utile, par exemple, pour les tables système.
+pour la table. Cela peut être utile, par exemple, pour les tables système.
 
-Configuration :
+Configuration :
 
 ```xml
 <s3_plain_rewritable>
@@ -449,6 +450,43 @@ est égal à
 
 À partir de `24.5`, il est possible de configurer n’importe quel disque de stockage objet
 (`s3`, `azure`, `local`) avec le type de métadonnées `plain_rewritable`.
+
+#### Liens physiques sur les disques plain rewritable {#plain-rewritable-hard-links}
+
+Les opérations `ALTER` et les mutations d&#39;une table `MergeTree` partagent, au moyen de liens physiques, les fichiers inchangés
+entre une part et la part mutée qui lui succède, au lieu de les
+copier. Le paramètre `enable_hard_links` (`0` par défaut) permet à un disque utilisant des
+métadonnées `plain_rewritable` de créer de véritables liens physiques, ce qui rend possibles les
+opérations suivantes :
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+Un lien physique fait en sorte que les métadonnées d&#39;un répertoire listent explicitement ses fichiers, ainsi
+que les clés des objets qui les stockent, de sorte qu&#39;un fichier puisse faire référence à un objet
+stocké sous le préfixe d&#39;un autre répertoire. Tenez compte des points suivants avant
+de l&#39;activer :
+
+* Un serveur qui ne prend pas en charge le paramètre `enable_hard_links` ne peut pas lire un
+  répertoire sous cette forme : il interprète l&#39;intégralité des métadonnées du répertoire comme son
+  path logique. Un disque contenant de tels répertoires n&#39;est donc plus lisible après
+  un downgrade vers une telle version, et ne peut pas être partagé avec celle-ci. Les répertoires qui
+  n&#39;ont jamais eu de liens physiques conservent l&#39;ancienne disposition : un disque reste donc lisible par
+  les serveurs plus anciens jusqu&#39;à la première opération qui crée un lien physique, à savoir une mutation,
+  un `ALTER`, un `FREEZE` ou une sauvegarde. Désactiver ensuite le paramètre ne
+  reconvertit pas les répertoires existants.
+* Le paramètre n&#39;est lu qu&#39;à la création du disque : toute modification prend effet après
+  un redémarrage du serveur, et `SYSTEM RELOAD CONFIG` ne l&#39;applique pas.
+* Un objet dont le dernier lien est supprimé est effacé en deux étapes : les métadonnées du
+  répertoire sont d&#39;abord réécrites, puis l&#39;objet est supprimé. Si le
+  serveur est arrêté brutalement entre les deux, l&#39;objet reste dans le bucket sans être
+  référencé par quoi que ce soit et doit alors être supprimé manuellement.
 
 ### Utilisation d’Azure Blob Storage {#azure-blob-storage}
 
@@ -628,7 +666,7 @@ Exemple de configuration du disque :
 Il est possible de configurer un cache local pour les disques dans la configuration de stockage à partir de la version 22.3.
 Pour les versions 22.3 à 22.7, le cache n’est pris en charge que pour le type de disque `s3`. Pour les versions &gt;= 22.8, le cache est pris en charge pour tous les types de disque : S3, Azure, Local, Encrypted, etc.
 Pour les versions &gt;= 23.5, le cache n’est pris en charge que pour les types de disque distants : S3, Azure, HDFS (non pris en charge).
-Le cache utilise la politique de cache `LRU`.
+Pour l’éviction, le cache s’appuie sur le paramètre `cache_policy` (`SLRU` par défaut), répertorié dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings). La liste complète des paramètres des disques de cache se trouve dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
 
 Exemple de configuration pour les versions supérieures ou égales à 22.8 :
 
@@ -688,24 +726,33 @@ Exemple de configuration pour les versions antérieures à 22.8 :
 </clickhouse>
 ```
 
-Paramètres de **configuration du disque** pour File Cache :
+Paramètres de **configuration du disque** pour File Cache (paramètres courants) :
 
-Ces paramètres doivent être définis dans la section de configuration du disque.
+Ces paramètres doivent être définis dans la section de configuration du disque. Ce tableau répertorie les principaux paramètres des disques de cache, et non l’ensemble des clés acceptées dans la configuration. Les valeurs à l’exécution et la liste complète des paramètres sont disponibles dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
 
-| Parameter                             | Type    | Default    | Description                                                                                                                                                                                                                                             |
-| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                                | String  | -          | **Obligatoire**. Chemin du répertoire où le cache sera stocké.                                                                                                                                                                                          |
-| `max_size`                            | Size    | -          | **Obligatoire**. Taille maximale du cache en octets ou dans un format lisible (par ex. `10Gi`). Les fichiers sont retirés du cache selon la politique LRU lorsque la limite est atteinte. Prend en charge les formats `ki`, `Mi`, `Gi` (depuis v22.10). |
-| `cache_on_write_operations`           | Boolean | `false`    | Active le cache en écriture directe pour les requêtes `INSERT` et les merges en arrière-plan. Peut être remplacé au niveau de chaque requête avec `enable_filesystem_cache_on_write_operations`.                                                        |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | Active des limites de taille du cache par requête basées sur `filesystem_cache_max_download_size`.                                                                                                                                                      |
-| `cache_hits_threshold`                | Integer | `0`        | Deprecated ; sans effet.                                                                                                                                                                                                                                |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Ignore le cache pour les grandes plages de lecture.                                                                                                                                                                                                     |
-| `bypass_cache_threshold`              | Size    | `256Mi`    | Taille de plage de lecture qui déclenche le contournement du cache (nécessite `enable_bypass_cache_with_threshold`).                                                                                                                                    |
-| `max_file_segment_size`               | Size    | `8Mi`      | Taille maximale d&#39;un fichier de cache unique en octets ou dans un format lisible.                                                                                                                                                                   |
-| `max_elements`                        | Integer | `10000000` | Nombre maximal de fichiers de cache.                                                                                                                                                                                                                    |
-| `load_metadata_threads`               | Integer | `16`       | Nombre de threads utilisés pour charger les métadonnées du cache au démarrage.                                                                                                                                                                          |
-| `use_split_cache`                     | Boolean | `false`    | Sépare les fichiers système des fichiers de données.                                                                                                                                                                                                    |
-| `split_cache_ratio`                   | Double  | `0.1`      | Ratio du segment système par rapport à la taille totale du cache pour split&#95;cache.                                                                                                                                                                  |
+| Paramètre                                   | Type    | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                      | String  | -          | **Obligatoire**. Chemin du répertoire où le cache sera stocké.                                                                                                                                                                                                                                                                                                                                            |
+| `max_size`                                  | Size    | -          | Taille maximale du cache en octets ou dans un format lisible (par ex. `10Gi`). **Obligatoire, sauf si** `max_size_ratio_to_total_space` est défini ; les deux ne peuvent pas être définis simultanément. Les fichiers sont retirés du cache selon la politique définie par `cache_policy` (SLRU par défaut) lorsque la limite est atteinte. Prend en charge les formats `ki`, `Mi`, `Gi` (depuis v22.10). |
+| `max_size_ratio_to_total_space`             | Double  | -          | Alternative à `max_size` : fraction de l’espace disque total utilisée comme taille du cache, dans `(0, 1]`. **Obligatoire, sauf si** `max_size` est défini. Ne peut pas être spécifié en même temps que `max_size`.                                                                                                                                                                                       |
+| `cache_policy`                              | Enum    | `SLRU`     | Politique d’éviction du cache. Valeurs possibles : `LRU`, `SLRU` (par défaut), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. Les politiques overcommit nécessitent un build avec prise en charge du cache distribué et ne peuvent pas être combinées avec `use_split_cache` (le serveur refuse de démarrer dans ces deux cas).                                                                                     |
+| `slru_size_ratio`                           | Double  | `0.6`      | Pour `SLRU` / `SLRU_OVERCOMMIT`, ratio entre le cache protégé et le cache probatoire.                                                                                                                                                                                                                                                                                                                     |
+| `reserve_granularity`                       | Size    | `4Mi`      | Lors de la réservation d’espace pour le téléchargement d’un segment de fichier, réserve à l’avance au moins ce nombre d’octets (dans la limite de la taille du segment de fichier). `0` réserve exactement la taille demandée.                                                                                                                                                                            |
+| `cache_on_write_operations`                 | Boolean | `false`    | Active le cache en écriture directe pour les requêtes `INSERT` et les merges en arrière-plan. Peut être remplacé au niveau de chaque requête avec `enable_filesystem_cache_on_write_operations`.                                                                                                                                                                                                          |
+| `enable_filesystem_query_cache_limit`       | Boolean | `false`    | Active des limites de taille du cache par requête basées sur `filesystem_cache_max_download_size`.                                                                                                                                                                                                                                                                                                        |
+| `cache_hits_threshold`                      | Integer | `0`        | Deprecated ; sans effet.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `enable_bypass_cache_with_threshold`        | Boolean | `false`    | Ignore le cache pour les grandes plages de lecture.                                                                                                                                                                                                                                                                                                                                                       |
+| `bypass_cache_threshold`                    | Size    | `256Mi`    | Taille de plage de lecture qui déclenche le contournement du cache (nécessite `enable_bypass_cache_with_threshold`).                                                                                                                                                                                                                                                                                      |
+| `max_file_segment_size`                     | Size    | `32Mi`     | Taille maximale d&#39;un fichier de cache unique en octets ou dans un format lisible.                                                                                                                                                                                                                                                                                                                     |
+| `boundary_alignment`                        | Size    | `4Mi`      | Alignement des limites des segments de fichier dans le cache. Ne doit pas dépasser `max_file_segment_size` (le serveur refuse de démarrer avec une valeur supérieure).                                                                                                                                                                                                                                    |
+| `max_elements`                              | Integer | `10000000` | Nombre maximal de fichiers de cache.                                                                                                                                                                                                                                                                                                                                                                      |
+| `load_metadata_threads`                     | Integer | `16`       | Nombre de threads utilisés pour charger les métadonnées du cache au démarrage.                                                                                                                                                                                                                                                                                                                            |
+| `background_download_threads`               | UInt64  | `5`        | Nombre de threads pour le téléchargement en arrière-plan des segments de fichier. `0` désactive le téléchargement en arrière-plan.                                                                                                                                                                                                                                                                        |
+| `background_download_queue_size_limit`      | UInt64  | `5000`     | Nombre maximal de segments en attente dans la file d’attente de téléchargement en arrière-plan. `0` signifie aucune limite (la file d’attente n’est pas désactivée). Le téléchargement en arrière-plan n’est désactivé que lorsque `background_download_threads` vaut `0`.                                                                                                                                |
+| `background_download_max_file_segment_size` | Size    | `4Mi`      | Seuil, arrondi selon l’alignement, déterminant jusqu’où un segment est préchargé en arrière-plan. La taille de téléchargement est arrondie au multiple supérieur de `boundary_alignment` ; il ne s’agit donc pas d’une limite stricte (par exemple, `1Mi` avec un `boundary_alignment` de `4Mi` télécharge tout de même `4Mi`).                                                                           |
+| `load_metadata_asynchronously`              | Boolean | `false`    | Charge les métadonnées du cache de manière asynchrone au démarrage du serveur.                                                                                                                                                                                                                                                                                                                            |
+| `use_split_cache`                           | Boolean | `false`    | Sépare les fichiers système des fichiers de données. Non pris en charge avec `SLRU_OVERCOMMIT` ou `LRU_OVERCOMMIT`.                                                                                                                                                                                                                                                                                       |
+| `split_cache_ratio`                         | Double  | `0.1`      | Ratio du segment système par rapport à la taille totale du cache pour split&#95;cache.                                                                                                                                                                                                                                                                                                                    |
 
 > **Remarque** : les valeurs de taille prennent en charge des unités comme `ki`, `Mi`, `Gi`, etc. (par ex. `10Gi`).
 

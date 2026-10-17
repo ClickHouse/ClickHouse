@@ -237,12 +237,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (prefix_size != 1)
             continue;
 
-        const auto & node_map = table_expression_data.getColumnNodeMap();
-        auto column_node_it = node_map.find(column_name);
-        if (column_node_it == node_map.end())
+        auto column_node = table_expression_data.tryGetColumnNode(column_name);
+        if (!column_node)
             continue;
 
-        const auto & column_node = column_node_it->second;
         auto column_type = column_node->getColumnType();
 
         for (size_t i = 0; i < prefix_size; ++i)
@@ -612,10 +610,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
-    auto it = node_map.find(identifier_full_name);
-    if (it != node_map.end())
-        return it->second;
+    if (auto column_node = scope.table_expression_data_for_alias_resolution->tryGetColumnNode(identifier_full_name))
+        return column_node;
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
@@ -783,10 +779,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    const auto & node_map = table_expression_data.getColumnNodeMap();
-    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
+    if (auto column_node = table_expression_data.tryGetColumnNode(identifier_full_name))
     {
-        result_expression = it->second;
+        result_expression = std::move(column_node);
     }
     /// Check if it's a subcolumn
     else
