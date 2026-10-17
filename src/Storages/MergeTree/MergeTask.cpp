@@ -559,6 +559,11 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
     return prefix + suffix;
 }
 
+bool MergeTask::isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time)
+{
+    return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -653,9 +658,33 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+
+    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
+    /// so the merged part must not take the bound of the other parts for that column.
+    NameSet columns_without_ttl_info;
+    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
+    {
+        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
+        {
+            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
+                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
+                columns_without_ttl_info.insert(column);
+        }
+    }
+
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        if (columns_without_ttl_info.empty())
+        {
+            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        }
+        else
+        {
+            auto part_ttl_infos = part->ttl_infos;
+            for (const auto & column : columns_without_ttl_info)
+                part_ttl_infos.columns_ttl.erase(column);
+            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
+        }
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
@@ -664,6 +693,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             ctx->force_ttl = true;
         }
     }
+
+    /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
+    /// so that bound must not decide that all merged rows have expired.
+    if (global_ctx->metadata_snapshot->hasRowsTTL()
+        && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
+        global_ctx->new_data_part->ttl_infos.table_ttl = {};
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -874,7 +910,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-    /// For TTLDrop merges, all source parts are fully expired.
+    /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
     ///
@@ -889,7 +925,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
-        && ctx->need_remove_expired_values;
+        && ctx->need_remove_expired_values
+        && std::ranges::all_of(global_ctx->future_part->parts, [&](const auto & part) { return isRowsTTLExpired(*part, global_ctx->time_of_merge); });
 
     /// The short-circuit below commits a 0-row part without ever running a pipeline, so nothing
     /// would retire these projections. Decide before the bookkeeping rather than undoing it
@@ -1307,7 +1344,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->stream_base_manifest);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1562,6 +1600,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         bool projection_part_misses_column = false;
 
         MergeTreeData::DataPartsVector projection_parts;
+        size_t parts_with_unloaded_projection = 0;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
@@ -1580,6 +1619,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
                 projection_parts.push_back(it->second);
             }
+            else if (part->hasUnloadedProjection(projection.name))
+                ++parts_with_unloaded_projection;
         }
 
         if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
@@ -1602,6 +1643,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             /// where the correct `_block_number` values are available.
             chassert(projection_parts.size() < global_ctx->future_part->parts.size());
             LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (parts_with_unloaded_projection
+                 && projection_parts.size() + parts_with_unloaded_projection == global_ctx->future_part->parts.size())
+        {
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts have it on disk but not loaded", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else if ((*global_ctx->data_settings)[MergeTreeSetting::materialize_projections_on_merge])
@@ -2271,7 +2318,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter());
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        global_ctx->stream_base_manifest);
 
     ctx->column_elems_written = 0;
 }
@@ -3729,8 +3777,6 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
             return MergeAlgorithm::Horizontal;
     }
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
-        return MergeAlgorithm::Horizontal;
-    if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->cleanup)
         return MergeAlgorithm::Horizontal;
