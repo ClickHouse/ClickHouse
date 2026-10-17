@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeLeaderElection.h>
 
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
@@ -70,6 +71,7 @@ MergeTreeLeaderElection::MergeTreeLeaderElection(
     , heartbeat_interval_ms(heartbeat_interval_ms_)
     , session_timeout_ms(session_timeout_ms_)
     , leader_id(generateLeaderId())
+    , incarnation(toString(UUIDHelpers::generateV4()))
     , log(getLogger("MergeTreeLeaderElection"))
 {
     /// Every participating table starts as a follower. `stop` always brings the
@@ -577,8 +579,9 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
 
 String MergeTreeLeaderElection::buildLeaseContent()
 {
-    /// `sequence` is not read back: it only makes the content, and thus the ETag, of every write
-    /// unique (see `lease_write_sequence`). Older binaries ignore unknown fields of version 1.
+    /// `sequence` and `incarnation` are not read back: they only make the content, and thus the
+    /// ETag, of every write unique (see `lease_write_sequence` and `incarnation`). Older binaries
+    /// ignore unknown fields of version 1.
     WriteBufferFromOwnString out;
     writeString(R"({"version":1,"leader_id":")", out);
     writeString(leader_id, out);
@@ -586,6 +589,9 @@ String MergeTreeLeaderElection::buildLeaseContent()
     writeIntText(time(nullptr), out);
     writeString(R"(,"sequence":)", out);
     writeIntText(++lease_write_sequence, out);
+    writeString(R"(,"incarnation":")", out);
+    writeString(incarnation, out);
+    writeChar('"', out);
     /// The validity interval this writer relies on: other nodes must not expire the lease sooner
     /// than this, even if their own `session_timeout` is shorter (see `run`).
     writeString(R"(,"session_timeout_ms":)", out);

@@ -40,8 +40,9 @@ namespace DB
   *   regardless of the clock offset between the nodes, including during the takeover sync,
   *   when that check is relaxed to the full `session_timeout`. Only the rates of the steady
   *   clocks are assumed to be equal. The wall-clock `timestamp` persisted in the lease is for
-  *   diagnostics; together with `sequence` it keeps the content of successive writes, and thus
-  *   their ETags (which are content hashes on S3), distinct.
+  *   diagnostics; together with `sequence` and `incarnation` it keeps the content of successive
+  *   writes, and thus their ETags (which are content hashes on S3), distinct, also across
+  *   instances of the same table (re-attach, restart).
   */
 class MergeTreeLeaderElection
 {
@@ -220,6 +221,13 @@ private:
     UInt64 lease_write_sequence = 0;
 
     String leader_id;
+
+    /// A random identifier of this instance, persisted as `incarnation`. `leader_id` survives
+    /// restarts and `DETACH`/`ATTACH` and `lease_write_sequence` restarts from zero in every
+    /// instance, so without it a new instance whose wall clock stepped back could reproduce the
+    /// exact content, and thus the ETag, of a lease written by the previous instance, and a
+    /// follower that observed that earlier write would wrongly consider the fresh lease expired.
+    String incarnation;
 
     CallbackOnLeadershipChange on_leadership_change;
 
