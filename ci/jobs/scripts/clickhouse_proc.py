@@ -18,6 +18,7 @@ from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
+from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -355,7 +356,15 @@ class ClickHouseProc:
         # the server starts without it, failing replication setup with `Code:
         # 701. Requested cluster 'system_logs_export' not found`.
         config_dir = config_dir or self.ch_config_dir
-        self.log_export_host, self.log_export_password = log_export.get_credentials()
+        # Without the credentials `setup_log_cluster.sh` creates no `_sender` table, a supported state.
+        try:
+            self.log_export_host, self.log_export_password = (
+                log_export.get_credentials()
+            )
+        except SecretFetchFailed as e:
+            print(f"WARNING: Failed to configure log export: {e}")
+            Info().add_workflow_warning(f"Failed to configure log export: {e}")
+            return True
         return log_export.create_config(
             config_dir, self.log_export_host, self.log_export_password
         )
