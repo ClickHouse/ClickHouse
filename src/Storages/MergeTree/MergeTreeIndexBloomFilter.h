@@ -162,7 +162,9 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// The filter is sized by the number of distinct values, so about half of its bits are set.
-    bool isCompressible() const override { return false; }
+    /// With several columns, every filter is sized by the column with the most distinct values,
+    /// so the filters of the other columns are mostly zeros and compress well.
+    bool isCompressible() const override { return index.column_names.size() > 1; }
 
 private:
     size_t bits_per_row;
