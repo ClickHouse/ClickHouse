@@ -377,7 +377,9 @@ def test_api_v1_url_path_routing_is_write_only():
     )
 
     assert response.status_code == requests.codes.bad_request
-    assert "URL path routing for prometheus_api_v1 is supported only for remote write" in response.text
+    assert response.headers["Content-Type"].startswith("application/json")
+    assert response.json()["status"] == "error"
+    assert "URL path routing for prometheus_api_v1 is supported only for remote write" in response.json()["error"]
 
 
 def test_api_v1_url_path_routing_write_only_check_runs_after_authentication():

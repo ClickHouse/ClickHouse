@@ -516,8 +516,10 @@ public:
             const auto & time_series_settings = time_series_storage->getStorageSettings();
             if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
             {
+                /// A 4xx status: a remote-write sender resends a request answered with 5xx for ever,
+                /// but a table which doesn't opt in is a permanent configuration mistake.
                 throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    ErrorCodes::BAD_ARGUMENTS,
                     "Prometheus remote write dynamic routing is disabled for TimeSeries table {}",
                     time_series_storage->getStorageID().getNameForLogs());
             }
@@ -695,12 +697,13 @@ public:
         /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
         LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
 
-        rejectURLPathRoutingForNonWriteEndpoint();
-
         response.setContentType("application/json");
 
         try
         {
+            /// Inside the `try` block, so the rejection is reported in the Prometheus JSON error envelope.
+            rejectURLPathRoutingForNonWriteEndpoint();
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a

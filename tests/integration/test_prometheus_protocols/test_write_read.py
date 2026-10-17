@@ -249,7 +249,7 @@ def test_remote_write_dynamic_routing_disabled_for_table():
         write_request,
     )
 
-    assert response.status_code == requests.codes.internal_server_error
+    assert response.status_code == requests.codes.bad_request
     assert "Prometheus remote write dynamic routing is disabled" in response.text
     assert "default.prometheus" in response.text
     assert (
@@ -392,7 +392,7 @@ def test_remote_write_dynamic_routing_setting_can_be_altered():
             f"default/{table_name}/write",
             write_request,
         )
-        assert response.status_code == requests.codes.internal_server_error
+        assert response.status_code == requests.codes.bad_request
         assert "Prometheus remote write dynamic routing is disabled" in response.text
         assert f"default.{table_name}" in response.text
 
@@ -426,7 +426,7 @@ def test_remote_write_dynamic_routing_setting_can_be_altered():
             f"default/{table_name}/write",
             disabled_write_request,
         )
-        assert response.status_code == requests.codes.internal_server_error
+        assert response.status_code == requests.codes.bad_request
         assert "Prometheus remote write dynamic routing is disabled" in response.text
         assert (
             node.query(
