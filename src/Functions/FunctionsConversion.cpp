@@ -2742,6 +2742,13 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(const DataTypePtr & fr
     }
     else if (isEnum(from_type))
     {
+        if (cast_type != CastType::nonAccurate)
+        {
+            if (checkAndGetDataType<DataTypeEnum8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+            return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+        }
+
         auto function = Function::createFromSettings(settings);
         return createFunctionAdaptor(function, from_type);
     }
@@ -2833,7 +2840,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
 {
     using FieldType = EnumType::FieldType;
 
-    return [function_name = cast_name, report_failure_as_null = cast_type == CastType::accurateOrNull] (
+    const bool check_exactness = cast_type != CastType::nonAccurate;
+    return [function_name = cast_name, check_exactness, report_failure_as_null = cast_type == CastType::accurateOrNull] (
         ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
@@ -2871,7 +2879,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
             const bool converted = accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(
                 in_data[i], converted_value);
             const bool use_value = converted
-                && (!failure_map || (accurate::equalsOp(in_data[i], converted_value) && result_type.hasValue(converted_value)));
+                && (!check_exactness || accurate::equalsOp(in_data[i], converted_value))
+                && (!failure_map || result_type.hasValue(converted_value));
             if (!use_value)
             {
                 if (!failure_map)
