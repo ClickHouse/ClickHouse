@@ -1,0 +1,1 @@
+CREATE DICTIONARY default.d_scalar\n(\n    `id` UInt64\n)\nPRIMARY KEY id\nSOURCE(HTTP(URL \'http://example.test/x\' FORMAT \'TSV\'))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(FLAT())
