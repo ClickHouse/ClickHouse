@@ -601,8 +601,8 @@ void StorageMergeTree::startup()
                     /// intervening leader already owns, losing deduplication history and
                     /// letting retried inserts bypass deduplication. Cancel it instead; the
                     /// log object is rebuilt from shared storage on the next acquisition.
-                    if (deduplication_log)
-                        deduplication_log->discard();
+                    if (auto previous_deduplication_log = getDeduplicationLog())
+                        previous_deduplication_log->discard();
 
                     /// Followers periodically re-scan shared object storage so that `SELECT`
                     /// observes parts the current leader has committed since this replica
@@ -743,8 +743,11 @@ void StorageMergeTree::shutdown(bool)
     /// left armed, so no task fires while `~MergeTreeData` destroys the state it touches.
     stopAllBackgroundTasks();
 
-    if (!already_called && deduplication_log)
-        deduplication_log->shutdown();
+    if (!already_called)
+    {
+        if (auto current_deduplication_log = getDeduplicationLog())
+            current_deduplication_log->shutdown();
+    }
 }
 
 void StorageMergeTree::stopAllBackgroundTasks()
@@ -1576,7 +1579,8 @@ void StorageMergeTree::alter(
             if ((*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
-            deduplication_log->setDeduplicationWindowSize((*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window]);
+            if (auto current_deduplication_log = getDeduplicationLog())
+                current_deduplication_log->setDeduplicationWindowSize((*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window]);
         }
     }
 }
@@ -1746,9 +1750,27 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
 
 void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
 {
-    auto [it, inserted] = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry));
-    if (!inserted)
+    auto existing = current_mutations_by_version.find(prepared.version);
+    if (existing != current_mutations_by_version.end())
+    {
+        /// Under `leader_election` the published `mutation_*.txt` can already have been adopted:
+        /// foreground mutation commands are not drained on leadership loss, so if this node lost
+        /// and reacquired the lease after `prepareMutationEntry` committed the file, the takeover
+        /// reload (`loadMutations(true)`) has registered the same entry. That entry now owns the
+        /// file and the mutation runs under the new epoch. Hand ownership over instead of failing:
+        /// an exception here would let the destructor of the unregistered prepared entry remove the
+        /// file of the adopted mutation, which a later restart or takeover would then lose.
+        if ((*getSettings())[MergeTreeSetting::leader_election] && existing->second.file_name == prepared.entry.file_name)
+        {
+            prepared.entry.is_registered = true;
+            LOG_INFO(log, "Mutation {}{} was already adopted by the leadership takeover reload", prepared.mutation_id, prepared.additional_info);
+            background_operations_assignee.trigger();
+            return;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", prepared.version);
+    }
+
+    auto it = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry)).first;
 
     /// Transfer ownership of `mutation_*.txt` to the registered entry so its
     /// destructor will not remove the file. See #80648.
@@ -2381,16 +2403,19 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     /// alone is not enough: a lease lost and reacquired in between looks writable again, but by
     /// then the entry belongs to the new epoch (the takeover reload may even have re-added it),
     /// so the check is against the epoch that admitted this command.
-    assertNotReadonly();
     try
     {
+        assertNotReadonly();
         assertWritableLeaderAtEpoch(admission_epoch);
     }
     catch (...)
     {
         /// The shared `mutation_*.txt` stays where it is, so put the in-memory entry back to keep
         /// this node consistent with shared storage: the command had already removed it from
-        /// `current_mutations_by_version` before the leadership check could reject it.
+        /// `current_mutations_by_version` before the leadership check could reject it. This
+        /// covers the freshness check too: if it rejects the command, the same unexpired lease
+        /// can be renewed by the next heartbeat without a takeover reload, so nothing else would
+        /// put the entry back.
         restoreKilledMutationEntry(mutation_version, std::move(*to_kill));
         throw;
     }
@@ -2435,15 +2460,17 @@ void StorageMergeTree::loadDeduplicationLog()
             /// Defense in depth: the leadership-loss callback already discards the previous
             /// epoch's log object, but if one survived with an open writer, destroying it via
             /// the replacement below would finalize that writer and clobber a shared log file
-            /// the previous epoch no longer owns (see the callback for details).
-            if (deduplication_log)
-                deduplication_log->discard();
+            /// the previous epoch no longer owns (see the callback for details). A foreground
+            /// operation of the previous epoch may still hold the object (see
+            /// `getDeduplicationLog`); once discarded, its further updates throw.
+            if (auto previous_deduplication_log = getDeduplicationLog())
+                previous_deduplication_log->discard();
         }
 
-        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(
+        auto new_deduplication_log = std::make_shared<MergeTreeDeduplicationLog>(
             path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
             std::move(may_write_shared_state));
-        deduplication_log->load();
+        new_deduplication_log->load();
 
         /// Reconcile the loaded log with the part set. An active *empty* part is a covering
         /// part: all data in its range was dropped (`DROP`/`DETACH`/`TRUNCATE`/`REPLACE
@@ -2460,20 +2487,32 @@ void StorageMergeTree::loadDeduplicationLog()
         {
             for (const auto & part : getDataPartsVectorForInternalUsage())
                 if (part->rows_count == 0)
-                    deduplication_log->dropPart(part->info);
+                    new_deduplication_log->dropPart(part->info);
         }
+
+        std::lock_guard lock(deduplication_log_mutex);
+        deduplication_log = std::move(new_deduplication_log);
     }
+}
+
+std::shared_ptr<MergeTreeDeduplicationLog> StorageMergeTree::getDeduplicationLog() const
+{
+    std::lock_guard lock(deduplication_log_mutex);
+    return deduplication_log;
 }
 
 void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
 {
-    if (!deduplication_log)
+    /// Keep the log object captured for the whole operation, including the error recovery below:
+    /// a leadership reacquisition can replace `deduplication_log` concurrently.
+    auto current_deduplication_log = getDeduplicationLog();
+    if (!current_deduplication_log)
         return;
 
     try
     {
         for (const auto & part : parts)
-            deduplication_log->dropPart(part->info);
+            current_deduplication_log->dropPart(part->info);
     }
     catch (...)
     {
@@ -2484,7 +2523,7 @@ void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
         /// election epoch reloads and reconciles the log from the committed empty parts.
         if (leader_election_ptr)
         {
-            deduplication_log->discard();
+            current_deduplication_log->discard();
             leader_election_ptr->relinquishLeadership();
         }
         throw;
@@ -4231,7 +4270,8 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
     /// reconciliation can no longer see that the surviving block ids belong to dropped data.
     /// Writing the records first fails closed instead: if the lease re-check inside `dropPart`
     /// throws, the part stays active and this cleanup is simply retried later.
-    if (hasLeaderElection() && deduplication_log)
+    auto current_deduplication_log = getDeduplicationLog();
+    if (hasLeaderElection() && current_deduplication_log)
     {
         auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
@@ -4239,7 +4279,7 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 
         try
         {
-            deduplication_log->dropPart(part->info);
+            current_deduplication_log->dropPart(part->info);
         }
         catch (...)
         {
@@ -4251,9 +4291,9 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
-        if (deduplication_log && !hasLeaderElection())
+        if (current_deduplication_log && !hasLeaderElection())
         {
-            deduplication_log->dropPart(part->info);
+            current_deduplication_log->dropPart(part->info);
         }
 
         /// Need to destroy part objects before clearing them from filesystem.

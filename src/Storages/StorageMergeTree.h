@@ -174,7 +174,10 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
-    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
+    /// Callers keep the returned pointer for the whole operation: under `leader_election` the log
+    /// object is replaced on every leadership acquisition (see `loadDeduplicationLog`), and the
+    /// shared ownership keeps the previous object alive for foreground operations still using it.
+    std::shared_ptr<MergeTreeDeduplicationLog> getDeduplicationLog() const;
 
 private:
 
@@ -186,7 +189,9 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
     MergeTreeCleanupThread cleanup_thread;
 
-    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
+    /// Protects the pointer itself, not the log object (it has its own synchronization).
+    mutable std::mutex deduplication_log_mutex;
+    std::shared_ptr<MergeTreeDeduplicationLog> deduplication_log TSA_GUARDED_BY(deduplication_log_mutex);
 
     /// For block numbers.
     SimpleIncrement increment;

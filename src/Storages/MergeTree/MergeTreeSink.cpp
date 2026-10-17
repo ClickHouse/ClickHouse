@@ -480,7 +480,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         if (!deduplication_hashes.empty())
             block_ids = getDeduplicationBlockIds(deduplication_hashes);
 
-        auto * deduplication_log = storage.getDeduplicationLog();
+        auto deduplication_log = storage.getDeduplicationLog();
         if (block_ids.empty() || !deduplication_log || !deduplication_log->containsAny(block_ids))
             storage.throwIfTemporaryTableSizeLimitsExceededForReplacement(context, lock, {part}, std::nullopt);
 
