@@ -25,7 +25,7 @@ protected:
     PatchPartMetadata patch_metadata;
 
     void finishDelayedChunk() override;
-    TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;
+    TemporaryPartPtr writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn) override;
 };
 
 }
