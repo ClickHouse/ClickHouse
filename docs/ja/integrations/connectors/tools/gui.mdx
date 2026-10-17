@@ -6,7 +6,9 @@ title: 'サードパーティ製のビジュアルインターフェイス'
 doc_type: 'reference'
 ---
 
-## オープンソース {#open-source}
+<div id="open-source">
+  ## オープンソース
+</div>
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx) は、Tauri と SvelteKit で構築されたデスクトップアプリケーションで、ClickHouse の組み込みデータベースエンジン (chdb) を使用してデータを探索・クエリするためのモダンなインターフェイスを提供します。
@@ -28,23 +30,6 @@ doc_type: 'reference'
   * ローカルデータストレージ: すべてのデータはブラウザ内にローカル保存され、外部には送信されません。
 </Accordion>
 
-<Accordion title="CHewie">
-  [CHewie](https://github.com/kolsys/chewie) は、高速・軽量かつ多機能な、ブラウザのみで動作する ClickHouse クライアントです。バックエンドは不要で、アプリは HTTP インターフェイス経由で ClickHouse と直接通信し、保存されるすべてのデータ (接続、タブ、クエリ履歴) はブラウザ内に保持されます。
-
-  機能:
-
-  * `DEV` / `STAGING` / `PROD` ラベルと色分けされた環境インジケーターを備えた複数の保存済み接続に加え、すべてのクエリに適用される接続ごとの ClickHouse 設定 (`max_execution_time=300` など)。
-  * ClickHouse の構文ハイライト、自動補完、マルチタブ実行、クエリ履歴を備えた SQL エディタ。
-  * 組み込みのデータ可視化: 結果グリッドから数回クリックするだけで、任意のクエリ結果を折れ線グラフ、面グラフ、棒グラフに柔軟に変換できます。
-  * テーブルへのクイッククエリ: テーブル概要ページから、クエリが入力済みの `SELECT` タブを即座に開けます。
-  * CSV、TabSeparated、JSON 系、Parquet、Avro、SQLInsert、Markdown など、ClickHouse のあらゆるネイティブ出力形式で結果をエクスポートできます (サーバーからストリーミング)。
-  * 結果グリッドから行の範囲をコピーし、Google Sheets、Excel、Docs に列を保ったまま貼り付けられます。
-  * サーバー上のすべての `system.*_log` テーブルに対応したログビューアと、主要なテーブル向けに厳選されたビュー。
-  * メトリクスダッシュボード: クエリパフォーマンス、テーブル統計、リソース使用状況、設定の概要。
-  * データはローカルのみ: ClickHouseサーバー以外にデータが送信されることはありません。
-  * Docker イメージとして、S3 などの静的ホスト上の静的ファイルとして、または `http_server_default_response` を介して ClickHouse 自体から直接デプロイでき、アプリケーションサーバーは不要です。
-</Accordion>
-
 <Accordion title="ChartDB">
   [ChartDB](https://chartdb.io) は、ClickHouse を含むデータベーススキーマを 1 つのクエリで可視化・設計できる、無料のオープンソースツールです。React で構築されており、シームレスで使いやすい操作性を提供します。使い始めるのに、データベースの認証情報や登録は必要ありません。
 
@@ -59,22 +44,22 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CHOps">
-  [CHOps](https://ch-ops.io) は、ClickHouse クラスターの管理と監視のための、無料でオープンソースのセルフホスト型 Web ダッシュボードです。ClickHouse の HTTP インターフェイスをブラウザ UI でラップし、SQL の実行、低速なクエリの調査、アラートの設定、バックアップの管理、アクセス制御をブラウザ上で行えます。HTTP 経由でアクセス可能な ClickHouse デプロイメントであれば利用できます。CHOps は現在 ClickHouse 26.3 LTS をサポートしています。その他の最近のバージョンでも動作しますが、一部の機能が利用できない場合があります。
+  [CHOps](https://ch-ops.io) は、ClickHouse クラスターを管理・監視するための無料のオープンソースかつセルフホスト型の Web ダッシュボードです。ClickHouse の HTTP インターフェイスをブラウザ UI で利用できるようにし、SQL の実行、低速クエリの調査、アラートの設定、バックアップの管理、アクセス制御を行えます。HTTP 経由で到達可能な ClickHouse デプロイメントで動作します。CHOps は現在 ClickHouse 26.3 LTS をサポートしています。他の最近のバージョンでも動作しますが、一部の機能に軽微な差異がある場合があります。
 
   機能:
 
-  * 自動補完、各種 `EXPLAIN` タイプ、22 種類のフォーマットでの結果エクスポート、クエリプロファイラー、クエリメトリクスのタイムラインを備えた SQL エディタ。
-  * クラスター概要: クエリを強制終了できるライブクエリモニター、クエリ分析とログ、テーブルとパーツの検査、マージとミューテーション、分散 DDL キュー。
-  * チャートビルダー、10 種類以上のチャートタイプ、カスタマイズ可能なグリッドレイアウトを備えたカスタムダッシュボード。
-  * 過去のメトリクスをフレーム単位で再生できる、DVR 方式の再生機能を備えた監視。
-  * しきい値評価とメール通知に対応した、SQL ベースのアラートルール。
-  * アクセス制御: ClickHouse のユーザーおよびロール管理、権限付与の可視化、設定プロファイルの編集。
-  * S3 互換ストレージへのバックアップおよび復元のオーケストレーション。バックアップの検出とストレージプロファイル管理にも対応。
-  * 索引ツール: データスキッピング索引の可視化、プロジェクション管理、セカンダリ索引の作成。
-  * カレンダーヒートマップとフィルタ付き検索を備えた、例外ログ、エラーログ、テキストログのビューアー。
-  * 単一の自己完結型バイナリ、Docker、またはソースからデプロイ可能。
+  * 自動補完、`EXPLAIN` タイプ、22 種類の形式での結果エクスポート、クエリプロファイラ、クエリメトリクスのタイムラインを備えた SQL エディタ。
+  * クラスター概要: クエリ停止操作を備えたライブクエリ監視、クエリ分析とログ、テーブルおよびパーツの調査、マージとミューテーション、分散 DDL キュー。
+  * チャートビルダー、10 種類以上のチャートタイプ、設定可能なグリッドレイアウトを備えたカスタムダッシュボード。
+  * 過去のメトリクスをフレームごとに再生する DVR スタイルの再生機能を備えた監視。
+  * しきい値評価とメール通知を備えた SQL ベースのアラートルール。
+  * アクセス制御: ClickHouse のユーザーおよびロール管理、権限の可視化、設定プロファイルの編集。
+  * S3 互換ストレージへのバックアップと復元のオーケストレーション、バックアップの検出、ストレージプロファイルの管理。
+  * 索引ツール: データスキップ索引の可視化、プロジェクション管理、セカンダリ索引の作成。
+  * カレンダーヒートマップとフィルター検索を備えた例外、エラー、テキストログビューア。
+  * 単一の自己完結型バイナリ、Docker、またはソースからデプロイできます。
 
-  [CHOps ソースコード](https://github.com/Quantrail-Data/CH-Ops)。
+  [CHOps ソースコード](https://github.com/Quantrail-Data/CH-Ops).
 </Accordion>
 
 <Accordion title="LibreDB Studio">
@@ -82,7 +67,7 @@ doc_type: 'reference'
 
   機能:
 
-  * スキーマ対応の自動補完、マルチタブ実行、プランツリーとして表示される `EXPLAIN` を備えた Monaco ベースの SQL エディタ。
+  * スキーマ対応の自動補完、マルチタブ実行、プランツリーとして表示される `EXPLAIN` を備えた Monaco ベースの SQL エディター。
   * 仮想化された結果グリッド、フィルタリング、CSV/JSON エクスポートを備えたスキーマエクスプローラー。
   * `system` テーブルに基づく監視機能: `system.metrics`、`system.parts`、`system.disks` によるサーバー概要とパーツサイズ、`system.query_log` による完了済みステートメント、`system.processes` による実行中ステートメント、および強制終了コントロール。
   * PostgreSQL、MySQL、Oracle、SQL Server、SQLite、MongoDB、Redis、Couchbase、Apache Druid と同じインターフェイスで ClickHouse を利用できるため、分析ストアとそれにデータを供給する OLTP データベースを 1 つのブラウザタブで操作できます。
@@ -99,7 +84,7 @@ doc_type: 'reference'
   * **AI 搭載インテリジェンス**: 自然言語でデータを探索し、SQL クエリの最適化や修正、データの可視化を行えます。
   * **公式 ClickHouse Agent Skills 統合**: [公式ベストプラクティス](https://github.com/ClickHouse/agent-skills)を活用し、AI にデータベースの最適化や提案を依頼できます。
   * **スマートエラー診断**: 行とカラムを正確にハイライトして構文エラーを即座に特定し、ワンクリックで AI による修正提案を取得できます。
-  * **システムテーブルの検査**: 強力な可視化ダッシュボードとフィルタを使用して、`system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log`、`system.processes` を詳細に分析し、クラスターの状態をすばやく把握できます。
+  * **システムテーブルの検査**: 強力な可視化ダッシュボードとフィルターを使用して、`system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log`、`system.processes` を詳細に分析し、クラスターの状態をすばやく把握できます。
   * **ワンクリック Explain**: 視覚的な AST ビューとパイプラインビューで、クエリ実行プランを即座に把握できます。
   * **依存関係グラフ**: テーブル間の関係を可視化し、materialized view、Distributed テーブル、外部システムを介したデータフローを追跡します。
   * **クラスター監視**: リアルタイムメトリクス、マージ操作、レプリケーションステータス、クエリパフォーマンスなどを通じて、すべてのノードを監視します。
@@ -109,33 +94,33 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DataPup">
-  [DataPup](https://github.com/DataPupOrg/DataPup) は、ClickHouse をネイティブにサポートする、AI 支援機能を備えたモダンなクロスプラットフォームのデータベースクライアントです。
+  [DataPup](https://github.com/DataPupOrg/DataPup) は、ネイティブの ClickHouse サポートを備えた、モダンで AI 支援機能を持つクロスプラットフォームのデータベースクライアントです。
 
   機能:
 
-  * AI による的確な提案で SQL クエリの作成を支援
-  * 認証情報を安全に管理できるネイティブの ClickHouse 接続サポート
+  * インテリジェントな提案を提供する AI 支援 SQL クエリ機能
+  * 安全な認証情報管理を備えたネイティブ ClickHouse 接続サポート
   * 複数のテーマ (ライト、ダーク、カラフルなバリエーション) を備えた、美しくアクセシブルなインターフェイス
-  * クエリ結果の高度なフィルタリングと探索
+  * 高度なクエリ結果のフィルタリングと探索
   * クロスプラットフォーム対応 (macOS、Windows、Linux)
-  * 高速で応答性に優れた動作
-  * MIT ライセンスのオープンソースソフトウェア
+  * 高速で応答性に優れたパフォーマンス
+  * オープンソース、MIT ライセンス
 </Accordion>
 
 <Accordion title="Dory">
-  [Dory](https://github.com/dorylab/dory) は、ClickHouse を全面的にサポートし、AI を標準搭載した AI ネイティブの SQL ワークスペースです。
+  [Dory](https://github.com/dorylab/dory) は、AI を標準搭載し、ClickHouse を第一級にサポートする AI ネイティブの SQL ワークスペースです。
 
   機能:
 
-  * SQL の生成、説明、デバッグを支援する AI Copilot
-  * 単一のワークスペースから複数の ClickHouse クラスターを管理し、クエリを実行
-  * スキーマに基づく SQL 自動補完と、複数タブを備えたクエリワークスペース
-  * フィルタリングと可視化による対話的なクエリ結果の探索
-  * データセットの理解を助ける AI によるテーブル要約
-  * SSH トンネルに対応した ClickHouse への直接接続
-  * ライトテーマやダークテーマなどに対応した、開発者に使いやすいモダンなインターフェイス
-  * クロスプラットフォームのデスクトップアプリ (macOS、Windows、Linux) と Docker 対応
-  * MIT ライセンスのオープンソースソフトウェア
+  * SQL の生成、説明、デバッグのための AI Copilot
+  * 統合ワークスペースから複数の ClickHouse クラスターを管理・クエリ
+  * スキーマ対応の SQL 自動補完とマルチタブのクエリワークスペース
+  * フィルタリングと可視化を備えたインタラクティブなクエリ結果の探索
+  * データセットの理解を支援する AI 搭載テーブル要約
+  * SSH トンネルをサポートする直接 ClickHouse 接続
+  * ライト、ダークなどのテーマをサポートするモダンで開発者向けのインターフェイス
+  * クロスプラットフォームのデスクトップアプリ (macOS、Windows、Linux) および Docker サポート
+  * オープンソース、MIT ライセンス
 </Accordion>
 
 <Accordion title="ClickHouse Schema Flow Visualizer">
@@ -218,9 +203,9 @@ doc_type: 'reference'
 <Accordion title="Grafana">
   [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) は、監視と可視化のためのプラットフォームです。
 
-  「Grafana を使えば、メトリクスの保存場所を問わず、クエリ、可視化、アラート設定を行い、メトリクスを理解できます。チームでダッシュボードを作成・探索・共有し、データドリブンな文化を育みましょう。コミュニティから信頼され、愛されています」— grafana.com
+  「Grafana を使用すると、保存場所に関係なく、メトリクスのクエリ、可視化、アラート設定、理解を行えます。チームでダッシュボードを作成、探索、共有し、データドリブンな文化を育成しましょう。コミュニティから信頼され、愛されています」 — grafana.com。
 
-  ClickHouse データソースプラグインを使用すると、ClickHouse をバックエンドデータベースとして利用できます。
+  ClickHouse データソースプラグインは、バックエンドデータベースとして ClickHouse をサポートします。
 </Accordion>
 
 <Accordion title="qryn">
@@ -241,7 +226,7 @@ doc_type: 'reference'
   機能:
 
   * 構文ハイライトと自動補完を備えたクエリ開発。
-  * フィルタとメタデータ検索を備えたテーブル一覧。
+  * フィルターとメタデータ検索を備えたテーブル一覧。
   * テーブルデータのプレビュー。
   * 全文検索。
 
@@ -280,19 +265,19 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DBM">
-  [DBM](https://github.com/devlive-community/dbm) DBM は ClickHouse 用のビジュアル管理ツールです。
+  [DBM](https://github.com/devlive-community/dbm) DBM は、ClickHouse のビジュアル管理ツールです。
 
   機能:
 
-  * クエリ履歴 (ページネーション、一括クリアなど)
-  * 選択した SQL 句のみのクエリ実行
-  * クエリの停止
-  * テーブル管理 (メタデータ、削除、プレビュー)
-  * データベース管理 (削除、作成)
-  * カスタムクエリ
-  * 複数データソースの管理 (接続テスト、監視)
-  * 監視 (プロセッサー、接続、クエリ)
-  * データ移行
+  * クエリ履歴をサポート (ページネーション、すべてクリアなど)
+  * 選択した SQL 句のクエリをサポート
+  * クエリの終了をサポート
+  * テーブル管理をサポート (メタデータ、削除、プレビュー)
+  * データベース管理をサポート (削除、作成)
+  * カスタムクエリをサポート
+  * 複数のデータソース管理をサポート (接続テスト、監視)
+  * 監視をサポート (プロセッサ、接続、クエリ)
+  * データ移行をサポート
 </Accordion>
 
 <Accordion title="Bytebase">
@@ -330,7 +315,7 @@ doc_type: 'reference'
 
   * 分析用ログライブラリをワンクリックで作成
   * ログ収集設定の管理
-  * ユーザー定義索引の設定
+  * ユーザー定義インデックスの設定
   * アラート設定
   * ライブラリおよびテーブル単位の権限設定
 </Accordion>
@@ -443,69 +428,9 @@ doc_type: 'reference'
   * 開発環境ですばやくセットアップできる Docker ベースのデプロイメント。
 </Accordion>
 
-<Accordion title="Beekeeper Studio">
-  [Beekeeper Studio](https://www.beekeeperstudio.io/) は、ClickHouse に対応した無料のオープンソース SQL エディタ兼データベースマネージャーです。
-
-  主な機能:
-
-  * オートコンプリートとマルチタブでのクエリ実行に対応したモダンな SQL エディタ。
-  * テーブル、ビュー、カラムを参照できるスキーマブラウザ。
-  * よく使うクエリの保存と整理。
-  * クロスプラットフォームのデスクトップアプリ (Windows、macOS、Linux) に加え、セルフホスト/Web 版も提供。
-
-  [Beekeeper Studio と ClickHouse のガイド](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
-</Accordion>
-
-<Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) は、Windows、macOS、Linux 向けのオープンソースのデスクトップ SQL ワークスペースで、Apache 2.0 ライセンスで提供されています。ClickHouse のサポートはアプリ内からインストールする公式プラグインによって提供され、Rust の `clickhouse` クライアント経由で HTTP インターフェイス (`8123`、TLS 利用時は `8443`) と通信します。
-
-  主な機能:
-
-  * ネイティブな ClickHouse の型に対応したデータベース、テーブル、ビューの参照。データスキッピングインデックスについては、その型、カラム、granularity も表示。
-  * Monaco をベースにした SQL エディタ。オートコンプリート、複数ステートメントの実行、ページネーション付きの結果表示に対応。
-  * データグリッドからのインラインでの insert、update、delete。`CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN`、`ADD INDEX` の DDL 生成。
-  * MCPサーバーを内蔵しているため、AI エージェントが同じアプリからスキーマを読み取り、クエリを実行可能。
-  * PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB などのエンジンと並べて、ClickHouse を 1 つのウィンドウで操作。
-
-  [Tabularis ClickHouse プラグイン](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Web サイト](https://tabularis.dev)
-</Accordion>
-
-## 商用 {#commercial}
-
-<Accordion title="ADQM Notebook">
-  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) は、Arenadata が ClickHouse をベースに構築したカラム指向 DBMS である [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) の Enterprise エディションに含まれる、notebook スタイルの SQL ワークスペースです。ClickHouse 組み込みの Web インターフェースを拡張し、マルチセルの notebook、インタラクティブな結果、クエリプラン分析、クラスター全体のスキーマブラウザーを提供します。ADQM ホストの HTTP ポート (`8123`) 上で `/play` と並んで `/notebook` から標準で利用でき、Chproxy 経由でも利用できます。
-
-  機能:
-
-  * SQL および Markdown セル、1 セルあたり最大 5 ステートメント、notebook またはセル単位のメモリ、時間、スレッド制限。
-  * 構文ハイライト、自動補完、`{{variable}}` 置換、`Beautify SQL` を備えた SQL エディタ。
-  * ソートおよび検索が可能なグリッド形式の結果表示。カラムごとの NULL 比率、ユニーク数、値の範囲を表示。
-  * 折れ線、エリア、棒チャート。CSV、TSV、JSON、JSONLines、Parquet 形式でのダウンロード。
-  * 推定および実際のクエリプラン、`EXPLAIN PIPELINE` と論理ビュー、修正案付きの検出結果。
-  * `system.query_log` からのクエリ統計とノードごとの内訳。直近 5 回の実行履歴。
-  * ローカルホストまたはクラスター全体を対象とした、カラム STATISTICS とすぐに使えるクエリを備えたデータベースパネル。
-  * テーブル、ビュー、materialized view、ディクショナリ、プロジェクションの依存関係グラフ。
-  * `KILL` ボタン付きの実行中クエリのライブビュー。
-  * クラスターへの単一エントリポイントとしての Chproxy 経由のアクセス。クエリは全ホストに分散されます。
-  * 自動保存、JSON のエクスポートとインポート、ClickHouse サーバー上での notebook の保存、リンクによる共有。
-</Accordion>
-
-<Accordion title="ProbeDeck">
-  [ProbeDeck](https://probedeck.app) は、ClickHouse の監視とクエリ実行のための iOS および iPadOS クライアントです。
-
-  機能:
-
-  * ProbeDeck は、実行中のクエリ、レプリカ、パーツ、マージ、ミューテーション、ディスク、サーバーメトリクスを表示します。
-  * `KILL QUERY` でクエリを停止し、`KILL MUTATION` でミューテーションを停止できます。
-  * スキーマとデータを参照したり、エディタで SQL を実行したりできます。
-  * ProbeDeck は、デバイスネットワークまたは SSH トンネル経由で HTTP(S) を使用して接続します。
-  * ProbeDeck は認証情報を iOS Keychain に保存し、接続ごとの読み取り専用モードをサポートします。
-  * アプリには、データがバンドルされたオフラインデモが含まれています。
-
-  無料ユーザーはサーバーを監視し、読み取り専用 SQL を実行できます。1 つの接続を保存できます。ProbeDeck Pro では、停止コントロール、書き込み、DDL、無制限の保存済み接続が追加されます。
-
-  接続手順については、[ProbeDeck を ClickHouse に接続する](/ja/integrations/connectors/sql-clients/probedeck)を参照してください。
-</Accordion>
+<div id="commercial">
+  ## 商用
+</div>
 
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) は、ClickHouse 専用のサポートを備えた JetBrains のデータベース IDE です。また、PyCharm、IntelliJ IDEA、GoLand、PhpStorm など、ほかの IntelliJ ベースのツールにも組み込まれています。
@@ -549,35 +474,37 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) は、ClickHouse を含む 50 以上のデータベース方言をサポートするデータプラットフォームおよびビジネスインテリジェンスツールです。Looker は SaaS プラットフォームとしても、セルフホストとしても利用できます。ユーザーはブラウザーから Looker を使用して、データの探索、可視化やダッシュボードの作成、レポートのスケジュール設定、同僚とのインサイト共有を行えます。Looker は、これらの機能を他のアプリケーションに埋め込むための豊富なツール群と、データを他のアプリケーションと連携させるための API を提供しています。
+  [Looker](https://looker.com) は、ClickHouse を含む 50 種類以上のデータベース SQL方言をサポートするデータプラットフォームおよびビジネスインテリジェンスツールです。Looker は SaaS プラットフォームおよびセルフホスト版として利用できます。ユーザーはブラウザから Looker を使用して、データの探索、可視化とダッシュボードの作成、レポートのスケジュール設定、インサイトの同僚との共有を行えます。Looker は、これらの機能を他のアプリケーションに埋め込むための豊富なツールセットと、他のアプリケーションとデータを
+  統合するための API を提供します。
 
   機能:
 
-  * レポート作成者やエンドユーザーを支援するキュレーションされた [Data Models](https://looker.com/platform/data-modeling) をサポートする言語である LookML を使用した、簡単かつ俊敏な開発。
-  * Looker の [Data Actions](https://looker.com/platform/actions) による強力なワークフローインテグレーション。
+  * レポート作成者とエンドユーザーを支援する、厳選された
+    [データモデリング](https://looker.com/platform/data-modeling) をサポートする言語 LookML を使用した、容易で俊敏な開発。
+  * Looker の [Data Actions](https://looker.com/platform/actions) による強力なワークフロー統合。
 
   [Looker で ClickHouse を設定する方法。](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) は、データ探索と運用レポート作成のためのセルフサービス BI ツールです。クラウドサービスとセルフホスト版の両方で利用できます。SeekTable のレポートは、任意の Web アプリに埋め込むことができます。
+  [SeekTable](https://www.seektable.com) は、データ探索と業務レポート作成のためのセルフサービス BI ツールです。クラウドサービスとセルフホスト版の両方で利用できます。SeekTable のレポートは、任意の Web アプリに埋め込めます。
 
   機能:
 
   * ビジネスユーザー向けの使いやすいレポートビルダー。
-  * SQL フィルタリングやレポート固有のクエリカスタマイズに対応する強力なレポートパラメーター。
-  * ネイティブ TCP/IP エンドポイントと HTTP(S) インターフェイスの両方で ClickHouse に接続可能 (2 種類の異なるドライバー)。
-  * ディメンションおよびメジャーの定義で、ClickHouse SQL 方言のすべての機能を使用できます。
-  * レポートを自動生成するための [Web API](https://www.seektable.com/help/web-api-integration)。
-  * アカウントデータの[バックアップ/復元](https://www.seektable.com/help/self-hosted-backup-restore)を利用したレポート開発フローをサポート。データモデル (キューブ) / レポート設定は可読性の高い XML 形式であり、バージョン管理システムで管理できます。
+  * SQL のフィルタリングやレポート固有のクエリカスタマイズに使える強力なレポートパラメーター。
+  * native TCP/IP endpoint と HTTP(S) インターフェイスの両方で ClickHouse に接続可能 (2 種類のドライバー) 。
+  * 次元/メジャー定義では、ClickHouse の SQL方言 の機能を最大限に活用できます。
+  * レポート自動生成用の [Web API](https://www.seektable.com/help/web-api-integration)。
+  * アカウントデータの [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore) に対応し、レポート開発フローをサポートします。データモデル (キューブ) / レポート設定は人が読める XML で、バージョン管理システムで管理できます。
 
-  SeekTable は、個人利用の場合は[無料](https://www.seektable.com/help/cloud-pricing)です。
+  SeekTable は、個人利用であれば [無料](https://www.seektable.com/help/cloud-pricing) です。
 
   [SeekTable で ClickHouse 接続を設定する方法。](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) は、ClickHouse クラスターで現在実行中のクエリとその詳細を可視化し、必要に応じて停止できるシンプルな UI です。
+  [Chadmin](https://github.com/bun4uk/chadmin) は、ClickHouse クラスターで現在実行中のクエリとその情報を可視化し、必要に応じて停止できるシンプルな UI です。
 </Accordion>
 
 <Accordion title="TABLUM.IO">
@@ -625,35 +552,6 @@ doc_type: 'reference'
   * ClickHouse ネイティブ型をサポート — `Nullable`、`Array`、`LowCardinality`、ネストされたオブジェクト。
   * ベクトル検索をサポート — `Array(Float32)` の埋め込みカラムを compact なベクトル cell として表示し、2D 埋め込みの可視化や、`cosineDistance` による類似検索に対応します。
   * 結果テーブル内でのインラインデータ編集とバッチ保存に対応し、さらに ClickHouse のネイティブフォーマットを使用した CSV/JSON/SQL のエクスポートとインポートも可能です。
-  * 接続オプション: HTTP/HTTPS、ファイアウォールの背後にあるプライベートクラスター向けの SSH トンネル、安全に production 環境を参照するためのオプションの 読み取り専用モード。
+  * 接続オプション: HTTP/HTTPS、ファイアウォールの背後にあるプライベートクラスター向けの SSH トンネル、安全に production 環境を参照するためのオプションの read-only モード。
   * ClickHouse Cloud とセルフホストの両方で利用できます。
-</Accordion>
-
-<Accordion title="ADQM Control">
-  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) は、Arenadata が ClickHouse 上に構築したカラム指向 DBMS である [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) としてデプロイされた ClickHouse クラスター向けのオブザーバビリティプラットフォームです。Prometheus のホストメトリクスと、クラスターから収集したホスト、テーブル、クエリに関するデータを組み合わせ、1 つまたは複数の ADQM クラスターを横断して、テーブルの増加状況、クエリの挙動、負荷がかかっているホストを可視化します。ADQM Control は [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) を用いて独立したクラスターとしてデプロイされ、収集したデータを PostgreSQL に保存します。
-
-  機能:
-
-  * 選択した ADQM クラスターのホスト状態を示すヒートマップ。
-  * 関連するアラートを時間に基づいてインシデントとしてグループ化。感度は調整可能。
-  * テーブルサイズ、行数、リクエスト数の時系列推移と、ホスト間の偏りや不均衡を示すメトリクス。
-  * カラムごとの圧縮サイズと非圧縮サイズ、圧縮による削減量、コーデックをグラフ付きで表示。
-  * ステータス、exception code、duration、メモリ、読み書きされた行数とバイト数を含む完全なクエリ履歴。
-  * テキスト、テーブル、ユーザー、ホスト、duration、ステータス、exception code のプリセットによるクエリのフィルター。
-  * duration、ユーザー、種類別のクエリグラフ。異常検知付きのホストごとの負荷グラフ。
-  * 問題の内容を説明し、修正方法を提示するホストリソースのしきい値アラート。
-</Accordion>
-
-<Accordion title="VisuaLeaf">
-  [VisuaLeaf](https://visualeaf.com/database/clickhouse/) は、MongoDB、PostgreSQL、MySQL などのデータベースに加えて ClickHouse にも対応した、クロスプラットフォームのデスクトップ向けデータベース GUI です。
-
-  機能:
-
-  * ClickHouse のデータベースとカラム指向テーブルを閲覧。
-  * 分析用 SQL クエリを実行。
-  * クエリ結果をチャートやダッシュボードに変換。
-  * ClickHouse Cloud の接続を自動認識。
-  * Windows、macOS、Linux に対応。
-
-  無料の Community Edition のほか、追加機能を備えた有料エディションも用意されています。
 </Accordion>

@@ -11,7 +11,9 @@ Sur une plateforme SaaS d&#39;analyse de données, il est courant que plusieurs 
 
 Selon les besoins, il existe différentes façons de mettre en œuvre la multi-tenance. Vous trouverez ci-dessous un guide expliquant comment les mettre en œuvre avec ClickHouse Cloud.
 
-## Table partagée {#shared-table}
+<div id="shared-table">
+  ## Table partagée
+</div>
 
 Dans cette approche, les données de tous les tenants sont stockées dans une seule table partagée, avec un champ (ou un ensemble de champs) servant à identifier les données de chaque tenant. Pour maximiser les performances, ce champ doit être inclus dans la [clé primaire](/fr/reference/statements/create/table#primary-key). Pour garantir que vous ne puissiez accéder qu&#39;aux données de vos tenants respectifs, nous utilisons le [contrôle d&#39;accès basé sur les rôles](/fr/concepts/features/security/access-rights), mis en œuvre au moyen de [politiques de lignes](/fr/concepts/features/security/access-rights#row-policy-management).
 
@@ -25,7 +27,9 @@ Cependant, d&#39;autres approches peuvent être plus adaptées si les tenants on
 
 Lorsqu&#39;il existe un écart important de volume de données entre les tenants, les plus petits peuvent subir une dégradation inutile des performances des requêtes. Notez que ce problème est largement atténué en incluant le champ tenant dans la clé primaire.
 
-### Exemple {#shared-table-example}
+<div id="shared-table-example">
+  ### Exemple
+</div>
 
 Voici un exemple d’implémentation d’un modèle de multi-tenance avec table partagée.
 
@@ -109,7 +113,9 @@ FROM events
    └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## Tables séparées {#separate-tables}
+<div id="separate-tables">
+  ## Tables séparées
+</div>
 
 Dans cette approche, les données de chaque tenant sont stockées dans une table distincte au sein de la même base de données, ce qui évite d&#39;avoir à utiliser un champ spécifique pour identifier les tenants. L&#39;accès des utilisateurs est contrôlé à l&#39;aide d&#39;une [instruction GRANT](/fr/reference/statements/grant), de sorte que chaque utilisateur ne puisse accéder qu&#39;aux tables contenant les données de ses tenants.
 
@@ -119,7 +125,9 @@ Pour les scénarios impliquant un petit nombre de tenants avec de très grands j
 
 Notez que cette approche ne passe pas à l&#39;échelle pour des milliers de tenants. Voir les [limites d&#39;utilisation](/fr/products/cloud/guides/best-practices/usagelimits).
 
-### Exemple {#separate-tables-example}
+<div id="shared-table-example">
+  ### Exemple
+</div>
 
 Voici un exemple d&#39;implémentation d&#39;un modèle de multi-tenancy à tables séparées.
 
@@ -203,7 +211,9 @@ FROM default.events_tenant_1
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## Bases de données séparées {#separate-databases}
+<div id="separate-databases">
+  ## Bases de données séparées
+</div>
 
 Les données de chaque tenant sont stockées dans une base de données distincte au sein du même service ClickHouse.
 
@@ -213,7 +223,9 @@ L&#39;implémentation est similaire à l&#39;approche des tables séparées, mai
 
 Notez que cette approche ne passe pas à l&#39;échelle pour des milliers de tenants. Consultez les [limites d&#39;utilisation](/fr/products/cloud/guides/best-practices/usagelimits).
 
-### Exemple {#separate-databases-example}
+<div id="shared-table-example">
+  ### Exemple
+</div>
 
 Voici un exemple d’implémentation d’un modèle de multi-tenance à bases de données séparées.
 
@@ -305,15 +317,19 @@ FROM tenant_1.events
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## Compute-compute separation {#compute-compute-separation}
+<div id="compute-compute-separation">
+  ## Compute-compute separation
+</div>
 
 Les trois approches décrites ci-dessus peuvent également être davantage isolées en utilisant les [Warehouses](/fr/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse). Les données sont partagées via un stockage objet commun, mais chaque tenant peut disposer de son propre service de compute grâce à la [compute-compute separation](/fr/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation), avec un ratio CPU/mémoire différent.
 
 La gestion des utilisateurs est similaire aux approches décrites précédemment, puisque tous les services d&#39;un warehouse [partagent les mêmes contrôles d&#39;accès](/fr/products/cloud/features/infrastructure/warehouses#database-credentials).
 
-Notez que le nombre de services dans un warehouse n&#39;est pas plafonné séparément, mais le nombre total de replicas cumulé sur l&#39;ensemble des services du warehouse est limité. Voir [les limites d’utilisation](/fr/cloud/bestpractices/usage-limits) et le [scaling des warehouses](/fr/products/cloud/features/infrastructure/warehouses#scaling).
+Notez que le nombre de services enfants dans un warehouse est limité. Voir [les limitations des warehouses](/fr/products/cloud/features/infrastructure/warehouses#limitations).
 
-## Service cloud séparé {#separate-service}
+<div id="separate-service">
+  ## Service cloud séparé
+</div>
 
 L’approche la plus radicale consiste à utiliser un service ClickHouse distinct pour chaque tenant.
 
@@ -323,7 +339,9 @@ Un compte utilisateur doit être créé sur chaque service afin que l’utilisat
 
 Cette approche est plus difficile à gérer et entraîne un surcoût pour chaque service, car chacun nécessite sa propre infrastructure pour fonctionner. Les services peuvent être gérés via l’[API ClickHouse Cloud](/fr/products/cloud/features/admin-features/api/api-overview), et l’orchestration est également possible via le [provider Terraform officiel](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
 
-### Exemple {#separate-service-example}
+<div id="shared-table-example">
+  ### Exemple
+</div>
 
 Voici un exemple de mise en œuvre d’un modèle de multi-tenance avec des services distincts. Notez que cet exemple montre la création de tables et d’utilisateurs sur un service ClickHouse ; il faudra reproduire la même configuration sur tous les services.
 

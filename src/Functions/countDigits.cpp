@@ -40,9 +40,15 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Integer | Decimal) -> UInt8";
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
+
+        return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -125,19 +131,19 @@ REGISTER_FUNCTION(CountDigits)
     FunctionDocumentation::Description description = R"(
 Returns the number of decimal digits needed to represent a value.
 
-<Note>
+:::note
 This function takes into account the scales of decimal values i.e., it calculates the result over the underlying integer type which is `(value * scale)`.
 
 For example:
 - `countDigits(42) = 2`
 - `countDigits(42.000) = 5`
 - `countDigits(0.04200) = 4`
-</Note>
+:::
 
-<Tip>
+:::tip
 You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
 although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
-</Tip>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "countDigits(x)";
     FunctionDocumentation::Arguments arguments = {

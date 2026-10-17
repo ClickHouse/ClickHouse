@@ -55,9 +55,20 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Float, Float, UInt8) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
+            ? FunctionArgumentDescriptors{
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}}
+            : FunctionArgumentDescriptors{
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -160,10 +171,9 @@ REGISTER_FUNCTION(GeoToH3)
     FunctionDocumentation::Description description = R"(
 Returns [H3](https://h3geo.org/docs/core-library/h3Indexing/) point index for the given latitude, longitude, and resolution.
 
-<Note>
+:::note
 In ClickHouse v25.4 or older, `geoToH3()` arguments are in the order `(lon, lat)`. As per ClickHouse v25.5, the input values are ordered `(lat, lon)`.
 The previous behavior can be restored using setting `geotoh3_argument_order = 'lon_lat'`.
-</Note>
     )";
     FunctionDocumentation::Syntax syntax = "geoToH3(lat, lon, resolution)";
     FunctionDocumentation::Arguments arguments = {
@@ -195,3 +205,4 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
 }
 
 #endif
+

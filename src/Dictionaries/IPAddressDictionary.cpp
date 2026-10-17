@@ -1,4 +1,3 @@
-#include <Common/StackWithMemoryTracking.h>
 #include <Dictionaries/IPAddressDictionary.h>
 #include <Columns/ColumnFixedString.h>
 
@@ -424,7 +423,7 @@ void IPAddressDictionary::createAttributes()
         {
             if (attribute.is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "{}: nullable attributes not supported for dictionary of type {}",
+                    "{}: array or nullable attributes not supported for dictionary of type {}",
                     getFullName(),
                     getTypeName());
 
@@ -574,7 +573,7 @@ void IPAddressDictionary::loadData()
     }
 
     parent_subnet.resize(ip_records.size());
-    StackWithMemoryTracking<size_t> subnets_stack;
+    std::stack<size_t> subnets_stack;
     for (const auto i : collections::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;

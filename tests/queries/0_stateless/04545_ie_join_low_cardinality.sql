@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- LowCardinality keys: the operator strips LowCardinality before comparisons, so LC(String)
 -- takes the generic comparator, LC(Int32) the encoded fast path, and LC(Nullable(Int32))
 -- additionally exercises the NULL-mask extraction after the conversion. All verified against

@@ -1,0 +1,7 @@
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
+add_headers_and_sources(clickhouse_functions_extractkeyvaluepairs .)
+add_headers_and_sources(clickhouse_functions_extractkeyvaluepairs impl)
+
+# Used in VirtualColumnsUtils (makeExtractor)
+extract_into_parent_list(clickhouse_functions_extractkeyvaluepairs_sources dbms_sources ${clickhouse_functions_extractkeyvaluepairs_sources})
+extract_into_parent_list(clickhouse_functions_extractkeyvaluepairs_headers dbms_headers ${clickhouse_functions_extractkeyvaluepairs_headers})
