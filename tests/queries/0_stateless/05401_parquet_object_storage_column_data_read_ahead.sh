@@ -13,6 +13,9 @@
 # Column chunks with an offset index (_pi.parquet) are not read ahead.
 # Reads through the userspace page cache are not read ahead. The CI server has no page cache, so a
 # clickhouse-local with one reads the files, then reads them again without it as a control.
+# A read buffer larger than the file puts the asynchronous prefetch buffer above the page cache
+# (RemoteFSBuffers); those reads are not read ahead either. The structure is given because schema
+# inference opens such a buffer too.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,10 +54,14 @@ $CLICKHOUSE_CLIENT --query "
 
 config="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_page_cache.yaml"
 echo "page_cache_max_size: 134217728" > "$config"
-s3_url_files="s3('http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}_{1,2}.parquet', 'test', 'testtest', 'Parquet')"
-events="SELECT sumIf(value, event = 'PageCacheReadBytes') > 0, sumIf(value, event = 'ParquetColumnDataReadAheadRowGroups') > 0 FROM system.events"
+s3_url_files="s3('http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}_{1,2}.parquet', 'test', 'testtest', 'Parquet', 'seqnum Nullable(UInt32), market Nullable(String)')"
+events="SELECT sumIf(value, event = 'PageCacheReadBytes') > 0, sumIf(value, event = 'RemoteFSBuffers') > 0, sumIf(value, event = 'ParquetColumnDataReadAheadRowGroups') > 0 FROM system.events"
+page_cache_settings="${settings/use_page_cache_for_object_storage = 0/use_page_cache_for_object_storage = 1}, max_download_threads = 4"
+async_settings="max_read_buffer_size_remote_fs = 16777216, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1"
 $CLICKHOUSE_LOCAL --config-file "$config" --multiquery "
-    $query FROM $s3_url_files SETTINGS ${settings/use_page_cache_for_object_storage = 0/use_page_cache_for_object_storage = 1}, max_download_threads = 4 FORMAT Null;
+    $query FROM $s3_url_files SETTINGS $page_cache_settings FORMAT Null;
+    $events;
+    $query FROM $s3_url_files SETTINGS $page_cache_settings, $async_settings FORMAT Null;
     $events;
     $query FROM $s3_url_files SETTINGS $settings, max_download_threads = 4 FORMAT Null;
     $events;"

@@ -76,8 +76,8 @@ public:
     /// Whether started prefetches are read by background tasks that can run in parallel.
     bool readsInBackground() const;
 
-    /// Whether reads retain whole page cache cells, which can be much larger than the ranges read.
-    bool readsPageCacheCells() const;
+    /// Whether reads go through the page cache, whose cells can be much larger than the ranges read.
+    bool readsThroughPageCache() const;
 
 private:
     friend class PrefetchHandle;

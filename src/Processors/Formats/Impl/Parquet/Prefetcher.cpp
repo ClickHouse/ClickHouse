@@ -110,9 +110,9 @@ bool Prefetcher::readsInBackground() const
     return read_mode == ReadMode::RandomRead && parser_shared_resources && !parser_shared_resources->io_runner.isDisabled();
 }
 
-bool Prefetcher::readsPageCacheCells() const
+bool Prefetcher::readsThroughPageCache() const
 {
-    return read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells();
+    return read_mode == ReadMode::RandomRead && reader->readsThroughPageCache();
 }
 
 void Prefetcher::readSync(char * to, size_t n, size_t offset)
@@ -594,7 +594,7 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     {
         /// When the reader supports zero-copy cached reads, get retained cache cells
         /// instead of allocating a buffer and copying data into it.
-        if (readsPageCacheCells() && task->length > 0)
+        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
         {
             auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
             chassert(!cached_regions.empty());
