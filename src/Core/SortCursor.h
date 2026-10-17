@@ -360,7 +360,10 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
     template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
-        for (size_t i = 0; i < impl->sort_columns_size; ++i)
+        /// Same truncated-cursor handling as in SortCursor::greaterAt.
+        const size_t prefix_limit = std::min(impl->sort_prefix_limit, rhs.impl->sort_prefix_limit);
+        const size_t num_sort_columns = std::min(impl->sort_columns_size, prefix_limit);
+        for (size_t i = 0; i < num_sort_columns; ++i)
         {
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
@@ -377,6 +380,10 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             if (res < 0)
                 return false;
         }
+
+        if (impl->sort_prefix_limit != rhs.impl->sort_prefix_limit)
+            return impl->sort_prefix_limit > rhs.impl->sort_prefix_limit;
+
         if constexpr (consider_order)
             return impl->order > rhs.impl->order;
         else
