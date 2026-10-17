@@ -1,0 +1,122 @@
+---
+sidebarTitle: "Approved domains"
+slug: "/cloud/security/approved-domains"
+title: "Approved domains"
+description: "Let new users join your ClickHouse Cloud organization based on their verified email domain, with automatic enrollment or invitations and default roles."
+doc_type: "guide"
+keywords:
+  - "ClickHouse Cloud"
+  - "approved domains"
+  - "domain verification"
+  - "auto-enrollment"
+  - "access management"
+---
+
+Approved domains allow new users to join your ClickHouse Cloud organization based on their email domain. After verifying a domain you own, you can automatically add matching users or send them an invitation, and assign default roles.
+
+This guide describes how to add and verify domains, configure enrollment, and manage approved domains.
+
+## Before you begin {#before-you-begin}
+
+You will need permission to manage organization settings and the ability to add a TXT record to your domain's DNS settings.
+
+<Note>
+  Approved domains are available for organizations that do not use SAML SSO or SCIM. For organizations using an identity provider, follow the [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) guide.
+</Note>
+
+## How it works {#how-it-works}
+
+When a user first creates their ClickHouse Cloud account, ClickHouse checks their email domain against approved domains. Each matching organization applies its configured enrollment method and default roles.
+
+| Enrollment method | Behavior |
+| --- | --- |
+| **Join automatically** | The user is added to the organization. The console then asks them to acknowledge their access and open an organization. |
+| **Send an invite** | The user receives an invitation and must accept it to join the organization. |
+
+Enrollment applies only to new accounts. To add an existing user, [send an invitation](/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+
+The email domain must match exactly. For example, `example.com` matches `user@example.com`, but not `user@team.example.com`. Add and verify subdomains separately.
+
+If multiple organizations approve the same domain, each applies its own enrollment settings. Users added automatically to multiple organizations can choose which one to open.
+
+## Add and verify a domain {#add-and-verify-a-domain}
+
+<Steps>
+  <Step title="Open approved domains" id="open-approved-domains">
+    In the ClickHouse Cloud console, open your organization's settings. Under **Approved domains**, click **Add domain**.
+  </Step>
+  <Step title="Add your domain" id="add-your-domain">
+    Enter your email domain, such as `example.com`, and click **Add**.
+
+    An organization can have up to 20 domains, including domains awaiting verification. Public and disposable email domains, such as `gmail.com`, cannot be approved.
+  </Step>
+  <Step title="Configure enrollment and default roles" id="configure-enrollment-and-default-roles">
+    For the domain, select an **Auto-enrollment** method and **Default role**.
+
+    New domains default to **Send an invite** and the **Member** role. Enrollment starts after verification succeeds.
+
+    The role selector offers **Member**, **Service Admin**, and **Service Reader**. Organizations using the earlier role system display **Service Read-Only** instead of **Service Reader**. Where supported, you can select multiple roles. The **Admin** option is disabled.
+  </Step>
+  <Step title="Add the DNS record" id="add-the-dns-record">
+    Create a TXT record with your DNS provider using the values shown in the console:
+
+    | Field | Value |
+    | --- | --- |
+    | Name/Host | The displayed **TXT record name**: `@`, or your provider's equivalent for the domain itself. |
+    | Value/Content | The complete **TXT record value**, beginning with `clickhouse-verification=`. |
+
+    Add this record alongside your existing TXT records.
+  </Step>
+  <Step title="Verify the domain" id="verify-the-domain">
+    Return to ClickHouse Cloud and click the refresh icon beside the unverified domain. When verification succeeds, its status changes to **Verified**.
+
+    DNS changes may take time to propagate. If verification does not succeed immediately, wait and try again.
+  </Step>
+</Steps>
+
+## Update enrollment settings {#update-enrollment-settings}
+
+Open **Approved domains** and change the domain's **Default role** or **Auto-enrollment** setting. Changes save automatically and apply to future enrollments.
+
+To update an existing member's roles, follow [Manage user role assignments](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments).
+
+## Remove a domain {#remove-a-domain}
+
+Open **Approved domains** and click the trash icon beside the domain.
+
+Removing a domain stops future enrollment through that domain. Existing members and invitations are retained. Remove members or cancel invitations separately if needed.
+
+## Limitations {#limitations}
+
+- Enrollment runs only when a user first creates their account. Existing users are not added retroactively.
+- Users who leave or are removed from an organization are not automatically added again when they sign in.
+- Existing members and unexpired invitations are not duplicated.
+- Organization membership restrictions still apply.
+- Configuring SAML SSO or enabling SCIM stops approved-domain enrollment.
+
+## Troubleshooting {#troubleshooting}
+
+### Approved domains is missing or cannot be edited {#approved-domains-missing}
+
+The section is hidden for organizations using SAML SSO. To edit approved domains, you need permission to manage organization settings.
+
+### Domain verification fails {#domain-verification-fails}
+
+Check that the TXT record is on the correct domain and matches the current value displayed in the console. Allow time for DNS propagation, then retry.
+
+If the console reports an outdated token, replace the verification value with the current value shown. If the verification request has expired, restart verification.
+
+### A domain is rejected {#domain-rejected}
+
+Check that the domain is not a public or disposable email domain and that your organization has fewer than 20 verified and unverified domains.
+
+### A user was not added {#user-not-added}
+
+Confirm that:
+
+- The user is creating a new ClickHouse Cloud account.
+- Their email domain exactly matches a verified domain.
+- The organization does not use SAML SSO or SCIM.
+- The organization is permitted to invite members.
+
+If **Send an invite** is selected, the user must accept the invitation before becoming a member. For existing accounts, send an invitation through **Users and roles**.

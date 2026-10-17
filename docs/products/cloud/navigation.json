@@ -1,5 +1,688 @@
 {
   "groups": [
+    {
+      "group": "Get started",
+      "pages": [
+        "products/cloud/getting-started/cloud-get-started",
+        "products/cloud/getting-started/intro",
+        "products/cloud/getting-started/resource-tour"
+      ]
+    },
+    {
+      "group": "Services and infrastructure",
+      "pages": [
+        "products/cloud/reference/architecture",
+        "products/cloud/features/cli",
+        {
+          "group": "Plan and deploy",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/cloud-tiers",
+            "products/cloud/reference/supported-regions",
+            "products/cloud/features/infrastructure/deployment-options",
+            "products/cloud/guides/cloud-compatibility",
+            "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+            "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
+          ]
+        },
+        {
+          "group": "Configure and scale",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/autoscaling/overview",
+            "products/cloud/reference/settings",
+            "products/cloud/features/autoscaling/vertical",
+            "products/cloud/features/autoscaling/horizontal-autoscaling",
+            "products/cloud/features/autoscaling/horizontal",
+            "products/cloud/features/autoscaling/make-before-break",
+            "products/cloud/features/autoscaling/idling",
+            "products/cloud/features/autoscaling/scaling-recommendations",
+            "products/cloud/features/autoscaling/scheduled-scaling"
+          ]
+        },
+        {
+          "group": "Compute and storage",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/infrastructure/on-demand-compute",
+            "products/cloud/features/large-single-replica-services",
+            "products/cloud/features/infrastructure/parallel-replicas",
+            "products/cloud/features/infrastructure/replica-aware-routing",
+            "products/cloud/features/infrastructure/shared-catalog",
+            "products/cloud/features/infrastructure/shared-merge-tree",
+            "products/cloud/features/infrastructure/warehouses"
+          ]
+        },
+        {
+          "group": "Reliability and maintenance",
+          "expanded": false,
+          "pages": [
+            "products/cloud/reference/service-uptime",
+            "products/cloud/reference/data-resiliency",
+            "products/cloud/features/admin-features/upgrades"
+          ]
+        },
+        {
+          "group": "Production planning",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/best-practices/index",
+            "products/cloud/guides/production-readiness",
+            "products/cloud/guides/best-practices/multitenancy",
+            "products/cloud/guides/best-practices/usagelimits"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Bring Your Own Cloud",
+      "pages": [
+        {
+          "group": "Overview",
+          "pages": [
+            "products/cloud/guides/infrastructure/deployment-options/byoc/overview",
+            "products/bring-your-own-cloud/overview/architecture"
+          ]
+        },
+        {
+          "group": "Configuration",
+          "pages": [
+            "products/bring-your-own-cloud/configuration/configurations",
+            "products/bring-your-own-cloud/configuration/connect",
+            "products/bring-your-own-cloud/configuration/operations"
+          ]
+        },
+        {
+          "group": "Onboarding",
+          "pages": [
+            "products/bring-your-own-cloud/onboarding/standard",
+            {
+              "group": "Customization",
+              "pages": [
+                "products/bring-your-own-cloud/onboarding/customization-aws",
+                "products/bring-your-own-cloud/onboarding/customization-gcp"
+              ]
+            },
+            {
+              "group": "Network",
+              "pages": [
+                "products/bring-your-own-cloud/onboarding/network",
+                "products/bring-your-own-cloud/onboarding/network-aws",
+                "products/bring-your-own-cloud/onboarding/network-gcp",
+                "products/bring-your-own-cloud/onboarding/network-azure"
+              ]
+            },
+            "products/bring-your-own-cloud/onboarding/new-region"
+          ]
+        },
+        {
+          "group": "Reference",
+          "pages": [
+            "products/bring-your-own-cloud/reference/network-security",
+            "products/bring-your-own-cloud/reference/privilege",
+            "products/bring-your-own-cloud/reference/clickhouse-data-access",
+            "products/bring-your-own-cloud/reference/observability-aws",
+            "products/bring-your-own-cloud/reference/billable-aws-services",
+            "products/bring-your-own-cloud/reference/cost-model-aws",
+            "products/bring-your-own-cloud/reference/aws-service-limits",
+            "products/bring-your-own-cloud/reference/security-shared-responsibility",
+            "products/bring-your-own-cloud/reference/faq",
+            {
+              "group": "Connector Mode",
+              "hidden": true,
+              "tag": "Preview",
+              "pages": [
+                "products/bring-your-own-cloud/connector/overview",
+                "products/bring-your-own-cloud/connector/onboarding",
+                "products/bring-your-own-cloud/connector/terraform-aws",
+                "products/bring-your-own-cloud/connector/architecture",
+                "products/bring-your-own-cloud/connector/managed-services",
+                "products/bring-your-own-cloud/connector/platform-updates",
+                "products/bring-your-own-cloud/connector/support-sessions",
+                "products/bring-your-own-cloud/connector/configuration",
+                "products/bring-your-own-cloud/connector/operations",
+                "products/bring-your-own-cloud/connector/reference/cli",
+                "products/bring-your-own-cloud/connector/reference/configuration",
+                "products/bring-your-own-cloud/connector/reference/faq",
+                "products/bring-your-own-cloud/connector/reference/privilege-model"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Data and integrations",
+      "pages": [
+        "products/cloud/features/integrations",
+        "products/cloud/features/data-catalogs",
+        "products/cloud/guides/migration/upload-a-csv-file",
+        {
+          "group": "Data sources",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/data-sources/index",
+            "products/cloud/guides/data-sources/cloud-endpoints-api",
+            "products/cloud/guides/data-sources/accessing-s3-data-securely",
+            "products/cloud/guides/data-sources/secure-azure",
+            "products/cloud/guides/data-sources/secure-gcs",
+            "products/cloud/guides/data-sources/accessing-iceberg-data-securely"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Connect and query",
+      "pages": [
+        "products/cloud/features/sql-console-features/sql-console",
+        "products/cloud/guides/sql-console/connection-details",
+        "products/cloud/features/sql-console-features/query-insights",
+        {
+          "group": "Query API endpoints",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/sql-console-features/query-endpoints",
+            "products/cloud/guides/sql-console/query-endpoints"
+          ]
+        },
+        "products/cloud/features/sql-console-features/dashboards",
+        "products/cloud/features/sql-console-features/user-defined-functions",
+        "products/cloud/features/sql-console-features/clickstack"
+      ]
+    },
+    {
+      "group": "Access management",
+      "pages": [
+        "products/cloud/guides/security/cloud-access-management/index",
+        {
+          "group": "Cloud accounts and roles",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/cloud-access-management/manage-my-account",
+            "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+            "products/cloud/guides/security/cloud-access-management/approved-domains",
+            "products/cloud/reference/security/console-roles",
+            "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
+          ]
+        },
+        {
+          "group": "Database users and permissions",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/cloud-access-management/manage-database-users",
+            "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+            "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts"
+          ]
+        },
+        {
+          "group": "Identity providers",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+            "products/cloud/guides/security/saml-sso-removal",
+            "products/cloud/guides/security/cloud-access-management/scim-setup",
+            "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+            "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Security and compliance",
+      "pages": [
+        "products/cloud/features/security",
+        {
+          "group": "Network access",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/connectivity/setting-ip-filters",
+            {
+              "group": "Private networking",
+              "expanded": false,
+              "pages": [
+                "products/cloud/guides/security/connectivity/private-networking/index",
+                "products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
+                "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
+                "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "Audit logging",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/audit-logging/index",
+            "products/cloud/guides/security/audit-logging/console-audit-log",
+            "products/cloud/reference/security/audit-logging",
+            "products/cloud/guides/security/audit-logging/database-audit-log",
+            "products/cloud/guides/security/audit-logging/byoc-security-playbook"
+          ]
+        },
+        {
+          "group": "Data security",
+          "expanded": false,
+          "pages": [
+            "products/cloud/guides/security/data-masking",
+            "products/cloud/guides/security/cmek"
+          ]
+        },
+        {
+          "group": "Compliance and privacy",
+          "expanded": false,
+          "pages": [
+            "products/cloud/reference/security/compliance-overview",
+            "products/cloud/guides/security/compliance/hipaa-onboarding",
+            "products/cloud/guides/security/compliance/pci-onboarding",
+            "products/cloud/reference/security/ai-compliance",
+            "products/cloud/reference/personal-data-access"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Monitoring and backups",
+      "pages": [
+        {
+          "group": "Monitoring",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/monitoring/overview",
+            "products/cloud/features/monitoring/cloud-console",
+            "products/cloud/features/monitoring/advanced-dashboard",
+            "products/cloud/features/monitoring/notifications",
+            "products/cloud/features/monitoring/prometheus",
+            "products/cloud/features/monitoring/system-tables",
+            "products/cloud/features/monitoring/integrations"
+          ]
+        },
+        {
+          "group": "Backups",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/backups/overview",
+            {
+              "group": "Manage backups",
+              "expanded": false,
+              "pages": [
+                "products/cloud/guides/backups/index",
+                "products/cloud/guides/backups/review-and-restore-backups",
+                "products/cloud/guides/backups/configurable-backups",
+                {
+                  "group": "Bring Your Own Backup",
+                  "expanded": false,
+                  "pages": [
+                    "products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
+                    "products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
+                    "products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "AI tools and agents",
+      "pages": [
+        "products/cloud/features/ai-ml/index",
+        "products/cloud/features/ai-ml/aichat/using-ai-chat",
+        "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+        "products/cloud/features/ai-ml/langfuse",
+        {
+          "group": "Remote MCP",
+          "expanded": false,
+          "pages": [
+            "products/cloud/features/ai-ml/remote-mcp",
+            "products/cloud/features/ai-ml/mcp/remote-mcp"
+          ]
+        },
+        {
+          "group": "ClickHouse Agents",
+          "pages": [
+            "products/cloud/features/ai-ml/agents/index",
+            "products/cloud/features/ai-ml/agents/quickstart",
+            "products/cloud/features/ai-ml/agents/chat",
+            {
+              "group": "Agent Builder",
+              "pages": [
+                "products/cloud/features/ai-ml/agents/builder/index",
+                "products/cloud/features/ai-ml/agents/builder/model-parameters",
+                "products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                "products/cloud/features/ai-ml/agents/builder/web-search",
+                "products/cloud/features/ai-ml/agents/builder/image-generation",
+                "products/cloud/features/ai-ml/agents/builder/vision",
+                "products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                "products/cloud/features/ai-ml/agents/builder/skills",
+                "products/cloud/features/ai-ml/agents/builder/subagents"
+              ]
+            },
+            "products/cloud/features/ai-ml/agents/prompts",
+            "products/cloud/features/ai-ml/agents/memory",
+            "products/cloud/features/ai-ml/agents/marketplace",
+            "products/cloud/features/ai-ml/agents/sharing-and-access"
+          ]
+        },
+        "products/cloud/features/ai-ml/model-developer-terms"
+      ]
+    },
+    {
+      "group": "Cloud API",
+      "pages": [
+        "products/cloud/features/admin-features/api/api-overview",
+        "products/cloud/features/admin-features/api/openapi",
+        "products/cloud/features/admin-features/api/postman",
+        {
+          "group": "API reference",
+          "openapi": {
+            "source": "_specs/cloud-openapi.json",
+            "directory": "products/cloud/api-reference"
+          },
+          "pages": [
+            {
+              "group": "Organization",
+              "pages": [
+                {
+                  "group": "Organization",
+                  "pages": [
+                    "GET /v1/organizations",
+                    "GET /v1/organizations/{organizationId}",
+                    "PATCH /v1/organizations/{organizationId}",
+                    "products/cloud/api-reference/organization/organization-quotas-get-list",
+                    "products/cloud/api-reference/organization/organization-quota-get",
+                    "GET /v1/organizations/{organizationId}/activities",
+                    "GET /v1/organizations/{organizationId}/activities/{activityId}",
+                    "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
+                    "POST /v1/organizations/{organizationId}/byocInfrastructure",
+                    "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+                    "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
+                    "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                    "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                    "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
+                    "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
+                    "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
+                  ]
+                },
+                {
+                  "group": "Notifications",
+                  "pages": [
+                    "products/cloud/api-reference/notifications/notification-types-get-list"
+                  ]
+                },
+                {
+                  "group": "Billing",
+                  "pages": [
+                    "GET /v1/organizations/{organizationId}/usageCost",
+                    "products/cloud/api-reference/billing/active-balances-get",
+                    "products/cloud/api-reference/billing/credit-balances-get"
+                  ]
+                },
+                {
+                  "group": "User management",
+                  "pages": [
+                    "products/cloud/api-reference/user-management/whoami-get",
+                    "GET /v1/organizations/{organizationId}/members",
+                    "GET /v1/organizations/{organizationId}/members/{userId}",
+                    "PATCH /v1/organizations/{organizationId}/members/{userId}",
+                    "DELETE /v1/organizations/{organizationId}/members/{userId}",
+                    "GET /v1/organizations/{organizationId}/invitations",
+                    "POST /v1/organizations/{organizationId}/invitations",
+                    "GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                    "DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                  ]
+                },
+                {
+                  "group": "Role Management",
+                  "pages": [
+                    "GET /v1/organizations/{organizationId}/roles",
+                    "POST /v1/organizations/{organizationId}/roles",
+                    "GET /v1/organizations/{organizationId}/roles/{roleId}",
+                    "PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                    "DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                  ]
+                },
+                {
+                  "group": "UDF",
+                  "pages": [
+                    "POST /v1/organizations/{organizationId}/udfUploads/url",
+                    "GET /v1/organizations/{organizationId}/udfs",
+                    "POST /v1/organizations/{organizationId}/udfs",
+                    "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
+                    "GET /v1/organizations/{organizationId}/udfs/{functionName}",
+                    "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
+                    "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+                    "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+                    "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+                    "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+                    "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+                    "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
+                  ]
+                }
+              ]
+            },
+            {
+              "group": "Service",
+              "pages": [
+                {
+                  "group": "Service",
+                  "pages": [
+                    "GET /v1/organizations/{organizationId}/serviceProfiles",
+                    "GET /v1/organizations/{organizationId}/services",
+                    "POST /v1/organizations/{organizationId}/services",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}",
+                    "PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                    "DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                    "DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                    "POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                    "PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                    "products/cloud/api-reference/service/instance-scaling-update",
+                    "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                    "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                    "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                    "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                    "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                    "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
+                    "products/cloud/api-reference/service/service-clickhouse-settings-update",
+                    "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
+                    "products/cloud/api-reference/service/service-clickhouse-setting-get",
+                    "products/cloud/api-reference/service/service-clickhouse-setting-delete"
+                  ]
+                },
+                {
+                  "group": "Backup",
+                  "pages": [
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                    "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                    "products/cloud/api-reference/backup/backup-bucket-get",
+                    "products/cloud/api-reference/backup/backup-bucket-create",
+                    "products/cloud/api-reference/backup/backup-bucket-update",
+                    "products/cloud/api-reference/backup/backup-bucket-delete"
+                  ]
+                },
+                {
+                  "group": "Snapshot",
+                  "pages": [
+                    "products/cloud/api-reference/snapshot/snapshot-get-list",
+                    "products/cloud/api-reference/snapshot/snapshot-get",
+                    "products/cloud/api-reference/snapshot/snapshot-configuration-get",
+                    "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+                  ]
+                },
+                {
+                  "group": "Query API endpoints",
+                  "pages": [
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+                    "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+                    "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+                    "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+                    "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
+                  ]
+                },
+                {
+                  "group": "Saved queries",
+                  "pages": [
+                    "products/cloud/api-reference/saved-queries/saved-query-list",
+                    "products/cloud/api-reference/saved-queries/saved-query-create",
+                    "products/cloud/api-reference/saved-queries/saved-query-delete",
+                    "products/cloud/api-reference/saved-queries/saved-query-get",
+                    "products/cloud/api-reference/saved-queries/saved-query-update"
+                  ]
+                }
+              ]
+            },
+            {
+              "group": "API keys",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/keys",
+                "POST /v1/organizations/{organizationId}/keys",
+                "GET /v1/organizations/{organizationId}/keys/{keyId}",
+                "PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                "DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+              ]
+            },
+            {
+              "group": "Prometheus",
+              "pages": [
+                "products/cloud/api-reference/prometheus/organization-prometheus-get",
+                "GET /v1/organizations/{organizationId}/prometheus/discovery",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
+                "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
+              ]
+            },
+            {
+              "group": "ClickPipes",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                "products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                "products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
+                "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+              ]
+            },
+            {
+              "group": "ClickStack",
+              "pages": [
+                "products/cloud/api-reference/clickstack/click-stack-list-dashboards",
+                "products/cloud/api-reference/clickstack/click-stack-create-dashboard",
+                "products/cloud/api-reference/clickstack/click-stack-get-dashboard",
+                "products/cloud/api-reference/clickstack/click-stack-update-dashboard",
+                "products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
+                "products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
+                "products/cloud/api-reference/clickstack/click-stack-list-alerts",
+                "products/cloud/api-reference/clickstack/click-stack-create-alert",
+                "products/cloud/api-reference/clickstack/click-stack-list-sources",
+                "products/cloud/api-reference/clickstack/click-stack-create-source",
+                "products/cloud/api-reference/clickstack/click-stack-get-source",
+                "products/cloud/api-reference/clickstack/click-stack-update-source",
+                "products/cloud/api-reference/clickstack/click-stack-delete-source",
+                "products/cloud/api-reference/clickstack/click-stack-get-alert",
+                "products/cloud/api-reference/clickstack/click-stack-update-alert",
+                "products/cloud/api-reference/clickstack/click-stack-delete-alert",
+                "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
+                "products/cloud/api-reference/clickstack/click-stack-create-webhook",
+                "products/cloud/api-reference/clickstack/click-stack-update-webhook",
+                "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
+                "products/cloud/api-reference/clickstack/click-stack-list-roles",
+                "products/cloud/api-reference/clickstack/click-stack-create-role",
+                "products/cloud/api-reference/clickstack/click-stack-get-role",
+                "products/cloud/api-reference/clickstack/click-stack-update-role",
+                "products/cloud/api-reference/clickstack/click-stack-delete-role",
+                "products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
+                "products/cloud/api-reference/clickstack/click-stack-create-saved-search",
+                "products/cloud/api-reference/clickstack/click-stack-get-saved-search",
+                "products/cloud/api-reference/clickstack/click-stack-update-saved-search",
+                "products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
+              ]
+            },
+            {
+              "group": "Postgres",
+              "pages": [
+                "products/cloud/api-reference/postgres/postgres-service-create",
+                "products/cloud/api-reference/postgres/postgres-service-get-list",
+                "products/cloud/api-reference/postgres/postgres-service-get",
+                "products/cloud/api-reference/postgres/postgres-service-delete",
+                "products/cloud/api-reference/postgres/postgres-service-patch",
+                "products/cloud/api-reference/postgres/postgres-service-certs-get",
+                "products/cloud/api-reference/postgres/postgres-instance-restore",
+                "products/cloud/api-reference/postgres/postgres-service-set-password",
+                "products/cloud/api-reference/postgres/postgres-service-patch-state",
+                "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+                "products/cloud/api-reference/postgres/postgres-instance-config-get",
+                "products/cloud/api-reference/postgres/postgres-instance-config-post",
+                "products/cloud/api-reference/postgres/postgres-instance-config-patch",
+                "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+                "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
+                "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+                "products/cloud/api-reference/postgres/slow-query-pattern-get",
+                "products/cloud/api-reference/postgres/postgres-logs-get-list"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Billing",
+      "pages": [
+        "products/cloud/reference/billing/billing-overview",
+        {
+          "group": "Marketplace",
+          "expanded": false,
+          "pages": [
+            "products/cloud/reference/billing/marketplace/overview",
+            "products/cloud/reference/billing/marketplace/aws-marketplace-committed",
+            "products/cloud/reference/billing/marketplace/aws-marketplace-payg",
+            "products/cloud/reference/billing/marketplace/azure-marketplace-committed",
+            "products/cloud/reference/billing/marketplace/azure-marketplace-payg",
+            "products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
+            "products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
+            "products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
+          ]
+        },
+        {
+          "group": "ClickPipes",
+          "expanded": false,
+          "pages": [
+            "products/cloud/reference/billing/clickpipes/index",
+            "products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+            "products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+          ]
+        },
+        "products/cloud/reference/billing/network-data-transfer",
+        "products/cloud/reference/billing/payment-thresholds",
+        "products/cloud/reference/billing/spend-alerts",
+        "products/cloud/reference/billing/managing-payment-methods",
+        "products/cloud/reference/billing/self-service-prepaid-credit-management",
+        "products/cloud/reference/billing/billing-compliance"
+      ]
+    },
+    {
+      "group": "Support",
+      "pages": [
+        "products/cloud/features/support",
+        "products/cloud/reference/account-close"
+      ]
+    },
         {
           "group": "Get started",
           "pages": [
