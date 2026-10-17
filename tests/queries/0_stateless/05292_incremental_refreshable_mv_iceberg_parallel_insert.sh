@@ -13,7 +13,7 @@ MV="mv_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TGT_PATH="${USER_FILES_PATH}/${TGT}/"
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${SRC} (k UInt64)
+    CREATE TABLE ${SRC} (k Int64)
     ENGINE = MergeTree ORDER BY k
     SETTINGS
         enable_block_number_column = 1,
@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TGT} (k UInt64)
+    CREATE TABLE ${TGT} (k Int64)
     ENGINE = IcebergLocal('${TGT_PATH}', 'Parquet')
     PARTITION BY icebergBucket(2, k)
 "
