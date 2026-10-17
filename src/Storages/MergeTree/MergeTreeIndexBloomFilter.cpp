@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -397,6 +398,39 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
             continue;
         }
 
+        if (const auto * left_decimal32 = typeid_cast<const DataTypeDecimal32 *>(left_type.get()))
+        {
+            const auto * right_decimal32 = typeid_cast<const DataTypeDecimal32 *>(right_type.get());
+            if (!right_decimal32 || left_decimal32->getPrecision() != right_decimal32->getPrecision()
+                || left_decimal32->getScale() != right_decimal32->getScale())
+                return false;
+            continue;
+        }
+        if (const auto * left_decimal64 = typeid_cast<const DataTypeDecimal64 *>(left_type.get()))
+        {
+            const auto * right_decimal64 = typeid_cast<const DataTypeDecimal64 *>(right_type.get());
+            if (!right_decimal64 || left_decimal64->getPrecision() != right_decimal64->getPrecision()
+                || left_decimal64->getScale() != right_decimal64->getScale())
+                return false;
+            continue;
+        }
+        if (const auto * left_decimal128 = typeid_cast<const DataTypeDecimal128 *>(left_type.get()))
+        {
+            const auto * right_decimal128 = typeid_cast<const DataTypeDecimal128 *>(right_type.get());
+            if (!right_decimal128 || left_decimal128->getPrecision() != right_decimal128->getPrecision()
+                || left_decimal128->getScale() != right_decimal128->getScale())
+                return false;
+            continue;
+        }
+        if (const auto * left_decimal256 = typeid_cast<const DataTypeDecimal256 *>(left_type.get()))
+        {
+            const auto * right_decimal256 = typeid_cast<const DataTypeDecimal256 *>(right_type.get());
+            if (!right_decimal256 || left_decimal256->getPrecision() != right_decimal256->getPrecision()
+                || left_decimal256->getScale() != right_decimal256->getScale())
+                return false;
+            continue;
+        }
+
         if (const auto * left_enum8 = typeid_cast<const DataTypeEnum8 *>(left_type.get()))
         {
             const auto * right_enum8 = typeid_cast<const DataTypeEnum8 *>(right_type.get());
@@ -716,7 +750,6 @@ bool compareSupportedNumericConstant(
 bool compareSupportedConstant(
     const ActionsDAG::Node & left,
     const ActionsDAG::Node & right,
-    ExpressionMatchMode mode,
     ExpressionMatchBudget & budget)
 {
     if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
@@ -763,8 +796,7 @@ bool compareSupportedConstant(
             && compareColumnStringStorage(*left_strings, *right_strings, left_size, budget);
     }
 
-    if (mode == ExpressionMatchMode::ArrayJoinWrapper
-        && compareFixedWidthArrayStorage(left.result_type, right.result_type, left_data, right_data, budget))
+    if (compareFixedWidthArrayStorage(left.result_type, right.result_type, left_data, right_data, budget))
         return true;
 
     return false;
@@ -1001,7 +1033,7 @@ bool structurallyMatchesIndexedExpression(
                 break;
             case ActionsDAG::ActionType::COLUMN:
                 if (!left->children.empty() || !right->children.empty()
-                    || !compareSupportedConstant(*left, *right, mode, budget))
+                    || !compareSupportedConstant(*left, *right, budget))
                     return false;
                 break;
             case ActionsDAG::ActionType::FUNCTION:

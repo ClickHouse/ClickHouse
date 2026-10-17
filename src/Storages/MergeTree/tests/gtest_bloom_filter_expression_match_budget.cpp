@@ -5,9 +5,12 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
@@ -100,6 +103,41 @@ bool canPruneTupleArrayJoinInWithSharedBudget(bool first_component_mismatches)
     return !condition.alwaysUnknownOrTrue();
 }
 
+bool canPruneDecimalToStringIn(const DataTypePtr & query_decimal_type, const DataTypePtr & index_decimal_type)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto string_type = std::make_shared<DataTypeString>();
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_input = query_dag.addInput("x", query_decimal_type);
+    const auto & index_input = index_dag.addInput("x", index_decimal_type);
+    const auto & query_to_string = query_dag.addFunction(
+        FunctionFactory::instance().get("toString", context), {&query_input}, "query_to_string");
+    const auto & index_to_string = index_dag.addFunction(
+        FunctionFactory::instance().get("toString", context), {&index_input}, "index_to_string");
+    /// DirectIN resolves the indexed expression by the canonical function column name.
+    const auto & indexed_output = index_dag.addAlias(index_to_string, "toString(x)");
+    index_dag.getOutputs().push_back(&indexed_output);
+
+    ColumnsWithTypeAndName header_columns{{string_type->createColumn(), string_type, "toString(x)"}};
+    Block header(std::move(header_columns));
+
+    auto set_value = ColumnString::create();
+    set_value->insertData("3", 1);
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), string_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node = query_dag.addColumn(
+        ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate = query_dag.addFunction(
+        FunctionFactory::instance().get("in", context), {&query_to_string, &set_node}, "predicate");
+
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
 }
 
 TEST(MergeTreeIndexBloomFilter, SharesExpressionMatchBudgetAcrossTupleINComponents)
@@ -110,4 +148,14 @@ TEST(MergeTreeIndexBloomFilter, SharesExpressionMatchBudgetAcrossTupleINComponen
 
     /// Exhaustion in a later component must preserve a safe predicate contributed by its sibling.
     EXPECT_TRUE(canPruneTupleArrayJoinInWithSharedBudget(false));
+}
+
+TEST(MergeTreeIndexBloomFilter, MatchesDecimalParametersForToStringIN)
+{
+    EXPECT_TRUE(canPruneDecimalToStringIn(
+        std::make_shared<DataTypeDecimal64>(10, 2), std::make_shared<DataTypeDecimal64>(10, 2)));
+    EXPECT_FALSE(canPruneDecimalToStringIn(
+        std::make_shared<DataTypeDecimal64>(18, 2), std::make_shared<DataTypeDecimal64>(10, 2)));
+    EXPECT_FALSE(canPruneDecimalToStringIn(
+        std::make_shared<DataTypeDecimal64>(10, 3), std::make_shared<DataTypeDecimal64>(10, 2)));
 }

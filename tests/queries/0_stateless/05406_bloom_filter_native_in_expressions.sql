@@ -5,6 +5,8 @@ SET use_query_condition_cache = 0;
 SET optimize_functions_to_subcolumns = 0;
 SET input_format_values_interpret_expressions = 1;
 
+DROP TABLE IF EXISTS t_bf_post5_array_direct_in;
+DROP TABLE IF EXISTS t_bf_post5_decimal_expr;
 DROP TABLE IF EXISTS t_bf_post5_types;
 DROP TABLE IF EXISTS t_bf_post5_map_expr;
 DROP TABLE IF EXISTS t_bf_post5_array_expr;
@@ -374,6 +376,198 @@ SELECT 'array physical collision', arraySort(groupArray(id)) FROM t_bf_post5_arr
 SELECT 'arrayReverse indexed', arraySort(groupArray(id)) FROM t_bf_post5_array_expr WHERE arrayJoin(arrayReverse(a)) IN ('3');
 SELECT 'arrayReverse full scan', arraySort(groupArray(id)) FROM t_bf_post5_array_expr WHERE arrayJoin(arrayReverse(a)) IN ('3') SETTINGS use_skip_indexes = 0;
 
+-- DirectIN constant arrays use the same bounded fixed-width comparison as arrayJoin wrappers.
+CREATE TABLE t_bf_post5_array_direct_in
+(
+    id UInt64,
+    a Array(UInt8),
+    INDEX idx_array_intersect arrayIntersect(a, [3]) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_post5_array_direct_in SELECT number, [number] FROM numbers(16);
+
+SELECT 'array DirectIN indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(3), [toUInt8(3)])]
+FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [3]) IN ([3]);
+SELECT 'array DirectIN full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(3), [toUInt8(3)])]
+FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [3]) IN ([3]) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_intersect') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'array DirectIN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [3]) IN ([3]));
+
+SELECT 'arrayJoin control indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(3), [toUInt8(3)])]
+FROM t_bf_post5_array_direct_in WHERE arrayJoin(arrayIntersect(a, [3])) IN (3);
+SELECT 'arrayJoin control full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(3), [toUInt8(3)])]
+FROM t_bf_post5_array_direct_in WHERE arrayJoin(arrayIntersect(a, [3])) IN (3) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_intersect') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arrayJoin control retains index pruning 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_array_direct_in WHERE arrayJoin(arrayIntersect(a, [3])) IN (3));
+
+SELECT 'unequal array literal indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(4), [toUInt8(4)])]
+FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [4]) IN ([4]);
+SELECT 'unequal array literal full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), a))) = [(toUInt64(4), [toUInt8(4)])]
+FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [4]) IN ([4]) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_intersect') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'unequal array literal declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_array_direct_in WHERE arrayIntersect(a, [4]) IN ([4]));
+
+CREATE TABLE t_bf_post5_decimal_expr
+(
+    id UInt64,
+    x UInt64,
+    INDEX idx_decimal32 toString(toDecimal32(x, 2)) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_decimal64 toString(toDecimal64(x, 2)) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_decimal128 toString(toDecimal128(x, 2)) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_decimal256 toString(toDecimal256(x, 2)) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_post5_decimal_expr SELECT number, number FROM numbers(16);
+
+SELECT 'Decimal32 IN indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal32(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 2)) IN (toString(toDecimal32(toUInt64(3), 2)));
+SELECT 'Decimal32 IN full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal32(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 2)) IN (toString(toDecimal32(toUInt64(3), 2))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal32') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal32 IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 2)) IN (toString(toDecimal32(toUInt64(3), 2))));
+SELECT 'Decimal32 scale mismatch indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal32(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 3)) IN (toString(toDecimal32(toUInt64(3), 3)));
+SELECT 'Decimal32 scale mismatch full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal32(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 3)) IN (toString(toDecimal32(toUInt64(3), 3))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal32') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal32 scale mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal32(x, 3)) IN (toString(toDecimal32(toUInt64(3), 3))));
+
+SELECT 'Decimal64 IN indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal64(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 2)) IN (toString(toDecimal64(toUInt64(3), 2)));
+SELECT 'Decimal64 IN full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal64(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 2)) IN (toString(toDecimal64(toUInt64(3), 2))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal64') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal64 IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 2)) IN (toString(toDecimal64(toUInt64(3), 2))));
+SELECT 'Decimal64 scale mismatch indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal64(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 3)) IN (toString(toDecimal64(toUInt64(3), 3)));
+SELECT 'Decimal64 scale mismatch full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal64(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 3)) IN (toString(toDecimal64(toUInt64(3), 3))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal64') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal64 scale mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal64(x, 3)) IN (toString(toDecimal64(toUInt64(3), 3))));
+
+SELECT 'Decimal128 IN indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal128(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 2)) IN (toString(toDecimal128(toUInt64(3), 2)));
+SELECT 'Decimal128 IN full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal128(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 2)) IN (toString(toDecimal128(toUInt64(3), 2))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal128') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal128 IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 2)) IN (toString(toDecimal128(toUInt64(3), 2))));
+SELECT 'Decimal128 scale mismatch indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal128(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 3)) IN (toString(toDecimal128(toUInt64(3), 3)));
+SELECT 'Decimal128 scale mismatch full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal128(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 3)) IN (toString(toDecimal128(toUInt64(3), 3))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal128') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal128 scale mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal128(x, 3)) IN (toString(toDecimal128(toUInt64(3), 3))));
+
+SELECT 'Decimal256 IN indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal256(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 2)) IN (toString(toDecimal256(toUInt64(3), 2)));
+SELECT 'Decimal256 IN full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal256(x, 2))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 2)) IN (toString(toDecimal256(toUInt64(3), 2))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal256') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal256 IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 2)) IN (toString(toDecimal256(toUInt64(3), 2))));
+SELECT 'Decimal256 scale mismatch indexed rows preserve typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal256(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 3)) IN (toString(toDecimal256(toUInt64(3), 3)));
+SELECT 'Decimal256 scale mismatch full scan preserves typed values',
+       arraySort(groupArray((toUInt64(id), toUInt64(x), toString(toDecimal256(x, 3))))) = [(toUInt64(3), toUInt64(3), '3')]
+FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 3)) IN (toString(toDecimal256(toUInt64(3), 3))) SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_decimal256') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Decimal256 scale mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_decimal_expr WHERE toString(toDecimal256(x, 3)) IN (toString(toDecimal256(toUInt64(3), 3))));
+
 DROP TABLE t_bf_post5_types;
 DROP TABLE t_bf_post5_map_expr;
 DROP TABLE t_bf_post5_array_expr;
@@ -381,3 +575,5 @@ DROP TABLE t_bf_post5_map_collision;
 DROP TABLE t_bf_post5_array_collision;
 DROP TABLE t_bf_post5_intermediate_expr;
 DROP TABLE t_bf_post5_array_slice_mismatch;
+DROP TABLE t_bf_post5_array_direct_in;
+DROP TABLE t_bf_post5_decimal_expr;
