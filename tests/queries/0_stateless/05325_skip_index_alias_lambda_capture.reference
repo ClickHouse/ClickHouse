@@ -1,0 +1,46 @@
+--- CREATE ---
+1
+1
+1
+1
+1
+1
+1
+1
+--- not captured ---
+i1	arrayMax(arrayMap(x -> (k + 1), arr))
+i2	arrayMax(arrayMap(d -> d, arr))
+i3	k + 1
+i4	arrayMax(arrayMap(k -> arrayMax(arrayMap(k -> (k + 1), arr)), arr))
+6
+i	arrayMax(arrayMap(x -> (k + 1), arr))
+i	text
+--- ALTER ---
+1
+1
+1
+1
+1
+1
+1
+i	arrayMax(arrayMap(k2 -> 1, arr))
+j	arrayMax(arrayMap(x -> (k2 + 1), arr))
+n	arrayMax(arrayMap(x -> (k2 + 1), arr))
+--- EXPLAIN WHATIF rebuild ---
+1
+1
+--- automatic minmax index ---
+auto_minmax_index_m	arrayMax(arrayMap(x -> (k + 1), arr))
+auto_minmax_index_m2	arrayMin(arrayMap(x -> (k + 1), arr))
+3	3
+--- stored definition ---
+1
+arrayMax(arrayMap(k -> (k + 1), arr))
+5	6
+6	7
+i	arrayMax(arrayMap(k -> (k + 1), arr))
+j	arrayMax(arrayMap(x -> (k + 1), arr))
+1
+1
+1
+1

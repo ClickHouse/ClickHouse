@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/IndicesDescription.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -245,9 +246,16 @@ StoragePtr StorageFactory::get(
                     [](StorageFeatures features) { return features.supports_ttl; });
 
             if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
+            {
                 check_feature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
+
+                /// A stored definition keeps the expression its parts were built with.
+                if (!isReplayedTableDefinition(mode, query, local_context))
+                    for (const auto & index : query.columns_list->indices->children)
+                        IndexDescription::checkAliasesNotCapturedByLambda(index, columns);
+            }
 
             if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
                 check_feature(
