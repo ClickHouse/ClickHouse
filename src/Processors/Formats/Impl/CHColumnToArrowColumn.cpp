@@ -2033,8 +2033,10 @@ namespace DB
 
         std::vector<std::shared_ptr<arrow::ChunkedArray>> columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- built for `arrow::Table::Make`, which takes std::vector
         columns.reserve(columns_num);
+        /// Arrow cannot infer the type of a column with no chunks.
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
-            columns.emplace_back(std::make_shared<arrow::ChunkedArray>(table_data.at(column_i)));
+            columns.emplace_back(std::make_shared<arrow::ChunkedArray>(
+                table_data.at(column_i), schema->field(static_cast<int>(column_i))->type()));
 
         return arrow::Table::Make(schema, columns);
     }

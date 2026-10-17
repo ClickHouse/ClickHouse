@@ -11,6 +11,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
@@ -46,7 +47,16 @@ std::optional<T> shift(T value, T offset, bool preceding)
     }
 }
 
-template <typename T>
+/// -1, 0 or 1 for two values of which either may be missing(NULL or NaN).
+int compareMissing(bool lhs_is_missing, bool rhs_is_missing, bool missing_is_greater)
+{
+    if (lhs_is_missing == rhs_is_missing)
+        return 0;
+
+    return lhs_is_missing == missing_is_greater ? 1 : -1;
+}
+
+template <typename T, bool missing_is_greater>
 int compareRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
     const IColumn * rhs_column, size_t rhs_row,
@@ -54,8 +64,15 @@ int compareRangeOffset(
 {
     const T lhs_value = assert_cast<const ColumnVector<T> &>(*lhs_column).getData()[lhs_row];
     const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
-    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        const bool lhs_is_nan = isNaN(lhs_value);
+        const bool rhs_is_nan = isNaN(rhs_value);
+        if (lhs_is_nan || rhs_is_nan)
+            return compareMissing(lhs_is_nan, rhs_is_nan, missing_is_greater);
+    }
 
+    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
     else if (lhs_value < *shifted_rhs)
@@ -66,8 +83,7 @@ int compareRangeOffset(
         return 1;
 }
 
-// The same over a Nullable column: NULL sorts before every value and equals NULL.
-template <typename T>
+template <typename T, bool missing_is_greater>
 int compareNullableRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
     const IColumn * rhs_column, size_t rhs_row,
@@ -79,28 +95,28 @@ int compareNullableRangeOffset(
     const bool lhs_is_null = lhs.isNullAt(lhs_row);
     const bool rhs_is_null = rhs.isNullAt(rhs_row);
     if (lhs_is_null || rhs_is_null)
-        return lhs_is_null == rhs_is_null ? 0 : (lhs_is_null ? -1 : 1);
+        return compareMissing(lhs_is_null, rhs_is_null, missing_is_greater);
 
-    return compareRangeOffset<T>(&lhs.getNestedColumn(), lhs_row, &rhs.getNestedColumn(), rhs_row, offset, offset_is_preceding);
+    return compareRangeOffset<T, missing_is_greater>(&lhs.getNestedColumn(), lhs_row, &rhs.getNestedColumn(), rhs_row, offset, offset_is_preceding);
 }
 
 /// The comparator specialised for the value type of `column`, which is the nested column for a Nullable key.
-template <bool nullable>
+template <bool nullable, bool missing_is_greater>
 RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & column)
 {
     switch (column.getDataType())
     {
-        case TypeIndex::UInt8: return nullable ? compareNullableRangeOffset<UInt8> : compareRangeOffset<UInt8>;
-        case TypeIndex::UInt16: return nullable ? compareNullableRangeOffset<UInt16> : compareRangeOffset<UInt16>;
-        case TypeIndex::UInt32: return nullable ? compareNullableRangeOffset<UInt32> : compareRangeOffset<UInt32>;
-        case TypeIndex::UInt64: return nullable ? compareNullableRangeOffset<UInt64> : compareRangeOffset<UInt64>;
-        case TypeIndex::Int8: return nullable ? compareNullableRangeOffset<Int8> : compareRangeOffset<Int8>;
-        case TypeIndex::Int16: return nullable ? compareNullableRangeOffset<Int16> : compareRangeOffset<Int16>;
-        case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
-        case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
-        case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
-        case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
-        case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
+        case TypeIndex::UInt8: return nullable ? compareNullableRangeOffset<UInt8, missing_is_greater> : compareRangeOffset<UInt8, missing_is_greater>;
+        case TypeIndex::UInt16: return nullable ? compareNullableRangeOffset<UInt16, missing_is_greater> : compareRangeOffset<UInt16, missing_is_greater>;
+        case TypeIndex::UInt32: return nullable ? compareNullableRangeOffset<UInt32, missing_is_greater> : compareRangeOffset<UInt32, missing_is_greater>;
+        case TypeIndex::UInt64: return nullable ? compareNullableRangeOffset<UInt64, missing_is_greater> : compareRangeOffset<UInt64, missing_is_greater>;
+        case TypeIndex::Int8: return nullable ? compareNullableRangeOffset<Int8, missing_is_greater> : compareRangeOffset<Int8, missing_is_greater>;
+        case TypeIndex::Int16: return nullable ? compareNullableRangeOffset<Int16, missing_is_greater> : compareRangeOffset<Int16, missing_is_greater>;
+        case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32, missing_is_greater> : compareRangeOffset<Int32, missing_is_greater>;
+        case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64, missing_is_greater> : compareRangeOffset<Int64, missing_is_greater>;
+        case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128, missing_is_greater> : compareRangeOffset<Int128, missing_is_greater>;
+        case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32, missing_is_greater> : compareRangeOffset<Float32, missing_is_greater>;
+        case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64, missing_is_greater> : compareRangeOffset<Float64, missing_is_greater>;
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
     }
@@ -113,17 +129,18 @@ bool isRangeOffsetFrame(const WindowFrame & frame)
 }
 
 /// Null for every frame but RANGE OFFSET, which has exactly one ORDER BY key.
-RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowFrame & frame, const std::vector<size_t> & order_by_indices)
+RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowFrame & frame, const SortDescription & order_by, const std::vector<size_t> & order_by_indices)
 {
     if (!isRangeOffsetFrame(frame))
         return nullptr;
 
     chassert(order_by_indices.size() == 1);
     const IColumn & column = *header.getByPosition(order_by_indices[0]).column;
+    const bool missing_is_greater = order_by[0].nulls_direction > 0;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        return chooseRangeOffsetComparatorForValueType<true>(nullable->getNestedColumn());
+        return missing_is_greater ? chooseRangeOffsetComparatorForValueType<true, true>(nullable->getNestedColumn()) : chooseRangeOffsetComparatorForValueType<true, false>(nullable->getNestedColumn());
     else
-        return chooseRangeOffsetComparatorForValueType<false>(column);
+        return missing_is_greater ? chooseRangeOffsetComparatorForValueType<false, true>(column) : chooseRangeOffsetComparatorForValueType<false, false>(column);
 }
 
 Block materializeHeader(Block header)
@@ -229,7 +246,7 @@ WindowTransformParams WindowTransformParams::create(
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
-    auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, order_by_indices);
+    auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
 
     return WindowTransformParams{
@@ -240,19 +257,6 @@ WindowTransformParams WindowTransformParams::create(
         std::move(should_materialize),
         std::move(range_offset_comparator),
     };
-}
-
-bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
-{
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
-        return false;
-
-    // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
-    for (const size_t key : order_by_indices)
-        if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
-            return false;
-
-    return true;
 }
 
 }

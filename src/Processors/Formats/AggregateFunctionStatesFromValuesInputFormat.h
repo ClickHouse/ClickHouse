@@ -47,6 +47,7 @@ public:
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
