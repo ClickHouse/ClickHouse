@@ -181,8 +181,12 @@ private:
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
-    bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+    bool traverseMapElementValueNode(const String & function_name, const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+
+    /// A row without the key reads the map value type's default, for which `mapValues` stores no term.
+    /// True when the predicate the plan runs on such a row may hold.
+    bool absentMapValueMatches(const String & function_name, const VectorWithMemoryTracking<String> & tokens) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
