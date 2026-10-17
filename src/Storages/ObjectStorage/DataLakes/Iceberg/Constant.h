@@ -49,6 +49,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(timestamp_with_local_time_zone, timestamp with local 
 DEFINE_ICEBERG_FIELD(timestamp_ns);
 DEFINE_ICEBERG_FIELD(timestamptz_ns);
 DEFINE_ICEBERG_FIELD(type)
+DEFINE_ICEBERG_FIELD(logicalType); /// this field has a camelCase name
 DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(direction);
 DEFINE_ICEBERG_FIELD(variant);

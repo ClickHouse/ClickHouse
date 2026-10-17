@@ -1,7 +1,8 @@
-"""An Iceberg `time` column is exposed as `Int64` microseconds since midnight. The manifest bounds,
-partition values and ORC/Avro data files all carry that number, so the Parquet data files written by a
-spec writer (TIME(MICROS)) must be decoded to it as well: otherwise `WHERE t = <value>` is pruned
-against bounds in another unit and the shown value depends on the partition spec."""
+"""An Iceberg `time` column is exposed as `Time64(6)`, or as `Int64` microseconds since midnight with
+setting `iceberg_time_as_int64`. The manifest bounds, partition values and ORC/Avro data files all carry
+the microseconds, so the Parquet data files written by a spec writer (TIME(MICROS)) must be decoded to
+them as well: otherwise `WHERE t = <value>` is pruned against bounds in another unit and the shown value
+depends on the partition spec."""
 
 import datetime
 import re
@@ -68,6 +69,14 @@ def micros_of(i):
     return ((i % 3) * 3600 + 30 * 60) * 1_000_000 + 250000
 
 
+def shown(i, as_int64=False):
+    return str(micros_of(i)) if as_int64 else f"{i % 3:02d}:30:00.250000"
+
+
+def literal(i):
+    return f"'{shown(i)}'"
+
+
 def rows(ids):
     return pa.Table.from_pydict(
         {
@@ -80,11 +89,13 @@ def rows(ids):
     )
 
 
-def expected(ids, nested=True):
-    return "\n".join(
-        f"{i}\t{micros_of(i)}\t{micros_of(i)}\t[{micros_of(i)}]" if nested else f"{i}\t{micros_of(i)}"
-        for i in ids
-    )
+def expected(ids, nested=True, as_int64=False):
+    def row(i):
+        value = shown(i, as_int64)
+        element = value if as_int64 else f"'{value}'"
+        return f"{i}\t{value}\t{value}\t[{element}]" if nested else f"{i}\t{value}"
+
+    return "\n".join(row(i) for i in ids)
 
 
 class Tables:
@@ -203,32 +214,44 @@ def test_iceberg_time_column_reads_microseconds(started_cluster_iceberg_no_spark
         ),
     )
     table.add_files([path])
-    added_rows = "\n".join(
-        f"{i}\t{micros_of(i)}\t{micros_of(i)}\t[{micros_of(i)}]\t{{{micros_of(i)}:{i}}}" for i in range(8)
-    )
+    def added_rows(as_int64):
+        def row(i):
+            value = shown(i, as_int64)
+            element = value if as_int64 else f"'{value}'"
+            return f"{i}\t{value}\t{value}\t[{element}]\t{{{element}:{i}}}"
+
+        return "\n".join(row(i) for i in range(8))
 
     matching = "1\n4\n7"
     nested_columns = "id, t, s.tt, l"
-    for key_prefix, columns, expected_rows in (
-        (flat, nested_columns, expected(range(8))),
-        (tpart, nested_columns, expected(range(8))),
-        (tbucket, nested_columns, expected(range(8))),
-        (tadded, f"{nested_columns}, m", added_rows),
-    ):
-        source = tables.source(key_prefix)
-        assert tables.query(f"SELECT {columns} FROM {source} ORDER BY id") == expected_rows, key_prefix
-        for where in (f"t = {micros_of(1)}", "t >= 5400000000 AND t < 9000000000"):
-            for settings in ({}, NO_PARQUET_PUSH_DOWN, {"use_iceberg_partition_pruning": 0}):
-                assert tables.query(f"SELECT id FROM {source} WHERE {where} ORDER BY id", settings) == matching, (
-                    key_prefix,
-                    where,
-                    settings,
-                )
+    for as_int64 in (False, True):
+        mode = {"iceberg_time_as_int64": 1} if as_int64 else {}
+        wheres = (
+            (f"t = {micros_of(1)}", "t >= 5400000000 AND t < 9000000000")
+            if as_int64
+            else (f"t = {literal(1)}", "t >= '01:30:00' AND t < '02:30:00'")
+        )
+        for key_prefix, columns, expected_rows in (
+            (flat, nested_columns, expected(range(8), as_int64=as_int64)),
+            (tpart, nested_columns, expected(range(8), as_int64=as_int64)),
+            (tbucket, nested_columns, expected(range(8), as_int64=as_int64)),
+            (tadded, f"{nested_columns}, m", added_rows(as_int64)),
+        ):
+            source = tables.source(key_prefix)
+            assert tables.query(f"SELECT {columns} FROM {source} ORDER BY id", mode) == expected_rows, (key_prefix, mode)
+            for where in wheres:
+                for settings in ({}, NO_PARQUET_PUSH_DOWN, {"use_iceberg_partition_pruning": 0}):
+                    assert tables.query(f"SELECT id FROM {source} WHERE {where} ORDER BY id", {**mode, **settings}) == matching, (
+                        key_prefix,
+                        where,
+                        settings,
+                        mode,
+                    )
 
     # Every data file is Parquet while the table is configured as ORC.
     source = tables.source(flat, "ORC")
     assert tables.query(f"SELECT id, t FROM {source} ORDER BY id") == expected(range(8), nested=False)
-    assert tables.query(f"SELECT id FROM {source} WHERE t = {micros_of(1)} ORDER BY id") == matching
+    assert tables.query(f"SELECT id FROM {source} WHERE t = {literal(1)} ORDER BY id") == matching
 
     # The row assertions above make these non-vacuous: two empty results also compare equal.
     for table_name, key_prefix, event in (
@@ -242,7 +265,7 @@ def test_iceberg_time_column_reads_microseconds(started_cluster_iceberg_no_spark
             {**SETTINGS, "use_iceberg_partition_pruning": 0},
             {**SETTINGS, "use_iceberg_partition_pruning": 1},
             event,
-            f"SELECT id, t FROM {tables.source(key_prefix)} WHERE t = {micros_of(1)} ORDER BY id",
+            f"SELECT id, t FROM {tables.source(key_prefix)} WHERE t = {literal(1)} ORDER BY id",
         )
         assert pruned == 2, (key_prefix, event, pruned)
 
@@ -266,7 +289,7 @@ def test_iceberg_time_column_reads_microseconds(started_cluster_iceberg_no_spark
             )
     query_id = f"time_row_groups_{uuid.uuid4()}"
     result = tables.instance.query(
-        f"SELECT id FROM {tables.source(tgroups)} WHERE t = {micros_of(1)} ORDER BY id",
+        f"SELECT id FROM {tables.source(tgroups)} WHERE t = {literal(1)} ORDER BY id",
         settings={**SETTINGS, "use_iceberg_partition_pruning": 0},
         query_id=query_id,
     )
@@ -346,7 +369,8 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
         commit_equality_delete(
             table, pa.Table.from_pydict({"t": [time_of(1), datetime.time(3, 0, 0)]}, schema=pa.schema([t_field]))
         )
-        assert tables.query(f"SELECT id FROM {tables.source(eqdel)} ORDER BY id") == "0\n2\n3\n5\n6", required
+        for mode in ({}, {"iceberg_time_as_int64": 1}):
+            assert tables.query(f"SELECT id FROM {tables.source(eqdel)} ORDER BY id", mode) == "0\n2\n3\n5\n6", (required, mode)
 
     # `OPTIMIZE` rewrites data files only when there are position deletes.
     table_name, key_prefix, table = tables.create("time_compaction")
@@ -376,4 +400,4 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
     read_files = set(tables.query(f"SELECT DISTINCT _file FROM {source}").split())
     assert read_files and read_files.isdisjoint(written_by_pyiceberg), (read_files, written_by_pyiceberg)
     assert tables.query(f"SELECT id, t FROM {source} ORDER BY id") == expected(range(1, 8), nested=False)
-    assert tables.query(f"SELECT id FROM {source} WHERE t = {micros_of(1)} ORDER BY id") == "1\n4\n7"
+    assert tables.query(f"SELECT id FROM {source} WHERE t = {literal(1)} ORDER BY id") == "1\n4\n7"
