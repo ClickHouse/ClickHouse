@@ -524,7 +524,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             return pipe;
         }
 
-        NumbersLikeUtils::checkLimits(context->getSettingsRef(), total_count);
+        NumbersLikeUtils::checkLimits(*context, total_count);
 
         UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
         auto source = std::make_shared<SimpleSteppedNumbersSource>(
@@ -665,7 +665,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
     }
 
-    NumbersLikeUtils::checkLimits(context->getSettingsRef(), size_t(total_size));
+    NumbersLikeUtils::checkLimits(*context, size_t(total_size));
 
     /// Don't start more streams than can be meaningfully filled with at least one block.
     if (total_size / max_block_size < num_streams)

@@ -765,6 +765,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+    context_mutable->increaseDistributedDepth();
 
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)

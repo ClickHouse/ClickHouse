@@ -266,7 +266,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
         if (effective_limit)
             /// Even if the source LIMIT is small, a large offset or step can still cause the sieve to read many primes, so we check total number of
             /// primes we end up generating here against `max_rows_to_read` to fail fast if the query is not feasible.
-            NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
+            NumbersLikeUtils::checkLimits(*context, static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
 
         auto source = std::make_shared<PrimesSource>(
             static_cast<UInt64>(max_block_size), primes_storage.offset, effective_limit, primes_storage.step, primes_storage.column_name);
@@ -346,7 +346,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     if (effective_limit && (primes_storage.offset > 0 || primes_storage.step > 1))
     {
         chassert(*effective_limit == *primes_storage.limit);
-        NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
+        NumbersLikeUtils::checkLimits(*context, static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
     }
 
     /// Fallback: generate primes in prime-index space as defined by storage params and apply the full filter later.
