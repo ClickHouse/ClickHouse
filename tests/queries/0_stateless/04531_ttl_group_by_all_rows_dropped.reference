@@ -1,0 +1,8 @@
+-- an unconditional rows TTL drops the whole block before the rule runs
+1
+0
+0	1
+-- a rows WHERE TTL filters every row before the rule sees the block
+1
+0
+0	1
