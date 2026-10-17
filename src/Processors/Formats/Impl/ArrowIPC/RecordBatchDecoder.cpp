@@ -1277,8 +1277,8 @@ ColumnPtr RecordBatchDecoder::readListViewAndChild(
                 || static_cast<UInt64>(offset) > child_rows - static_cast<UInt64>(view_size))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Arrow IPC list view row {} references child rows from {} of size {}, but the child has {} rows",
-                    i, offset, view_size, child_rows);
+                    "Arrow IPC list view field '{}' row {} references child rows from {} of size {}, but the child has {} rows",
+                    field.name, i, offset, view_size, child_rows);
             starts[i] = static_cast<UInt64>(offset);
             size = static_cast<UInt64>(view_size);
             if (size != 0)
@@ -1303,9 +1303,23 @@ ColumnPtr RecordBatchDecoder::readListViewAndChild(
 
     checkRowCountWithinBody(child_rows, "list view child");
 
-    /// Child rows that no visible row references hold undefined bytes and must not be value-validated. The
-    /// coverage of the (possibly overlapping) ranges is counted with a difference array.
+    /// Child rows that no visible row references hold undefined bytes and must not be value-validated. Contiguous
+    /// ranges cover exactly `total` rows from `first_start`; otherwise the coverage of the (possibly overlapping)
+    /// ranges is counted with a difference array.
     std::optional<InvisibleRowsMask> child_invisible;
+    if (contiguous)
+    {
+        const UInt64 begin = first_start.value_or(0);
+        if (!(begin == 0 && total == child_rows))
+        {
+            InvisibleRowsMask mask;
+            mask.resize_fill(child_rows, 1);
+            if (total)
+                memset(mask.data() + begin, 0, total);
+            child_invisible = std::move(mask);
+        }
+    }
+    else
     {
         PaddedPODArray<Int64> coverage(child_rows + 1, 0);
         for (size_t i = 0; i < rows; ++i)
@@ -1340,16 +1354,16 @@ ColumnPtr RecordBatchDecoder::readListViewAndChild(
         return ColumnArray::create(child, std::move(offsets_col));
     }
 
-    auto indexes = ColumnUInt64::create();
-    auto & index_data = indexes->getData();
-    index_data.reserve(total);
+    /// Copy each row's range directly: an index column would take 8 bytes per copied element on top of the copy.
+    auto gathered = child->cloneEmpty();
+    gathered->reserve(total);
     for (size_t i = 0; i < rows; ++i)
     {
         const UInt64 size = offs[i] - (i == 0 ? 0 : offs[i - 1]);
-        for (UInt64 k = 0; k < size; ++k)
-            index_data.push_back(starts[i] + k);
+        if (size)
+            gathered->insertRangeFrom(*child, starts[i], size);
     }
-    return ColumnArray::create(child->index(*indexes, 0), std::move(offsets_col));
+    return ColumnArray::create(std::move(gathered), std::move(offsets_col));
 }
 
 bool RecordBatchDecoder::isSizeDeterminedSubtree(const ArrowField & field) const

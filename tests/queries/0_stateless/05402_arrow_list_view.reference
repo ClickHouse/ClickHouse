@@ -40,3 +40,13 @@ dict	Array(Nullable(String))
 3	[]
 4	[NULL,NULL,NULL]
 5	[NULL]
+--- unused child rows are not validated ---
+['x']
+['y']
+[]
+--- contiguous ranges after the start of the child ---
+[3,4]
+[5]
+[6]
+--- a range past the end of the child ---
+INCORRECT_DATA
