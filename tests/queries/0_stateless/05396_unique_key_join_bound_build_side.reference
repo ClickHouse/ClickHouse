@@ -1,0 +1,8 @@
+4901
+Aggregating (rows: <unknown>)
+   └──Join (JOIN FillRightFirst) (rows: <unknown>, bound: 100000000)
+      ├──ReadFromMergeTree (t_ub_fact) (rows: <unknown>)
+      └──Join (JOIN FillRightFirst) (rows: <unknown>, bound: 1000)
+         ├──ReadFromMergeTree (t_ub_dim) (rows: <unknown>)
+         └──Aggregating (rows: <unknown>)
+            └──ReadFromMergeTree (t_ub_fact) (rows: <unknown>)

@@ -2,13 +2,13 @@
 Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
-│  t1 ⋈ t2
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Cost: estimated no stats
-│  Selectivity: estimated (NDV) no stats
-│  Output rows: estimated no stats
-│  Left: rows estimated no stats
-│  Right: rows estimated no stats
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: a = x
 │  Input (left): a, b
 │  Input (right): x, y
@@ -24,13 +24,13 @@ Join (JOIN FillRightFirst)
 Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
-│  t1 ⋈ t2
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Cost: estimated no stats
-│  Selectivity: estimated (NDV) no stats
-│  Output rows: estimated no stats
-│  Left: rows estimated no stats
-│  Right: rows estimated no stats
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: a <=> x
 │  Input (left): a, b
 │  Input (right): x, y

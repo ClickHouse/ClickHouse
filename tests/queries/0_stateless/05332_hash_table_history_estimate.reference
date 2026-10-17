@@ -1,0 +1,14 @@
+30
+-- the measured build rows replace the statistics estimate and stay imprecise
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: <unknown>, cost: <unknown>)
+    Expression ((Before GROUP BY + )) (rows: <unknown>, cost: <unknown>)
+      Expression (Post Join Actions) (rows: ~30.0, cost: 30.0)
+        Join (JOIN FillRightFirst) (rows: ~30.0, cost: 30.0)
+          Expression (Left Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Filter ((WHERE + Change column names to column identifiers)) (rows: ~7999.0, source: statistics)
+              ReadFromMergeTree (default.t_hist_probe) (rows: <unknown>, cost: <unknown>)
+          Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression ((WHERE + Change column names to column identifiers)) (rows: ~30.0, source: hash_table_cache)
+              ReadFromMergeTree (default.t_hist_build) (rows: <unknown>, cost: <unknown>)
+1

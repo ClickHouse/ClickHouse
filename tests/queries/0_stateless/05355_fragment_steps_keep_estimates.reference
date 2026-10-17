@@ -1,0 +1,6 @@
+100000
+Expression	1000	hint	1
+Expression	100000		1
+Expression	100000	hint	1
+Expression	\N		1
+Join	100000		1

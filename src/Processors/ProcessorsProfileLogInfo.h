@@ -17,6 +17,10 @@ struct ProcessorsProfileLogInfo
     UInt64 plan_group = 0;
     String processor_uniq_id;
     String step_uniq_id;
+    /// Row count the optimizer estimated for the output of the plan step; absent when it had none.
+    std::optional<Float64> plan_step_estimated_rows;
+    /// Origin of that estimate, see `rowEstimateSourceName`; empty when not recorded.
+    String plan_step_estimate_source;
     String processor_name;
     UInt64 elapsed_us = 0;
     UInt64 input_wait_elapsed_us = 0;

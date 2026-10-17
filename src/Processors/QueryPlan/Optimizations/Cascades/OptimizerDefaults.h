@@ -16,6 +16,10 @@ namespace CascadesDefaults
 /// `_internal_cascades_task_limit` parameter can change it.
 constexpr size_t DEFAULT_TASK_LIMIT = 100000;
 
+/// Search value for a read that could not be estimated and has no bound when the query has no
+/// other known leaf to take the value from. Marked unknown, never reported as an estimate.
+constexpr Float64 DEFAULT_UNKNOWN_READ_ROWS = 1000000;
+
 /// Selectivity constants for predicates without usable statistics; the same values that
 /// `ConditionSelectivityEstimator` uses for the reads.
 constexpr Float64 DEFAULT_EQUALITY_SELECTIVITY = 0.01;

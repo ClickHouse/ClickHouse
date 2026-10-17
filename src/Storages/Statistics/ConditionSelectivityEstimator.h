@@ -14,6 +14,12 @@ class RPNBuilderTreeNode;
 struct ColumnStats
 {
     UInt64 num_distinct_values = 0;
+    /// NDV of the column in the whole relation it comes from, before any filter; zero when unknown.
+    /// Two filtered sets of the column's values overlap in proportion to their shares of it.
+    UInt64 domain_distinct_values = 0;
+    /// Rows of the table the column is read from, and the rows of it that the read selects; zero when unknown.
+    UInt64 table_rows = 0;
+    UInt64 table_selected_rows = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
     /// Value range from `basic`/`minmax` statistics; unset when unknown.
@@ -21,12 +27,21 @@ struct ColumnStats
     std::optional<Field> max_value = {};
     /// Fraction of NULL values; unset when unknown.
     std::optional<Float64> null_fraction = {};
+    /// Most distinct values the column can have, proven by a filter (`x = c`, `x IN (c1, ...)`) and kept
+    /// by what follows it; zero when nothing proves a limit. Unlike `num_distinct_values` it never
+    /// comes from a sketch, so the row bounds may use it.
+    UInt64 max_distinct_values = 0;
+    /// Every value of the column is on at most one row: the column is the only key of an aggregation. A join on it
+    /// matches each row of the other side at most once. Whatever can repeat a row (a join, a union) drops the flag.
+    bool unique = false;
 };
 
 struct RelationProfile
 {
     UInt64 rows = 0;
     std::unordered_map<String, ColumnStats> column_stats = {};
+    /// A predicate the statistics could not estimate took the default selectivity, so `rows` is a guess.
+    bool estimate_from_defaults = false;
 };
 
 struct StorageInMemoryMetadata;
@@ -62,7 +77,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
+    /// `row_fraction` scales the rows the conditions keep: the share of the table an index analysis has
+    /// already selected for conditions left out of `nodes`.
+    RelationProfile estimateRelationProfile(
+        const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes, Float64 row_fraction = 1.0) const;
     RelationProfile estimateRelationProfile() const;
 
     struct RPNElement
@@ -95,6 +113,8 @@ public:
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
+        /// The default selectivity stood in for this element or for an atom it absorbed.
+        bool used_default = false;
         Selectivity selectivity;
         /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
         /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
@@ -140,11 +160,12 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
+        /// `used_default` is set when a range took a default factor because the statistics could not estimate it.
+        Selectivity estimateRanges(const PlainRanges & ranges, bool & used_default) const;
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction = 1.0) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
@@ -153,7 +174,7 @@ private:
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
     Selectivity estimateSelectivityFromSetSize(
         const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
-        const DataTypePtr & set_type, bool negative) const;
+        const DataTypePtr & set_type, bool negative, bool & used_default) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
