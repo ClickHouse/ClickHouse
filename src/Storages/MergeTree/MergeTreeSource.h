@@ -18,6 +18,8 @@ public:
     std::string getName() const override;
     std::span<ISpillable * const> getSpillables() override;
 
+    bool hasVirtualRowConversions() const;
+
     Status prepare() override;
 
 #if defined(OS_LINUX)
