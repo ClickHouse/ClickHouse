@@ -4,8 +4,9 @@
 
 #include <Server/ArrowFlight/AuthMiddleware.h>
 #include <Server/ArrowFlight/CallsData.h>
-#include <Server/ArrowFlight/commandSelector.h>
+#include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 #include <Server/ArrowFlight/PollSession.h>
+#include <Server/ArrowFlight/commandSelector.h>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -44,7 +45,6 @@
 #include <arrow/scalar.h>
 #include <fmt/ranges.h>
 #include <google/protobuf/descriptor.h>
-
 
 namespace DB
 {
@@ -125,7 +125,7 @@ namespace
     }
 
     /// Builds a SQL query from pre-split parts by joining them with "NULL".
-    /// Used for syntax validation and schema inference during CreatePreparedStatement.
+    /// Used for syntax validation and schema inference during `CreatePreparedStatement` and unbound `GetSchema`.
     String buildQueryWithNULLs(const std::vector<String> & query_parts)
     {
         String result;
@@ -404,6 +404,7 @@ namespace
 arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescriptor(
     const arrow::flight::FlightDescriptor & descriptor,
     bool for_put_operation,
+    PreparedStatementParameterMode prepared_statement_parameter_mode,
     const std::string & username) const
 {
     switch (descriptor.type)
@@ -433,9 +434,16 @@ arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescript
                 auto ps_info_res = calls_data->getPreparedStatement(sql_set->sql, username);
                 ARROW_RETURN_NOT_OK(ps_info_res);
                 const auto & ps_info = ps_info_res.ValueUnsafe();
+
+                if (prepared_statement_parameter_mode == PreparedStatementParameterMode::SubstituteNullsIfUnbound
+                    && (!ps_info.bound_parameters || ps_info.bound_parameters->num_rows() == 0))
+                {
+                    return DecodeResult{buildQueryWithNULLs(ps_info.query_parts), sql_set->schema_modifier, sql_set->block_modifier, {}};
+                }
+
                 auto resolved_query_res = buildQueryWithValues(ps_info.query_parts, ps_info.bound_parameters);
                 ARROW_RETURN_NOT_OK(resolved_query_res);
-                return DecodeResult {std::move(resolved_query_res).ValueUnsafe(), {}, {}, {}};
+                return DecodeResult{std::move(resolved_query_res).ValueUnsafe(), sql_set->schema_modifier, sql_set->block_modifier, {}};
             }
 
             return DecodeResult {sql_set->sql, sql_set->schema_modifier, sql_set->block_modifier, {}};
@@ -646,15 +654,16 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
         PullingPipelineExecutor executor{block_io.pipeline};
+        const auto schema_header = executor.getHeader().getColumnsWithTypeAndName();
         schema = CHColumnToArrowColumn::calculateArrowSchema(
-            executor.getHeader().getColumnsWithTypeAndName(),
+            schema_header,
             "Arrow",
             nullptr,
             ArrowFlight::arrowConversionSettings(query_context));
 
         if (schema_modifier)
         {
-            auto status = schema_modifier(schema);
+            auto status = schema_modifier(schema, schema_header);
             ARROW_RETURN_NOT_OK(status);
             schema = status.ValueUnsafe();
         }
@@ -743,7 +752,9 @@ arrow::Status ArrowFlightServer::GetFlightInfo(
         std::shared_ptr<arrow::Table> table;
         std::shared_ptr<arrow::Schema> schema;
 
-        ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+        ARROW_ASSIGN_OR_RAISE(
+            std::tie(sql, schema_modifier, block_modifier, table),
+            decodeDescriptor(request, false, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
         chassert(!sql.empty() || table);
 
         std::vector<arrow::flight::FlightEndpoint> endpoints;
@@ -815,8 +826,9 @@ arrow::Status ArrowFlightServer::GetSchema(
         auto session = auth.getSession();
 
         std::shared_ptr<arrow::Schema> schema;
+        const bool is_poll_descriptor = request.type == arrow::flight::FlightDescriptor::CMD && hasPollDescriptorPrefix(request.cmd);
 
-        if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
+        if (is_poll_descriptor)
         {
             const String & poll_descriptor = request.cmd;
             ARROW_RETURN_NOT_OK(calls_data->extendPollDescriptorExpirationTime(poll_descriptor));
@@ -832,7 +844,9 @@ arrow::Status ArrowFlightServer::GetSchema(
             ArrowFlight::BlockModifier block_modifier;
             std::shared_ptr<arrow::Table> table;
 
-            ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+            ARROW_ASSIGN_OR_RAISE(
+                std::tie(sql, schema_modifier, block_modifier, table),
+                decodeDescriptor(request, false, PreparedStatementParameterMode::SubstituteNullsIfUnbound, auth.getUsername()))
             chassert(!sql.empty() || table);
 
             if (table)
@@ -860,13 +874,14 @@ arrow::Status ArrowFlightServer::GetSchema(
                     ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
                     PullingPipelineExecutor executor{block_io.pipeline};
+                    const auto schema_header = executor.getHeader().getColumnsWithTypeAndName();
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
-                        executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
+                        schema_header, "Arrow", nullptr,
                         ArrowFlight::arrowConversionSettings(query_context));
                     if (schema_modifier)
                     {
-                        auto status = schema_modifier(schema);
+                        auto status = schema_modifier(schema, schema_header);
                         ARROW_RETURN_NOT_OK(status);
                         schema = status.ValueUnsafe();
                     }
@@ -936,7 +951,9 @@ arrow::Status ArrowFlightServer::PollFlightInfo(
             ArrowFlight::BlockModifier block_modifier;
             std::shared_ptr<arrow::Table> table;
 
-            ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+            ARROW_ASSIGN_OR_RAISE(
+                std::tie(sql, schema_modifier, block_modifier, table),
+                decodeDescriptor(request, false, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
             chassert(!sql.empty() || table);
 
             if (table)
@@ -1209,8 +1226,23 @@ arrow::Status ArrowFlightServer::DoPut(
         const auto & request = reader->descriptor();
         LOG_INFO(log, "DoPut is called for descriptor {}", descriptorForLogging(request));
 
-        const auto & auth = AuthMiddleware::get(context);
+        auto & auth = AuthMiddleware::get(context);
         auto session = auth.getSession();
+
+        /// `writer->WriteMetadata` puts the app metadata on the wire while this handler is still running, and
+        /// `AuthMiddleware::CallCompleted` -- the only other place that releases the session -- runs just after the
+        /// handler returns. Every other Flight RPC writes its response only after the handler returns, so a client
+        /// that reacts to a successful response by sending the next request on the same session would race with the
+        /// release and can hit `SESSION_IS_LOCKED` on `DoPut` alone. Release before writing to close that window.
+        /// `AuthMiddleware::completeSessionEarly` runs the prepared-statement expiration refresh together with the
+        /// release, so the refresh stays ordered before the next request on this session can start, and
+        /// `CallCompleted` skips its own refresh and release. For a request that carries
+        /// `x-clickhouse-session-close`, it instead closes the session and its session-scoped prepared
+        /// statements, so a client reacting to the response can immediately reuse the `session_id`.
+        auto release_session_before_response = [&]
+        {
+            auth.completeSessionEarly();
+        };
 
         /// DoPut with CommandPreparedStatementQuery is parameter binding only (no execution).
         if (request.type == arrow::flight::FlightDescriptor::CMD)
@@ -1261,6 +1293,7 @@ arrow::Status ArrowFlightServer::DoPut(
                 /// Return DoPutPreparedStatementResult with the same handle.
                 arrow::flight::protocol::sql::DoPutPreparedStatementResult result;
                 result.set_prepared_statement_handle(handle);
+                release_session_before_response();
                 ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(result.SerializeAsString())));
 
                 LOG_INFO(log, "DoPut: parameter binding succeeded for prepared statement {}", handle);
@@ -1275,7 +1308,9 @@ arrow::Status ArrowFlightServer::DoPut(
         ArrowFlight::BlockModifier block_modifier;
         std::shared_ptr<arrow::Table> table;
 
-        ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, true, auth.getUsername()))
+        ARROW_ASSIGN_OR_RAISE(
+            std::tie(sql, schema_modifier, block_modifier, table),
+            decodeDescriptor(request, true, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
         /// DoPut command should only produce sql query
         chassert(!sql.empty() && !schema_modifier && !block_modifier && !table);
 
@@ -1285,12 +1320,11 @@ arrow::Status ArrowFlightServer::DoPut(
 
         auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
 
+        UInt64 affected_rows = 0;
         bool query_finished = false;
         bool handling_exception = false;
         SCOPE_EXIT({
-            if (query_finished)
-                block_io.onFinish();
-            else if (!handling_exception)
+            if (!query_finished && !handling_exception)
                 block_io.onCancelOrConnectionLoss();
         });
 
@@ -1318,6 +1352,11 @@ arrow::Status ArrowFlightServer::DoPut(
                 executor.execute();
             }
 
+            if (auto element = query_context->getProcessListElement())
+                affected_rows = element->getInfo().written_rows;
+
+            /// Finish the query, including any implicit transaction commit, before releasing the session.
+            block_io.onFinish();
             query_finished = true;
         }
         catch (...)
@@ -1330,11 +1369,9 @@ arrow::Status ArrowFlightServer::DoPut(
         if (!dont_write_flight_sql_metadata)
         {
             arrow::flight::protocol::sql::DoPutUpdateResult update_result;
-            if (auto element = query_context->getProcessListElement())
-                update_result.set_record_count(element->getInfo().written_rows);
-            else
-                update_result.set_record_count(0);
+            update_result.set_record_count(affected_rows);
 
+            release_session_before_response();
             ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
         }
 
@@ -1595,6 +1632,7 @@ arrow::Status ArrowFlightServer::DoAction(
                 /// function arguments like numbers(?)). In that case, we still create the
                 /// prepared statement but without dataset_schema — the client will discover
                 /// the schema at execution time.
+                std::optional<ColumnsWithTypeAndName> dataset_header;
                 try
                 {
                     auto [_, block_io] = executeQuery(substituted_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
@@ -1604,8 +1642,9 @@ arrow::Status ArrowFlightServer::DoAction(
                         if (block_io.pipeline.pulling())
                         {
                             PullingPipelineExecutor executor{block_io.pipeline};
+                            dataset_header = executor.getHeader().getColumnsWithTypeAndName();
                             info.dataset_schema = CHColumnToArrowColumn::calculateArrowSchema(
-                                executor.getHeader().getColumnsWithTypeAndName(),
+                                *dataset_header,
                                 "Arrow",
                                 nullptr,
                                 ArrowFlight::arrowConversionSettings(query_context));
@@ -1620,9 +1659,18 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
                 catch (...)
                 {
+                    info.dataset_schema.reset();
+                    dataset_header.reset();
                     LOG_DEBUG(log, "CreatePreparedStatement: schema inference failed for query '{}', "
                         "the prepared statement will be created without dataset_schema: {}",
                         ast->formatForLogging(), getCurrentExceptionMessage(/* with_stacktrace = */ false));
+                }
+
+                if (info.dataset_schema)
+                {
+                    chassert(dataset_header);
+                    ARROW_ASSIGN_OR_RAISE(
+                        info.dataset_schema, ArrowFlight::addFlightSQLTypeMetadata(std::move(info.dataset_schema), *dataset_header))
                 }
             }
 

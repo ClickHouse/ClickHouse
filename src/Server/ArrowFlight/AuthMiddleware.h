@@ -50,12 +50,22 @@ public:
     const std::string & getSessionId() const { return session_id; }
     std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
+    /// Completes the session from inside a handler that writes its response before
+    /// returning (e.g. `DoPut` with `WriteMetadata`), so that the response reaching
+    /// the client already implies the session is free: releases the session for regular
+    /// requests, closes it together with its session-scoped prepared statements for
+    /// requests with `x-clickhouse-session-close`. `CallCompleted` then skips its own
+    /// release/close. No-op for session-less requests and when called twice.
+    void completeSessionEarly();
+
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 
     std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
 private:
+    void refreshAndReleaseSession();
+
     std::shared_ptr<Session> session;
     std::string token;
     std::string username;
@@ -63,6 +73,7 @@ private:
     const std::string session_id;
     const bool session_close;
     const std::chrono::steady_clock::duration session_timeout;
+    bool session_completed = false;
 };
 
 class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
