@@ -1,0 +1,7 @@
+no limit: using DirectKeyValueJoin
+1
+max_rows_in_join: not using DirectKeyValueJoin
+0
+max_rows_in_join enforced
+max_bytes_in_join: not using DirectKeyValueJoin
+0

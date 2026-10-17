@@ -1,0 +1,4 @@
+CREATE TABLE t (`id` UInt64, `subid` UInt64, `value` String, LOOKUP INDEX idx_set (id, subid) TYPE table_set, LOOKUP INDEX idx_join (id, subid) TYPE table_join) ENGINE = MergeTree ORDER BY (id, subid)
+CREATE TABLE t (`id` UInt64, `value` String, LOOKUP INDEX idx_set id TYPE table_set, INDEX skip_idx value TYPE bloom_filter GRANULARITY 4) ENGINE = MergeTree ORDER BY id
+ALTER TABLE t (ADD LOOKUP INDEX idx (id, subid) TYPE table_join)
+ALTER TABLE t (DROP LOOKUP INDEX idx)
