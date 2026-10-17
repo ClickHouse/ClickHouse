@@ -75,6 +75,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — `Impl::ResultType` is one of `UInt8`, `UInt64` or
+    /// `Array(UInt8)` depending on the variant (any-match / first-index /
+    /// all-indices), driven by `Impl::is_column_array`.
+    String getSignatureString() const override
+    {
+        if constexpr (Impl::is_column_array)
+            return "(String, Array(String)) -> Array(" + String(DataTypeNumber<typename Impl::ResultType>{}.getName()) + ")";
+        else
+            return "(String, Array(String)) -> " + String(DataTypeNumber<typename Impl::ResultType>{}.getName());
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))

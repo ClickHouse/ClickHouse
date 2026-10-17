@@ -19,13 +19,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ## 备份状态列表 {#backup-status-list}
 
-无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用备份。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
+无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用的恢复点。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud 中的备份状态列表" border />
 
 ## 了解备份成本 {#understanding-backup-cost}
 
 除非配置了其他计划，否则服务每 24 小时备份一次，且每个备份保留 24 小时。能否配置备份计划因服务和套餐而异。选择需要保留更多数据或提高备份频率的计划，可能会产生额外的备份存储费用。
+
+控制台中显示的恢复点并不等同于计费范围。一个恢复点可能依赖其备份链中的一个全量备份以及一个或多个增量备份。即使这些被保留的依赖项并未作为单独的恢复点显示，它们也可能计入备份存储用量。
 
 要了解备份成本，你可以在用量页面中查看每个服务的备份成本 (如下所示) 。当你按自定义计划运行备份几天后，就可以大致了解相关成本，并据此推算出每月的备份成本。
 

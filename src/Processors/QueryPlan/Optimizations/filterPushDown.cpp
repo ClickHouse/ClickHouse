@@ -1,10 +1,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -30,7 +32,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -43,6 +44,11 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -1171,6 +1177,49 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
+/// Whether a conjunct might fix a column to a single value, and so let a read go in order:
+/// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. Any column counts, in the sorting
+/// key or not: the read is inside the fragment and its key is not looked up here. A superset of what
+/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals` or an
+/// `isNotDistinctFrom` anywhere inside, or an input reached the way it looks for one - through aliases and
+/// `and`. Such an input is a column of the fragment, which may compute it as an equality.
+static bool mayFixColumn(const ActionsDAG::Node * conjunct)
+{
+    std::vector<const ActionsDAG::Node *> stack{conjunct};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            return true;
+        if (node->type == ActionsDAG::ActionType::ALIAS
+            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and"))
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+
+    stack.push_back(conjunct);
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1226,29 +1275,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
-            return updated_steps;
-    }
-
-    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
-    {
-        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
-        /// window: it only removes whole partitions, and dropping a partition never changes
-        /// any window value on a surviving row (regardless of the window function or frame).
-        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-
-        if (partition_keys.empty())
-            return 0;
-
-        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
-        /// A predicate must be deterministic in the partition key, not merely reference only it:
-        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
-        /// inside a surviving partition before the window runs, which can change which row
-        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
-        /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*allow_index_hints=*/false))
             return updated_steps;
     }
 
@@ -1445,10 +1471,58 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 3;
     }
 
+    /// A filter left above the local fragment (see below) would keep this one from reaching it, while the
+    /// remote step gathers every filter in the chain above it. So join the two, and split them together.
+    if (typeid_cast<FilterStep *>(child.get()) && child_node->children.size() == 1
+        && typeid_cast<ReadFromLocalParallelReplicaStep *>(child_node->children.front()->step.get()))
+        return tryMergeFilters(parent_node, nodes, settings);
+
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        if (!settings.parallel_replicas_filter_pushdown)
+        if (!parallel_replicas_local_plan->getContext()->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
             return 0;
+
+        /// The replicas get a condition pushed here only through the splice into the query they are sent,
+        /// which carries it conjunct by conjunct and may leave some out. What this copy of the fragment
+        /// holds and they do not must not decide how the read is ordered - an equality fixes a sort key
+        /// column, the read goes in order, and the initiator announces `WithOrder` to the shared
+        /// coordinator against the replicas' `Default`. Nor may they hold what it does not, for the same
+        /// reason the other way round. So a conjunct they miss stays above unless it cannot fix any column,
+        /// even one outside the sorting key; one that cannot - a join runtime filter, which the splice
+        /// never carries, or a range - still prunes here.
+        const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+        if (!condition)
+            return 0;
+
+        const auto missed = parallel_replicas_local_plan->conjunctsTheReplicasMiss(*condition);
+        ActionsDAG::NodeRawConstPtrs to_push;
+        bool some_stay_above = false;
+        for (const auto * atom : ActionsDAG::extractConjunctionAtoms(condition))
+        {
+            if (std::ranges::find(missed, atom) != missed.end() && mayFixColumn(atom))
+                some_stay_above = true;
+            else
+                to_push.push_back(atom);
+        }
+
+        if (to_push.empty())
+            return 0;
+
+        if (some_stay_above)
+        {
+            auto pushed = filter->getExpression().splitActionsForFilterPushDown(
+                filter->getFilterColumnName(),
+                filter->removesFilterColumn(),
+                to_push,
+                parallel_replicas_local_plan->getOutputHeader()->getColumnsWithTypeAndName());
+            if (!pushed)
+                return 0;
+
+            String pushed_column = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
+            parallel_replicas_local_plan->addFilter({std::move(pushed->dag), std::move(pushed_column), pushed->remove_filter});
+            filter->updateInputHeader(parallel_replicas_local_plan->getOutputHeader());
+            return 2;
+        }
 
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
