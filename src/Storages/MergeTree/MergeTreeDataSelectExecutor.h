@@ -281,6 +281,7 @@ public:
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using query condition cache.
+    /// With `consult_where = false` only the PREWHERE is looked up; `filter_actions_dag` still salts a TopK PREWHERE key.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
@@ -288,10 +289,18 @@ public:
         const std::optional<TopKFilterInfo> & top_k_filter_info,
         bool allow_top_k_prewhere_query_condition_cache,
         bool use_sampling,
+        bool consult_where,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
         LoggerPtr log);
+
+    static bool canFilterPartsByQueryConditionCache(
+        const SelectQueryInfo & select_query_info,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context);
 
     /// Salt a WHERE/PREWHERE condition hash with the effective skip-index profile that index
     /// analysis actually ran: the set of useful skip indexes (their names and types, after

@@ -241,27 +241,6 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
-    read_step->updatePrewhereInfo(new_prewhere_info);
-    auto updated_header = read_step->getOutputHeader();
-
-    if (!blocksHaveEqualStructure(*initial_header, *updated_header))
-    {
-        auto dag = ActionsDAG::makeConvertingActions(
-            updated_header->getColumnsWithTypeAndName(),
-            initial_header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            read_step->getContext());
-
-        auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
-        auto & converting_node = nodes.emplace_back();
-        converting_node.step = std::move(converting_step);
-
-        /// The reading node takes the converting step and moves its own step into the new child node,
-        /// so the parent does not have to be touched.
-        node->children.push_back(&converting_node);
-        std::swap(node->step, converting_node.step);
-    }
-
     /// Salts the query condition cache key the way `tryOptimizeTopK` does, with an extra mark so that a
     /// `GROUP BY key LIMIT n` read never shares entries with an `ORDER BY key LIMIT n` read over the same table.
     /// Unlike `ORDER BY`, the boundary on the first key column depends on every grouping key: the heap ranks
@@ -306,6 +285,28 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
     if (has_non_deterministic_filter)
         read_step->disableTopKPrewhereQueryConditionCache();
+
+    /// Only after the stamp: `updatePrewhereInfo` looks a new PREWHERE up in the query condition cache under the stamp's salt.
+    read_step->updatePrewhereInfo(new_prewhere_info);
+    auto updated_header = read_step->getOutputHeader();
+
+    if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+    {
+        auto dag = ActionsDAG::makeConvertingActions(
+            updated_header->getColumnsWithTypeAndName(),
+            initial_header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            read_step->getContext());
+
+        auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+        auto & converting_node = nodes.emplace_back();
+        converting_node.step = std::move(converting_step);
+
+        /// The reading node takes the converting step and moves its own step into the new child node,
+        /// so the parent does not have to be touched.
+        node->children.push_back(&converting_node);
+        std::swap(node->step, converting_node.step);
+    }
 
     /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
     /// filter the granules it sees are only those the boundary let through, so the entry must be salted with the
