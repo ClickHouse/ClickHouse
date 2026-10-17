@@ -1088,7 +1088,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapsh
     return std::make_shared<MergeTreeIndexBloomFilterText>(std::move(metadata_snapshot), index, params, std::move(tokenizer));
 }
 
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     for (const auto & index_data_type : index.data_types)
     {
@@ -1156,6 +1156,16 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         args[first_bf_param_idx].safeGet<size_t>(),
         args[first_bf_param_idx+1].safeGet<size_t>(),
         args[first_bf_param_idx+2].safeGet<size_t>());
+
+    /// Every granule of the index eagerly allocates one filter per indexed column, so limit the total size,
+    /// not only the size of a single filter. Not on `ATTACH`: a table created before this check must still load.
+    /// `params.filter_size` is at most `MAX_BLOOM_FILTER_SIZE`, so the multiplication cannot overflow.
+    const size_t num_columns = index.column_names.size();
+    if (!attach && params.filter_size * num_columns > MAX_BLOOM_FILTER_SIZE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The total size of bloom filters in a granule of index {} cannot be more than {}: "
+            "the size of bloom filter is {} and the index has {} columns",
+            backQuote(index.name), MAX_BLOOM_FILTER_SIZE, params.filter_size, num_columns);
 }
 
 }
