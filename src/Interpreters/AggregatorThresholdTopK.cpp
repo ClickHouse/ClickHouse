@@ -348,6 +348,56 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             return better_column(*list.values_column, a.value_index, *list.values_column, b.value_index);
         };
 
+        /// The extremum bounds have a cutoff before any heap is built: the k-th best partial value
+        /// `v_k` of any single table bounds the k-th best merged value, because that table holds k
+        /// distinct groups at least as good as `v_k`, and a group's merged extremum is at least as
+        /// good as each of its partial values. A group whose partial values are all strictly worse
+        /// than the best such `v_k` merges to a strictly worse value and cannot rank, so only the
+        /// cells at least as good as the cutoff enter the heaps (the other cells of their groups are
+        /// still reached by the random access). The selection and the filter are batch column
+        /// operations, so the setup no longer pays a virtual `compareAt` heap sift for every cell,
+        /// which made the walk slower than the ordinary merge of cheap extremum states.
+        if (!values_are_uint64)
+        {
+            const auto sort_direction = ascending ? IColumn::PermutationSortDirection::Ascending : IColumn::PermutationSortDirection::Descending;
+            const List * cutoff_list = nullptr;
+            size_t cutoff_row = 0;
+            IColumn::Permutation permutation;
+            for (const List & list : lists)
+            {
+                if (list.heap_size < k)
+                    continue;
+                list.values_column->getPermutation(
+                    sort_direction, IColumn::PermutationSortStability::Unstable, k, nan_direction_hint, permutation);
+                const size_t row = permutation[k - 1];
+                if (!cutoff_list || better_column(*list.values_column, row, *cutoff_list->values_column, cutoff_row))
+                {
+                    cutoff_list = &list;
+                    cutoff_row = row;
+                }
+            }
+
+            if (cutoff_list)
+            {
+                /// The entries are not permuted yet, so the entry `j` holds the value row `j`.
+                PaddedPODArray<Int8> compare_results;
+                for (List & list : lists)
+                {
+                    compare_results.clear();
+                    list.values_column->compareColumn(
+                        *cutoff_list->values_column, cutoff_row, nullptr, compare_results, ascending ? -1 : 1, nan_direction_hint);
+                    size_t kept = 0;
+                    for (size_t j = 0; j < list.heap_size; ++j)
+                        if (compare_results[j] >= 0)
+                            list.entries[kept++] = list.entries[j];
+                    list.entries.resize(kept);
+                    list.heap_size = kept;
+                }
+                /// The walk reads the head of every list.
+                std::erase_if(lists, [](const List & list) { return list.heap_size == 0; });
+            }
+        }
+
         for (List & list : lists)
         {
             std::make_heap(
