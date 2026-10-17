@@ -190,7 +190,7 @@ void maskS3PositionalsFrom(FunctionSecretArgumentsFinder & finder, const std::ve
 
 /// The S3 URL itself can carry credentials: a userinfo part and presigned-URL query parameters.
 /// If the url positional does, replace it with a partially masked copy that keeps the host and
-/// path visible. The field set mirrors `BackupInfo::removeCredentialsFromS3URL`.
+/// path visible.
 void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector<size_t> & positional, size_t url_slot)
 {
     if (url_slot >= positional.size())
@@ -331,9 +331,8 @@ bool isS3SecretKey(std::string_view key)
 
 bool maskS3URICredentials(String & url)
 {
-    /// The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL` (which strips the same fields from
-    /// persisted backup metadata). Both scans live in `Common/maskURIPassword.h` and are checked against the
-    /// regular expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
+    /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular expressions they
+    /// replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
     bool changed = maskURIUserinfo(url);
     changed |= maskPresignedURLParameters(url);
     return changed;
