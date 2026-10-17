@@ -443,18 +443,14 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             return better_column(*exact_values_column, a.value, *exact_values_column, b.value);
         };
 
-        /// Destroys the states of `place` from the aggregate `first` on. A destructive merge consumes
-        /// the source state one aggregate at a time, so an aborted one leaves exactly this tail alive.
-        const auto destroy_place_from = [&](AggregateDataPtr place, size_t first)
+        const auto destroy_place = [&](AggregateDataPtr place)
         {
             if (all_aggregates_has_trivial_destructor || is_simple_count)
                 return;
-            for (size_t i = first; i < params.aggregates_size; ++i)
+            for (size_t i = 0; i < params.aggregates_size; ++i)
                 if (!aggregate_functions[i]->hasTrivialDestructor())
                     aggregate_functions[i]->destroy(place + offsets_of_aggregate_states[i]);
         };
-
-        const auto destroy_place = [&](AggregateDataPtr place) { destroy_place_from(place, 0); };
 
         const auto destroy_candidates = [&]
         {
@@ -529,11 +525,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             {
                 AggregateDataPtr place = *entry.slot;
                 *entry.slot = nullptr;
-                /// The source cell of the pair being merged, while it is detached from its table and
-                /// only partially consumed: the states from `other_merged_aggregates` on are still
-                /// alive and nothing else can reach them if an aggregate's merge throws.
+                /// The source cell of the pair being merged, while it is detached from its table:
+                /// it is still whole and nothing else can reach it if an aggregate's merge throws.
                 AggregateDataPtr other_in_flight = nullptr;
-                size_t other_merged_aggregates = 0;
                 try
                 {
                     for (Table * table : tables)
@@ -547,28 +541,30 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                         if (!other_slot)
                             continue;
                         ++consumed_cells;
-                        /// Detach the source state from the table before the destructive merge
-                        /// (the same pattern as `mergeDataImpl`): if a later aggregate's merge
-                        /// throws, the table cell must not be destroyed again by the unwinding -
-                        /// the already-consumed substates would be destroyed a second time.
+                        /// Detach the source state from the table before merging it: from here on
+                        /// it is owned by this pair and destroyed exactly once, either after all
+                        /// the merges succeeded or by the unwinding.
                         AggregateDataPtr other = other_slot;
                         other_slot = nullptr;
                         other_in_flight = other;
-                        other_merged_aggregates = 0;
                         /// Always the interpreted merge, even when the accumulation was
                         /// JIT-compiled: the compiled and the interpreted code share the
                         /// state layout by contract (spilling and distributed aggregation
                         /// rely on the same interoperability), and only the few candidate
-                        /// groups pay for it. The per-pair batch entry point handles the
-                        /// functions whose merge may use the thread pool (e.g. `uniqExact`)
-                        /// and destroys the source state.
+                        /// groups pay for it. The batch entry point handles the functions whose
+                        /// merge may use the thread pool (e.g. `uniqExact`). The merge is not the
+                        /// destructive `mergeAndDestroyBatch`: a composite aggregate (e.g. the
+                        /// `Tuple` combinator) destroys its source substates one by one, so a
+                        /// failure in the middle would leave a state that cannot be destroyed as
+                        /// a whole without destroying the consumed substates a second time.
                         for (size_t f = 0; f < params.aggregates_size; ++f)
                         {
-                            aggregate_functions[f]->mergeAndDestroyBatch(
-                                &place, &other, 1, offsets_of_aggregate_states[f], *thread_pool, is_cancelled, arena);
-                            other_merged_aggregates = f + 1;
+                            const size_t state_offset = offsets_of_aggregate_states[f];
+                            const AggregateDataPtr other_state = other + state_offset;
+                            aggregate_functions[f]->mergeBatch(0, 1, &place, state_offset, &other_state, *thread_pool, is_cancelled, arena);
                         }
                         other_in_flight = nullptr;
+                        destroy_place(other);
                     }
 
                     /// The exact merged value of the group.
@@ -586,11 +582,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                 }
                 catch (...)
                 {
-                    /// `mergeAndDestroyBatch` destroys the source state of an aggregate only after its
-                    /// merge succeeded, so the detached source cell still owns everything from the
-                    /// failing aggregate on; the table cannot reach it anymore, destroy it here.
+                    /// The detached source cell is still whole and the table cannot reach it anymore.
                     if (other_in_flight)
-                        destroy_place_from(other_in_flight, other_merged_aggregates);
+                        destroy_place(other_in_flight);
                     destroy_place(place);
                     throw;
                 }
