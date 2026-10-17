@@ -46,9 +46,19 @@
 #include <Storages/ObjectStorage/Utils.h>
 
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+extern const Event IcebergManifestListsRead;
+extern const Event IcebergManifestListsReadMicroseconds;
+extern const Event IcebergManifestFilesRead;
+extern const Event IcebergManifestFilesReadBytes;
+extern const Event IcebergManifestFilesReadMicroseconds;
+}
 
 namespace DB
 {
@@ -138,6 +148,9 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesRead);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
+
         RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
@@ -156,6 +169,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
             std::move(buffer), filename, getFormatSettings(local_context));
 
         const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
+        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesReadBytes, manifest_file_bytes);
         return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
@@ -216,6 +230,9 @@ ManifestFileCacheKeys getManifestList(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergManifestListsRead);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestListsReadMicroseconds);
+
         RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
