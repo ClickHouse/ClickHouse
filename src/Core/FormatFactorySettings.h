@@ -1400,6 +1400,10 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 Put crc32 checksums in parquet page headers.
 )", 0, \
         {"25.11", false, true, "New setting."}) \
+    DECLARE(Bool, output_format_parquet_use_alp_encoding, false, R"(
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
