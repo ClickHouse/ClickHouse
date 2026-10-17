@@ -505,8 +505,9 @@ private:
         if (!result.has_capture)
             return;
 
-        /// Only a trailing `.*$` is removed. Leftmost-first matching fixes where the match starts
-        /// before the tail is considered, so dropping the tail cannot change what is captured.
+        /// Every trailing `.*$` is removed, so a second visit of a node shared by several references
+        /// changes nothing. Leftmost-first matching fixes where the match starts before the tail is
+        /// considered, so dropping the tail cannot change what is captured.
         ///
         /// A leading greedy `^.*` must be left alone: it consumes as much as it can and then
         /// backtracks, so the capture binds at the *last* offset where the rest of the pattern
@@ -523,12 +524,12 @@ private:
         /// quotes it, and then `.*$` are three ordinary characters to match.
         ///
         /// For simplicity, this optimization ignores alternations.
-        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3) && !disablesDotAll(regexp)
-            && !endsInsideQuotedLiteral(regexp))
-        {
-            regexp = regexp.substr(0, regexp.size() - 3);
-            function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(std::move(regexp));
-        }
+        std::string_view stripped = regexp;
+        while (stripped.ends_with(".*$") && isUnescaped(regexp, stripped.size() - 3))
+            stripped.remove_suffix(3);
+
+        if (stripped.size() != regexp.size() && !disablesDotAll(regexp) && !endsInsideQuotedLiteral(regexp))
+            function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(String(stripped));
     }
 };
 
