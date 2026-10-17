@@ -940,6 +940,23 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// The numbering is derived from the key of the table: the next objects are `data.tsv` -> `data.1.tsv`, ...,
     /// and an insert that had to step aside from an existing object into a numbered key continues the numbering from there.
     const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
+
+    /// A truncating insert that is not split overwrites the last key of the table, as it always did before the splitting
+    /// by size existed - the keys that the inserts with `*_create_new_file_on_insert` alone have stepped aside into are kept
+    /// along with their objects. The keys written by a previous split insert do not count: they are deleted below.
+    /// A truncating insert that is split claims the whole numbered sequence, and so starts from the key of the table.
+    if (settings.truncate_on_insert && !settings.split_on_write_by_size_bytes)
+    {
+        const Strings split_tail = configuration->getSplitTailPaths();
+        for (auto it = paths.rbegin(); it != paths.rend(); ++it)
+        {
+            if (std::ranges::find(split_tail, it->path) == split_tail.end())
+            {
+                first_key = it->path;
+                break;
+            }
+        }
+    }
     /// Every key of the table after the first one is a numbered key, so an insert with `*_create_new_file_on_insert`
     /// starts probing from the number of the keys the table knows, as it always did: every probe is a request to the
     /// object storage, and starting from 1 would make the N-th insert probe all the keys of the previous inserts again.
@@ -1008,7 +1025,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         std::move(publish_path),
         /* path_is_published = */ false);
 
-    /// A truncating insert overwrites the table: it starts from the base key, the split objects
+    /// A truncating insert overwrites the table: it starts from the key chosen above, the split objects
     /// of the previous split inserts are forgotten, and the numbering starts over, overwriting them one by one.
     /// It does not matter whether the current insert is split by size: a rewrite with
     /// `*_split_on_write_by_size_bytes` turned back to 0 has to drop the numbered tail of the previous

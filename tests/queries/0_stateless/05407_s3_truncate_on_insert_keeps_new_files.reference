@@ -4,4 +4,8 @@
 data.1.tsv
 data.tsv
 --- s3_create_new_file_on_insert, a split insert, then a truncating insert
-Code: 115. DB::Exception: Code: 115. DB::Exception: Unknown setting 's3_split_on_write_by_size_bytes'. (UNKNOWN_SETTING) (version 26.10.1.1). (UNKNOWN_SETTING)
+302	1
+1
+3
+data.1.tsv
+data.tsv

@@ -10,8 +10,8 @@ PREFIX="05407_truncate_keeps_new_files/${CLICKHOUSE_DATABASE}"
 
 SETTINGS="max_threads = 1, max_insert_threads = 1, max_block_size = 100, min_insert_block_size_rows = 100, min_insert_block_size_bytes = 0"
 
-# A truncating insert replaces only the object of the table, and keeps the objects created
-# by `s3_create_new_file_on_insert`, as it did before the splitting by size existed.
+# A truncating insert that is not split replaces only the last object of the table, and keeps the other
+# objects created by `s3_create_new_file_on_insert`, as it did before the splitting by size existed.
 echo '--- s3_create_new_file_on_insert, then a truncating insert'
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE test_05407 (x UInt64) ENGINE = S3(s3_conn, filename='${PREFIX}/plain/data.tsv', format=TSV);
