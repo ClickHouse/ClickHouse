@@ -503,6 +503,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
+    /// Check before `stopReplication` and `flushAndPrepareForShutdown`, so a rejected drop leaves the tables running.
+    if (database->shouldBeEmptyOnDetach() && (drop || (truncate && !query.has_tables)))
+    {
+        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(
+                StorageID(database_name, iterator->name()), getContext(), /*is_drop_database*/ true);
+    }
+
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
 
