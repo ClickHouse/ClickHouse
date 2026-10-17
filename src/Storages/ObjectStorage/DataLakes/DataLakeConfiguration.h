@@ -114,6 +114,12 @@ public:
             metadata->setExplicitMetadataFilePath(path);
     }
 
+    bool isMetadataFileOfThisTable(const String & path, ContextPtr local_context) const override
+    {
+        auto metadata = tryGetMetadata();
+        return metadata && metadata->isMetadataFileOfThisTable(path, local_context);
+    }
+
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     StorageObjectStorageConfiguration::Path getRawPath() const override
