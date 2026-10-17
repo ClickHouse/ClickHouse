@@ -1,0 +1,16 @@
+-- 1. MaterializedView in a scalar subquery
+3
+3
+ACCESS_DENIED
+-- 1. Buffer in a scalar subquery
+30
+30
+ACCESS_DENIED
+-- 2. trivial count in a scalar subquery, revoke
+3
+3
+ACCESS_DENIED
+-- 2. trivial count in a scalar subquery, table replaced
+3
+3
+1

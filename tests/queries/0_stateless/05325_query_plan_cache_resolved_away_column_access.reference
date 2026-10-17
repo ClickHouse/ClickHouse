@@ -1,0 +1,33 @@
+-- SELECT a FROM t_resolved_away WHERE indexHint(c = 1) AND a = 1
+miss:
+1
+hit:
+1
+-- SELECT a FROM t_resolved_away PREWHERE b > 0 WHERE a = 1
+miss:
+1
+hit:
+1
+-- SELECT count() FROM t_resolved_away WHERE indexHint(c = 1)
+miss:
+2
+hit:
+2
+-- after revoke: SELECT a FROM t_resolved_away WHERE indexHint(c = 1) AND a = 1
+without the cache:
+ACCESS_DENIED
+hit:
+ACCESS_DENIED
+-- after revoke: SELECT a FROM t_resolved_away PREWHERE b > 0 WHERE a = 1
+without the cache:
+ACCESS_DENIED
+hit:
+ACCESS_DENIED
+-- after revoke: SELECT count() FROM t_resolved_away WHERE indexHint(c = 1)
+without the cache:
+ACCESS_DENIED
+hit:
+ACCESS_DENIED
+-- parameterized view: an indexHint argument requires a grant on the view column
+ACCESS_DENIED
+1

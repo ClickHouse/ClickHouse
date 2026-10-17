@@ -1,0 +1,45 @@
+-- UNION ALL: miss
+1	a1
+2	a2
+2	a2
+3	b3
+-- hits: 0
+-- UNION ALL: hit
+1	a1
+2	a2
+2	a2
+3	b3
+-- hits: 1
+-- UNION DISTINCT: miss
+1	a1
+2	a2
+3	b3
+-- hits: 0
+-- UNION DISTINCT: hit
+1	a1
+2	a2
+3	b3
+-- hits: 1
+-- a hit reads current data of both branches
+1	a1
+2	a2
+2	a2
+3	b3
+4	a4
+5	b5
+-- hits: 1
+-- a schema change of the second branch's table invalidates the entry
+1	a1
+2	a2
+2	a2
+3	b3
+4	a4
+5	b5
+-- hits: 0
+1	a1
+2	a2
+2	a2
+3	b3
+4	a4
+5	b5
+-- hits: 1

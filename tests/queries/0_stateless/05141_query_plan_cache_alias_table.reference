@@ -1,0 +1,22 @@
+-- 1. an ordinary read through an Alias is never cached
+60
+-- hits: 0
+60
+-- hits: 0
+-- 2. a row policy tightened on the target table takes effect immediately
+30
+-- hits: 0
+10
+-- hits: 0
+-- 3. a zero-column read through an Alias is not cached either, so revoking the column
+-- chosen at planning time still re-plans with the other one
+3
+-- hits: 0
+3
+-- hits: 0
+-- 4. an Alias folded into a scalar subquery is not cached, so losing the grant on the
+-- target's column denies the query instead of serving the baked constant
+60
+60
+-- hits: 0
+ACCESS_DENIED
