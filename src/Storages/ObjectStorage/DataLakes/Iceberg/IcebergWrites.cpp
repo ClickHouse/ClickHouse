@@ -1515,8 +1515,6 @@ bool IcebergStorageSink::initializeMetadata()
         }
     };
 
-    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-    std::vector<Iceberg::IcebergPathFromMetadata> dropped_metadata_files;
     try
     {
         /// On a retry the manifests are reused and only the manifest list is written.
@@ -1628,7 +1626,7 @@ bool IcebergStorageSink::initializeMetadata()
         }
 
         {
-            dropped_metadata_files = MetadataGenerator(metadata).trimMetadataLog();
+            MetadataGenerator(metadata).trimMetadataLog();
             std::string json_representation = stringifyJSON(metadata, 4);
 
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
@@ -1638,6 +1636,7 @@ bool IcebergStorageSink::initializeMetadata()
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_writes_pause_before_commit);
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
+            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
             if (!catalog_writes_metadata_file)
             {
                 if (!writeMetadataFileAndVersionHint(
@@ -1677,9 +1676,6 @@ bool IcebergStorageSink::initializeMetadata()
         cleanup(false);
         throw;
     }
-
-    if (!catalog_writes_metadata_file)
-        removeDroppedMetadataFiles(metadata, dropped_metadata_files, resolver, object_storage, log);
     return true;
 }
 

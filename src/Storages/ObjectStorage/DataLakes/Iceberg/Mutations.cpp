@@ -516,8 +516,6 @@ static bool writeMetadataFiles(
         }
     };
 
-    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-    std::vector<Iceberg::IcebergPathFromMetadata> dropped_metadata_files;
     try
     {
         write_manifest_entries(delete_files, Iceberg::FileContentType::POSITION_DELETE, delete_sample_block);
@@ -553,7 +551,7 @@ static bool writeMetadataFiles(
             buffer_manifest_list->finalize();
         }
 
-        dropped_metadata_files = MetadataGenerator(metadata).trimMetadataLog();
+        MetadataGenerator(metadata).trimMetadataLog();
         std::string json_representation = stringifyJSON(metadata, 4);
 
         fiu_do_on(FailPoints::iceberg_writes_cleanup,
@@ -561,6 +559,7 @@ static bool writeMetadataFiles(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
         });
 
+        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
         if (!catalog_writes_metadata_file)
         {
             if (!writeMetadataFileAndVersionHint(
@@ -593,9 +592,6 @@ static bool writeMetadataFiles(
         cleanup();
         throw;
     }
-
-    if (!catalog_writes_metadata_file)
-        removeDroppedMetadataFiles(metadata, dropped_metadata_files, path_resolver, object_storage, getLogger("IcebergMutations"));
     return true;
 }
 
@@ -892,7 +888,7 @@ void alter(
         }
 
         metadata->set(Iceberg::f_last_updated_ms, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-        auto dropped_metadata_files = metadata_json_generator.trimMetadataLog();
+        metadata_json_generator.trimMetadataLog();
         std::string json_representation = stringifyJSON(metadata, 4);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
@@ -927,8 +923,6 @@ void alter(
             }
         }
 
-        if (!catalog_writes_metadata_file)
-            removeDroppedMetadataFiles(metadata, dropped_metadata_files, persistent_table_components.path_resolver, object_storage, log);
         succeeded = true;
         break;
     }

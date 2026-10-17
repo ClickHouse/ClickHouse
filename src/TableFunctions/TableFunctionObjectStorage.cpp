@@ -2209,14 +2209,9 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 
 ### Metadata Log Retention {#iceberg-metadata-log-retention}
 
-Each commit records the previous metadata file in the `metadata-log` of the new one. ClickHouse honors two Iceberg table properties that bound this log:
+Each commit records the previous metadata file in the `metadata-log` of the new one. The log keeps at most `write.metadata.previous-versions-max` previous metadata files (an Iceberg table property, default `100`). Older entries are dropped on commit, and the files they name become collectable by `remove_orphan_files`.
 
-| Property | Default | Description |
-|---|---|---|
-| `write.metadata.previous-versions-max` | `100` | Maximum number of previous metadata files kept in `metadata-log`. Older entries are dropped on commit, and the files they name become collectable by `remove_orphan_files`. |
-| `write.metadata.delete-after-commit.enabled` | `false` | When `true`, metadata files dropped from `metadata-log` are deleted right after the commit. |
-
-Files are not deleted by ClickHouse when a transactional catalog (REST, Unity) manages the table's metadata files.
+ClickHouse does not delete metadata files on commit, even when the table sets `write.metadata.delete-after-commit.enabled`: without a transactional catalog, a commit is refused only if the metadata file of its version already exists, so deleting an old version would let a delayed writer commit that version again.
 
 ## See Also {#see-also}
 
