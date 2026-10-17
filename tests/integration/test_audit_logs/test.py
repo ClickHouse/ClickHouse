@@ -923,6 +923,45 @@ def test_audit_log_fire_and_forget_async_insert_flush_failure(start_cluster):
     node_dml_misc.query("DROP TABLE IF EXISTS audit_async_flush_table")
 
 
+def test_audit_log_fire_and_forget_async_insert_flush_failure_before_start(start_cluster):
+    """A deferred flush can fail before its query logging is set up, e.g. when the user who queued
+    the data is dropped before the flush restores its identity. The failure must still be audited."""
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_async_dropped_user_table")
+    node_dml_misc.query("DROP USER IF EXISTS audit_async_dropped_user")
+    node_dml_misc.query("CREATE TABLE audit_async_dropped_user_table (a UInt32) ENGINE = Memory")
+    node_dml_misc.query("CREATE USER audit_async_dropped_user")
+    node_dml_misc.query("GRANT INSERT ON default.audit_async_dropped_user_table TO audit_async_dropped_user")
+
+    # The busy timeout keeps the data queued until the explicit flush below.
+    node_dml_misc.query(
+        "INSERT INTO default.audit_async_dropped_user_table SETTINGS async_insert = 1, wait_for_async_insert = 0, "
+        "async_insert_use_adaptive_busy_timeout = 0, async_insert_busy_timeout_max_ms = 600000 VALUES (1)",
+        user="audit_async_dropped_user",
+    )
+    node_dml_misc.query("DROP USER audit_async_dropped_user")
+    node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+
+    for _ in range(60):
+        log_content = node_dml_misc.grep_in_log(
+            "audit_async_dropped_user_table", from_host=True, filename="clickhouse-server.audit.log"
+        )
+        failed = [
+            line for line in log_content.strip().split("\n")
+            if "AUDIT:" in line
+            and line.split("AUDIT: ", 1)[1].split(", ")[1] == "AsyncInsertFlush"
+            and line.split("AUDIT: ", 1)[1].split(", ")[2] != "0"
+        ]
+        if failed:
+            break
+        time.sleep(0.5)
+    assert len(failed) == 1, f"the flush that failed before start must be audited once: {log_content}"
+    fields = failed[0].split("AUDIT: ", 1)[1].split(", ")
+    assert fields[0] == "DML", failed[0]
+    assert fields[3] == "audit_async_dropped_user", failed[0]
+
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_async_dropped_user_table")
+
+
 def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     """`EXECUTE AS <user> <statement>` runs the wrapped statement through
     `executeQuery(..., internal = true)`, which by itself would leave it out of the audit log. The
