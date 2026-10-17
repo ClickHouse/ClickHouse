@@ -108,7 +108,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         }
         else
         {
-            new_ttl_info.update(cur_ttl);
+            new_ttl_info.updateZeroAsNever(cur_ttl);
             is_fully_empty = false;
             if (result_column)
                 result_column->insertFrom(*values_column, i);
@@ -122,7 +122,7 @@ void TTLColumnAlgorithm::execute(Block & block)
 void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
+    data_part->ttl_infos.updatePartMinMaxColumnTTL(new_ttl_info);
     if (is_fully_empty)
         data_part->expired_columns.insert(column_name);
 }

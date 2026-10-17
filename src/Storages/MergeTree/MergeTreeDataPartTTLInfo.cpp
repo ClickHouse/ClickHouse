@@ -22,6 +22,14 @@ void MergeTreeDataPartTTLInfo::update(time_t time)
     max = std::max(time, max);
 }
 
+void MergeTreeDataPartTTLInfo::updateZeroAsNever(time_t time)
+{
+    if (time)
+        update(time);
+    else
+        max = NEVER;
+}
+
 void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_info)
 {
     if (other_info.min && (!min || other_info.min < min))
@@ -39,7 +47,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
         columns_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info);
+        updatePartMinMaxColumnTTL(ttl_info);
     }
 
     for (const auto & [name, ttl_info] : other_infos.rows_where_ttl)
@@ -88,7 +96,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             String name = col["name"].getString();
             columns_ttl.emplace(name, ttl_info);
 
-            updatePartMinMaxTTL(ttl_info);
+            updatePartMinMaxColumnTTL(ttl_info);
         }
     }
     if (json.has("table"))
@@ -169,7 +177,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         }
         writeString("]", out);
     }
-    if (table_ttl.min)
+    if (table_ttl.initialized())
     {
         if (!columns_ttl.empty())
             writeString(",", out);
@@ -207,7 +215,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeString("]", out);
     };
 
-    bool is_first = columns_ttl.empty() && !table_ttl.min;
+    bool is_first = columns_ttl.empty() && !table_ttl.initialized();
     if (!moves_ttl.empty())
     {
         write_infos(moves_ttl, "moves", is_first);
