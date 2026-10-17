@@ -1,0 +1,8 @@
+no-parameter merge preserves lg_k and representation
+14	2	1
+no-parameter merge of two high-precision sketches keeps their precision
+14	2	1
+explicit parameters still take precedence
+10	0
+default sketches merged without parameters keep the default precision
+10	0	1
