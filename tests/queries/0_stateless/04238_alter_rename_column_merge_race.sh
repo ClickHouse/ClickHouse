@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings, no-random-detach
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan, no-random-detach
+# no-msan: each iteration starts four clients, which are slow under MSan, and the run takes over the
+# 600 s timeout with `meta in keeper` and `s3 storage`. The race is a logical one, MSan does not help to find it.
 # no-random-detach: this deliberately races ALTER RENAME COLUMN against a concurrent
 # merge; a random DETACH/ATTACH mid-operation reloads intersecting parts
 # (Part A intersects next part B), which is unrelated to what the test checks.
