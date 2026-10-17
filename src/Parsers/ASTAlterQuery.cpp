@@ -1389,6 +1389,34 @@ bool ASTAlterQuery::isSettingsOrCommentAlter() const
     return true;
 }
 
+bool ASTAlterQuery::isColumnCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::COMMENT_COLUMN && !isCommentOnlyModifyColumn(command))
+            return false;
+    }
+    return true;
+}
+
+bool ASTAlterQuery::isSettingsOrTableCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING
+            && command.type != ASTAlterCommand::RESET_SETTING
+            && command.type != ASTAlterCommand::MODIFY_COMMENT)
+            return false;
+    }
+    return true;
+}
+
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
 {
     if (command_list)
