@@ -139,6 +139,10 @@ public:
             ObjectInfoPtr object;
             /// When the recheck is due if the status of the file is not cached any more.
             time_t due_time = 0;
+            /// Ordered mode only. The file was not foreign-held itself: it is replayed after the
+            /// blocker of its ordering domain resolved (or it is queued behind such a replay),
+            /// see `pending_replays_per_domain`.
+            bool is_replay = false;
         };
         std::deque<PendingRecheck> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
 
@@ -190,6 +194,13 @@ public:
         /// processed: the pointer would advance past the held file and lose it forever.
         std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
 
+        /// Ordered mode only. The replayed files (`PendingRecheck::is_replay`) still waiting in
+        /// `foreign_processing_files_to_recheck`. A replayed file is neither foreign-held nor handed
+        /// out yet, so nothing else keeps a later file of its domain from being committed first and
+        /// advancing the `processed` pointer past it: a later file found behind a pending replay is
+        /// queued as a replay as well, and the recheck batch hands both out in path order.
+        std::map<OrderingDomain, std::multiset<std::string>> pending_replays_per_domain TSA_GUARDED_BY(next_mutex);
+
         /// Ordered mode only. Files handed out to a processing thread whose `trySetProcessing`
         /// outcome is not known yet. A later file of the domain must not start processing
         /// while a smaller file can still turn out to be foreign-held: with several processing
@@ -204,6 +215,9 @@ public:
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         void recheckBlockedFilesForDomain(const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void queueReplay(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        void forgetPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
+        bool isBehindPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
 
         void registerUnresolvedSetProcessing(const std::string & path);
         void resolveSetProcessing(const std::string & path);
@@ -211,12 +225,14 @@ public:
         bool hasSmallerUnresolvedSetProcessing(const std::string & path) TSA_REQUIRES(next_mutex);
         /// Waits until the file at `path` is allowed to start a set-processing attempt.
         /// TSA does not understand the `std::unique_lock` needed by the condition variable.
-        enum class OrderingDomainGate { Proceed, Blocked, Shutdown };
+        enum class OrderingDomainGate { Proceed, Blocked, BehindReplay, Shutdown };
         OrderingDomainGate waitOrderingDomainGate(const std::string & path) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
         ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
+        /// When the recheck of `pending` is due, judging by the most recent cached observation.
+        time_t getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const;
         std::vector<PendingRecheck> takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
         /// Queues a recheck of a file skipped because of the foreign `processing` observation in `status`.
         void queueForeignProcessingRecheck(ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status) TSA_REQUIRES(next_mutex);
