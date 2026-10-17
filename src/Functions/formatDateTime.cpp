@@ -1487,8 +1487,9 @@ public:
                         break;
                     }
 
-                    // Year of ISO 8601 week number (see %V)
+                    // Year of ISO 8601 week number (see %V and %v)
                     case 'G':
+                    case 'x':
                     {
                         Instruction<T> instruction;
                         instruction.setMysqlFunc(&Instruction<T>::mysqlISO8601Year4);
@@ -1529,6 +1530,7 @@ public:
 
                     // ISO 8601 week number (01-53)
                     case 'V':
+                    case 'v':
                     {
                         Instruction<T> instruction;
                         instruction.setMysqlFunc(&Instruction<T>::mysqlISO8601Week);
@@ -1754,10 +1756,6 @@ public:
                     // Unimplemented
                     case 'U':
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
-                    case 'v':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Mon-Sun)");
-                    case 'x':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Mon-Sun)");
                     case 'X':
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Sun-Sat)");
                     default:
@@ -2122,8 +2120,10 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
+| %v | ISO 8601 week number (01-53), Monday-first; same as %V | 01 |
 | %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
+| %x | ISO 8601 week-year (four digits), used with %v; same as %G | 2018 |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |
 | %z | Time offset from UTC as +HHMM or -HHMM | -0500 |
