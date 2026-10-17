@@ -375,6 +375,8 @@ private:
 
     Chunk generate() override;
 
+    void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback) override;
+
     void onFinish() override;
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;

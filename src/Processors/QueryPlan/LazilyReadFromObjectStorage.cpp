@@ -70,7 +70,8 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     const std::optional<DB::FormatSettings> & format_settings_,
     ReadFromFormatInfo info_,
     ContextPtr context_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_)
     : ISourceStep(std::move(header))
     , storage_id(storage_id_)
     , object_storage(std::move(object_storage_))
@@ -80,6 +81,7 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
+    , storage_limits(std::move(storage_limits_))
 {
 }
 
@@ -103,6 +105,7 @@ void LazilyReadFromObjectStorage::initializePipeline(QueryPipelineBuilder & pipe
         info,
         context,
         max_block_size,
+        storage_limits,
         lazy_materializing_rows);
 
     processors.emplace_back(source);

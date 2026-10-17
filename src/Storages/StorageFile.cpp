@@ -62,6 +62,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
@@ -1840,12 +1841,20 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     return true;
 }
 
+void StorageFileSource::setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback)
+{
+    parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+}
+
 Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
     while (!finished_generate)
     {
+        if (parser_shared_resources->isReadStopped())
+            return {};
+
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
         if (!reader)
         {
@@ -2285,10 +2294,10 @@ Chunk StorageFileSource::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
-            size_t chunk_size = 0;
-            if (input_format && storage->format_name != "Distributed")
-                chunk_size = input_format->getApproxBytesReadForChunk();
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            if (input_format && input_format->reportsReadProgress())
+                progress(0, 0);
+            else
+                progress(num_rows, chunk.bytes());
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -2378,6 +2387,11 @@ Chunk StorageFileSource::generate()
 
             return chunk;
         }
+
+        /// A format can stop internally on a read limit without exhausting the file.
+        /// Do not publish partial row counts or unmatched row groups to the caches.
+        if (parser_shared_resources->isReadStopped())
+            return {};
 
         /// Read only once for file descriptor.
         if (storage->use_table_fd)
@@ -2621,6 +2635,21 @@ bool ReadFromFile::canUseLazyMaterialization() const
     if (need_only_count)
         return false;
 
+    /// The lazy branch must return every requested row to restore the main branch's order.
+    /// A read limit in break mode can stop it before all deferred rows have been read.
+    if (query_info.storage_limits)
+    {
+        for (const auto & limits : *query_info.storage_limits)
+        {
+            const auto & size_limits = limits.local_limits.size_limits;
+            if ((size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK)
+                || (limits.leaf_limits.hasLimits() && limits.leaf_limits.overflow_mode == OverflowMode::BREAK)
+                || (limits.local_limits.speed_limits.max_execution_time != 0
+                    && limits.local_limits.timeout_overflow_mode == OverflowMode::BREAK))
+                return false;
+        }
+    }
+
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
     /// Only the Parquet reader supports both.
@@ -2696,7 +2725,8 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
         storage,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        query_info.storage_limits);
 
     return lazy_step;
 }
@@ -2904,6 +2934,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             lazy_row_index_registry,
             top_k_query_condition_cache_key);
 
+        source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
 
@@ -2950,10 +2981,18 @@ public:
 
     String getName() const override { return "StorageFileLazyRows"; }
 
+    void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback) override
+    {
+        parser_shared_resources->setReadProgressCallback(callback, storage_limits);
+    }
+
     Chunk generate() override
     {
         while (true)
         {
+            if (parser_shared_resources->isReadStopped())
+                return {};
+
             if (!reader)
             {
                 if (next_file_index >= files.size())
@@ -3071,8 +3110,10 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                progress(chunk.getNumRows(), chunk_size ? chunk_size : chunk.bytes());
+                if (input_format->reportsReadProgress())
+                    progress(0, 0);
+                else
+                    progress(chunk.getNumRows(), chunk.bytes());
                 return chunk;
             }
 

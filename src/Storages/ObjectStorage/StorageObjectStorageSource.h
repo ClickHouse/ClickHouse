@@ -54,6 +54,8 @@ public:
 
     Chunk generate() override;
 
+    void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback) override;
+
     void onFinish() override;
 
     static std::shared_ptr<IObjectIterator> createFileIterator(

@@ -251,6 +251,8 @@ public:
 
     Chunk generate() override;
 
+    void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & callback) override;
+
     void onFinish() override;
 
     void cancel(CancelReason reason) noexcept override;

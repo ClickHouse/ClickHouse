@@ -36,7 +36,7 @@ private:
     std::exception_ptr exception;
 
     /// Callback for read progress.
-    ReadProgressCallback * read_progress_callback = nullptr;
+    std::shared_ptr<ReadProgressCallback> read_progress_callback;
     QueryStatus * process_list_element = nullptr;
 
     /// EXPLAIN ANALYZE statistics.
@@ -82,7 +82,7 @@ public:
     /// Hands the recorded intervals to the profiler; called once, after the thread finished.
     void flushWorkIntervals();
 
-    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback,
+    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, std::shared_ptr<ReadProgressCallback> callback,
         StepProfiler * step_profiler_, QueryStatus * process_list_element_);
 };
 

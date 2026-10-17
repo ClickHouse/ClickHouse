@@ -77,7 +77,8 @@ public:
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         ContextPtr context_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     void setLazyMaterializingRows(FileLazyMaterializingRowsPtr lazy_materializing_rows_);
 
@@ -93,6 +94,7 @@ private:
     ReadFromFormatInfo info;
     ContextPtr context;
     size_t max_block_size;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 
     FileLazyMaterializingRowsPtr lazy_materializing_rows;
 };

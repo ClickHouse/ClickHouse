@@ -15,12 +15,14 @@ LazyReadFromFileSource::LazyReadFromFileSource(
     ReadFromFormatInfo info_,
     ContextPtr context_,
     size_t max_block_size_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
     FileLazyMaterializingRowsPtr lazy_materializing_rows_)
     : IProcessor({}, {std::move(header)})
     , storage(std::move(storage_))
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
+    , storage_limits(std::move(storage_limits_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
 }
@@ -76,6 +78,7 @@ IProcessor::PipelineUpdate LazyReadFromFileSource::updatePipeline()
 
     auto source = StorageFile::createLazyRowsSource(
         storage, info, context, max_block_size, std::move(rows->rows_in_files));
+    source->setStorageLimits(storage_limits);
 
     auto & source_output = source->getOutputs().front();
     inputs.emplace_back(source_output.getHeader(), this);

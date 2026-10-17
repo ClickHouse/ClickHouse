@@ -132,6 +132,10 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
+    /// The format reports scan progress itself, including rows discarded by internal filters.
+    /// The enclosing source must not count its returned chunks again.
+    virtual bool reportsReadProgress() const { return false; }
+
     /// Query parameters make sense only for the Values format, where the data may contain expressions.
     virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
 

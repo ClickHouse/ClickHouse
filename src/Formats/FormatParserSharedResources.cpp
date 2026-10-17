@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/ExpressionActions.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 namespace DB
 {
@@ -25,6 +26,30 @@ FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, 1);
     const_cast<size_t &>(parser_shared_resources->max_parsing_threads) = 1;
     return parser_shared_resources;
+}
+
+void FormatParserSharedResources::setReadProgressCallback(
+    const std::shared_ptr<ReadProgressCallback> & callback, std::shared_ptr<const StorageLimitsList> storage_limits_)
+{
+    std::call_once(progress_init_flag, [&]
+    {
+        storage_limits = std::move(storage_limits_);
+        read_progress_callback = callback;
+    });
+}
+
+bool FormatParserSharedResources::reportReadProgress(size_t rows, size_t bytes)
+{
+    if (isReadStopped())
+        return false;
+
+    static const StorageLimitsList empty_limits;
+    if (read_progress_callback && !read_progress_callback->onProgress(rows, bytes, storage_limits ? *storage_limits : empty_limits))
+    {
+        read_stopped.store(true, std::memory_order_relaxed);
+        return false;
+    }
+    return true;
 }
 
 

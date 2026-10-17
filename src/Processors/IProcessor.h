@@ -19,6 +19,7 @@ namespace DB
 {
 
 class IQueryPlanStep;
+class ReadProgressCallback;
 
 class ISpillable;
 
@@ -383,6 +384,10 @@ public:
     /// Different limits may be applied to different storages, we need to keep it per processor.
     /// This method needs to be overridden only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
+
+    /// Called before a source starts work. Internally filtering readers can report scan progress
+    /// through the same callback as their enclosing pipeline, before returning any rows.
+    virtual void setReadProgressCallback(const std::shared_ptr<ReadProgressCallback> & /*callback*/) {}
 
     /// This method is called for every processor without input ports.
     /// Processor can return new progress for the last read operation.

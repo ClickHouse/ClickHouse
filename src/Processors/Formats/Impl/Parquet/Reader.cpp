@@ -2993,7 +2993,7 @@ size_t Reader::memoryEstimateLimit() const
     return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
 }
 
-void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
+size_t Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
     /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
@@ -3176,6 +3176,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
 
+    /// Output assembly can move the primitive columns and offsets out of the subchunk.
+    /// Measure the decoded data first, independently of compressed file sizes and `PREWHERE`.
+    size_t read_bytes = subchunk.column->byteSize();
+    if (subchunk.null_map)
+        read_bytes += subchunk.null_map->byteSize();
+    if (subchunk.group_null_map)
+        read_bytes += subchunk.group_null_map->byteSize();
+    for (const auto & offsets : subchunk.arrays_offsets)
+        read_bytes += offsets->byteSize();
+
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
     size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
@@ -3185,6 +3195,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         const auto & output_idx = sample_block_to_output_columns_idx.at(column_info.idx_in_output_block);
         state.column = formOutputColumn(row_subgroup, output_idx.value(), row_subgroup.filter.rows_pass);
     }
+    return read_bytes;
 }
 
 void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
