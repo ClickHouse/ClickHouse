@@ -3898,19 +3898,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
-            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared and then waited for,
-            /// before the AsyncLoader stops, because a restore can create a database. Any other backup or restore that missed
-            /// the wait above is cancelled: an initiator's own part needs this host's DDL worker, which the drain stops.
+            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared, and waited for below.
+            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker.
             const bool wait_backups_and_restores = server_settings[ServerSetting::shutdown_wait_backups_and_restores];
-            auto kill_queries_and_drain_backups_and_restores = [&]
-            {
+            if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ wait_backups_and_restores);
-                if (wait_backups_and_restores)
-                    global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
-            };
-            const bool wait_unfinished_queries = server_settings[ServerSetting::shutdown_wait_unfinished_queries];
-            if (!wait_unfinished_queries)
-                kill_queries_and_drain_backups_and_restores();
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
@@ -3933,10 +3925,6 @@ try
 
             dns_cache_updater.reset();
 
-            /// With `shutdown_wait_unfinished_queries`, only after the queries were waited for.
-            if (wait_unfinished_queries && wait_backups_and_restores)
-                kill_queries_and_drain_backups_and_restores();
-
             /// killAllQueries() and the waits above can have driven a cancelled backup to a final
             /// status, and then the normal teardown is able to complete. Sound because this is false
             /// only where new operations are already refused, so the unfinished set cannot grow.
@@ -3956,6 +3944,14 @@ try
                 /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            /// Before the AsyncLoader stops, because a restore can create a database, and after the forced exit, because stopping
+            /// the DDL worker waits for the task it runs, which the kill cancels unless it is such a part.
+            if (wait_backups_and_restores)
+            {
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ true);
+                global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
             }
         });
 
