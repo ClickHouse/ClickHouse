@@ -60,7 +60,7 @@ struct ContextPools
     struct Pool
     {
         std::mutex mutex;
-        std::vector<std::unique_ptr<ContextPtr>> idle;
+        std::vector<std::unique_ptr<ContextPtr>> idle; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: process-wide, not charged to a query
     };
 
     /// Returns a context to the pool of the CPU that took it, which is not necessarily the pool it was taken from.
