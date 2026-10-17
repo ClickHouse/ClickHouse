@@ -1,0 +1,18 @@
+a float key keeps -0.0 apart from 0.0
+0
+0
+0
+0
+1
+and so does a float nested in the key
+0
+0
+0
+the rewrite still applies to a key that compares the same either way
+└──Join (JOIN FillRightFirst)
+│  Type: left | Strictness: semi | Algorithm: PartialMergeJoin
+│  Join conditions: 1 <=> 1
+a float key with only hash algorithms is rewritten too
+└──Join (JOIN FillRightFirst)
+│  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: 0. <=> 0.

@@ -214,6 +214,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First global query-plan version that writes version 1 of `Join`, adding the multiset flag of the join
+/// operator (see `JoinOperator::multiset`). Version 19 shipped without it, so the flag is anchored at the
+/// first global version no release has shipped yet.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN = 20;
 /// First global query-plan version that writes version 1 of `Aggregating`, which carries the
 /// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,

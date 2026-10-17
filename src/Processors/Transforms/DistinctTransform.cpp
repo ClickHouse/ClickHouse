@@ -23,7 +23,7 @@ bool DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_r
     rows_observed += num_rows;
     unique_rows_observed += num_unique_rows;
 
-    if (chunks_observed < OBSERVATION_CHUNK_COUNT && set_bytes < MAX_OBSERVATION_SET_BYTES)
+    if (chunks_observed < observation_chunk_count && set_bytes < MAX_OBSERVATION_SET_BYTES)
         return false;
 
     double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
@@ -38,7 +38,8 @@ DistinctTransform::DistinctTransform(
     bool allow_abandoning_,
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_,
-    bool allow_spilling_)
+    bool allow_spilling_,
+    size_t abandon_observation_chunk_count_)
     : ISimpleTransform(header_, header_, true)
     , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
@@ -46,7 +47,7 @@ DistinctTransform::DistinctTransform(
     , allow_spilling(allow_spilling_)
 {
     if (allow_abandoning_)
-        abandon_controller.emplace();
+        abandon_controller.emplace(abandon_observation_chunk_count_);
 }
 
 ProcessorMemoryStats DistinctTransform::getMemoryStats() const
