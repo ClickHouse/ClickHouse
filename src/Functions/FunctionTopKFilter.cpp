@@ -6,6 +6,7 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -29,6 +30,7 @@ public:
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
+        threshold_type = recursiveRemoveLowCardinality(threshold_tracker_->getDataType());
         String comparator = "lessOrEquals";
 
         if (threshold_tracker->getDirection() == -1) /// DESC
@@ -78,7 +80,9 @@ public:
             auto current_threshold = threshold_tracker->getValue();
 
             auto data_type = arguments[0].type;
-            ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
+            /// The threshold is a value of the tracker's type, which a `Field` does not carry (an `Interval` is a plain `Int64`).
+            ColumnPtr threshold_column = data_type->createColumnConst(
+                input_rows_count, convertFieldToType(current_threshold, *data_type, threshold_type.get()));
 
             ColumnsWithTypeAndName args{ arguments[0], {threshold_column, data_type, {}} };
             auto elem_compare = compare_function->build(args);
@@ -93,6 +97,8 @@ public:
     }
 private:
     TopKThresholdTrackerPtr threshold_tracker;
+    /// The type of the threshold value as this function receives it (the default implementation removes LowCardinality).
+    DataTypePtr threshold_type;
     FunctionOverloadResolverPtr compare_function;
 
     int direction;
