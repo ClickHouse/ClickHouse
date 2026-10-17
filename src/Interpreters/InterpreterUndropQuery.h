@@ -24,6 +24,9 @@ private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
 
+    /// Binds a hierarchical name (see `DatabaseCatalog`) to the database and the table of the dropped table it denotes.
+    void resolveHierarchicalName(ASTUndropQuery & query) const;
+
     BlockIO executeToTable(ASTUndropQuery & query);
 };
 }

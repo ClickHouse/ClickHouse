@@ -63,6 +63,11 @@ private:
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
     void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
 
+    /// Rewrites `database` and `table` of a table named in a command (not the altered table) to the split of
+    /// the hierarchical name that denotes an existing table, see `DatabaseCatalog::resolveHierarchicalName`.
+    /// A session temporary table keeps its name.
+    void bindHierarchicalNameOfOperand(String & database, String & table) const;
+
     BlockIO executeToTable(const ASTAlterQuery & alter);
 
     BlockIO executeToDatabase(const ASTAlterQuery & alter);

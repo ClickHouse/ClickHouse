@@ -34,11 +34,45 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 }
 
 
+void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, bool is_on_cluster) const
+{
+    auto & catalog = DatabaseCatalog::instance();
+    String current_database = getContext()->getCurrentDatabase();
+
+    for (auto & elem : rename.getElements())
+    {
+        /// The source is the existing table the name refers to.
+        StorageID from_as_written(elem.from.database ? elem.from.getDatabase() : "", elem.from.getTable());
+        StorageID from = catalog.resolveHierarchicalName(from_as_written, getContext());
+        if (from.database_name != (elem.from.database ? elem.from.getDatabase() : current_database) || from.table_name != from_as_written.table_name)
+            rename.setTableNames(elem.from, from.database_name, from.table_name);
+
+        /// The destination is placed the same way as a created table. On a cluster, the database may exist on the other
+        /// hosts only: then the name is shipped as written, and every host resolves it against its own catalog.
+        StorageID to_as_written(elem.to.database ? elem.to.getDatabase() : "", elem.to.getTable());
+        std::optional<StorageID> to;
+        if (is_on_cluster)
+            to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, getContext());
+        else
+            to = catalog.resolveHierarchicalNameForCreation(to_as_written, getContext());
+        if (to && (to->database_name != (elem.to.database ? elem.to.getDatabase() : current_database) || to->table_name != to_as_written.table_name))
+            rename.setTableNames(elem.to, to->database_name, to->table_name);
+    }
+}
+
 BlockIO InterpreterRenameQuery::execute()
 {
-    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    auto & rename = query_ptr->as<ASTRenameQuery &>();
 
-    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    bool is_on_cluster = !rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext());
+
+    /// Hierarchical names (see `DatabaseCatalog`) are bound to the tables they denote before the access is checked, so
+    /// that the check and the rename agree on the tables: a grant on the (nonexistent) database `a.b` must not allow
+    /// `RENAME TABLE a.b.c TO ...` to move the table `b.c` out of the database `a`.
+    if (!rename.database)
+        resolveHierarchicalNames(rename, is_on_cluster);
+
+    if (is_on_cluster)
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);

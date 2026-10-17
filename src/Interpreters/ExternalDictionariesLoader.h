@@ -49,6 +49,13 @@ public:
     /// owning the definition, e.g. when the metadata of a table is loaded.
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
+    /// A qualified dictionary name is hierarchical (see `DatabaseCatalog`): inside `USE db`, `ns.d` is the dictionary
+    /// `db`.`ns.d` when there is no database `ns`. Returns the name bound to the dictionary it denotes now, so that a
+    /// stored or shipped query is neither resolved against another current database nor retargeted when a database
+    /// `ns` is created later. Returns nothing for an unqualified name, for an XML dictionary, and when no such
+    /// dictionary exists here (the name may be meant for a dictionary that only exists on the shards).
+    std::optional<QualifiedTableName> tryBindQualifiedDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
+
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
@@ -96,12 +103,12 @@ protected:
     /// Resolution without a record.
     ResolvedDictionaryName resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
-    std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;
+    ResolvedDictionaryName resolveDictionaryName(const QualifiedTableName & dictionary_name, const std::string & current_database_name) const;
 
     /// Try convert qualified dictionary name to persistent UUID
     ResolvedDictionaryName resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
 
-    std::string resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name) const;
+    ResolvedDictionaryName resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name, const std::string & current_database_name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;

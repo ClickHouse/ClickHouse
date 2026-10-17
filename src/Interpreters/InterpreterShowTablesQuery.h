@@ -28,6 +28,15 @@ private:
     ASTPtr query_ptr;
 
     String getRewrittenQuery();
+
+    struct HierarchicalDatabaseSource
+    {
+        String condition;
+        String name_expression;
+        /// The databases the source reads from.
+        Strings databases;
+    };
+    static std::vector<HierarchicalDatabaseSource> getHierarchicalDatabaseSources(const String & database);
 };
 
 

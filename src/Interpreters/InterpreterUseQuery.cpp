@@ -1,5 +1,6 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Access/Common/AccessFlags.h>
@@ -14,7 +15,11 @@ namespace DB
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
-    getContext()->checkAccess(AccessType::SHOW_DATABASES, new_database);
+
+    /// A hierarchical name (`USE a.b`) may denote the tables `b.*` of the database `a`: the access is checked for the
+    /// database it denotes. When it is only a prefix of database names, it is checked as written.
+    auto resolved = DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database);
+    getContext()->checkAccess(AccessType::SHOW_DATABASES, resolved.database_name.empty() ? new_database : resolved.database_name);
     auto session_context = getContext()->getSessionContext();
 
     /// `database` is a real setting that `executeQuery` applies as the documented equivalent of

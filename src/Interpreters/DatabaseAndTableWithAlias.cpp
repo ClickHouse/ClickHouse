@@ -34,12 +34,18 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 {
     alias = identifier.tryGetAlias();
 
-    if (identifier.name_parts.size() == 2)
-        std::tie(database, table) = std::tie(identifier.name_parts[0], identifier.name_parts[1]);
-    else if (identifier.name_parts.size() == 1)
-        table = identifier.name_parts[0];
-    else
+    /// A name can have any number of parts: `a.b.c` is a hierarchical name, and the database is everything but the
+    /// last part, the same way as `ASTTableIdentifier::getTableId` splits it.
+    if (identifier.name_parts.empty())
         throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
+
+    table = identifier.name_parts.back();
+    for (size_t i = 0; i + 1 < identifier.name_parts.size(); ++i)
+    {
+        if (i > 0)
+            database += '.';
+        database += identifier.name_parts[i];
+    }
 
     if (database.empty())
         database = current_database;
