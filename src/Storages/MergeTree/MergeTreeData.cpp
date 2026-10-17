@@ -8915,6 +8915,52 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
+void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const
+{
+    /// Deliberately not re-checking the table settings here: every part in `committed_parts` has
+    /// skipped its per-part sync because of the settings in effect when it was written. If the
+    /// table settings were changed while the query was running, the batched sync is the only one
+    /// those parts will ever get, so it must happen regardless of what the settings say now.
+    if (committed_parts.empty())
+        return;
+
+    /// A part committed earlier by this same query may already have been merged into a wider part
+    /// while the query was still running. Syncing the active part that covers it instead of the
+    /// part itself is what makes the inserted data durable with the fewest files touched: many
+    /// committed parts map to one covering part, and the covered ones are outdated and about to be
+    /// removed anyway. Holding the covering parts alive over the fsync also keeps their files from
+    /// being removed by a merge that finishes in the meantime.
+    /// A merge syncs its source parts before reading them if they are still pending, see
+    /// IMergeTreeDataPart::syncIfPendingFsyncAfterInsert, so the data is durable even if the covering
+    /// part is on a disk that cannot sync finalized files and is skipped here.
+    DataPartsVector parts_to_sync;
+    {
+        auto lock = readLockParts();
+
+        std::unordered_set<String> seen_part_names;
+        for (const auto & part_info : committed_parts)
+        {
+            auto covering_part = getActiveContainingPart(part_info, DataPartState::Active, lock);
+            /// A part referenced by a deduplication conflict can still be `PreActive`: a concurrent
+            /// `INSERT` into a `ReplicatedMergeTree` publishes its block in Keeper before it makes
+            /// the local part active. Its files are already finalized, so it can be synced.
+            if (!covering_part)
+                covering_part = getActiveContainingPart(part_info, DataPartState::PreActive, lock);
+            /// No covering part means the data is already gone (dropped partition, TRUNCATE, ...),
+            /// so there is nothing to make durable.
+            if (covering_part && seen_part_names.emplace(covering_part->name).second)
+                parts_to_sync.push_back(std::move(covering_part));
+        }
+    }
+
+    /// Outside the parts lock: an fsync of a whole part is far too slow to hold it for.
+    for (const auto & part : parts_to_sync)
+    {
+        part->getDataPartStorage().syncFiles();
+        part->pending_fsync_after_insert.store(false);
+    }
+}
+
 void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
 {
     const auto settings = getSettings();
