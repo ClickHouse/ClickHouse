@@ -2511,9 +2511,16 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!is_archive)
         return object_info;
 
-    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(object_info->getPath());
+    const auto path = object_info->getPath();
+    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(path);
     if (!path_in_archive.has_value())
-        return object_info;
+    {
+        /// `ObjectInfoInArchive::getPath` gives `<archive>::` for an archive entry without a name.
+        if (!path.ends_with("::"))
+            return object_info;
+        path_to_archive = path.substr(0, path.size() - 2);
+        path_in_archive.emplace();
+    }
 
     return createObjectInfoInArchive(
         path_to_archive,
@@ -2645,6 +2652,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                     archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
                 archive_reader = createArchiveReader(archive_object);
+                archive_has_unnamed_entry = false;
                 file_enumerator = archive_reader->firstFile();
                 entry_positions.reset();
                 if (!file_enumerator)
@@ -2661,7 +2669,19 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
+
             current_file_info = file_enumerator->getFileInfo();
+
+            /// Entries are reopened by name, so two entries stored without a name cannot be told apart.
+            if (!current_file_info.has_name)
+            {
+                if (archive_has_unnamed_entry)
+                    throw Exception(
+                        ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                        "Cannot read archive {}: it has more than one entry without a name",
+                        archive_object->getPath());
+                archive_has_unnamed_entry = true;
+            }
         }
         else
         {
