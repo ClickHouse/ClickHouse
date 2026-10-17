@@ -18,7 +18,7 @@ class CompressedReadBufferFromFile final : public CompressedReadBufferBase, publ
 {
 private:
       /** At any time, one of two things is true:
-      * a) size_compressed = 0
+      * a) size_compressed = 0 and working_buffer is empty
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
