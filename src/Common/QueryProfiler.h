@@ -16,11 +16,9 @@ namespace Poco
 
 /// Whether the sampling query profiler can run in this build.
 ///
-/// It is disabled under TSan on macOS: the profiler pauses threads with signals, and a signal
-/// delivered to a thread waiting on a `pthread_rwlock` makes Darwin's implementation lose the
-/// wakeup and deadlock the process (Apple FB24027930). Other Darwin builds link the replacement
-/// in `base/darwin-compatibility`, but TSan builds cannot, because TSan interposes those same
-/// functions to track lock order.
+/// It is disabled under TSan on macOS. The macOS profiler stops threads with `thread_suspend` and
+/// reads their stacks from a sampler thread (see ProfilerSampler in QueryProfiler.cpp), which has
+/// not been exercised under TSan: there is no macOS TSan CI.
 ///
 /// It is disabled under MSan because it destroys every MSan report. Printing a report takes the
 /// sanitizer runtime seconds (it symbolizes each frame through an `llvm-symbolizer` subprocess),
