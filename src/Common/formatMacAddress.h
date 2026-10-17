@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/MacAddress.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <cstring>
 #include <cstdint>
 
