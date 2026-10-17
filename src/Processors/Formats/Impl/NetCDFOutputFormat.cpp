@@ -616,7 +616,8 @@ void NetCDFOutputFormat::finalizeImpl()
             if (variable.null_map)
             {
                 const auto & null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData();
-                const bool has_nulls = std::find(null_map.begin(), null_map.end(), 1) != null_map.end();
+                /// Any nonzero byte of a null map is a NULL, not only 1.
+                const bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 is_null) { return is_null != 0; });
 
                 /// A column that has no NULLs at all needs no value to write them as: the attribute
                 /// is not written, and the column is read back as not Nullable.
