@@ -1,0 +1,29 @@
+insert projection adds file syncs	1
+insert projection adds directory syncs	1
+merge projection adds file syncs	1
+merge projection adds directory syncs	1
+rows	10000
+check
+1
+merge rebuilt projections	1
+merge rebuilt projection adds file syncs	1
+rebuild check
+1
+packed insert projection adds directory syncs	1
+packed insert projection adds exactly one file sync	1
+packed storage type	Packed
+packed check
+1
+packed merge projection adds directory syncs	1
+packed merge projection adds exactly one file sync	1
+packed merge storage type	Packed
+packed merge check
+1
+mutation syncs projection files	1
+materialize rows	10000
+materialize check
+1
+multi-part projection merges temporary parts	1
+multi-part projection syncs as if it decided by itself	1
+multi-part check
+1
