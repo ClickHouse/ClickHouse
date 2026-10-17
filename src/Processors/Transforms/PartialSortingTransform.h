@@ -24,6 +24,9 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
+    /// Preview chunks are sorted standalone, without touching the shared threshold or the counters.
+    bool supportsQueryResultPreviews() const override { return true; }
+
 protected:
     void transform(Chunk & chunk) override;
 

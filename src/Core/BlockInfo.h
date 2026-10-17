@@ -45,6 +45,14 @@ struct BlockInfo
 
 #undef DECLARE_FIELD
 
+    /** is_preview:
+      * The block is a real-time preview of the query result (see the `query_result_previews`
+      * setting). This field is in-memory only: it is not serialized with the other fields, because
+      * on the wire a preview block travels as a distinct `PreviewData` packet - a receiver that
+      * does not know the packet type must never mistake a preview for result data.
+      */
+    bool is_preview = false;
+
     /// Write the values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
     void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
 

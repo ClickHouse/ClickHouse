@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryResultPreview.h>
 
 
 namespace DB
@@ -40,6 +41,28 @@ ExpressionTransform::ExpressionTransform(
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+    {
+        executeExpression(chunk);
+        return;
+    }
+
+    /// A function may throw on the intermediate values of a preview (see `QueryResultPreview.h`).
+    /// The chunk without columns is skipped by `ISimpleTransform`, so the preview is dropped.
+    try
+    {
+        executeExpression(chunk);
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        chunk.clear();
+    }
+}
+
+void ExpressionTransform::executeExpression(Chunk & chunk)
+{
     size_t num_rows = chunk.getNumRows();
 
     if (isCancelled())
@@ -73,6 +96,11 @@ void ExpressionTransform::transform(Chunk & chunk)
         num_rows = 0;
     }
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+bool ExpressionTransform::supportsQueryResultPreviews() const
+{
+    return canEvaluateOnQueryResultPreviews(expression->getActionsDAG());
 }
 
 void ExpressionTransform::onCancel() noexcept

@@ -59,12 +59,13 @@ struct PullingAsyncPipelineExecutor::Data
     }
 };
 
-PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool with_query_result_previews)
+    : pipeline(pipeline_)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader());
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader(), with_query_result_previews);
     pipeline.complete(lazy_format);
 }
 
@@ -199,6 +200,8 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
          block.info.is_overflows = agg_info->is_overflows;
          block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
+
+    block.info.is_preview = isQueryResultPreview(chunk);
 
     return true;
 }

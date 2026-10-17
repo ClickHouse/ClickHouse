@@ -1,0 +1,10 @@
+--- previews are emitted
+has previews
+--- every preview is the top-N of the whole aggregation snapshot
+ok
+--- the result
+[999, 10000]
+[998, 10000]
+[997, 10000]
+[996, 10000]
+[995, 10000]

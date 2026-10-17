@@ -397,6 +397,14 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    /// Whether chunks annotated as query result previews (see `QueryResultPreview.h`) may pass
+    /// through this processor: the processor either treats them out-of-band or is stateless with
+    /// respect to them. Any processor that accumulates state across chunks, counts rows towards
+    /// limits or quotas, or writes chunks anywhere must keep the default (false) unless it
+    /// explicitly handles preview chunks. `QueryPipeline::complete` keeps preview emitters dormant
+    /// unless every processor between the emitter and the output format returns true here.
+    virtual bool supportsQueryResultPreviews() const { return false; }
+
     /// Distinct, non-null components this processor can service. The range and its objects remain
     /// valid through graph removal, including after `Finished`.
     virtual std::span<ISpillable * const> getSpillables() { return {}; }

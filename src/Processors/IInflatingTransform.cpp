@@ -1,5 +1,6 @@
 #include <Processors/IInflatingTransform.h>
 #include <Processors/Port.h>
+#include <Processors/QueryResultPreview.h>
 
 namespace DB
 {
@@ -61,6 +62,20 @@ IInflatingTransform::Status IInflatingTransform::prepare()
             return Status::NeedData;
 
         current_chunk = input.pull();
+
+        /// An out-of-band query result preview (see `QueryResultPreview.h`): forward it to the
+        /// output untouched instead of consuming it. If the output slot is already occupied,
+        /// drop the preview - previews are best effort and a newer one will follow.
+        if (isQueryResultPreview(current_chunk))
+        {
+            if (output.canPush())
+                output.push(std::move(current_chunk));
+            else
+                current_chunk.clear();
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
         has_input = true;
     }
 
