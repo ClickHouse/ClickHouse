@@ -2804,7 +2804,7 @@ FunctionCast::WrapperType FunctionCast::createStringToEnumWrapper() const
 
             if (report_failure_as_null)
             {
-                auto failure_map = ColumnUInt8::create(size, 0);
+                auto failure_map = ColumnUInt8::create(size, UInt8{});
                 auto & failures = failure_map->getData();
 
                 for (size_t i = 0; i < size; ++i)
@@ -2882,7 +2882,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
         NullMap * failures = nullptr;
         if (report_failure_as_null)
         {
-            failure_map = ColumnUInt8::create(size, 0);
+            failure_map = ColumnUInt8::create(size, UInt8{});
             failures = &assert_cast<ColumnUInt8 &>(*failure_map).getData();
         }
 
