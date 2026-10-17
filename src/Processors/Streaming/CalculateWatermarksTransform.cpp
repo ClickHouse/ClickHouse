@@ -85,7 +85,7 @@ CalculateWatermarksTransform::CalculateWatermarksTransform(
     ContextPtr context_)
     : ISimpleTransform(input_header_, output_header_, /*skip_empty_chunks=*/false)
     , result_name(watermark_expression_.getOutputs().front()->result_name)
-    , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
+    , watermark_expression(ExpressionActions::create(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
     , watermark(std::move(initial_watermark_))
 {
 }

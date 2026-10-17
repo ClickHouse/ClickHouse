@@ -14,7 +14,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
+struct FunctionExecutionProfile;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
@@ -63,7 +63,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce(bool dry_run = false) const;
+    ColumnWithTypeAndName reduce(bool dry_run = false, FunctionExecutionProfile * profile = nullptr) const;
 
     Field operator[](size_t n) const override;
 
@@ -238,6 +238,9 @@ private:
     std::optional<size_t> short_circuit_eager_argument;
 
     void appendArgument(const ColumnWithTypeAndName & column);
+
+    template <bool with_profile>
+    ColumnWithTypeAndName reduceImpl(bool dry_run, FunctionExecutionProfile * profile) const;
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);
