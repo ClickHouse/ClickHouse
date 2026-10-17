@@ -1,4 +1,4 @@
--- Test array constructor syntax array[...]
+-- Test array constructor syntax array[...] 
 SELECT array[1, 2, 3];
 SELECT array[1.5, 2.5, 3.5];
 SELECT array['a', 'b', 'c'];
