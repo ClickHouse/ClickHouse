@@ -290,3 +290,168 @@ def test_drop_role_cascades_to_disk():
         DROP QUOTA    IF EXISTS q_104298;
         """
     )
+
+
+@pytest.mark.parametrize("grant_option", [False, True])
+def test_self_authentication_grants_survive_restart(grant_option):
+    direct = "self_auth_direct_05055"
+    member = "self_auth_member_05055"
+    recipient = "self_auth_recipient_05055"
+    role = "self_auth_role_05055"
+    password = "InitialPassword_05055"
+    privilege = "ALTER USER SELF AUTHENTICATION"
+    option = " WITH GRANT OPTION" if grant_option else ""
+
+    def own_change(user):
+        instance.query(
+            f"ALTER USER {user} IDENTIFIED WITH sha256_password BY '{password}'",
+            user=user,
+            password=password,
+        )
+        assert instance.query("SELECT 1", user=user, password=password) == "1\n"
+
+    def delegate():
+        query = f"GRANT {privilege} TO {recipient}"
+        if grant_option:
+            instance.query(query, user=direct, password=password)
+        else:
+            assert "ACCESS_DENIED" in instance.query_and_get_error(
+                query, user=direct, password=password
+            )
+
+    try:
+        instance.query(
+            f"""
+            CREATE USER {direct} IDENTIFIED WITH sha256_password BY '{password}';
+            CREATE USER {member} IDENTIFIED WITH sha256_password BY '{password}';
+            CREATE USER {recipient};
+            CREATE ROLE {role};
+            GRANT {privilege} TO {direct}{option};
+            GRANT SELECT, {privilege} ON *.* TO {role}{option};
+            GRANT {role} TO {member};
+            """
+        )
+        direct_grants = instance.query(f"SHOW GRANTS FOR {direct}")
+        assert direct_grants == f"GRANT {privilege} TO {direct}{option}\n"
+        role_grants = instance.query(f"SHOW GRANTS FOR {role}")
+        assert privilege in role_grants and f"ON *.* TO {role}" in role_grants
+        member_grants = instance.query(f"SHOW GRANTS FOR {member}")
+        own_change(direct)
+        own_change(member)
+        delegate()
+
+        # Disk loading parses serialized ATTACH grants through the same short-form parser.
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == direct_grants
+        assert instance.query(f"SHOW GRANTS FOR {role}") == role_grants
+        assert instance.query(f"SHOW GRANTS FOR {member}") == member_grants
+        own_change(direct)
+        own_change(member)
+        delegate()
+
+        instance.query(
+            f"REVOKE GRANT OPTION FOR {privilege} FROM {direct};"
+            f"GRANT ALTER USER ON {direct} TO {direct} WITH GRANT OPTION;"
+        )
+        revoked_grants = instance.query(f"SHOW GRANTS FOR {direct}")
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == revoked_grants
+        assert "ACCESS_DENIED" in instance.query_and_get_error(
+            f"GRANT {privilege} TO {recipient}", user=direct, password=password
+        )
+        own_change(direct)
+
+        instance.query(f"REVOKE ALTER USER ON {direct} FROM {direct}")
+        own_change(direct)
+        instance.query(f"REVOKE {privilege} FROM {direct}")
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == ""
+        assert "ACCESS_DENIED" in instance.query_and_get_error(
+            f"ALTER USER {direct} IDENTIFIED BY '{password}'",
+            user=direct,
+            password=password,
+        )
+        own_change(member)
+    finally:
+        instance.query(
+            f"DROP USER IF EXISTS {direct}, {member}, {recipient};"
+            f"DROP ROLE IF EXISTS {role};"
+        )
+
+
+@pytest.mark.parametrize(
+    "failpoint",
+    ["self_authentication_before_identity_lookup", "self_authentication_before_update"],
+)
+@pytest.mark.parametrize("change", ["rename_replace", "drop", "drop_replace"])
+def test_self_authentication_identity_race(failpoint, change):
+    user = "self_auth_race_05055"
+    renamed = "self_auth_renamed_05055"
+    password = "InitialPassword_05055"
+    replacement_password = "ReplacementPassword_05055"
+    attempted_password = "DeniedPassword_05055"
+    request = None
+
+    try:
+        instance.query(
+            f"CREATE USER {user} IDENTIFIED WITH sha256_password BY '{password}';"
+            f"GRANT ALTER USER SELF AUTHENTICATION TO {user};"
+        )
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        if_exists = "IF EXISTS " if change.startswith("drop") else ""
+        request = instance.get_query_request(
+            f"ALTER USER {if_exists}{user} IDENTIFIED WITH sha256_password BY '{attempted_password}'",
+            user=user,
+            password=password,
+            timeout=60,
+        )
+        # Wait for the exact execution boundary, rather than racing client connections with sleeps.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=20)
+
+        if change == "rename_replace":
+            instance.query(f"ALTER USER {user} RENAME TO {renamed}")
+        else:
+            instance.query(f"DROP USER {user}")
+
+        if change != "drop":
+            instance.query(
+                f"CREATE USER {user} IDENTIFIED WITH sha256_password BY '{replacement_password}'"
+            )
+
+        survivors = []
+        if change == "rename_replace":
+            survivors.append((renamed, password))
+        if change != "drop":
+            survivors.append((user, replacement_password))
+        definitions = {
+            name: instance.query(f"SHOW CREATE USER {name}")
+            for name, _ in survivors
+        }
+
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        completed_request = request
+        request = None
+        if change == "rename_replace" or (
+            change == "drop_replace" and failpoint.endswith("identity_lookup")
+        ):
+            assert "ACCESS_DENIED" in completed_request.get_error()
+        else:
+            # A disappeared bound ID is skipped; a replacement under the same name is never updated.
+            assert completed_request.get_answer() == ""
+
+        for name, expected_password in survivors:
+            assert instance.query(f"SHOW CREATE USER {name}") == definitions[name]
+            assert instance.query("SELECT 1", user=name, password=expected_password) == "1\n"
+            assert "AUTHENTICATION_FAILED" in instance.query_and_get_error(
+                "SELECT 1", user=name, password=attempted_password
+            )
+        assert instance.query(
+            f"SELECT count() FROM system.users WHERE name IN ('{user}', '{renamed}')"
+        ) == f"{len(survivors)}\n"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        try:
+            if request is not None:
+                request.get_answer_and_error()
+        finally:
+            instance.query(f"DROP USER IF EXISTS {user}, {renamed}")

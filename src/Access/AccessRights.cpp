@@ -665,6 +665,7 @@ public:
         ProtoElements res;
         Node tmp_node = node;
         Node tmp_node_go = node_with_grant_option;
+        alignTreesForSerialization(tmp_node, tmp_node_go);
         getElementsRec(res, {}, &tmp_node, {}, &tmp_node_go, {}, "");
         return res;
     }
@@ -945,6 +946,38 @@ private:
                 String new_path = path;
                 new_path.append(child.node_name);
                 getElementsRec(res, full_name, child, flags, new_path);
+            }
+        }
+    }
+
+    /// Align compressed paths in the temporary normal and grant-option trees without changing rights.
+    /// Otherwise a normal path such as `prefix_alice` can hide the grant-option-only sibling
+    /// `prefix_bob` under a shorter shared `prefix_` node when the traversal skips matched prefixes.
+    static void alignTreesForSerialization(Node & node, Node & node_go)
+    {
+        if (node.children)
+        {
+            for (const auto & child : *node.children)
+                node_go.getLeaf(child.node_name, child.level, !child.isLeaf());
+        }
+
+        if (node_go.children)
+        {
+            for (const auto & child : *node_go.children)
+                node.getLeaf(child.node_name, child.level, !child.isLeaf());
+        }
+
+        /// A prefix is meaningful if either tree grants on it. Use the same scope when emitting
+        /// differences from both trees; inserted nodes inherit the original resolved flags.
+        node.wildcard_grant = node_go.wildcard_grant = node.wildcard_grant || node_go.wildcard_grant;
+
+        if (node.children)
+        {
+            for (auto & child : *node.children)
+            {
+                auto * child_go = node_go.tryGetChildNode(child.node_name);
+                chassert(child_go);
+                alignTreesForSerialization(child, *child_go);
             }
         }
     }
