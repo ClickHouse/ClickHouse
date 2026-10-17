@@ -2773,6 +2773,15 @@ ClassifierPtr Context::getWorkloadClassifier() const
     // Pass the query's scheduling settings so the classifier can build this query's scheduling
     // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
     // shared mutex under `mutex`.
+    // An unchanged `max_threads_soft_limit` defers to the workload's value; a changed one (even `0`) overrides it.
+    std::optional<Int64> max_threads_soft_limit;
+    if (query_settings[Setting::max_threads_soft_limit].changed)
+    {
+        UInt64 value = query_settings[Setting::max_threads_soft_limit];
+        max_threads_soft_limit = (value == 0 || value > static_cast<UInt64>(WorkloadSettings::unlimited))
+            ? WorkloadSettings::unlimited // `0` disables the limit for this query
+            : static_cast<Int64>(value);
+    }
     ClassifierSettings settings{
         .throw_on_unknown_workload = getThrowOnUnknownWorkload(),
         .weight = query_settings[Setting::weight],
@@ -2781,15 +2790,8 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
         .priority = Priority{query_settings[Setting::workload_priority]},
+        .max_threads_soft_limit = max_threads_soft_limit,
     };
-    // An unchanged setting defers to the workload's `max_threads_soft_limit`; a changed one (even `0`) overrides it.
-    if (query_settings[Setting::max_threads_soft_limit].changed)
-    {
-        UInt64 value = query_settings[Setting::max_threads_soft_limit];
-        settings.max_threads_soft_limit = (value == 0 || value > static_cast<UInt64>(WorkloadSettings::unlimited))
-            ? WorkloadSettings::unlimited // `0` disables the limit for this query
-            : static_cast<Int64>(value);
-    }
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
