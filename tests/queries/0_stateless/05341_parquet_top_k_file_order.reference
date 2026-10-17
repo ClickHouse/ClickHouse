@@ -1,0 +1,51 @@
+8	32
+-- the file with the smallest (largest) k is opened first and the row groups of the others are skipped
+[[0], [1], [2]] rows read <= 250: True
+[[7999], [7998], [7997]] rows read <= 250: True
+[[4000], [4001], [4002]] rows read <= 250: True
+[[4000], [4001], [4002]] rows read <= 250: True
+-- results identical with and without the optimization
+OK
+OK
+-- a file without the sort column
+0	1
+0	1000
+0	1001
+-- each footer is read once: by the first pass into the metadata cache, where the readers find it
+0
+1
+2
+hits	8	misses <= 8	1
+0
+1
+2
+hits	8	misses <= 8	1
+-- the first pass stops after the first file when the sort column has no usable statistics
+1
+2
+3
+hits	1	misses <= 8	1
+-- no first pass with use_parquet_metadata_cache = 0, input_format_parquet_preserve_order = 1 or input_format_allow_seeks = 0
+0
+1
+2
+hits	0	misses <= 8	1
+0
+1
+2
+hits	0	misses <= 8	1
+0
+1
+2
+hits	0	misses <= 8	1
+-- a corrupt file and an empty file fail the query in the same way
+Code: 117
+Code: 117
+Code: 117
+Code: 117
+-- EXPLAIN PIPELINE does not fail on the corrupt file
+OK
+-- no first pass with at most one file per stream or with more than 4 streams
+four	4	0
+many	4	10
+many	5	0
