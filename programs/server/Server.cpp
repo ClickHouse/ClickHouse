@@ -3588,6 +3588,9 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
+        /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
@@ -3625,9 +3628,6 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
-        /// The tables can depend on the dictionaries from the configuration files, so register them before
-        /// loading the databases. They start loading later, in `loadOrReloadDictionaries`.
-        global_context->registerDictionariesBeforeLoadingMetadata(config());
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
         load_metadata_tasks = loadMetadata(global_context, default_database, server_settings[ServerSetting::async_load_databases]);
         /// If we need to convert database engines, disable async tables loading
