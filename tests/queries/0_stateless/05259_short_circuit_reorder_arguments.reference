@@ -28,3 +28,11 @@
 50
 AND column: notEmpty(__table1.s)
 AND column: equals(modulo(__table1.number, 2_UInt8), 0_UInt8)
+1
+1
+1
+1
+0
+1
+AND column: equals(__table1.t1, __table1.t2)
+AND column: isValidUTF8(repeat(toString(__table1.k), 10_UInt8))
