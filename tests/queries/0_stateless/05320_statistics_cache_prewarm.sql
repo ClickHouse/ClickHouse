@@ -7,7 +7,6 @@
 -- loaded into the statistics cache, so the first query after an insert or after attaching the table
 -- reads nothing from disk.
 
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET use_statistics_for_part_pruning = 0;
 SET materialize_statistics_on_insert = 1;
