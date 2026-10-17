@@ -824,6 +824,18 @@ Linhas e bytes são informados uma vez para todo o passo (a linha `I/O`). O temp
   2. o número máximo de threads de processamento de consultas definido em `max_threads`.
 </Note>
 
+#### Spill em passos de agregação, ordenação e DISTINCT {#explain-analyze-spilling}
+
+Quando um passo `GROUP BY`, `ORDER BY` ou `DISTINCT` faz spill de dados para o armazenamento temporário, ele reporta:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+Este é o número cumulativo de bytes compactados gravados por todo o passo, incluindo seus processadores paralelos.
+O total inclui arquivos temporários já consumidos ou excluídos e contabiliza cada gravação quando os dados são gravados em disco (spill) mais de uma vez.
+A linha é omitida quando nenhum dado foi gravado em disco.
+
 #### Passos de junção {#explain-analyze-join-steps}
 
 Em um passo de junção, `EXPLAIN ANALYZE` exibe linhas que comparam as estimativas do otimizador de ordem de junção com o que realmente ocorreu (consulte [Métricas de junção estimadas versus reais](#explain-analyze-join-estimation)) e linhas de *participação* para cada lado — `Left` e `Right` — seguidas de linhas específicas da implementação da junção. `Left` e `Right` correspondem aos lados lógicos do SQL. Na maioria dos casos, `Left` também será o lado de sondagem (probe) da junção, e `Right` será o lado de construção (build). No entanto, isso nem sempre ocorre, por causa da troca que pode acontecer durante a execução da junção. Todos os valores de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) são contemplados (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), assim como as três implementações que essa configuração não pode selecionar: uma junção `CROSS` ou `COMMA`, a [junção de laço aninhado por blocos](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition), usada quando a seção `ON` não determina nenhuma chave de junção, e o motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join). A maioria deles informa ambos os lados; alguns informam apenas o lado que materializam (por exemplo, `direct` exibe apenas `Left:`).

@@ -204,6 +204,14 @@
       ]
     },
     {
+      "group": "安全与访问",
+      "icon": "shield-check",
+      "pages": [
+        "zh/integrations/clickpipes/security/aws-iam-role",
+        "zh/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
       "group": "网络",
       "icon": "network-wired",
       "pages": [

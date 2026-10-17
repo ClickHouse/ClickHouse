@@ -56,6 +56,21 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 0 以外の値に設定し、かつ `join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`max_bytes_ratio_before_external_join` と合わせて、これはハッシュベースのすべての `join_algorithm` に対するしきい値ベースのスピルのトリガーであり、`grace_hash` も含まれます。`grace_hash` では、この 2 つのいずれかが 0 以外である必要があります。0 以外のしきい値によって結合がスピル可能になると、`enable_adaptive_memory_spill_scheduler` により、しきい値に達する前でもメモリ逼迫時に強制的にスピルさせることができます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。両方の設定が `0` の場合、結合はスピルしないため、スケジューラーがトリガーする対象がありません。例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、単独の `grace_hash` は両方の設定を無視し、代わりに `max_rows_in_join` / `max_bytes_in_join` に基づいてスピルします。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。また、このしきい値は、`join_algorithm` の設定にかかわらず、[block nested loop join](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition) によってマテリアライズされる右側の上限も定めます。
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定。メモリ使用量が指定したしきい値 (バイト単位) を超えた場合に、サブクエリを伴う `IN` の集合をディスクへスピルできるようにします。0 の場合は、`max_bytes_ratio_before_external_set` のみが適用されます。"}]}]} />
+
+サブクエリを伴う `IN` の集合を、構築中またはクエリでの使用中にディスクへスピルするための、クエリのメモリしきい値 (バイト単位) です。
+実際のメモリ使用量がこのしきい値を超えることもあります。使用メモリがこのしきい値と 16 MiB のいずれか小さい方を
+下回る集合は、メモリ上に保持されます。
+
+`0` を指定すると、このしきい値は無効になります。`max_bytes_ratio_before_external_set` でもしきい値が指定されている場合は、
+小さい方が使用されます。スピルを無効化するには、両方の設定を `0` にしてください。
+
+[外部メモリを使用する IN](/ja/reference/statements/in#in-in-external-memory) を参照してください。
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -177,6 +192,18 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 `max_bytes_before_external_join` と `max_bytes_ratio_before_external_join` の両方が設定されている場合は、結果として小さい方のしきい値が使用されます。比率が `0` の場合は、絶対値の設定のみが適用されます。
 
 一時データパスが設定されていれば、`grace_hash` を含むすべてのハッシュベースの `join_algorithm` に対して効果があります。
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "メモリ使用量が利用可能なメモリに対して指定の比率を超えた場合に、サブクエリを伴う `IN` の集合をディスクへスピルできるようにする新しい設定です。0 の場合は `max_bytes_before_external_set` のみが適用されます。"}]}]} />
+
+サブクエリを伴う `IN` の集合をディスクへスピルするしきい値を実行開始時に算出する際に用いる、サーバーまたはユーザーの利用可能なメモリに対する割合です。たとえば `0.5` を指定すると、利用可能なメモリの半分がしきい値になります。
+
+値は `0` 以上 `1` 未満である必要があります。`0` を指定すると、このしきい値は無効になります。適用されるサーバーまたはユーザーのメモリ制限が存在しない場合、この比率は効果を持ちません。
+
+`max_memory_usage` はこの計算に影響しません。その制限を基準にスピルを設定する場合は、追加のメモリ使用量を見込んだ余裕を残したうえで `max_bytes_before_external_set` を使用してください。
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

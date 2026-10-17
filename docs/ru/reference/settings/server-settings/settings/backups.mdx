@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки предназначены для конфигурации сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="backups">
-  ## резервные копии
-</div>
+## резервные копии {#backups}
 
 Настройки резервного копирования, используемые при выполнении команд [`BACKUP` и `RESTORE`](/ru/concepts/features/backup-restore/overview).
 
@@ -32,15 +30,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
     ('compare_collected_metadata', 'Bool', 'Если true, сравнивает собранные метаданные с существующими, чтобы убедиться, что они не изменились во время резервного копирования.', 'true'),
     ('create_table_timeout', 'UInt64', 'Тайм-аут в миллисекундах на создание таблиц во время восстановления.', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', 'Максимальное количество повторных попыток после возникновения ошибки bad version во время координируемого резервного копирования/восстановления.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Максимальное время ожидания в миллисекундах перед следующей попыткой собрать метаданные.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Минимальное время ожидания в миллисекундах перед следующей попыткой собрать метаданные.', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Максимальное время ожидания в миллисекундах перед следующей попыткой собрать метаданные.', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Минимальное время ожидания в миллисекундах перед следующей попыткой собрать метаданные.', '100'),
     ('remove_backup_files_after_failure', 'Bool', 'Если команда `BACKUP` завершается ошибкой, ClickHouse попытается удалить файлы, уже скопированные в резервную копию до сбоя; в противном случае скопированные файлы останутся как есть.', 'true'),
     ('sync_period_ms', 'UInt64', 'Период синхронизации в миллисекундах для координируемого резервного копирования/восстановления.', '5000'),
-    ('test_inject_sleep', 'Bool', 'Ожидание, используемое при тестировании', 'false'),
+    ('test_inject_sleep', 'Bool', 'Пауза для тестирования', 'false'),
     ('test_randomize_order', 'Bool', 'Если true, случайным образом меняет порядок некоторых операций в целях тестирования.', 'false'),
     ('zookeeper_path', 'String', 'Путь в ZooKeeper, где хранятся метаданные резервного копирования и восстановления при использовании предложения `ON CLUSTER`.', '/clickhouse/backups')
   ]) AS t )
-  SELECT concat('`', t.1, '`') AS Настройка, t.2 AS Тип, t.3 AS Описание, concat('`', t.4, '`') AS По_умолчанию FROM settings FORMAT Markdown
+  SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
   */}
 
 | Параметр                                            | Тип    | Описание                                                                                                                                                                                | По умолчанию          |
@@ -54,8 +52,8 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 | `compare_collected_metadata`                        | Bool   | Если `true`, сравнивает собранные метаданные с существующими, чтобы убедиться, что они не изменились во время резервного копирования.                                                   | `true`                |
 | `create_table_timeout`                              | UInt64 | Тайм-аут в миллисекундах на создание таблиц во время восстановления.                                                                                                                    | `300000`              |
 | `max_attempts_after_bad_version`                    | UInt64 | Максимальное количество повторных попыток после ошибки `bad version` во время координируемого резервного копирования/восстановления.                                                    | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Максимальная длительность паузы в миллисекундах перед следующей попыткой собрать метаданные.                                                                                            | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Минимальная длительность паузы в миллисекундах перед следующей попыткой собрать метаданные.                                                                                             | `5000`                |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Максимальная длительность паузы в миллисекундах перед следующей попыткой собрать метаданные.                                                                                            | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Минимальная длительность паузы в миллисекундах перед следующей попыткой собрать метаданные.                                                                                             | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | Если команда `BACKUP` завершается ошибкой, ClickHouse попытается удалить файлы, уже скопированные в резервную копию до сбоя; в противном случае скопированные файлы останутся как есть. | `true`                |
 | `sync_period_ms`                                    | UInt64 | Период синхронизации в миллисекундах для координируемого резервного копирования/восстановления.                                                                                         | `5000`                |
 | `test_inject_sleep`                                 | Bool   | Пауза для тестирования                                                                                                                                                                  | `false`               |
@@ -70,9 +68,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </backups>
 ```
 
-<div id="backups_io_thread_pool_queue_size">
-  ## backups_io_thread_pool_queue_size
-</div>
+## backups_io_thread_pool_queue_size {#backups_io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 

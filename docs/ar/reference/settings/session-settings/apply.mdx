@@ -82,9 +82,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتنفيذ pushdown لشروط البحث عن السلاسل الفرعية في أعمدة String من PREWHERE إلى فحص العمود."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد لتنفيذ pushdown لشروط البحث عن السلاسل الفرعية في أعمدة `String` من `PREWHERE` إلى فحص العمود، وهو مفعَّل افتراضيًا. ويؤدي ضبط `compatibility` على إصدار سابق للإصدار 26.10 إلى تعطيله."}]}]} />
 
 ينفّذ pushdown لشروط البحث عن السلاسل الفرعية في أعمدة `String` من `PREWHERE` إلى فحص العمود.
 
@@ -94,13 +94,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 انتقائيًا، لأن بيانات القيم غير المطابقة لا تُنسخ إلى العمود. ولا تتغير نتيجة الاستعلام،
 لأن `PREWHERE` يستبعد حتمًا الصفوف ذات القيم غير المطابقة، ولأن هذه الشروط لا تتطابق أبدًا مع سلسلة فارغة.
 
-يُعطَّل عامل التصفية تكيفيًا أثناء التشغيل إذا تبيّن أنه غير انتقائي.
+يُعطَّل عامل التصفية تكيفيًا أثناء التشغيل إذا تبيّن أنه غير انتقائي، أو إذا كانت القيم غير المطابقة
+أقصر من أن يكون تخطي بياناتها مجديًا.
 
 يسمح هذا الإعداد أيضًا لتحسين نقل الشروط من `WHERE` إلى `PREWHERE` بنقل شروط البحث عن السلاسل الفرعية (`LIKE` و`position` و`startsWith` و`endsWith`)
 حتى عندما تستخدم جميع الأعمدة المستعلَم عنها (وهو أمر لا جدوى منه عادةً، لكن الفحص نفسه يصبح أقل تكلفة مع هذا الإعداد).
 أما المساواة مع سلسلة ثابتة فلا تُنقل لهذا الغرض، لكنها تظل تُطبَّق أثناء الفحص إذا كانت موجودة أصلًا في `PREWHERE`.
 
-مدعوم عند القراءة من جداول `MergeTree` ومن صيغة `Parquet`.
+مدعوم عند القراءة من جداول `MergeTree` ومن صيغة `Parquet`. وفي `Parquet`، يُطبَّق عامل التصفية على الصفحات المرمَّزة بترميزات
+`PLAIN` و`DELTA_LENGTH_BYTE_ARRAY` و`DELTA_BYTE_ARRAY` والترميز باستخدام القاموس.
 
 لاحظ أن تقدير بايتات الإدخال الذي يُجمع لاتخاذ القرار التلقائي بشأن النسخ المتماثلة المتوازية
 (`RuntimeDataflowStatisticsInputBytes`) يعتمد على حجم الكتل المقروءة في الذاكرة، ولذلك يُقدِّر

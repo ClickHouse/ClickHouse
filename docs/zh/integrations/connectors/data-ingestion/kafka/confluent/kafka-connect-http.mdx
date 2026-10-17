@@ -18,9 +18,7 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
   HTTP 连接器依据 [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license) 发布。
 </Note>
 
-<div id="quick-start-steps">
-  ### 快速入门步骤
-</div>
+### 快速入门步骤 {#quick-start-steps}
 
 <Steps>
   <Step title="收集连接详细信息" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
 </Steps>
 
 <div id="troubleshooting">
-  ### 故障排查
+  ### 故障排查 {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink 不会批量处理消息
+  #### HTTP Sink 不会批量处理消息 {#http-sink-doesnt-batch-messages}
 </div>
 
 摘自 [Sink documentation](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp)：
@@ -121,11 +119,11 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
 2. 向 HTTP API URL 添加参数时，每条记录都可能生成唯一的 URL。因此，使用额外的 URL 参数时会禁用批处理。
 
 <div id="400-bad-request">
-  #### 400 请求错误
+  #### 400 请求错误 {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 如果 HTTP Sink 在将 JSON 对象插入 `String` 列时失败，并显示以下消息：
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 在 URL 中，使用编码字符串 `SETTINGS%20input_format_json_read_objects_as_strings%3D1` 设置 `input_format_json_read_objects_as_strings=1`
 
 <div id="load-the-github-dataset-optional">
-  ### 加载 GitHub 数据集 (可选)
+  ### 加载 GitHub 数据集 (可选) {#load-the-github-dataset-optional}
 </div>
 
 请注意，此示例会保留 GitHub 数据集中的 Array 字段。我们假设在示例环境中已有一个空的 github topic，并使用 [kcat](https://github.com/edenhill/kcat) 向 Kafka 插入消息。

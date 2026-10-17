@@ -1,0 +1,174 @@
+---
+slug: /integrations/libredb-studio
+sidebarTitle: 'LibreDB Studio'
+description: '오픈 소스 웹 기반 SQL IDE인 LibreDB Studio를 HTTP 인터페이스로 자체 호스팅 ClickHouse 서버에 연결합니다.'
+title: 'LibreDB Studio를 ClickHouse에 연결하기'
+doc_type: 'guide'
+keywords: ['libredb studio', 'sql client', 'sql ide', 'web', 'open source', 'self-hosted', 'monitoring']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio)는 브라우저에서 실행되는 오픈 소스(MIT) 자체 호스팅 SQL IDE입니다.
+JDBC나 네이티브 드라이버 없이 HTTP 인터페이스를 통해 ClickHouse에 연결하며, SQL 편집기, 데이터베이스 브라우저, `EXPLAIN` 실행 계획,
+`system` 테이블을 기반으로 한 모니터링 대시보드를 제공합니다.
+
+## 시작하기 전에 {#before-you-begin}
+
+* Docker(`docker run -p 3000:3000 ghcr.io/libredb/libredb-studio:latest`) 또는
+  Node.js 24 이상(`npx @libredb/studio`)으로 LibreDB Studio를 실행한 다음 `http://localhost:3000`을 여십시오. 처음
+  실행하면 관리자 비밀번호가 로그에 출력됩니다.
+* LibreDB Studio를 실행하는 머신에서 ClickHouse HTTP 또는 HTTPS 포트에 접근할 수 있는지 확인하십시오.
+* 쿼리할 데이터베이스에 액세스할 수 있는 ClickHouse 사용자를 생성하십시오. 데이터베이스 브라우저를 사용하려면
+  `system.dictionaries` 및 `system.data_skipping_indices`에 대한 `SELECT` 권한과, 딕셔너리가 있는 각 데이터베이스에 대한
+  `dictGet` 권한도 필요합니다. 대시보드를 사용하려면 [ClickHouse 모니터링](#monitor-clickhouse)에 나열된 `system` 테이블에
+  `SELECT` 권한을 부여하십시오.
+
+예를 들어, `uk` 데이터베이스를 쿼리하는 사용자 `reader`는 다음과 같이 설정합니다.
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
+
+| 배포 방식             | 테스트한 버전 | 참고                                           |
+| ----------------- | ------- | -------------------------------------------- |
+| 자체 호스팅 ClickHouse | 26.7    | HTTP(S) 인터페이스(`8123`, HTTPS는 `8443`)를 사용합니다. |
+
+## 작동 방식 {#how-it-works}
+
+1. 브라우저가 SQL 문을 LibreDB Studio 서버로 전송합니다.
+2. 서버는 이 SQL 문을 HTTP `POST /` 요청의 body에 담아 ClickHouse로 전송합니다. 이때
+   `default_format=JSONCompact`와 선택한 데이터베이스는 URL 매개변수로, 자격 증명은
+   HTTP 기본 인증으로 전달합니다.
+3. 서버는 결과 행(rows)과 함께 ClickHouse가 선언한 컬럼 타입, ClickHouse가 보고한 경과 시간을
+   반환합니다. 각 SQL 문은 독립적인 상태 비저장 요청으로 처리되며, 세션을 고정하지 않습니다.
+
+## 자체 호스팅 ClickHouse에 연결 {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+  <Step title="연결 정보 확인" id="gather-your-connection-details">
+    호스트, HTTP 포트(기본값 `8123`, 또는 서버에서 사용하는 HTTPS 포트로 보통
+    `8443`), 사용자 이름과 비밀번호가 필요하며, 필요에 따라 데이터베이스 이름도 지정할 수 있습니다. 데이터베이스를
+    지정하지 않으면 `default`가 사용됩니다.
+  </Step>
+
+  <Step title="연결 생성" id="create-the-connection">
+    1. 사이드바에서 **+** (**New connection**)를 선택합니다.
+    2. 데이터베이스 유형으로 **ClickHouse**를 선택합니다. 포트에는 `8123`이 자동으로 입력됩니다.
+    3. 연결 이름, 호스트, 포트, 사용자 이름, 비밀번호를 입력하고, 필요하면
+       데이터베이스 이름도 입력합니다.
+    4. HTTPS를 사용하려면 **SSL / TLS**를 열고 `disable` 이외의 SSL 모드를 선택한 다음, **Port**를
+       서버의 HTTPS 포트(보통 `8443`)로 변경합니다. `disable` 이외의 모든 모드는 LibreDB Studio 서버가 신뢰하는
+       인증 기관(CA)을 기준으로 서버 인증서를 검증하며, 이것이 `verify-system`에 해당하는 동작입니다.
+       이 방식은 ClickHouse Cloud 및 공개적으로 신뢰되는 CA가 발급한 인증서를 사용하는 서버에서 동작합니다.
+       자체 서명 인증서나 사설 CA 인증서를 사용하는 경우
+       [문제 해결](#troubleshooting)을 참조하십시오.
+    5. **Test Connection**을 선택한 다음 **Establish Connection**을 선택합니다.
+
+    각 필드를 직접 입력하는 대신 **Paste URL**로 URL을 붙여 넣을 수도 있습니다(예:
+    `clickhouse://localhost:8123/default` 또는 `https://reader:secret@ch.example.com:8443/analytics`).
+    `https://` URL을 사용하면 TLS가 활성화됩니다.
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="ClickHouse가 선택되고 호스트, 포트 8123, 사용자 이름, 데이터베이스가 입력되었으며 연결 테스트에 성공한 LibreDB Studio New Connection 대화 상자" />
+  </Step>
+
+  <Step title="쿼리 실행" id="run-a-query">
+    연결을 열고 편집기에서 SQL 문을 작성한 후 실행합니다. 데이터베이스 브라우저에는 각
+    데이터베이스의 테이블, 뷰(view), materialized view, 딕셔너리, 사용자 정의 함수가 표시되며, 컬럼, 기본 키 컬럼(primary key columns),
+    데이터 건너뛰기 인덱스(data-skipping indexes), 객체 정의도 함께 확인할 수 있습니다.
+
+    이 예시에서는 [UK Property Price 데이터셋](/ko/get-started/sample-datasets/uk-price-paid)을 사용합니다.
+    해당 가이드의 설명에 따라 데이터를 `uk.uk_price_paid`에 로드하고 연결의 데이터베이스를 `uk`로 설정한 다음,
+    아래 쿼리를 실행하십시오.
+
+    ```sql
+    SELECT
+        town,
+        count() AS sales,
+        round(avg(price)) AS average_price
+    FROM uk_price_paid
+    GROUP BY town
+    ORDER BY sales DESC
+    LIMIT 10
+    ```
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="uk_price_paid 쿼리와 선언된 ClickHouse 컬럼 타입이 표시된 결과 그리드를 보여주는 LibreDB Studio SQL 편집기" />
+  </Step>
+</Steps>
+
+## ClickHouse 모니터링 {#monitor-clickhouse}
+
+모니터링 대시보드는 연결에 설정된 사용자 권한으로 다음 소스를 읽습니다.
+
+| 영역                                        | ClickHouse 소스                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| 버전, 가동 시간, 연결                             | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
+| 캐시 적중률(Cache hit ratio), 초당 쿼리 수, 메모리     | `system.events`, `system.asynchronous_metrics`                      |
+| 정규화된 쿼리(normalized query) 기준으로 그룹화된 느린 쿼리 | `system.query_log`                                                  |
+| 실행 중인 쿼리                                  | `system.processes`                                                  |
+| 테이블, 테이블 파트(Table Parts), 행 수 및 크기        | `system.tables`, `system.parts`                                     |
+| 데이터 건너뛰기 인덱스(Data-skipping indexes)       | `system.data_skipping_indices`                                      |
+| 디스크                                       | `system.disks`                                                      |
+
+사용자에게 이 테이블 중 하나에 대한 권한이 없거나 `query_log`가 비활성화되어 있으면, 대시보드 전체가 실패하지 않고 해당 패널만
+비어 있게 됩니다. `system.query_log`는 비동기로 플러시되므로, 방금 완료된
+SQL 문이 표시되기까지 몇 초가 걸릴 수 있습니다.
+
+LibreDB Studio에서는 테이블에 `OPTIMIZE TABLE ... FINAL`을 실행하거나, 테이블 또는 데이터베이스의 `system.parts` 요약을
+확인하거나, `KILL QUERY ... SYNC`로 실행 중인 쿼리를 중지할 수도 있습니다. 이러한 작업을 수행하려면
+각 작업에 맞는 권한이 필요합니다.
+
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="ClickHouse 연결에 대한 LibreDB Studio 모니터링 개요 화면으로, 서버 버전, 가동 시간, 연결, 스토리지 크기, 캐시 적중률 및 테이블 수를 보여줍니다" />
+
+## 문제 해결 {#troubleshooting}
+
+<Accordion title="연결이 거부되거나 시간이 초과됨">
+  요청은 브라우저가 아니라 LibreDB Studio의 서버가 보내므로, LibreDB Studio를 실행하는 머신 또는 컨테이너에서
+  호스트에 연결할 수 있어야 합니다. LibreDB Studio는 Docker에서, ClickHouse는 같은 머신에서 실행 중이라면
+  `localhost`는 호스트가 아니라 컨테이너를 가리킵니다. 또한 native protocol 포트인 `9000`이 아니라
+  HTTP 포트를 입력했는지 확인하십시오.
+</Accordion>
+
+<Accordion title="자체 서명 또는 사설 CA 인증서 사용 시 HTTPS 연결 실패">
+  LibreDB Studio의 서버는 Node.js에서 실행되며, Node.js는 자체 번들에 포함된 공개 CA 목록을 기준으로 서버 인증서를
+  검증합니다. 따라서 **SSL / TLS** 아래에 붙여 넣은 CA 인증서는 무시되며, 운영 체제의 인증서 저장소에 CA를 추가하는 것만으로도
+  충분하지 않습니다. CA 인증서(자체 서명 인증서라면 서버 자체의 인증서)가 담긴 PEM 파일의 경로를 `NODE_EXTRA_CA_CERTS`
+  환경 변수로 지정한 상태에서 LibreDB Studio 서버를 시작하십시오. Docker를 사용한다면 해당 파일을 컨테이너에 마운트하고
+  `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`과 같이 전달하십시오.
+</Accordion>
+
+<Accordion title="데이터베이스 브라우저에 객체가 표시되지 않거나 딕셔너리가 테이블로 표시됨">
+  데이터베이스 브라우저는 각 데이터베이스의 객체를 종류별로 분류할 때 `system.dictionaries`를 읽고,
+  테이블 세부 정보를 표시할 때 `system.data_skipping_indices`를 읽습니다. `system.dictionaries`에 대한 `SELECT` 권한이 없으면
+  객체 목록이 로드되지 않고, `system.data_skipping_indices`에 대한 `SELECT` 권한이 없으면 테이블 세부 정보가
+  열리지 않습니다. 또한 사용자에게 딕셔너리가 속한 데이터베이스에 대한 `dictGet` 권한이 없으면 해당 딕셔너리는 테이블 아래에 표시됩니다.
+  [시작하기 전에](#before-you-begin)에 설명된 대로 이러한 권한을 부여한 후 브라우저를 새로 고치십시오.
+</Accordion>
+
+<Accordion title="일부 대시보드 패널이 비어 있음">
+  ClickHouse 사용자가 [ClickHouse 모니터링](#monitor-clickhouse)에 나열된 `system` 테이블 중 하나 이상을
+  읽을 수 없기 때문입니다. 필요한 테이블에 대한 `SELECT` 권한을 부여한 후 다시 연결하십시오.
+</Accordion>
+
+<Accordion title="느린 쿼리 뷰가 비어 있음">
+  느린 쿼리 뷰는 `system.query_log`를 읽는데, 쿼리 로깅이 꺼져 있으면 이 테이블에는 아무것도 기록되지 않습니다.
+  해당 사용자에 대해 `log_queries` 설정을 활성화한 후(예: 사용자의 설정 프로파일(Settings Profile)에서) 쿼리를 몇 개
+  실행하십시오. 새 항목은 로그가 플러시된 후에 나타나며, 플러시까지 몇 초 정도 걸릴 수 있습니다.
+  그래도 뷰가 계속 비어 있다면 사용자 단위가 아니라 서버 전체에서 쿼리 로깅이 비활성화되어 있을 수 있습니다.
+  [system.query&#95;log](/ko/operations/system-tables/query_log)에 설명된 대로 서버 구성에 `query_log` 섹션이
+  있는지 확인하십시오.
+</Accordion>
+
+## 다음 단계 {#next-steps}
+
+* 전체 동작 방식은 [LibreDB Studio ClickHouse provider 문서](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md)를 참조하십시오.
+* 서버 구성 방법은 [ClickHouse HTTP 인터페이스 문서](/ko/concepts/features/interfaces/http)를 참조하십시오.

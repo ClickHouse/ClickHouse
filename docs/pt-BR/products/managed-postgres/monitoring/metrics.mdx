@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Referência de métricas'
 title: 'Referência de métricas do ClickHouse Managed Postgres'
 description: 'Lista completa das métricas expostas pelo endpoint Prometheus do ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'métricas', 'prometheus', 'referência', 'observabilidade']
+keywords: ['managed postgres', 'métricas', 'prometheus', 'referência', 'observabilidade', 'eventos de espera', 'esperas por bloqueio']
 doc_type: 'reference'
 ---
 
@@ -27,7 +27,7 @@ Toda métrica inclui os seguintes rótulos:
 
 Algumas métricas adicionam um rótulo para a dimensão por que são segmentadas (por exemplo,
 `mode` nas métricas de CPU, `state` nas conexões, `database` no tamanho do banco de
-dados). Esses rótulos são listados junto de cada métrica.
+dados, `wait` nos eventos de espera). Esses rótulos são listados junto de cada métrica.
 
 ## Métrica de informação {#information-metric}
 
@@ -121,10 +121,31 @@ Contadores dos eventos registrados pelo Query Insights, excluindo operações `U
 | `PostgresServer_CacheHitRatio`     | gauge |                    | Taxa de acerto do cache de buffer: blocos atendidos pelo cache em relação ao total de blocos acessados, em porcentagem.                        |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`         | Tamanho em disco de cada banco de dados, em bytes. Inclui o banco de dados padrão `postgres` e quaisquer bancos de dados criados pelo usuário. |
 
+## Eventos de espera {#wait-events}
+
+Gauges derivados das amostras de espera que o ClickHouse Managed Postgres coleta no
+primário a cada 30 segundos. São as mesmas amostras usadas nos
+[gráficos de espera do Query insights](/pt-BR/products/managed-postgres/monitoring/query-insights#wait-charts).
+Uma série só aparece quando há algo a reportar: um
+serviço idle não tem séries de espera, e `PostgresServer_LockWaitMaxSeconds`
+só aparece enquanto alguma sessão estiver aguardando um bloqueio.
+
+| Métrica                               | Tipo  | Rótulos adicionais | Descrição                                                                                                                                                                                                                                                                    |
+| ------------------------------------- | ----- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait`             | Sessões ativas em cada evento de espera, com média calculada sobre as amostras recentes em que ele foi reportado. `wait` é o evento de espera no formato `type:event`, por exemplo `Lock:relation` ou `IO:WalSync`, ou `None` para sessões em execução sem evento de espera. |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |                    | Maior tempo, em segundos, que uma sessão passou aguardando um bloqueio.                                                                                                                                                                                                      |
+
+Para contar as sessões que aguardam bloqueios, some os eventos de espera `Lock`:
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## Páginas relacionadas {#related}
 
 * [endpoint Prometheus] — configuração, autenticação e scraping
 * [Dashboard](/pt-BR/products/managed-postgres/monitoring/dashboard) — gráficos integrados do console em nuvem
+* [Query insights](/pt-BR/products/managed-postgres/monitoring/query-insights#wait-charts) — gráficos de espera e a tabela Waits no console em nuvem
 * [Guia de OpenAPI](/pt-BR/products/managed-postgres/openapi) — criação de chave de API
   e consulta dos IDs da organização e do serviço
 

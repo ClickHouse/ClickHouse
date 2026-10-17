@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <div id="prerequisites">
-  ## Prérequis
+  ## Prérequis {#prerequisites}
 </div>
 
 Pour suivre les exemples de cet article, vous aurez besoin de :
@@ -64,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## Exécuter des requêtes via HTTP/HTTPS
+  ## Exécuter des requêtes via HTTP/HTTPS {#querying}
 </div>
 
 Pour exécuter des requêtes via HTTP/HTTPS, trois options s’offrent à vous :
@@ -350,7 +350,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 Si la requête contient déjà une clause `FROM`, le composant de chemin sert uniquement à fournir le nom du fichier téléchargé.
 
 <div id="insert-queries">
-  ## Requêtes `INSERT` via HTTP/HTTPS
+  ## Requêtes `INSERT` via HTTP/HTTPS {#insert-queries}
 </div>
 
 La méthode `POST` est nécessaire pour transmettre des données dans les requêtes `INSERT`. Dans ce cas, vous pouvez écrire le début de la requête dans le paramètre d’URL et utiliser `POST` pour transmettre les données à insérer. Les données à insérer peuvent être, par exemple, un dump MySQL séparé par des tabulations. Ainsi, la requête `INSERT` remplace `LOAD DATA LOCAL INFILE` de MySQL.
@@ -530,7 +530,7 @@ Vous pouvez configurer le niveau de compression des données à l&#39;aide du pa
 </Info>
 
 <div id="examples-compression">
-  ## Exemples
+  ## Exemples {#examples-compression}
 </div>
 
 Pour envoyer des données compressées au serveur :
@@ -563,7 +563,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## Base de données par défaut
+  ## Base de données par défaut {#default-database}
 </div>
 
 Vous pouvez utiliser le paramètre d’URL `database` ou l’en-tête `X-ClickHouse-Database` pour indiquer la base de données par défaut.
@@ -585,7 +585,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 Par défaut, la base de données enregistrée dans les paramètres du serveur est utilisée comme base de données par défaut. Par défaut, il s’agit de la base de données nommée `default`. Vous pouvez également toujours préciser la base de données en la faisant précéder d’un point avant le nom de la table.
 
 <div id="authentication">
-  ## Authentification
+  ## Authentification {#authentication}
 </div>
 
 Le nom d’utilisateur et le mot de passe peuvent être indiqués de l’une des trois manières suivantes :
@@ -713,26 +713,24 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   Utilisez la mise en mémoire tampon pour éviter les situations où une erreur de traitement de la requête survient après l’envoi au client du code de réponse et des en-têtes HTTP. Dans ce cas, un message d’erreur est ajouté à la fin du corps de la réponse et, côté client, l’erreur ne peut être détectée qu’au stade de l’analyse.
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## Définir un rôle avec des paramètres de requête
-</div>
+## Définir un rôle avec des paramètres de requête {#setting-role-with-query-parameters}
 
 Cette fonctionnalité a été ajoutée dans ClickHouse 24.4.
 
 Dans certains cas, il peut être nécessaire de définir d’abord le rôle accordé avant d’exécuter l’instruction proprement dite.
-Cependant, il n’est pas possible d’envoyer `SET ROLE` et l’instruction en une seule fois, car les requêtes multi-instructions ne sont pas autorisées :
+Cependant, il n’est pas possible d’envoyer `SET ROLE` et l’instruction en une seule fois, car les requêtes multi-instructions ne sont pas autorisées :
 
 ```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
 ```
 
-La commande ci-dessus provoque une erreur :
+La commande ci-dessus provoque une erreur :
 
 ```sql
 Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 ```
 
-Pour contourner cette limitation, utilisez plutôt le paramètre de requête `role` :
+Pour contourner cette limitation, utilisez plutôt le paramètre de requête `role` :
 
 ```bash
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
@@ -740,13 +738,15 @@ curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_ta
 
 Cela revient à exécuter `SET ROLE my_role` avant l’instruction.
 
-De plus, il est possible de spécifier plusieurs paramètres de requête `role` :
+De plus, il est possible de spécifier plusieurs paramètres de requête `role` :
 
 ```bash
 curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
 ```
 
 Dans ce cas, `?role=my_role&role=my_other_role` fonctionne comme si `SET ROLE my_role, my_other_role` était exécuté avant l’instruction.
+
+Le paramètre de requête `role` n’est pas concerné par le paramètre du serveur `access_control_improvements.readonly_restricts_set_role`, qui ne bloque que l’instruction `SET ROLE`.
 
 ## Mises en garde concernant les codes de réponse HTTP {#http_response_codes_caveats}
 
@@ -840,13 +840,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## Requêtes avec paramètres
+  ## Requêtes avec paramètres {#cli-queries-with-parameters}
 </div>
 
 Vous pouvez créer une requête avec des paramètres et leur attribuer des valeurs à partir des paramètres de la requête HTTP correspondante. Pour en savoir plus, consultez [Requêtes avec paramètres pour l’interface CLI](/fr/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### Exemple
+  ### Exemple {#example-3}
 </div>
 
 ```bash
@@ -854,7 +854,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### Tabulations dans les paramètres d’URL
+  ### Tabulations dans les paramètres d’URL {#tabs-in-url-parameters}
 </div>
 
 Les paramètres de requête sont analysés à partir du format &quot;escaped&quot;. Cela présente certains avantages, comme la possibilité d’analyser sans ambiguïté les valeurs NULL sous la forme `\N`. Cela signifie que le caractère de tabulation doit être encodé sous la forme `\t` (ou `\` suivi d’une tabulation). Par exemple, ce qui suit contient une véritable tabulation entre `abc` et `123`, et la chaîne d’entrée est divisée en deux valeurs :
@@ -884,11 +884,9 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## Interface HTTP prédéfinie
-</div>
+## Interface HTTP prédéfinie {#predefined_http_interface}
 
-ClickHouse prend en charge certaines requêtes via l’interface HTTP. Par exemple, vous pouvez écrire des données dans une table comme suit :
+ClickHouse prend en charge certaines requêtes via l’interface HTTP. Par exemple, vous pouvez écrire des données dans une table comme suit :
 
 ```bash
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
@@ -896,9 +894,11 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 
 ClickHouse prend également en charge une Interface HTTP prédéfinie, ce qui peut faciliter l’intégration avec des outils tiers comme [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Prenons un exemple.
 
+Les mêmes handlers peuvent également être définis en SQL, sans modifier le fichier de configuration du serveur — voir [`CREATE HANDLER`](/fr/reference/statements/create/handler).
+
 Tout d’abord, ajoutez cette section à votre fichier de configuration du serveur.
 
-`http_handlers` est configuré pour contenir plusieurs `rule`. ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini dans `rule`, et la première règle qui correspond exécutera le gestionnaire. Ensuite, ClickHouse exécutera la requête prédéfinie correspondante si la correspondance aboutit.
+`http_handlers` est configuré pour contenir plusieurs `rule`. ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini dans `rule`, et la première règle qui correspond exécutera le handler. Ensuite, ClickHouse exécutera la requête prédéfinie correspondante si la correspondance aboutit.
 
 ```yaml title="config.xml"
 <http_handlers>
@@ -915,7 +915,7 @@ Tout d’abord, ajoutez cette section à votre fichier de configuration du serve
 </http_handlers>
 ```
 
-Vous pouvez maintenant interroger directement l’URL pour des données au format Prometheus :
+Vous pouvez maintenant interroger directement l’URL pour des données au format Prometheus :
 
 ```bash
 $ curl -v 'http://localhost:8123/predefined_query'
@@ -965,7 +965,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Les options de configuration de `http_handlers` sont les suivantes.
 
-`rule` permet de configurer les paramètres suivants :
+`rule` permet de configurer les paramètres suivants :
 
 * `method`
 * `headers`
@@ -973,7 +973,7 @@ Les options de configuration de `http_handlers` sont les suivantes.
 * `full_url`
 * `handler`
 
-Chacun de ces paramètres est décrit ci-dessous :
+Chacun de ces paramètres est décrit ci-dessous :
 
 * `method` sert à faire correspondre la partie méthode de la requête HTTP. `method` est entièrement conforme à la définition de [`method`]
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) dans le protocole HTTP. Il s&#39;agit d&#39;une configuration facultative. S&#39;il n&#39;est pas défini dans le
@@ -1056,7 +1056,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### Paramètre virtuel `_request_body`
+  #### Paramètre virtuel `_request_body` {#virtual-param-request-body}
 </div>
 
 En plus des paramètres d’URL, des en-têtes et des paramètres de requête, `predefined_query_handler` prend en charge un paramètre virtuel spécial, `_request_body`.
@@ -1125,7 +1125,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static
+  ### static {#static}
 </div>
 
 `static` peut renvoyer [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et `response_content`. `response_content` peut renvoyer le contenu indiqué.
@@ -1318,7 +1318,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` effectue une redirection `302` vers `location`
@@ -1341,7 +1341,7 @@ Par exemple, voici comment ajouter automatiquement set user à `play` dans Click
 ```
 
 <div id="http-response-headers">
-  ## En-têtes de réponse HTTP
+  ## En-têtes de réponse HTTP {#http-response-headers}
 </div>
 
 ClickHouse vous permet de configurer des en-têtes de réponse HTTP personnalisés, applicables à tout type de gestionnaire configurable. Ces en-têtes peuvent être définis à l’aide du paramètre `http_response_headers`, qui accepte des paires clé-valeur représentant les noms des en-têtes et leurs valeurs. Cette fonctionnalité est particulièrement utile pour mettre en place des en-têtes de sécurité personnalisés, des politiques CORS ou toute autre exigence relative aux en-têtes HTTP sur votre interface HTTP ClickHouse.

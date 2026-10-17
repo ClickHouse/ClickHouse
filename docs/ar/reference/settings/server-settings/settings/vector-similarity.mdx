@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدَم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="vector_similarity_index_cache_max_entries">
-  ## vector_similarity_index_cache_max_entries
-</div>
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />حجم ذاكرة التخزين المؤقت لفهرس تشابه المتجهات، بعدد الإدخالات. تعني القيمة صفر أنه معطّل.
 
-<div id="vector_similarity_index_cache_policy">
-  ## vector_similarity_index_cache_policy
-</div>
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة ذاكرة التخزين المؤقت لفهرس تشابه المتجهات.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لفهرس تشابه المتجهات. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="vector_similarity_index_cache_size">
-  ## vector_similarity_index_cache_size
-</div>
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لفهارس تشابه المتجهات. تعني القيمة 0 تعطيلها.
 
@@ -34,9 +28,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
 </Note>
 
-<div id="vector_similarity_index_cache_size_ratio">
-  ## vector_similarity_index_cache_size_ratio
-</div>
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حالة استخدام سياسة SLRU) في ذاكرة التخزين المؤقت لفهرس تشابه المتجهات، كنسبة إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

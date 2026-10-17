@@ -731,8 +731,8 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
 用于指定在 Parquet 文件中的何处放置布隆过滤器。布隆过滤器将按大致该大小分组写入。具体来说：
 
 * 如果为 0，则每个行组的布隆过滤器会在该行组之后立即写入，
-  * 如果该值大于所有布隆过滤器的总大小，则所有行组的布隆过滤器会先在内存中累积，然后在接近文件末尾处一起写入，
-  * 否则，布隆过滤器会先在内存中累积，并在其总大小超过该值时写出。
+* 如果该值大于所有布隆过滤器的总大小，则所有行组的布隆过滤器会先在内存中累积，然后在接近文件末尾处一起写入，
+* 否则，布隆过滤器会先在内存中累积，并在其总大小超过该值时写出。
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -845,6 +845,16 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新设置。"}]}]} />
 
 在 Parquet 页头中写入 crc32 校验和。
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于将字段为 Parquet `FILE` 逻辑类型字段的命名 `Tuple` 写为带有 `FILE` 注解的 group。"}]}]} />
+
+如果命名 `Tuple` 的元素名称全部是 Parquet `FILE` 逻辑类型的字段 (`uri`、`offset`、`size`、`content_type`、`checksum`、`inline`；可以是任意非空子集，顺序不限) ，则将其写为带有 `FILE` 逻辑类型注解的 group。该 group 表示对某一字节范围的引用，这些字节可以内联存储，也可以存储在外部文件中。`offset` 和 `size` 元素必须为整数 (写为 `INT64`) ，其他元素必须为 `String` 或 `FixedString` (`inline` 写为不带注解的 `BYTE_ARRAY`，其余写为 `STRING`) 。按照规范要求，所有字段均写为 `OPTIONAL`。值按原样写入，不会校验其是否构成有效引用。
+
+读取时，带有 `FILE` 注解的 group 始终会被读取为上述由 `Nullable` 元素组成的 `Tuple`。
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

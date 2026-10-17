@@ -109,17 +109,19 @@ Para personalizar a carga de trabalho, as seguintes configurações podem ser us
 * `priority` - (somente compartilhamento por tempo) cargas de trabalho irmãs são atendidas de acordo com valores de prioridade estáticos (um valor menor significa prioridade mais alta). Determina a preempção.
 * `precedence` - (somente compartilhamento por espaço) cargas de trabalho irmãs são admitidas de acordo com valores estáticos (um valor menor significa precedência mais alta). Determina a evicção e a admissão.
 * `weight` - cargas de trabalho irmãs com a mesma prioridade estática ou precedência compartilham recursos de acordo com os pesos, de forma justa. Afeta a preempção, a evicção e a admissão.
-* `max_io_requests` - o limite para o número de solicitações de E/S concurrentes nesta carga de trabalho.
-* `max_bytes_inflight` - o limite para o total de bytes em trânsito de solicitações concurrentes nesta carga de trabalho.
+* `max_io_requests` - o limite para o número de solicitações de E/S concorrentes nesta carga de trabalho.
+* `max_bytes_inflight` - o limite para o total de bytes em trânsito de solicitações concorrentes nesta carga de trabalho.
 * `max_bytes_per_second` - o limite da taxa de leitura ou gravação de bytes desta carga de trabalho.
 * `max_burst_bytes` - o número máximo de bytes que pode ser processado pela carga de trabalho sem sofrer limitação de taxa (para cada recurso de forma independente).
 * `max_concurrent_threads` - o limite para o número de threads de consultas nesta carga de trabalho.
-* `max_concurrent_threads_ratio_to_cores` - o mesmo que `max_concurrent_threads`, mas normalized em relação ao número de CPU cores disponíveis.
-* `max_cpus` - o limite para o número de CPU cores para atender consultas nesta carga de trabalho.
-* `max_cpu_share` - o mesmo que `max_cpus`, mas normalized em relação ao número de CPU cores disponíveis.
+* `max_concurrent_threads_ratio_to_cores` - o mesmo que `max_concurrent_threads`, mas normalizado em relação ao número de núcleos de CPU disponíveis.
+* `max_cpus` - o limite para o número de núcleos de CPU para atender consultas nesta carga de trabalho.
+* `max_cpu_share` - o mesmo que `max_cpus`, mas normalizado em relação ao número de núcleos de CPU disponíveis.
 * `max_burst_cpu_seconds` - o número máximo de segundos de CPU que pode ser consumido pela carga de trabalho sem sofrer limitação devido a `max_cpus`.
 * `scheduler` - (somente compartilhamento por tempo) o algoritmo de escalonamento usado entre as consultas desta carga de trabalho: `fifo` (padrão, primeiro a chegar, primeiro a ser atendido), `fair` (enfileiramento justo ponderado), `las` (menor serviço obtido) ou `priority` (ordem estrita pela configuração `workload_priority` da consulta). Consulte [Escalonamento com reconhecimento de consultas](#query_aware_scheduling).
 * `max_memory` - o limite para o total de memória reservada para esta carga de trabalho.
+* `max_memory_before_spill` - o limite flexível de memória acima do qual as consultas da carga de trabalho devem fazer spill da memória recuperável para o disco, antes que o limite rígido `max_memory` force a evicção. Experimental; consulte [Spill de memória recuperável](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - o mesmo limite flexível que `max_memory_before_spill`, mas normalizado em relação ao `max_memory` desta carga de trabalho. Quando ambos são definidos, prevalece o menor limiar resultante.
 
 Todos os limites especificados por meio das configurações de carga de trabalho são independentes para cada recurso. Por exemplo, uma carga de trabalho com `max_bytes_per_second = '10Mi'` terá um limite de largura de banda de 10 MB/s para cada recurso de leitura e gravação, de forma independente. Se for necessário um limite comum para leitura e gravação, considere usar o mesmo recurso para os acessos READ e WRITE.
 
@@ -150,9 +152,9 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 É possível atribuir uma configuração `workload` a atividades em segundo plano. Merges e mutações usam as configurações do servidor `merge_workload` e `mutation_workload`, respectivamente. Esses valores também podem ser substituídos para tabelas específicas usando as configurações do MergeTree `merge_workload` e `mutation_workload`.
 
-## Escalonamento de CPU {#cpu_scheduling}
+## Agendamento de CPU {#cpu_scheduling}
 
-Para habilitar o escalonamento de CPU para cargas de trabalho, crie um recurso de CPU e defina um limite para o número de threads concorrentes:
+Para habilitar o agendamento de CPU para cargas de trabalho, crie um recurso de CPU e defina um limite para o número de threads concorrentes:
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
@@ -163,7 +165,7 @@ Quando o servidor ClickHouse executa muitas consultas simultâneas com [múltipl
 
 O tempo de CPU é consumido pelas threads quando elas não estão bloqueadas e executam tarefas intensivas em CPU. Para fins de agendamento, distinguem-se dois tipos de threads:
 
-* Thread principal — a primeira thread que começa a trabalhar em uma consulta ou em uma atividade em segundo plano, como um merge ou uma mutação.
+* Thread principal — a primeira thread que começa a trabalhar em uma consulta ou em uma atividade em segundo plano, como uma mesclagem ou uma mutação.
 * Thread de trabalho — as threads adicionais que a thread principal pode gerar para executar tarefas intensivas em CPU.
 
 Pode ser desejável usar recursos separados para threads principais e threads de trabalho para obter melhor capacidade de resposta. Um número elevado de threads de trabalho pode facilmente monopolizar os recursos de CPU quando são usados valores altos da configuração de consulta `max_threads`. Nesse caso, as consultas recebidas precisam ficar bloqueadas e aguardar um slot de CPU para que suas threads principais iniciem a execução. Para evitar isso, a configuração a seguir pode ser usada:
@@ -174,9 +176,9 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-Isso criará limites separados para threads master e worker. Mesmo que todos os 100 slots de CPU de worker estejam ocupados, novas consultas não serão bloqueadas enquanto houver slots de CPU de master disponíveis. Elas iniciarão a execução com uma thread. Depois, se slots de CPU de worker ficarem disponíveis, essas consultas poderão escalar e criar suas threads de worker. Por outro lado, essa abordagem não relaciona o número total de slots ao número de processadores de CPU, e executar threads concorrentes em excesso afetará o desempenho.
+Isso criará limites separados para threads principais e de trabalho. Mesmo que todos os 100 slots de CPU de worker estejam ocupados, novas consultas não serão bloqueadas enquanto houver slots de CPU de master disponíveis. Elas iniciarão a execução com uma thread. Depois, se slots de CPU de worker ficarem disponíveis, essas consultas poderão escalar e criar suas threads de trabalho. Por outro lado, essa abordagem não relaciona o número total de slots ao número de processadores de CPU, e executar threads concorrentes em excesso afetará o desempenho.
 
-Limitar a concorrência das threads master não limitará o número de consultas concorrentes. Os slots de CPU podem ser liberados no meio da execução da consulta e readquiridos por outras threads. Por exemplo, 4 consultas concorrentes com limite de 2 threads master concorrentes podem ser executadas em paralelo. Nesse caso, cada consulta receberá 50% de um processador de CPU. Uma lógica separada deve ser usada para limitar o número de consultas concorrentes, e isso atualmente não é compatível com cargas de trabalho.
+Limitar a concorrência das threads principais não limitará o número de consultas concorrentes. Os slots de CPU podem ser liberados no meio da execução da consulta e readquiridos por outras threads. Por exemplo, 4 consultas concorrentes com limite de 2 threads principais concorrentes podem ser executadas em paralelo. Nesse caso, cada consulta receberá 50% de um processador de CPU. Uma lógica separada deve ser usada para limitar o número de consultas concorrentes, e isso atualmente não é compatível com cargas de trabalho.
 
 Limites separados de concorrência de threads podem ser usados para cargas de trabalho:
 
@@ -193,12 +195,14 @@ Este exemplo de configuração fornece pools independentes de slots de CPU para 
 
 Para excluir uma consulta do agendamento de CPU, defina a configuração de consulta [use&#95;concurrency&#95;control](/pt-BR/reference/settings/session-settings/use#use_concurrency_control) como 0.
 
-O agendamento de CPU ainda não é compatível com merges e mutações.
+O agendamento de CPU ainda não é compatível com mesclagens e mutações.
 
 Para fornecer alocações justas para as cargas de trabalho, é necessário realizar preempção e redução de escala durante a execução da consulta. A preempção é habilitada com a configuração de servidor `cpu_slot_preemption`. Se ela estiver habilitada, cada thread renova periodicamente seu slot de CPU (de acordo com a configuração de servidor `cpu_slot_quantum_ns`). Essa renovação pode bloquear a execução se a CPU estiver sobrecarregada. Quando a execução fica bloqueada por muito tempo (consulte a configuração de servidor `cpu_slot_preemption_timeout_ms`), a consulta reduz o número de threads em execução, que diminui dinamicamente. Observe que a distribuição justa de tempo de CPU é garantida entre cargas de trabalho, mas, entre consultas dentro da mesma carga de trabalho, isso pode falhar em alguns casos extremos.
 
+Enquanto uma thread mantém um slot de CPU, ela nem sempre usa a CPU e, por padrão, o slot permanece retido mesmo quando não está em uso — de modo que outras consultas não podem utilizá-lo, ainda que a CPU esteja ociosa. Habilitar a configuração do servidor `cpu_slot_parking` permite que uma thread libere (&quot;estacione&quot;) seu slot de CPU em determinadas esperas em que não está usando a CPU — um worker idle sem tarefa para executar, uma thread aguardando uma fonte remota ou assíncrona, uma leitura armazenada em cache obtendo dados do armazenamento ou uma thread pausada por throttling de largura de banda de leitura — e volte a adquirir um slot ao retomar o trabalho de CPU. Nem toda espera que não envolve CPU libera o slot; uma leitura comum de arquivo local, por exemplo, não o libera. Com isso, outras consultas podem usar a capacidade de CPU liberada enquanto uma consulta está parada, o que melhora a utilização da CPU e a latência das consultas em situações de sobrecarga. O estacionamento só se aplica quando `cpu_slot_preemption` está habilitado e um único recurso de CPU define tanto `MASTER THREAD` quanto `WORKER THREAD` (como no exemplo `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` acima); em outras configurações, não tem efeito.
+
 <Warning>
-  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings/max-threads#max_threads), mas não garante uma alocação justa do tempo de CPU, a menos que a configuração de servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é fornecida com base no número de alocações de slots de CPU entre cargas de trabalho concorrentes. Isso não implica a mesma quantidade de segundos de CPU porque, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
+  O agendamento de slots oferece uma forma de controlar a [concorrência de consultas](/pt-BR/reference/settings/session-settings/max-threads#max_threads), mas não garante uma alocação justa de tempo de CPU, a menos que a configuração do servidor `cpu_slot_preemption` esteja definida como `true`; caso contrário, a justiça é baseada no número de alocações de slots de CPU entre as cargas de trabalho concorrentes. Isso não implica uma quantidade igual de segundos de CPU, pois, sem preempção, um slot de CPU pode ser mantido indefinidamente. Uma thread adquire um slot no início e o libera quando o trabalho é concluído.
 </Warning>
 
 <Note>
@@ -357,6 +361,28 @@ Neste exemplo, a memória total reservada por todas as consultas e atividades em
 Se houver pressão de memória, as alocações da carga de trabalho de teste serão desalojadas primeiro. Em seguida, se mais memória precisar ser liberada, as alocações da carga de trabalho de staging serão desalojadas antes das alocações da carga de trabalho de produção, se excederem suas garantias. Observe que consultas pendentes em produção e staging podem desalojar alocações em execução na carga de trabalho de teste para liberar memória, mas não podem se desalojar mutuamente porque têm a mesma precedência. Em caso de pressão de memória, elas aguardarão em filas, o que permite ao sistema evitar erros de MEMORY&#95;LIMIT&#95;EXCEEDED devido ao número excessivo de consultas executadas simultaneamente.
 
 Observe que a carga de trabalho do sistema tem precedência 0 (padrão), que é superior à das cargas de trabalho de produção, staging e teste, mas elas não são cargas de trabalho irmãs. O ancestral comum mais próximo é a carga de trabalho all, cujos dois filhos têm a mesma precedência. Portanto, a carga de trabalho do sistema pendente não pode desalojar nenhuma delas, e vice-versa. Isso garante que as atividades do sistema não possam ser facilmente desalojadas.
+
+### Spill de memória recuperável {#spilling-reclaimable-memory}
+
+Além do limite rígido `max_memory`, uma carga de trabalho pode definir um limite de memória *flexível* mais baixo, que aciona o spill da memória recuperável para o disco antes que o limite rígido force uma evicção. Memória recuperável é a parte da alocação de uma consulta que seus operadores conseguem serializar em disco e recarregar sob demanda (por exemplo, sequências ordenadas de uma ordenação externa ou estados de agregação intermediários), ao contrário da memória não recuperável, que precisa permanecer na RAM.
+
+O limite flexível é definido por meio de duas configurações de carga de trabalho; quando ambas estão definidas, prevalece o menor limiar resultante:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+Quando a memória alocada na subárvore de uma carga de trabalho excede seu limite flexível, o scheduler solicita que as consultas com memória recuperável façam spill para o disco. Várias consultas podem fazer spill de forma concorrente para reduzir o uso de memória abaixo do limite flexível.
+
+Ultrapassar o limite flexível não bloqueia nem remove consultas por si só: os operadores selecionados realizam o spill durante a execução. Configure uma lacuna entre os limites flexível e rígido para deixar margem de capacidade para o spill. Se nada na carga de trabalho for recuperável, nenhum spill é solicitado e o limite rígido `max_memory` continua sendo a única salvaguarda. Defina o limite flexível em uma carga de trabalho que englobe todas as cargas de trabalho que você deseja controlar. Um limite na carga de trabalho raiz `all` só é global em uma hierarquia com uma única raiz; raízes irmãs ficam fora do seu escopo. Cargas de trabalho aninhadas podem definir seus próprios limites flexíveis.
+
+:::note
+O spill de memória recuperável é experimental e se baseia no escalonamento de reservas de memória (que também é experimental). Os operadores compatíveis incluem ordenação externa, agregação, hash joins com suporte a spill, `DISTINCT` externo e conjuntos `IN` de subconsultas. Esses conjuntos podem fazer spill tanto durante a construção quanto durante o uso, mesmo quando os limiares de conjuntos externos por consulta estão desabilitados. A quantidade de memória que pode ser recuperada depende da fase de execução atual de cada operador. Estimativas de memória recuperável abaixo da configuração de consulta `min_bytes_to_spill` são ignoradas. Quando nenhuma memória recuperável é informada, o limite flexível não tem efeito e o comportamento é idêntico ao de usar apenas o limite rígido `max_memory`.
+:::
 
 ## Agendamento de slots de consulta {#query_scheduling}
 

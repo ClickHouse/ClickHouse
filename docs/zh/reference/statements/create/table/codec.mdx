@@ -43,8 +43,10 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 编解码器可以组合成管道，例如 `CODEC(Delta, Default)`。
 
+编解码器名称不区分大小写，因此 `CODEC(ZSTD)`、`CODEC(zstd)` 和 `CODEC(ZStd)` 指的都是同一个编解码器。
+
 <Tip>
-  无法使用 `lz4` 等外部工具解压 ClickHouse 数据库文件。请改用专用的 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 工具。
+  无法使用 `lz4` 等外部工具解压缩 ClickHouse 数据库文件。请改用专用的 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 工具。
 </Tip>
 
 以下表引擎支持压缩：
@@ -130,6 +132,22 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 <Note>
   此编解码器处于 Beta 状态，使用前需执行 `SET enable_alp_codec = 1`。
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — 基于 [pcodec](https://github.com/pcodec/pcodec) 库，对定宽数值序列进行无损压缩。适用于所有 1、2、4 或 8 字节的数值类型 (`Int8`..`Int64`、`UInt8`..`UInt64`、`Float32`、`Float64`，以及以它们为底层存储的类型，如 `Date`、`DateTime`、`Decimal32`、`Decimal64`、`IPv4` 和 `Enum`) 。不支持 `Decimal128`/`Decimal256` 以及非数值类型。
+
+pcodec 会识别数值的近似结构 (即一种“模式”，例如近似的公共乘数) ，将每个值拆分为若干“潜在量” (latents) ，再使用 delta 编码和交错式 [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) 熵编码器对其进行压缩。对于分布平滑、多峰或高熵的数值列 (如测量值、耗时、计数器、标识符) ，其压缩效果通常优于 `Gorilla`/`FPC`/`ZSTD`/`ALP`；但由于它不具备游程编码或基于匹配的处理路径，常量列或低基数列的压缩效果会较差。编码速度比 `ZSTD` 慢数倍；解码速度则取决于具体工作负载。
+
+可选参数 `level` 用于设置压缩级别，取值范围为 0 到 12，默认值为 8。如果某个块无法压缩 (例如数据本身不可压缩) ，该块将以未压缩形式存储，因此该编解码器造成的数据膨胀最多只有每个块一个很小的固定开销。
+
+每个压缩块的载荷都是一个独立的 [`.pco`](https://github.com/pcodec/pcodec) stream，与 pcodec 参考实现兼容。
+
+<Note>
+  该编解码器目前处于 Beta 阶段，需要先执行 `SET enable_pco_codec = 1` 才能使用。由于它依赖列类型信息，因此只能按列指定，不能用于未指定类型的压缩设置 (`marks_compression_codec`、`primary_key_compression_codec`、`default_compression_codec`) 或 `TTL ... RECOMPRESS` 中。
 </Note>
 
 ### FPC {#fpc}

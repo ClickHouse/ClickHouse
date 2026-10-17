@@ -33,7 +33,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 `=, !=, >, >=, <, <=`와 같은 단순한 `WHERE` 절은 현재 MySQL 서버에서 실행됩니다.
 
-그 외 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+그 외 조건은 MySQL 쿼리가 완료된 후 ClickHouse에서 실행됩니다. `LIMIT` 샘플링 제약은 안전하다고 판단되고 [external&#95;storage&#95;push&#95;down&#95;limit](/ko/reference/settings/session-settings/external-storage#external_storage_push_down_limit)가 활성화된 경우에만 MySQL로 푸시되며, 그 밖의 경우에는 ClickHouse에서 실행됩니다.
 
 ## TLS/SSL {#tls-ssl}
 

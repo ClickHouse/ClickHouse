@@ -167,6 +167,7 @@
     "ru/reference/settings/session-settings/mysql-map",
     "ru/reference/settings/session-settings/network",
     "ru/reference/settings/session-settings/number-of",
+    "ru/reference/settings/session-settings/obfuscate-markov",
     "ru/reference/settings/session-settings/odbc-bridge",
     "ru/reference/settings/session-settings/opentelemetry-start",
     "ru/reference/settings/session-settings/opentelemetry-trace",

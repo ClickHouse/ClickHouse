@@ -141,6 +141,25 @@ Pour modifier les mappages DNS privé personnalisé d’un endpoint, utilisez la
 
 Si un endpoint affiche `Rejected` ou `Failed`, lisez le message sous son status : il permet de distinguer une connexion rejetée par le producteur d’une connexion fermée ou nécessitant une intervention. Dans les deux cas, cela signifie généralement que la liste d’acceptation de l’attachement de service n’inclut pas le projet consommateur de ClickPipes. Pour consulter le status signalé par GCP pour l’endpoint, décrivez les `connectedEndpoints` de l’attachement de service.
 
+## Suppression automatique des endpoints inactifs {#automatic-cleanup}
+
+Les reverse private endpoints qui restent dans un état terminal sont automatiquement supprimés à l&#39;issue d&#39;un délai de grâce défini.
+Ainsi, les endpoints inutilisés ou mal configurés ne persistent pas indéfiniment.
+
+Les délais de grâce suivants s&#39;appliquent en fonction du statut de l&#39;endpoint :
+
+| Statut                           | Délai de grâce | Description                                                                                                                                                                                                   |
+| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Échec**                        | 7 jours        | L&#39;endpoint a rencontré une erreur lors du provisionnement.                                                                                                                                                |
+| **En attente d&#39;acceptation** | 1 jour         | La connexion de l&#39;endpoint n&#39;a pas été acceptée par le propriétaire du service. Cela concerne principalement le PSC détenu par le producteur. Les endpoints PSC natifs sont acceptés automatiquement. |
+| **Rejeté**                       | 1 jour         | La connexion de l&#39;endpoint a été rejetée par le propriétaire du service.                                                                                                                                  |
+
+Une fois le délai de grâce écoulé, l&#39;endpoint et toutes les ressources associées sont automatiquement supprimés.
+
+Pour éviter la suppression automatique, corrigez le problème sous-jacent avant l&#39;expiration du délai de grâce.
+Par exemple, ajoutez le projet consommateur de ClickPipes à la liste d&#39;autorisation de l&#39;attachement de service, comme décrit dans [Approbation des connexions PSC détenues par le producteur](#producer-owned),
+ou recréez l&#39;endpoint s&#39;il est passé à l&#39;état en échec.
+
 ## Limitations {#limitations}
 
 * Un attachement de service PSC ne peut être revendiqué que par un seul service ClickHouse Cloud à la fois ; il ne peut pas être réutilisé par plusieurs services. Pour déplacer un attachement de service vers un autre service, [contactez le support ClickHouse](https://clickhouse.com/support/program) afin de libérer la revendication existante.

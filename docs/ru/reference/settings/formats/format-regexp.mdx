@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="format_regexp">
-  ## format_regexp
-</div>
+## format_regexp {#format_regexp}
 
 Регулярное выражение (для формата Regexp)
 
-<div id="format_regexp_escaping_rule">
-  ## format_regexp_escaping_rule
-</div>
+## format_regexp_escaping_rule {#format_regexp_escaping_rule}
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "Использовать Raw в качестве правила экранирования по умолчанию для формата Regexp, чтобы сделать поведение более соответствующим ожиданиям пользователей"}]}]} />
 
-Правило экранирования поля (для формата Regexp)
+Определяет, как каждая группа захвата, извлечённая с помощью `format_regexp`, разбирается в целевой тип столбца. Используйте `Raw` (по умолчанию) для неэкранированного текста, `Escaped` — для экранирования в стиле TSV, `Quoted` — для полей в кавычках в стиле Values, `CSV` — для полей CSV или `JSON` — для значений JSON. Эта настройка применяется после того, как строка совпала с регулярным выражением; само регулярное выражение она не изменяет.
 
-<div id="format_regexp_skip_unmatched">
-  ## format_regexp_skip_unmatched
-</div>
+## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

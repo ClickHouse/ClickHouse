@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,15 +25,13 @@ Valores posibles:
 
 * 1 — omisión habilitada.
 
-  Si un segmento no está disponible, ClickHouse devuelve un resultado basado en datos parciales y no informa de problemas de disponibilidad de los nodos.
+  Si un segmento no está disponible, ClickHouse devuelve un resultado basado en datos parciales y no informa de problemas de disponibilidad de los nodos. En una lectura, si se omiten *todos* los segmentos antes de devolver cualquier dato, no quedan datos parciales que devolver, por lo que la consulta lanza `ALL_CONNECTION_TRIES_FAILED` en lugar de devolver un resultado vacío. Esta comprobación solo se aplica a las lecturas; `INSERT` gestiona de forma propia el caso en que el cluster de destino no está disponible en absoluto.
 
 * 0 — omisión deshabilitada.
 
   Si un segmento no está disponible, ClickHouse lanza una excepción.
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

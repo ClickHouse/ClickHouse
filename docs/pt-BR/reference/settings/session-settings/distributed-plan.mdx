@@ -63,7 +63,7 @@ Só tem efeito quando `make_distributed_plan` (private preview) está habilitado
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "Nova configuração experimental."}]}]} />
 
-Força o tipo especificado de operadores Exchange entre os estágios de uma consulta distribuída.
+Força o tipo especificado de operadores Exchange entre as etapas de uma consulta distribuída.
 
 Valores possíveis:
 
@@ -81,6 +81,16 @@ Valores possíveis:
 
 Use a estratégia de agregação Shuffle em vez de PartialAggregation + Merge no plano de consulta distribuída.
 Ignorado quando a estratégia Shuffle não pode produzir um resultado correto, por exemplo para `GROUPING SETS` ou quando a agregação deve produzir resultados em ordem de bucket.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração experimental."}]}]} />
+
+Com `make_distributed_plan`, envia os filtros de JOIN em tempo de execução gerados em uma etapa para as etapas que leem o lado de sondagem, para que essas etapas filtrem as linhas antes de enviá-las. Se um filtro não chegar, as linhas passam sem ser filtradas. Requer `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

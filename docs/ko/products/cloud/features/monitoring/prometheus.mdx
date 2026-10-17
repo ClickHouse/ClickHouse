@@ -7,7 +7,6 @@ keywords: ['prometheus', 'grafana', '모니터링', '메트릭', 'exporter']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 기능은 [Prometheus](https://prometheus.io/)를 통합하여 ClickHouse Cloud 서비스를 모니터링할 수 있도록 지원합니다. Prometheus 메트릭에 대한 액세스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview) 엔드포인트를 통해 제공되며, 이 엔드포인트를 사용하면 Prometheus 메트릭 collector에 안전하게 연결하여 메트릭을 내보낼 수 있습니다. 이러한 메트릭은 시각화를 위해 Grafana, Datadog 등의 대시보드와 통합할 수 있습니다.
@@ -19,12 +18,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스에 해당하는 엔드포인트를 찾고 있다면 [ClickHouse Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)를 참조하십시오.
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API
+  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 </div>
 
-<div id="api-reference">
-  ### API 참조
-</div>
+### API 참조 {#api-reference}
 
 | 메서드 | 경로                                                                                                                              | 설명                                                                                                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +44,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이러한 엔드포인트의 전체 요청 및 응답 스키마는 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus)에서 확인할 수 있습니다.
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
 기본 인증에는 ClickHouse Cloud API Key를 사용하십시오:
@@ -69,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### 응답 예시
+  ### 응답 예시 {#sample-response}
 </div>
 
 ```response
@@ -133,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### 메트릭 레이블
+  ### 메트릭 레이블 {#metric-labels}
 </div>
 
 모든 메트릭에는 다음 레이블이 포함됩니다:
@@ -153,7 +150,7 @@ ClickPipes의 경우 메트릭에 다음 레이블도 포함됩니다:
 | clickpipe&#95;source | ClickPipe 소스 유형 |
 
 <div id="information-metrics">
-  ### 정보 메트릭
+  ### 정보 메트릭 {#information-metrics}
 </div>
 
 ClickHouse Cloud는 값이 항상 `1`인 `gauge` 타입의 특수 메트릭 `ClickHouse_ServiceInfo`를 제공합니다. 이 메트릭에는 모든 **메트릭 레이블**과 함께 다음 레이블이 포함됩니다:
@@ -174,9 +171,7 @@ ClickPipes의 경우에도 이와 유사하게 `ClickPipes_Info`라는 `gauge` �
 | ------------------- | ----------- |
 | clickpipe&#95;state | 파이프의 현재 상태  |
 
-<div id="configuring-prometheus">
-  ### Prometheus 구성
-</div>
+### Prometheus 구성 {#configuring-prometheus}
 
 Prometheus 서버는 지정된 인터벌마다 구성된 대상에서 메트릭을 수집합니다. 아래는 ClickHouse Cloud Prometheus 엔드포인트를 사용하도록 Prometheus 서버를 구성하는 예시입니다.
 
@@ -194,20 +189,16 @@ scrape_configs:
     scheme: https
     params:
       filtered_metrics: ["true"]
-    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    metrics_path: "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus"
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
     honor_labels: true
 ```
 
-`honor_labels` 구성 매개변수는 인스턴스 레이블 값이 올바르게 채워지도록 `true`로 설정해야 합니다. 또한 위 예시에서는 `filtered_metrics`를 `true`로 설정했지만, 이는 사용자 선호에 따라 구성해야 합니다.
+`honor_labels` 구성 매개변수는 인스턴스 레이블 값이 올바르게 채워지도록 `true`로 설정해야 합니다. 또한 위 예시에서는 `filtered_metrics`를 `true`로 설정했지만, 이는 사용자 선호에 따라 구성해야 합니다. 조직 내 모든 서비스를 스크레이프하려면 [자동 서비스 검색](#automatic-service-discovery)을 사용하세요.
 
-<div id="automatic-service-discovery">
-  ### 자동 서비스 디스커버리
-</div>
-
-<BetaBadge />
+### 자동 서비스 검색 {#automatic-service-discovery}
 
 디스커버리 엔드포인트는 조직 내 서비스별로 하나의 스크레이프 대상을 Prometheus [HTTP 서비스 디스커버리](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) 포맷으로 반환합니다. Prometheus는 디스커버리 폴링마다 대상 목록을 갱신하고 발견된 각 대상을 스크레이프하므로, 새로 생성된 서비스는 자동으로 포함되고 삭제된 서비스는 대상 목록에서 제거됩니다. API Key에 해당 서비스를 볼 권한이 있는 경우에만 포함되며, 삭제 중이거나 이미 삭제된 서비스는 제외됩니다.
 
@@ -231,7 +222,7 @@ scrape_configs:
     honor_labels: true
 ```
 
-두 곳 모두에 `basic_auth`를 설정합니다. `http_sd_configs` 아래의 블록은 디스커버리 폴링을 인증하고, 스크레이프 작업의 블록은 서비스별 메트릭 스크레이프를 인증합니다. 정적 구성과 마찬가지로 instance 레이블이 올바르게 설정되도록 `honor_labels: true`를 지정합니다.
+두 곳 모두에 `basic_auth`를 설정합니다. `http_sd_configs` 아래의 블록은 디스커버리 폴링을 인증하고, 스크레이프 작업의 블록은 서비스별 메트릭 스크레이프를 인증합니다. 정적 구성과 마찬가지로 인스턴스 레이블이 올바르게 설정되도록 `honor_labels: true`를 지정합니다.
 
 디스커버리 응답 예시:
 
@@ -245,16 +236,31 @@ scrape_configs:
       "__param_filtered_metrics": "true",
       "clickhouse_org_id": "<ORG_ID>",
       "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
+      "clickhouse_discovery_service_name": "my service",
+      "__meta_clickhouse_region": "us-east-1",
+      "__meta_clickhouse_provider": "aws",
+      "__meta_clickhouse_tag_env": "production",
+      "__meta_clickhouse_tagpresent_env": "true"
     }
   }
 ]
 ```
 
+각 대상에는 서비스의 리전, 클라우드 제공업체, 태그도 각각 `__meta_clickhouse_region`, `__meta_clickhouse_provider`, `__meta_clickhouse_tag_<key>` 레이블로 포함됩니다. `__meta_clickhouse_tagpresent_<key>`는 값이 없는 태그를 포함한 모든 태그에서 `true`입니다. 태그 키에 포함된 영문자, 숫자, 밑줄 이외의 문자는 `_`로 변환됩니다. Prometheus는 리레이블링(relabeling) 후 `__meta_` 레이블을 삭제하므로, 대상을 필터링하거나 이 레이블을 유지하려면 `relabel_configs`를 사용하십시오:
+
+```yaml
+    relabel_configs:
+      - source_labels: [__meta_clickhouse_tag_env]
+        regex: production
+        action: keep
+      - source_labels: [__meta_clickhouse_region]
+        target_label: region
+```
+
 디스커버리를 통해 발견된 대상은 `filtered_metrics=true`로 스크레이프됩니다. 전체 메트릭 세트를 스크레이프하는 대상을 발견하려면 디스커버리 URL에 `?filtered_metrics=false`를 추가하십시오. 전체 엔드포인트 사양은 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)에서 확인할 수 있습니다.
 
 <div id="integrating-with-grafana">
-  ## Grafana와 통합하기
+  ## Grafana와 통합하기 {#integrating-with-grafana}
 </div>
 
 Grafana와 통합하는 주요 방법은 두 가지입니다.
@@ -264,9 +270,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 아래에서는 이러한 옵션을 사용하는 방법을 설명하며, ClickHouse Cloud Prometheus 엔드포인트와 관련된 세부 사항을 중심으로 다룹니다.
 
-<div id="grafana-cloud-with-metrics-endpoint">
-  ### Grafana Cloud와 메트릭 엔드포인트
-</div>
+### Grafana Cloud와 메트릭 엔드포인트 {#grafana-cloud-with-metrics-endpoint}
 
 * Grafana Cloud 계정에 로그인하세요
 * **메트릭 엔드포인트**를 선택하여 새 연결을 추가하세요
@@ -285,9 +289,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 메트릭 탐색기 차트" border />
 
-<div id="grafana-cloud-with-alloy">
-  ### Alloy를 사용하는 Grafana Cloud
-</div>
+### Alloy를 사용하는 Grafana Cloud {#grafana-cloud-with-alloy}
 
 Grafana Cloud를 사용 중이라면 Grafana에서 Alloy 메뉴로 이동한 후, 화면의 안내에 따라 Alloy를 설치할 수 있습니다:
 
@@ -306,7 +308,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/services/<clickhouse_service_id>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -336,11 +338,9 @@ prometheus.scrape "clickhouse_cloud" {
 }
 ```
 
-instance 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
+인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-<div id="grafana-self-managed-with-alloy">
-  ### Alloy를 사용하는 자가 관리형 Grafana
-</div>
+### Alloy를 사용하는 자가 관리형 Grafana {#grafana-self-managed-with-alloy}
 
 자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 컴포넌트는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
 
@@ -353,7 +353,7 @@ instance 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개�
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+  metrics_path = "/v1/organizations/<organizationId>/services/<serviceId>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -378,9 +378,7 @@ instance 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개�
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-<div id="integrating-with-datadog">
-  ## Datadog와 통합하기
-</div>
+## Datadog와 통합하기 {#integrating-with-datadog}
 
 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux)와 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 사용해 ClickHouse Cloud 엔드포인트에서 메트릭을 수집할 수 있습니다. 아래에는 이 Agent와 통합에 대한 간단한 예시 구성이 나와 있습니다. 다만, 실제로는 가장 필요한 메트릭만 선별하는 것이 좋습니다. 아래의 일괄 예시는 수천 개의 메트릭-인스턴스 조합을 내보내며, Datadog는 이를 커스텀 메트릭으로 처리합니다.
 
@@ -388,7 +386,7 @@ Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux)와 [OpenMetrics 통
 init_config:
 
 instances:
-   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/services/12f4a114-9746-4a75-9ce5-161ec3a73c4c/prometheus?filtered_metrics=true'
      namespace: 'clickhouse'
      metrics:
          - '^ClickHouse.*'
@@ -400,9 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus Datadog 통합" />
 
-<div id="related">
-  ## 관련 페이지
-</div>
+## 관련 페이지 {#related}
 
 * [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방법을 비교합니다
 * [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 외부 도구 없이 사용할 수 있는 기본 제공 대시보드

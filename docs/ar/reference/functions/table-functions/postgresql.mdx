@@ -52,11 +52,11 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 ## تفاصيل التنفيذ {#implementation-details}
 
-تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع إجراء commit بعد كل استعلام `SELECT`.
+تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع إجراء commit بعد كل استعلام `SELECT`.
 
-تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=` و`IN` على خادم PostgreSQL.
+تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=` و`IN` على خادم PostgreSQL.
 
-تُنفَّذ جميع عمليات الربط والتجميع والفرز وشروط `IN [ array ]` وقيد sampling الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام على PostgreSQL.
+تُنفَّذ جميع عمليات الربط والتجميع والفرز وشروط `IN [ array ]` في ClickHouse بعد اكتمال الاستعلام على PostgreSQL. أما قيد sampling الخاص بـ `LIMIT` فلا يُدفَع إلى PostgreSQL إلا عندما يكون ذلك آمنًا ويكون الإعداد [external&#95;storage&#95;push&#95;down&#95;limit](/ar/reference/settings/session-settings/external-storage#external_storage_push_down_limit) مفعّلًا؛ وإلا فيُنفَّذ في ClickHouse.
 
 ## تمرير استعلام بدلاً من اسم جدول {#passing-a-query}
 

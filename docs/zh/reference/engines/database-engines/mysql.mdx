@@ -23,9 +23,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## 创建数据库
-</div>
+## 创建数据库 {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **设置**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 为 MySQL 协议连接启用 zlib 压缩。设置为 `1` 时，ClickHouse 会向 MySQL 服务器请求启用协议级压缩。
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+允许在查询执行完成后自动关闭连接，即禁用连接复用。设置为 `0` 时，数据库中的每个表都会在各自的对象池中保留其连接，以供下一次查询使用。
+
+默认值：`1`。
+
+## TLS/SSL {#tls-ssl}
 
 与 MySQL 建立加密连接所需的凭据可作为[命名集合](/zh/concepts/features/configuration/server-config/named-collections)的键 (或键值参数) 传递：
 
@@ -76,9 +76,7 @@ SETTINGS enable_compression = 1;
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## 数据类型支持
-</div>
+## 数据类型支持 {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ SETTINGS enable_compression = 1;
 
 支持 [Nullable](/zh/reference/data-types/nullable)。在以下三种情况下，空间列会映射为 `String` (如果可为空，则为 `Nullable(String)`) ，而非几何类型：声明为 `GEOMETRYCOLLECTION`；`geometry` 标志已禁用且类型不是 `POINT`；或该列可为空且类型不是 `POINT`，因为 `Point` 是唯一可嵌套在 `Nullable` 中的几何类型。在这三种情况下，字符串会精确保留 MySQL 返回的值：一个 4 字节的 SRID 前缀，后接 WKB 载荷，因此在将其传递给 WKB 解码器之前，请去除前导的这 4 个字节。
 
-<div id="global-variables-support">
-  ## 支持全局变量
-</div>
+## 支持全局变量 {#global-variables-support}
 
 为获得更好的兼容性，你可以使用 MySQL 风格引用全局变量，即 `@@identifier`。
 
@@ -128,9 +124,7 @@ SETTINGS enable_compression = 1;
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## 使用示例
-</div>
+## 使用示例 {#examples-of-use}
 
 MySQL 中的表：
 

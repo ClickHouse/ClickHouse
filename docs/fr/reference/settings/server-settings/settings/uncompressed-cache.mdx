@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir des sources de ClickHouse.
 
-<div id="uncompressed_cache_policy">
-  ## uncompressed_cache_policy
-</div>
+## uncompressed_cache_policy {#uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique du cache non compressé.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d&#39;éviction du cache non compressé. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
 
-<div id="uncompressed_cache_size">
-  ## uncompressed_cache_size
-</div>
+## uncompressed_cache_size {#uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -36,9 +32,7 @@ Le cache non compressé peut être avantageux pour des requêtes très courtes d
   Ce paramètre peut être modifié en cours d’exécution et prend effet immédiatement.
 </Note>
 
-<div id="uncompressed_cache_size_ratio">
-  ## uncompressed_cache_size_ratio
-</div>
+## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />La taille de la file d’attente protégée (dans le cas de la politique SLRU) du cache non compressé, par rapport à la taille totale du cache.
 

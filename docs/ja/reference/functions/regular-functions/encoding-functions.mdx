@@ -403,6 +403,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+導入バージョン: v26.10.0
+
+[RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7) に従って、[Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) 形式でエンコードされた文字列をデコードします。
+
+`=XX` (16進数の桁は大文字・小文字のどちらでも可) は、その値が表すバイトに置換されます。
+`=` の直後に `\r` または `\n` が続く場合はソフト改行とみなされ、行の残りの部分が次の `\n` まで (`\n` を含む) まとめて削除されます。
+その他の不正なエスケープシーケンス (`=ZZ` や文字列末尾の `=4` など) はそのまま保持されます。ただし、文字列の最後尾にある単独の `=` は削除されます。
+この動作は Python の `quopri.decodestring` と同じです。
+
+**構文**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**引数**
+
+* `s` — Quoted-Printable でエンコード済みの文字列。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+デコード済みの文字列を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+導入バージョン: v26.10.0
+
+電子メールで使用される [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) エンコーディングを用いて、[RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7) に従って文字列をエンコードします。
+
+`=` を除く印字可能な ASCII 文字はそのまま保持され、それ以外のバイトは大文字の16進数を用いて `=XX` の形式で書き込まれます。
+`\r\n` の改行はそのまま保持され、単独の `\r` または `\n` はエンコードされます。スペースやタブは、行末に位置する場合にエンコードされます。
+各行はソフト改行 (`=\r\n`) によって最大 76 文字に収められます。
+任意の `s` について、`decodeQuotedPrintable(encodeQuotedPrintable(s))` は元の文字列 `s` を返します。
+
+**構文**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**引数**
+
+* `s` — エンコードする文字列。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+Quoted-Printable 形式でエンコードされた文字列を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 導入バージョン: v1.1.0
@@ -424,6 +502,8 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 ```sql
 hex(arg)
 ```
+
+**別名**: `to_hex`
 
 **引数**
 
@@ -1070,6 +1150,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**別名**: `from_hex`
 
 **引数**
 

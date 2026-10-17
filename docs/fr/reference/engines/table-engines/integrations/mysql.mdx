@@ -32,29 +32,29 @@ SETTINGS
 
 Consultez une description détaillée de la requête [CREATE TABLE](/fr/reference/statements/create/table).
 
-La structure de la table peut différer de celle de la table MySQL d’origine :
+La structure de la table peut différer de celle de la table MySQL d’origine :
 
 * Les noms des colonnes doivent être les mêmes que dans la table MySQL d’origine, mais vous pouvez n’utiliser que certaines de ces colonnes, dans n’importe quel ordre.
 * Les types de colonnes peuvent différer de ceux de la table MySQL d’origine. ClickHouse essaie de [convertir](/fr/reference/engines/database-engines/mysql#data_types-support) les valeurs dans les types de données ClickHouse.
-* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings/external-table#external_table_functions_use_nulls) définit comment gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction de table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs NULL. Cela s’applique également aux valeurs NULL à l’intérieur des arrays.
+* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings/external-table#external_table_functions_use_nulls) définit comment gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction de table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs NULL. Cela s’applique également aux valeurs NULL à l’intérieur des arrays.
 
 **Paramètres du moteur**
 
 * `host:port` — Adresse du serveur MySQL.
 * `database` — Nom de la base de données distante.
-* `table` — Nom de la table distante, ou requête transmise telle quelle à MySQL (voir [Passer une requête au lieu d’un nom de table](#passing-a-query)).
+* `table` — Nom de la table distante, ou requête transmise telle quelle à MySQL (voir [Utilisation d’une requête à la place d’un nom de table](#passing-a-query)).
 * `user` — Utilisateur MySQL.
 * `password` — Mot de passe de l’utilisateur.
 * `replace_query` — Option qui convertit les requêtes `INSERT INTO` en `REPLACE INTO`. Si `replace_query=1`, la requête est remplacée.
 * `on_duplicate_clause` — Expression `ON DUPLICATE KEY on_duplicate_clause` ajoutée à la requête `INSERT`.
-  Exemple : `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, où `on_duplicate_clause` vaut `UPDATE c2 = c2 + 1`. Consultez la [documentation MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) pour savoir quelles valeurs de `on_duplicate_clause` vous pouvez utiliser avec la clause `ON DUPLICATE KEY`.
+  Exemple : `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, où `on_duplicate_clause` vaut `UPDATE c2 = c2 + 1`. Consultez la [documentation MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) pour savoir quelles valeurs de `on_duplicate_clause` vous pouvez utiliser avec la clause `ON DUPLICATE KEY`.
   Pour spécifier `on_duplicate_clause`, vous devez passer `0` au paramètre `replace_query`. Si vous passez simultanément `replace_query = 1` et `on_duplicate_clause`, ClickHouse génère une exception.
 
 Les arguments peuvent également être transmis à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, `host` et `port` doivent être spécifiés séparément. Cette approche est recommandée en production.
 
 Les clauses `WHERE` simples telles que `=, !=, >, >=, <, <=` sont exécutées sur le serveur MySQL.
 
-Le reste des conditions et la contrainte d’échantillonnage `LIMIT` ne sont exécutés dans ClickHouse qu’une fois la requête vers MySQL terminée.
+Le reste des conditions est exécuté dans ClickHouse une fois la requête vers MySQL terminée. La contrainte d’échantillonnage `LIMIT` n’est transmise à MySQL que si cela peut se faire sans risque et que [external&#95;storage&#95;push&#95;down&#95;limit](/fr/reference/settings/session-settings/external-storage#external_storage_push_down_limit) est activé ; sinon, elle est exécutée dans ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 

@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-除上文所示的必需属性外，`clickhouse_udf` 资源还支持 `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`sandbox_version`、`return_name` 和 `fail_on_build_error`；完整 schema 请参阅[资源文档](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)。
+除上文所示的必需属性外，`clickhouse_udf` 资源还支持 `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`return_name` 和 `fail_on_build_error`；完整 schema 请参阅[资源文档](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)。
 
 如需在新版本进入生产环境之前，先在开发服务上进行测试，可以让一个附加资源跟踪最新版本，并将另一个附加资源固定到某个变量。开发环境的附加资源会自动跟进每个新构建版本，而生产环境的附加资源仅在您修改 `var.prod_udf_version` 时才会更新：
 

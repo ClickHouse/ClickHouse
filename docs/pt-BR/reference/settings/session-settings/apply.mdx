@@ -82,9 +82,9 @@ Observe que, inicialmente (24.12), havia uma configuração do servidor (`send_s
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para fazer o pushdown de condições de busca de substring em colunas String do PREWHERE para a varredura da coluna."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para fazer o pushdown de condições de busca de substring em colunas `String` do `PREWHERE` para a varredura da coluna, habilitada por padrão. A configuração `compatibility` com versões anteriores à 26.10 a desabilita."}]}]} />
 
 Faz o pushdown de condições de busca de substring em colunas `String` do `PREWHERE` para a varredura da coluna.
 
@@ -94,13 +94,15 @@ durante a desserialização e lê os valores que não correspondem como strings 
 é seletiva, pois os dados dos valores que não correspondem não são copiados para a coluna. O resultado da consulta não se altera,
 pois é garantido que as linhas com valores que não correspondem serão filtradas pelo `PREWHERE`, e essas condições nunca correspondem a uma string vazia.
 
-O filtro é desabilitado de forma adaptativa em tempo de execução caso se mostre pouco seletivo.
+O filtro é desabilitado de forma adaptativa em tempo de execução caso se mostre pouco seletivo, ou caso os valores que não correspondem
+sejam curtos demais para que valha a pena pular seus dados.
 
 Também permite que a otimização de `WHERE` para `PREWHERE` mova condições de busca de substring (`LIKE`, `position`, `startsWith`, `endsWith`)
 mesmo quando elas usam todas as colunas consultadas (normalmente isso seria inútil, mas com esta configuração a própria varredura fica mais barata).
 A igualdade com uma string constante não é movida por esse motivo, mas continua sendo aplicada durante a varredura quando já está no `PREWHERE`.
 
-Compatível com a leitura de tabelas `MergeTree` e do formato `Parquet`.
+Compatível com a leitura de tabelas `MergeTree` e do formato `Parquet`. No `Parquet`, o filtro é aplicado a páginas com
+as codificações `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY` e por dicionário.
 
 Observe que a estimativa de bytes de entrada coletada para a decisão automática sobre réplicas paralelas
 (`RuntimeDataflowStatisticsInputBytes`) se baseia no tamanho em memória dos blocos lidos e, portanto, subestima

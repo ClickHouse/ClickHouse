@@ -61,7 +61,7 @@ doc_type: 'reference'
 | `where`            | 筛选条件。可选。                                                                                                                                     |
 | `invalidate_query` | 用于检查字典状态的查询。可选。更多信息，请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)一节。                                             |
 | `secure`           | 连接时使用 SSL。                                                                                                                                   |
-| `query`            | 自定义查询。可选。                                                                                                                                    |
+| `query`            | 自定义查询。可选。查询中的列按名称与字典匹配，因此请以每列所填充的属性为其命名。参见[自定义查询的列顺序](/zh/reference/statements/create/dictionary/sources/overview#custom-query-column-order)。   |
 
 <Note>
   `table` 或 `where` 字段不能与 `query` 字段同时使用。此外，必须声明 `table` 或 `query` 字段之一。

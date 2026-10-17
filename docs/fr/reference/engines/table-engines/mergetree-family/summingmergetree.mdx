@@ -13,9 +13,7 @@ Le moteur hérite de [MergeTree](/fr/reference/engines/table-engines/mergetree-f
 
 Nous recommandons d&#39;utiliser ce moteur avec `MergeTree`. Stockez les données complètes dans une table `MergeTree` et utilisez `SummingMergeTree` pour stocker des données agrégées, par exemple pour préparer des rapports. Cette approche vous évitera de perdre des données précieuses à cause d&#39;une clé primaire mal définie.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Pour une description des paramètres de la requête, voir [description de la requête](/fr/reference/statements/create/table).
 
-<div id="parameters-of-summingmergetree">
-  ### Paramètres de SummingMergeTree
-</div>
+### Paramètres de SummingMergeTree {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### Colonnes
-</div>
+#### Colonnes {#columns}
 
 `columns` - un tuple contenant les noms des colonnes dont les valeurs seront additionnées. Paramètre facultatif.
 Les colonnes doivent être de type numérique et ne doivent pas faire partie de la partition ni de la clé de tri.
 
 Si `columns` n&#39;est pas spécifié, ClickHouse additionne les valeurs de toutes les colonnes de type numérique qui ne font pas partie de la clé de tri.
 
-<div id="query-clauses">
-  ### Clauses de requête
-</div>
+### Clauses de requête {#query-clauses}
 
 Lors de la création d&#39;une table `SummingMergeTree`, les mêmes [clauses](/fr/reference/engines/table-engines/mergetree-family/mergetree) sont requises que pour la création d&#39;une table `MergeTree`.
 
@@ -72,9 +64,7 @@ Lors de la création d&#39;une table `SummingMergeTree`, les mêmes [clauses](/f
   * `columns` — tuple contenant les noms des colonnes dont les valeurs seront additionnées. Paramètre facultatif. Pour une description, voir le texte ci-dessus.
 </details>
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
 Prenons la table suivante :
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## Traitement des données
-</div>
+## Traitement des données {#data-processing}
 
 Lorsque des données sont insérées dans une table, elles sont enregistrées telles quelles. ClickHouse fusionne périodiquement les parties de données insérées, et c’est à ce moment-là que les lignes ayant la même clé primaire sont additionnées et remplacées par une seule ligne dans chaque partie de données résultante.
 
 ClickHouse peut fusionner les parties de données de telle sorte que différentes parties de données résultantes puissent contenir des lignes ayant la même clé primaire, c.-à-d. que la sommation sera incomplète. Par conséquent, il convient d’utiliser dans une requête (`SELECT`) une fonction d’agrégation [sum()](/fr/reference/functions/aggregate-functions/sum) et la clause `GROUP BY`, comme décrit dans l’exemple ci-dessus.
 
-<div id="common-rules-for-summation">
-  ### Règles générales de sommation
-</div>
+### Règles générales de sommation {#common-rules-for-summation}
 
 Les valeurs des colonnes de type de données numérique sont additionnées. L’ensemble des colonnes est défini par le paramètre `columns`.
 
-Si les valeurs sont égales à 0 dans toutes les colonnes à sommer, la ligne est supprimée.
+Si les valeurs sont égales à 0 dans toutes les colonnes à sommer, la ligne est supprimée lors d’une fusion. Une requête avec le modificateur [FINAL](/fr/reference/statements/select/from#final-modifier) additionne les lignes sans toutefois les supprimer, de sorte que l’ensemble des lignes renvoyées ne dépend pas des colonnes lues par la requête. Notez que `FINAL` ne fusionne une [structure imbriquée](#nested-structures) dont le nom se termine par `Map` de la même manière qu’une fusion que si la requête lit toutes les colonnes de cette structure.
 
 Si une colonne ne fait pas partie de la clé primaire et n’est pas additionnée, une valeur arbitraire est choisie parmi les valeurs existantes.
 
 Les valeurs des colonnes de la clé primaire ne sont pas additionnées.
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### La sommation dans les colonnes AggregateFunction
-</div>
+### La sommation dans les colonnes AggregateFunction {#the-summation-in-the-aggregatefunction-columns}
 
 Pour les colonnes de [type AggregateFunction](/fr/reference/data-types/aggregatefunction), ClickHouse se comporte comme le moteur [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree) et agrège selon la fonction.
 
-<div id="nested-structures">
-  ### Structures imbriquées
-</div>
+### Structures imbriquées {#nested-structures}
 
 Une table peut contenir des structures de données imbriquées qui sont traitées de manière particulière.
 
@@ -206,18 +188,16 @@ Lorsque vous demandez des données, utilisez la fonction [sumMap(key, value)](/f
 
 Pour une structure de données imbriquée, vous n’avez pas besoin de spécifier ses colonnes dans le tuple des colonnes à sommer.
 
-<div id="tuple-element-aggregation">
-  ### Agrégation des éléments de Tuple
-</div>
+### Agrégation des éléments de Tuple {#tuple-element-aggregation}
 
 Lorsque le paramètre `allow_tuple_element_aggregation` est activé, les colonnes `Tuple` sont aplaties récursivement afin que chaque élément terminal participe indépendamment à la sommation. Cela permet de stocker plusieurs métriques dans une seule colonne `Tuple` et de les additionner élément par élément lors des fusions.
 
-Les mêmes règles s&#39;appliquent aux sous-colonnes aplaties qu&#39;aux colonnes ordinaires :
+Les mêmes règles s&#39;appliquent aux sous-colonnes aplaties qu&#39;aux colonnes ordinaires :
 
 * Seules les sous-colonnes numériques sont additionnées.
 * Les sous-colonnes appartenant à un `Tuple` dans la clé de tri ou la clé de partition sont exclues de la sommation.
 * Si `columns` est spécifié, seules les sous-colonnes des colonnes `Tuple` répertoriées sont additionnées.
-* Si toutes les sous-colonnes numériques d&#39;une ligne valent zéro après la sommation, la ligne est supprimée.
+* Si toutes les sous-colonnes numériques d&#39;une ligne valent zéro après la sommation, la ligne est supprimée lors d&#39;une fusion (mais pas par une requête avec `FINAL`).
 
 <Note>
   Ce paramètre est immuable et doit être défini au moment de la création de la table.
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## Voir aussi
-</div>
+## Voir aussi {#related-content}
 
 * Blog : [Utiliser les combinateurs d’agrégation dans ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 

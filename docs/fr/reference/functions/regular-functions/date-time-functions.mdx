@@ -934,7 +934,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 ## age {#age}
 
-Introduit dans : v23.1.0
+Introduit dans : v23.1.0
 
 Renvoyer le composant d’unité de la différence entre `startdate` et `enddate`.
 La différence est calculée avec une précision de 1 nanoseconde.
@@ -969,7 +969,7 @@ age('unit', startdate, enddate[, timezone])
 | year        | `year`, `years`, `yyyy`, `yy`            |
 
 * `startdate` — Première valeur temporelle à soustraire (le terme soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
-* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme duquel on soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme diminué). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Nom du fuseau horaire. S’il est spécifié, il s’applique à `startdate` et à `enddate`. S’il n’est pas spécifié, les fuseaux horaires de `startdate` et `enddate` sont utilisés. S’ils ne sont pas identiques, le résultat n’est pas défini. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1207,7 +1207,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 ## dateDiff {#dateDiff}
 
-Introduit dans : v23.4.0
+Introduit dans : v23.4.0
 
 Renvoyer le nombre de limites de `unit` spécifié franchies entre `startdate` et `enddate`.
 La différence est calculée à l’aide d’unités relatives. Par exemple, la différence entre 2021-12-29 et 2022-01-01 est de 3 jours pour l’unité day
@@ -1225,7 +1225,7 @@ Pour une alternative à `dateDiff`, voir la fonction [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **Arguments**
 
@@ -1255,7 +1255,7 @@ Renvoie la différence entre `enddate` et `startdate`, exprimée en `unit`. [`In
 
 **Exemples**
 
-**Calculer la différence entre deux dates en heures**
+**Calculer la différence entre dates en heures**
 
 ```sql title=Query
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**Calculer l’écart entre deux dates dans différentes unités**
+**Calculer la différence entre dates dans différentes unités**
 
 ```sql title=Query
 SELECT
@@ -1528,15 +1528,15 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Semblable à `formatDateTime`, sauf qu&#39;il met en forme les valeurs datetime au format Joda plutôt qu&#39;au format MySQL. Consultez la [documentation Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
 L&#39;opération inverse de cette fonction est [`parseDateTimeInJodaSyntax`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTimeInJodaSyntax).
 
-À l&#39;aide de champs de remplacement, vous pouvez définir un modèle pour la chaîne résultante.
+À l&#39;aide de champs de remplacement, vous pouvez définir un motif pour la chaîne résultante.
 
-**Champs de remplacement :**
+**Champs de remplacement :**
 
 | Espace réservé | Description                                                    | Présentation | Exemples                   |
 | -------------- | -------------------------------------------------------------- | ------------ | -------------------------- |
@@ -1569,6 +1569,8 @@ L&#39;opération inverse de cette fonction est [`parseDateTimeInJodaSyntax`](/fr
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
+
+**Alias** : `FORMAT_DATETIME`
 
 **Arguments**
 
@@ -2158,7 +2160,7 @@ Renvoie la date et l’heure actuelles au moment de l’analyse de la requête. 
 now([timezone])
 ```
 
-**Alias** : `current_timestamp`, `localtimestamp`
+**Alias** : `localtimestamp`, `current_timestamp`
 
 **Arguments**
 
@@ -3292,12 +3294,12 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 
 ## timezone {#timezone}
 
-Introduit dans : v21.4.0
+Introduit dans : v21.4.0
 
 Renvoie le nom du fuseau horaire de la session en cours ou convertit un décalage ou un nom de fuseau horaire en nom de fuseau horaire canonique.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -3306,7 +3308,7 @@ Renvoie le nom du fuseau horaire de la session en cours ou convertit un décalag
 timezone()
 ```
 
-**Alias** : `timeZone`
+**Alias** : `current_timezone`, `timeZone`
 
 **Arguments**
 
@@ -3419,7 +3421,7 @@ Renvoie le jour du mois (1-31) d’une `Date` ou d’un `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Alias** : `DAYOFMONTH`, `DAY`
+**Alias** : `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **Arguments**
 
@@ -3445,7 +3447,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 
 ## toDayOfWeek {#toDayOfWeek}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie le numéro du jour de la semaine pour une valeur `Date` ou `DateTime`.
 
@@ -3454,10 +3456,10 @@ et si la valeur renvoyée doit être comprise dans l’intervalle de 0 à 6 ou d
 
 | Mode | Premier jour de la semaine | Intervalle                                     |
 | ---- | -------------------------- | ---------------------------------------------- |
-| 0    | Lundi                      | 1-7 : lundi = 1, mardi = 2, ..., dimanche = 7  |
-| 1    | Lundi                      | 0-6 : lundi = 0, mardi = 1, ..., dimanche = 6  |
-| 2    | Dimanche                   | 0-6 : dimanche = 0, lundi = 1, ..., samedi = 6 |
-| 3    | Dimanche                   | 1-7 : dimanche = 1, lundi = 2, ..., samedi = 7 |
+| 0    | Lundi                      | 1-7 : lundi = 1, mardi = 2, ..., dimanche = 7  |
+| 1    | Lundi                      | 0-6 : lundi = 0, mardi = 1, ..., dimanche = 6  |
+| 2    | Dimanche                   | 0-6 : dimanche = 0, lundi = 1, ..., samedi = 6 |
+| 3    | Dimanche                   | 1-7 : dimanche = 1, lundi = 2, ..., samedi = 7 |
 
 **Syntaxe**
 
@@ -3465,7 +3467,7 @@ et si la valeur renvoyée doit être comprise dans l’intervalle de 0 à 6 ou d
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Alias** : `DAYOFWEEK`
+**Alias** : `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **Arguments**
 
@@ -3496,7 +3498,7 @@ SELECT
 
 ## toDayOfYear {#toDayOfYear}
 
-Introduite dans : v18.4.0
+Introduite dans : v18.4.0
 
 Renvoie le numéro du jour dans l’année (1-366) pour une valeur `Date` ou `DateTime`.
 
@@ -3506,7 +3508,7 @@ Renvoie le numéro du jour dans l’année (1-366) pour une valeur `Date` ou `Da
 toDayOfYear(datetime)
 ```
 
-**Alias** : `DAYOFYEAR`
+**Alias** : `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **Arguments**
 
@@ -3644,9 +3646,9 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 
 ## toISOWeek {#toISOWeek}
 
-Introduite dans : v20.1.0
+Introduite dans : v20.1.0
 
-Renvoie le numéro de semaine ISO d&#39;une date ou d&#39;une date et heure.
+Renvoie le numéro de semaine ISO d&#39;une date ou d&#39;une date avec heure.
 
 Il s&#39;agit d&#39;une fonction de compatibilité équivalente à `toWeek(date, 3)`.
 Les semaines ISO commencent le lundi, et la première semaine de l&#39;année contient le 4 janvier.
@@ -3660,6 +3662,8 @@ le 29 décembre 2025 renvoie la semaine 1, car cette date appartient à la premi
 ```sql
 toISOWeek(datetime[, timezone])
 ```
+
+**Alias** : `WEEK_OF_YEAR`
 
 **Arguments**
 
@@ -3698,7 +3702,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 
 ## toISOYear {#toISOYear}
 
-Introduit dans : v18.4.0
+Introduit dans : v18.4.0
 
 Convertit une date ou une date avec heure en numéro de l’année ISO.
 
@@ -3707,6 +3711,8 @@ Convertit une date ou une date avec heure en numéro de l’année ISO.
 ```sql
 toISOYear(datetime)
 ```
+
+**Alias** : `YEAR_OF_WEEK`
 
 **Arguments**
 
@@ -3734,7 +3740,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 ## toLastDayOfMonth {#toLastDayOfMonth}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Arrondit une date ou une date avec heure au dernier jour du mois.
 
@@ -3748,7 +3754,7 @@ Arrondit une date ou une date avec heure au dernier jour du mois.
 toLastDayOfMonth(value)
 ```
 
-**Alias** : `LAST_DAY`
+**Alias** : `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **Arguments**
 
@@ -5735,12 +5741,12 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## today {#today}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à `toDate(now())`.
 
 <Note>
-  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5749,7 +5755,7 @@ Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à 
 today()
 ```
 
-**Alias** : `current_date`, `curdate`
+**Alias** : `curdate`, `current_date`
 
 **Arguments**
 

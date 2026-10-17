@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，由 ClickHouse 源代码自动生成。
 
-<div id="vector_similarity_index_cache_max_entries">
-  ## vector_similarity_index_cache_max_entries
-</div>
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />向量相似度索引缓存的大小，以条目数计。0 表示禁用。
 
-<div id="vector_similarity_index_cache_policy">
-  ## vector_similarity_index_cache_policy
-</div>
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />向量相似度索引缓存策略名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />向量相似度索引缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="vector_similarity_index_cache_size">
-  ## vector_similarity_index_cache_size
-</div>
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />向量相似度索引缓存的大小。0 表示禁用。
 
@@ -34,9 +28,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-<div id="vector_similarity_index_cache_size_ratio">
-  ## vector_similarity_index_cache_size_ratio
-</div>
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="否" />在向量相似度索引缓存中，受保护队列 (在使用 SLRU 策略时) 的大小占缓存总大小的比例。
 

@@ -33,17 +33,13 @@ LIMIT <N>
 이때 사용 가능한 [거리 함수](/ko/reference/functions/regular-functions/distance-functions)는 어느 것이나 사용할 수 있습니다.
 `<N>`은 반환할 이웃의 수를 지정합니다.
 
-<div id="exact-nearest-neighbor-search">
-  ## 정확 벡터 검색
-</div>
+## 정확 벡터 검색 {#exact-nearest-neighbor-search}
 
 정확 벡터 검색은 위의 SELECT 쿼리를 그대로 사용해 수행할 수 있습니다.
 이러한 쿼리의 런타임은 일반적으로 저장된 벡터 수, 벡터 원소 수(= 차원), 벡터 원소의 비트 폭에 비례합니다.
 또한 ClickHouse는 모든 벡터를 브루트 포스(전체 스캔) 방식으로 스캔하므로, 런타임은 쿼리가 사용하는 스레드 수에도 영향을 받습니다([max&#95;threads](/ko/reference/settings/session-settings/max-threads#max_threads) 설정 참조).
 
-<div id="exact-nearest-neighbor-search-example">
-  ### 예시
-</div>
+### 예시 {#exact-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab
@@ -73,13 +69,9 @@ LIMIT 3;
    └────┴─────────┘
 ```
 
-<div id="approximate-nearest-neighbor-search">
-  ## 근사 벡터 검색
-</div>
+## 근사 벡터 검색 {#approximate-nearest-neighbor-search}
 
-<div id="vector-similarity-index">
-  ### 벡터 유사성 인덱스
-</div>
+### 벡터 유사성 인덱스 {#vector-similarity-index}
 
 ClickHouse는 근사 벡터 검색을 수행할 수 있도록 특수한 &quot;벡터 유사성&quot; 인덱스를 제공합니다.
 
@@ -88,9 +80,7 @@ ClickHouse는 근사 벡터 검색을 수행할 수 있도록 특수한 &quot;�
   문제가 발생하면 [ClickHouse 리포지토리](https://github.com/clickhouse/clickhouse/issues)에 이슈를 등록해 주십시오.
 </Note>
 
-<div id="creating-a-vector-similarity-index">
-  #### 벡터 유사성 인덱스 생성
-</div>
+#### 벡터 유사성 인덱스 생성 {#creating-a-vector-similarity-index}
 
 새 테이블에 벡터 유사성 인덱스를 다음과 같이 생성할 수 있습니다.
 
@@ -214,9 +204,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 
 위 공식에는 벡터 유사성 인덱스가 미리 할당된 버퍼와 캐시 같은 런타임 데이터 구조를 할당하는 데 필요한 추가 메모리가 고려되어 있지 않습니다.
 
-<div id="using-a-vector-similarity-index">
-  #### 벡터 유사도 인덱스 사용하기
-</div>
+#### 벡터 유사도 인덱스 사용하기 {#using-a-vector-similarity-index}
 
 <Note>
   벡터 유사성 인덱스를 사용하려면 [compatibility](/ko/reference/settings/session-settings/compatibility#compatibility) 설정이 `''`(기본값)이거나 `'25.1'` 이상이어야 합니다.
@@ -425,9 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   재점수화 없이 실행되는 쿼리(`vector_search_with_rescoring = 0`)라도 병렬 레플리카가 활성화되어 있으면 재점수화으로 폴백될 수 있습니다.
 </Note>
 
-<div id="performance-tuning">
-  #### 성능 튜닝
-</div>
+#### 성능 튜닝 {#performance-tuning}
 
 **압축 튜닝**
 
@@ -578,9 +564,7 @@ result = chclient.query(
 이 예시에서는 기준 벡터를 바이너리 형식 그대로 전송한 뒤, 서버에서 float 배열로 재해석합니다.
 이렇게 하면 서버 측 CPU 시간을 절약할 수 있고, 서버 로그와 `system.query_log`가 불필요하게 커지는 것도 방지할 수 있습니다.
 
-<div id="administration">
-  #### 관리 및 모니터링
-</div>
+#### 관리 및 모니터링 {#administration}
 
 벡터 유사성 인덱스가 디스크에서 차지하는 크기는 [system.data&#95;skipping&#95;indices](/ko/reference/system-tables/data_skipping_indices)에서 확인할 수 있습니다:
 
@@ -598,9 +582,15 @@ WHERE type = 'vector_similarity';
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-<div id="differences-to-regular-skipping-indexes">
-  #### 일반 스키핑 인덱스와의 차이점
-</div>
+#### 삭제된 행 {#deleted-rows}
+
+벡터 유사성 인덱스는 파트가 기록되거나 머지되거나 뮤테이션이 적용될 때 생성되므로, 이후 [경량 `DELETE`(lightweight `DELETE`)](/ko/reference/statements/delete)로 삭제된 행이나 아직 대기 중인 `ALTER TABLE ... DELETE` 뮤테이션으로 삭제된 행은 인식하지 못합니다.
+이러한 행은 인덱스에서 여전히 후보로 반환된 다음 읽기 이후에야 제거되므로, 쿼리가 `LIMIT N`보다 적은 행을 반환하거나 남아 있는 행 중 가장 가까운 이웃을 놓칠 수 있습니다.
+정확한 결과를 보장하기 위해 ClickHouse는 삭제된 행이 있는 파트에는 벡터 유사성 인덱스를 사용하지 않고, 대신 해당 파트 전체를 읽습니다(정확 검색(exact search)).
+머지 또는 뮤테이션으로 파트가 재작성되면(예: `OPTIMIZE TABLE ... FINAL` 실행 후) 해당 파트에 다시 인덱스가 사용됩니다.
+`apply_deleted_mask = 0` 설정을 사용하면 경량 삭제된 행도 쿼리 결과로 반환되므로, 쿼리에서 `_row_exists`로 명시적으로 필터링하지 않는 한 인덱스가 계속 사용됩니다.
+
+#### 일반 스키핑 인덱스와의 차이점 {#differences-to-regular-skipping-indexes}
 
 모든 일반 [스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes)와 마찬가지로, 벡터 유사성 인덱스도 그래뉼을 기준으로 구성되며 각 인덱싱된 블록은 `GRANULARITY = [N]`개의 그래뉼로 이루어집니다(일반 스키핑 인덱스의 기본값은 `[N]` = 1).
 예를 들어 테이블의 프라이머리 인덱스 세분화 수준이 8192이고(`index_granularity = 8192` 설정) `GRANULARITY = 2`이면, 각 인덱싱된 블록에는 16384개의 행이 포함됩니다.
@@ -626,9 +616,7 @@ rescoring을 사용하지 않으면 ClickHouse는 가상 컬럼 `_distance`를 �
 일반적으로 벡터 유사성 인덱스에는 큰 `GRANULARITY`를 사용하는 것이 권장되며, 벡터 유사성 구조의 메모리 사용량이 지나치게 커지는 등의 문제가 있을 때만 더 작은 `GRANULARITY` 값으로 낮추는 것이 좋습니다.
 벡터 유사성 인덱스에 `GRANULARITY`를 지정하지 않으면 기본값은 1억입니다.
 
-<div id="approximate-nearest-neighbor-search-example">
-  #### 예시
-</div>
+#### 예시 {#approximate-nearest-neighbor-search-example}
 
 쿼리:
 
@@ -666,18 +654,14 @@ LIMIT 3;
 * [dbpedia](/ko/get-started/sample-datasets/dbpedia)
 * [hackernews](/ko/get-started/sample-datasets/hacker-news-vector-search)
 
-<div id="vector-search-with-quantized-codecs">
-  ### 양자화된 코덱을 사용한 벡터 검색
-</div>
+### 양자화된 코덱을 사용한 벡터 검색 {#vector-search-with-quantized-codecs}
 
 <ExperimentalBadge />
 
 `Quantized` 코덱을 활성화하려면 먼저 `SET enable_quantized_codec = 1`을 실행하십시오.
 문제가 발생하면 [ClickHouse 리포지토리](https://github.com/clickhouse/clickhouse/issues)에 이슈를 등록해 주십시오.
 
-<div id="quantized-codecs-introduction">
-  #### 소개
-</div>
+#### 소개 {#quantized-codecs-introduction}
 
 [벡터 유사성 인덱스](#vector-similarity-index)는 그래프를 순회해 최근접 이웃 쿼리를 처리하며, 그래프 전체를 메모리에 유지할 수 있을 때 매우 뛰어난 성능을 발휘합니다.
 하지만 다음 조건으로 인해 적용이 제한됩니다.
@@ -702,9 +686,7 @@ LIMIT 3;
 * **분산.** 세그먼트된 클러스터에서는 작업이 여러 머신으로 분산됩니다. 각 세그먼트가 자체 슬라이스를 병렬로 스캔하고 코디네이터가 후보 목록을 머지합니다.
 * **추가 구축 비용 없음.** 양자화된 코드는 벡터가 기록될 때 생성됩니다. 구축, 조정 또는 재구축할 추가 인덱스가 없으므로 데이터가 저장되는 즉시 테이블을 검색할 수 있습니다.
 
-<div id="quantized-codecs-declaring">
-  #### 코덱 적용
-</div>
+#### 코덱 적용 {#quantized-codecs-declaring}
 
 `Array(Float32)`(또는 `Array(Float64)` / `Array(BFloat16)`) 컬럼에 `Quantized(...)` 코덱을 지정합니다.
 
@@ -722,9 +704,7 @@ ORDER BY ...;
 
 코덱은 나중에 `ALTER TABLE`을 사용하여 추가하거나 변경할 수 없습니다.
 
-<div id="quantized-codecs-methods">
-  #### 양자화 방식
-</div>
+#### 양자화 방식 {#quantized-codecs-methods}
 
 각 양자화 방식은 크기와 정확도 간에 서로 다른 절충 관계가 있습니다. `dimensions` 인수는 벡터 길이입니다.
 
@@ -736,9 +716,7 @@ ORDER BY ...;
 
 `rabitq`와 `turboquant`는 `dimensions`가 8의 배수여야 합니다.
 
-<div id="quantized-codecs-searching">
-  #### 코덱 사용
-</div>
+#### 코덱 사용 {#quantized-codecs-searching}
 
 일반적인 상위 `k`개 쿼리 형태에서는 코덱이 자동으로 적용됩니다([정확 검색](#exact-nearest-neighbor-search) 참조):
 
@@ -760,9 +738,7 @@ SETTINGS vector_search_use_quantized_codes = 1;
 승수가 클수록 rescoring이 늘어나는 대신 재현율이 향상됩니다.
 기본값은 `1`(오버샘플링 없음)이며, 일반적으로 좋은 재현율을 얻으려면 값을 높여야 합니다(예: `10`).
 
-<div id="approximate-nearest-neighbor-search-qbit">
-  ### Quantized Bit (QBit)
-</div>
+### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 정확 벡터 검색의 속도를 높이는 일반적인 방법 중 하나는 더 낮은 정밀도의 [float data type](/ko/reference/data-types/float)을 사용하는 것입니다.
 예를 들어 벡터를 `Array(Float32)` 대신 `Array(BFloat16)`로 저장하면 데이터 크기가 절반으로 줄어들고, 쿼리 런타임도 그에 비례해 감소할 것으로 예상됩니다.
@@ -789,9 +765,7 @@ column_name QBit(element_type, dimension[, stride])
 * `dimension` – 각 벡터의 차원입니다.
 * `stride` – 선택 사항입니다. `dimension`의 제수로, 차원을 각각 별도의 스트림에 저장되는 `dimension / stride`개의 연속된 그룹으로 나눕니다. 따라서 앞쪽 차원만 대상으로 검색할 경우 더 적은 수의 스트림만 읽으면 됩니다(Matryoshka embeddings에 유용함). 기본값은 `dimension`이며, 이 경우 해당 타입은 stride가 없는 `QBit`와 바이트 단위로 동일합니다. 자세한 내용은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit)를 참조하십시오.
 
-<div id="qbit-create">
-  #### `QBit` 테이블 만들기 및 데이터 추가
-</div>
+#### `QBit` 테이블 만들기 및 데이터 추가 {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -809,9 +783,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div id="qbit-search">
-  #### `QBit`을 사용한 벡터 검색
-</div>
+#### `QBit`을 사용한 벡터 검색 {#qbit-search}
 
 L2 거리를 사용해 단어 &#39;lemon&#39;을 나타내는 벡터의 최근접 이웃을 찾아보겠습니다. 거리 함수의 세 번째 매개변수는 비트 단위의 정밀도를 지정하며, 값이 클수록 정확도는 높아지지만 더 많은 계산이 필요합니다.
 
@@ -861,18 +833,14 @@ ORDER BY distance;
 
 12비트 양자화를 사용하면 더 빠르게 쿼리를 실행하면서도 거리의 근사값을 충분히 정확하게 얻을 수 있습니다. 상대적인 순서는 대체로 그대로 유지되며, &#39;apple&#39;이 여전히 가장 가까운 일치 항목입니다.
 
-<div id="qbit-performance">
-  #### 성능 고려 사항
-</div>
+#### 성능 고려 사항 {#qbit-performance}
 
 `QBit`의 성능상 이점은 I/O 작업이 줄어든다는 점에 있습니다. 정밀도를 낮추면 스토리지에서 읽어야 할 데이터가 줄어들기 때문입니다. 또한 `QBit`에 `Float32` 데이터가 포함된 경우, 정밀도 매개변수가 16 이하이면 계산량이 감소해 추가적인 이점도 얻을 수 있습니다. 정밀도 매개변수는 정확도와 속도 사이의 절충 관계를 직접 제어합니다.
 
 * **더 높은 정밀도**(원본 데이터 폭에 더 가까움): 결과는 더 정확하지만 쿼리는 더 느림
 * **더 낮은 정밀도**: 근사 결과를 더 빠르게 얻을 수 있고, 메모리 사용량도 줄어듦
 
-<div id="references">
-  ### 참고
-</div>
+### 참고 {#references}
 
 블로그:
 

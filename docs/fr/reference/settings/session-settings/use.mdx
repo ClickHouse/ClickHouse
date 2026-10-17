@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La conversion à deux niveaux de `GROUP BY` compare `group_by_two_level_threshold_bytes` uniquement à la mémoire occupée par l’état d’agrégation, mesurée par un composant de suivi de la mémoire dédié (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Avant la version 26.7, elle se fondait sur l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de choisir la manière dont la conversion à deux niveaux de `GROUP BY` mesure la mémoire d’agrégation. La modification qu’il conditionne a été livrée dans la version 26.7, et la régression de mémoire associée a été corrigée dans la version 26.9."}]}]} />
+
+Mesure la taille de l’état d’agrégation, comparée à `group_by_two_level_threshold_bytes`, à l’aide du composant de suivi de la mémoire dédié à l’agrégation. Lorsque ce paramètre est désactivé, la taille correspond à l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête depuis la création de l’agrégation : une agrégation dont l’état est de petite taille peut donc être convertie en agrégation à deux niveaux.
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -60,6 +68,18 @@ Une entrée contient une plage contiguë de granules d&#39;un même stripe : u
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Activer le contrôle de la concurrence par défaut"}]}]} />
 
 Respecte le contrôle de la concurrence du serveur (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`). Si ce paramètre est désactivé, il permet d&#39;utiliser un plus grand nombre de threads même si le serveur est surchargé (non recommandé en usage normal, et surtout nécessaire pour les tests).
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de déterminer le parallélisme d’une requête à partir de la part équitable des créneaux CPU du contrôle de concurrence"}]}]} />
+
+Détermine le parallélisme d’une requête (le nombre de flux et de fils d’exécution prévus lors de sa planification) à partir de la part équitable des créneaux CPU du contrôle de concurrence du serveur, plutôt qu’à partir du nombre de cœurs CPU. La part équitable correspond à la limite de créneaux (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`) répartie à parts égales entre les pipelines en cours d’exécution et la nouvelle requête.
+
+Ainsi, lorsque de nombreuses requêtes s’exécutent simultanément, chacune est planifiée avec moins de flux : elle consomme moins de mémoire et moins de CPU pour fusionner les résultats partiels de ses fils d’exécution (par exemple, les états d’agrégation), ce qui augmente le débit global. Une requête planifiée alors que le serveur est inactif utilise tous les cœurs CPU, comme auparavant.
+
+Ce paramètre ne s’applique que si `max_threads` vaut `auto` (non défini explicitement) et si `use_concurrency_control` est activé.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

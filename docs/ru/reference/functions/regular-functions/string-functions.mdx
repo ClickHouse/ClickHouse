@@ -206,6 +206,8 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
+**Псевдонимы**: `from_base32`
+
 **Аргументы**
 
 * `encoded` — столбец типа String или константа. [`String`](/ru/reference/data-types/string)
@@ -239,6 +241,8 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
+
+**Псевдонимы**: `to_base32`
 
 **Аргументы**
 
@@ -425,6 +429,8 @@ SELECT base64Encode('clickhouse')
 base64URLDecode(encoded)
 ```
 
+**Псевдонимы**: `from_base64url`
+
 **Аргументы**
 
 * `encoded` — столбец типа String или константа для кодирования. Если строка закодирована в Base64 некорректно, будет сгенерировано исключение. [`String`](/ru/reference/data-types/string)
@@ -458,6 +464,8 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**Псевдонимы**: `to_base64url`
 
 **Аргументы**
 
@@ -1098,7 +1106,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**Псевдонимы**: `levenshteinDistanceUTF8`
+**Псевдонимы**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Аргументы**
 
@@ -1170,6 +1178,8 @@ SELECT
 ```sql
 endsWith(s, suffix)
 ```
+
+**Псевдонимы**: `ends_with`
 
 **Аргументы**
 
@@ -2883,6 +2893,8 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```sql
 startsWith(s, prefix)
 ```
+
+**Псевдонимы**: `starts_with`
 
 **Аргументы**
 

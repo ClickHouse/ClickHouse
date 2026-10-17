@@ -10,11 +10,9 @@ doc_type: 'reference'
 
 Un tableau d’éléments de type `T`, dont le premier indice est 1. `T` peut être n’importe quel type de données, y compris un tableau.
 
-<div id="creating-an-array">
-  ## Créer un Array
-</div>
+## Créer un tableau {#creating-an-array}
 
-Vous pouvez utiliser une fonction pour créer un Array :
+Vous pouvez utiliser une fonction pour créer un tableau :
 
 ```sql
 array(T)
@@ -26,7 +24,10 @@ Vous pouvez également utiliser `[]`.
 []
 ```
 
-Exemple de création d’un tableau :
+La syntaxe du constructeur de tableau de la norme SQL, de PostgreSQL et de Trino est également prise en charge : `ARRAY[1, 2]` équivaut à `[1, 2]`.
+Le type de données peut aussi s’écrire `ARRAY(T)`.
+
+Exemple de création d’un tableau :
 
 ```sql
 SELECT array(1, 2) AS x, toTypeName(x)
@@ -48,9 +49,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-<div id="working-with-data-types">
-  ## Travailler avec les types de données
-</div>
+## Travailler avec les types de données {#working-with-data-types}
 
 Lors de la création d’un tableau à la volée, ClickHouse définit automatiquement le type des arguments comme le type de données le plus étroit capable de stocker tous les arguments listés. S’il y a des valeurs [Nullable](/fr/reference/data-types/nullable) ou des valeurs littérales [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default), le type des éléments du tableau devient lui aussi [Nullable](/fr/reference/data-types/nullable).
 
@@ -79,9 +78,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-<div id="array-size">
-  ## Taille d’un Array
-</div>
+## Taille d’un Array {#array-size}
 
 Il est possible de déterminer la taille d’un Array en utilisant la sous-colonne `size0` sans lire toute la colonne. Pour les Arrays multidimensionnels, vous pouvez utiliser `sizeN-1`, où `N` correspond à la dimension souhaitée.
 
@@ -101,9 +98,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-<div id="reading-nested-subcolumns-from-array">
-  ## Lecture des sous-colonnes imbriquées d’un Array
-</div>
+## Lecture des sous-colonnes imbriquées d’un Array {#reading-nested-subcolumns-from-array}
 
 Si le type imbriqué `T` dans `Array` possède des sous-colonnes (par exemple, s’il s’agit d’un [tuple nommé](/fr/reference/data-types/tuple)), vous pouvez lire ces sous-colonnes à partir d’un type `Array(T)` en conservant les mêmes noms de sous-colonnes. Le type d’une sous-colonne sera un `Array` du type de la sous-colonne d’origine.
 

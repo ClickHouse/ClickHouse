@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="uncompressed_cache_policy">
-  ## uncompressed_cache_policy
-</div>
+## uncompressed_cache_policy {#uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />未压缩缓存的策略名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />未压缩缓存的淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="uncompressed_cache_size">
-  ## uncompressed_cache_size
-</div>
+## uncompressed_cache_size {#uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -36,9 +32,7 @@ MergeTree 家族表引擎使用的未压缩数据的最大大小 (以字节为�
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-<div id="uncompressed_cache_size_ratio">
-  ## uncompressed_cache_size_ratio
-</div>
+## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="否" />在未压缩缓存中，受保护队列 (在 SLRU 策略下) 的大小占缓存总大小的比例。
 

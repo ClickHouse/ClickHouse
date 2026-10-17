@@ -22,14 +22,12 @@ description: 'Найдите решения самых распростране�
 
 Возникли проблемы с ClickHouse? Здесь вы найдете решения типичных проблем.
 
-<div id="performance-and-errors">
-  ## Производительность и ошибки
-</div>
+## Производительность и ошибки {#performance-and-errors}
 
 Медленные запросы, тайм-ауты или сообщения об ошибках вроде &quot;Memory limit exceeded&quot; или &quot;Connection refused.&quot;
 
 <Accordion title="Показать решения по производительности и ошибкам">
-  ### Производительность запросов
+  ### Производительность запросов {#query-performance}
 
   * [Узнайте, какие запросы потребляют больше всего ресурсов](/ru/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [Полное руководство по оптимизации запросов](/ru/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -38,14 +36,14 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Производительность вставки данных
+  ### Производительность вставки данных {#data-insertion-performance}
 
   * [Ускорьте вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
   * [Настройте асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### Инструменты расширенного анализа
+  ### Инструменты расширенного анализа {#advanced-analysis-tools}
 
   {/* - [Профилирование с помощью LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -54,7 +52,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Сообщения об ошибках
+  ### Сообщения об ошибках {#error-messages}
 
   * **&quot;Memory limit exceeded&quot;** → [Разбор ошибок превышения лимита памяти](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [Устранение проблем с подключением](#connections-and-authentication)
@@ -65,14 +63,12 @@ description: 'Найдите решения самых распростране�
   * **Other issues** → [Отслеживайте ошибки во всем кластере](/ru/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## Память и ресурсы
-</div>
+## Память и ресурсы {#memory-and-resources}
 
 Высокое использование памяти, сбои из-за нехватки памяти или нужна помощь с выбором размера для развертывания ClickHouse.
 
 <Accordion title="Показать решения, связанные с памятью">
-  ### Отладка и мониторинг памяти:
+  ### Отладка и мониторинг памяти: {#memory-debugging-and-monitoring}
 
   * [Определите, что использует память](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [Проверьте текущее использование памяти](/ru/reference/system-tables/processes)
@@ -81,7 +77,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Конфигурация памяти:
+  ### Конфигурация памяти: {#memory-configuration}
 
   * [Настройте лимиты памяти](/ru/concepts/features/configuration/settings/memory-overcommit)
   * [Настройки памяти сервера](/ru/reference/settings/server-settings/settings)
@@ -89,20 +85,18 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Масштабирование и подбор размера:
+  ### Масштабирование и подбор размера: {#scaling-and-sizing}
 
   * [Подберите оптимальный размер для вашего сервиса](/ru/guides/oss/best-practices/tips)
   * [Настройте автомасштабирование](/ru/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## Подключения и аутентификация
-</div>
+## Подключения и аутентификация {#connections-and-authentication}
 
 Не удается подключиться к ClickHouse, возникают ошибки аутентификации, ошибки SSL-сертификатов или проблемы с настройкой клиента.
 
 <Accordion title="Показать решения для подключения">
-  ### Основные проблемы с подключением
+  ### Основные проблемы с подключением {#basic-connection-issues}
 
   * [Устранение проблем с HTTP-интерфейсом](/ru/concepts/features/interfaces/http)
   * [Устранение проблем с SSL-сертификатами](/ru/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -110,7 +104,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Клиентские интерфейсы
+  ### Клиентские интерфейсы {#client-interfaces}
 
   * [Нативные клиенты ClickHouse](/ru/concepts/features/interfaces/native-clients-interfaces-index)
   * [Проблемы с интерфейсом MySQL](/ru/concepts/features/interfaces/mysql)
@@ -120,20 +114,18 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Сеть и данные
+  ### Сеть и данные {#network-and-data}
 
   * [Настройки сетевой безопасности](/ru/reference/settings/server-settings/settings)
   * [Проблемы с разбором форматов данных](/ru/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## Настройка и конфигурация
-</div>
+## Настройка и конфигурация {#setup-and-configuration}
 
 Первоначальная установка, настройка сервера, создание базы данных, проблемы с ингестией данных или настройка репликации.
 
 <Accordion title="Показать решения по настройке и конфигурации">
-  ### Первоначальная настройка
+  ### Первоначальная настройка {#initial-setup}
 
   * [Выполните настройку сервера](/ru/reference/settings/server-settings/settings)
   * [Настройте безопасность и управление доступом](/ru/concepts/features/security/access-rights)
@@ -141,7 +133,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Управление базами данных
+  ### Управление базами данных {#database-management}
 
   * [Создавайте базы данных и управляйте ими](/ru/reference/statements/create/database)
   * [Выберите подходящий движок таблицы](/ru/reference/engines/table-engines/index)
@@ -150,7 +142,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Операции с данными
+  ### Операции с данными {#data-operations}
 
   * [Оптимизируйте массовую вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
   * [Устраняйте проблемы с форматами данных](/ru/reference/formats/index)
@@ -159,7 +151,7 @@ description: 'Найдите решения самых распростране�
 
   <br />
 
-  ### Расширенная конфигурация
+  ### Расширенная конфигурация {#advanced-configuration}
 
   * [Настройте репликацию данных](/ru/reference/engines/table-engines/mergetree-family/replication)
   * [Настройте distributed таблицы](/ru/reference/engines/table-engines/special/distributed)
@@ -170,9 +162,7 @@ description: 'Найдите решения самых распростране�
   * [Настройте мониторинг](/ru/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## Всё ещё нужна помощь?
-</div>
+## Всё ещё нужна помощь? {#still-need-help}
 
 Если вы не можете найти решение:
 

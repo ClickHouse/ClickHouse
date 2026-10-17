@@ -52,6 +52,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `written_bytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى التخزين.
 * `memory_usage` ([Int64](/ar/reference/data-types/int-uint)) — مقدار ذاكرة RAM التي يستخدمها الاستعلام. وقد لا يشمل بعض أنواع الذاكرة المخصصة.
 * `peak_memory_usage` ([Int64](/ar/reference/data-types/int-uint)) — الذروة الحالية لاستخدام الذاكرة.
+* `spillable_memory_bytes` ([Int64](/ar/reference/data-types/int-uint)) — مقدار الذاكرة الحالي القابل للكتابة إلى القرص.
 * `query` ([String](/ar/reference/data-types/string)) — نص الاستعلام. بالنسبة إلى INSERT، لا يشمل البيانات المراد إدراجها.
 * `normalized_query_hash` ([UInt64](/ar/reference/data-types/int-uint)) — قيمة hash رقمية متطابقة، على سبيل المثال، للاستعلامات التي لا تختلف إلا في قيم القيم الحرفية.
 * `query_kind` ([String](/ar/reference/data-types/string)) — نوع الاستعلام: SELECT أو INSERT، إلخ.

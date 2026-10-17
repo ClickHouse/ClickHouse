@@ -954,11 +954,11 @@ age('unit', startdate, enddate[, timezone])
 
 * `unit` — El tipo de intervalo del resultado.
 
-| Unidad      | Posibles valores                         |
+| Unidad      | Valores posibles                         |
 | ----------- | ---------------------------------------- |
-| nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
-| microsecond | `microsecond`, `microseconds`, `us`, `u` |
-| millisecond | `millisecond`, `milliseconds`, `ms`      |
+| nanosegundo  | `nanosecond`, `nanoseconds`, `ns`        |
+| microsegundo | `microsecond`, `microseconds`, `us`, `u` |
+| milisegundo | `millisecond`, `milliseconds`, `ms`      |
 | second      | `second`, `seconds`, `ss`, `s`           |
 | minute      | `minute`, `minutes`, `mi`, `n`           |
 | hour        | `hour`, `hours`, `hh`, `h`               |
@@ -1225,13 +1225,13 @@ Como alternativa a `dateDiff`, consulte la función [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Alias**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**Alias**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **Argumentos**
 
 * `unit` — El tipo de intervalo del resultado.
 
-| Unidad       | Posibles valores                         |
+| Unidad       | Valores posibles                         |
 | ------------ | ---------------------------------------- |
 | nanosegundo  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsegundo | `microsecond`, `microseconds`, `us`, `u` |
@@ -1570,6 +1570,8 @@ Mediante campos de reemplazo, puede definir un patrón para la cadena resultante
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
+**Alias**: `FORMAT_DATETIME`
+
 **Argumentos**
 
 * `datetime` — Una fecha o una fecha y hora para formatear. [`DateTime`](/es/reference/data-types/datetime) o [`Date`](/es/reference/data-types/date) o [`Date32`](/es/reference/data-types/date32) o [`DateTime64`](/es/reference/data-types/datetime64)
@@ -1582,7 +1584,7 @@ Devuelve valores de fecha y hora según el formato especificado. [`String`](/es/
 
 **Ejemplos**
 
-**Formatear datetime con sintaxis Joda**
+**Formatear fecha y hora con sintaxis Joda**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -2158,7 +2160,7 @@ Devuelve la fecha y hora actuales en el momento del análisis de la consulta. La
 now([timezone])
 ```
 
-**Alias**: `current_timestamp`, `localtimestamp`
+**Alias**: `localtimestamp`, `current_timestamp`
 
 **Argumentos**
 
@@ -3305,7 +3307,7 @@ Devuelve el nombre de la zona horaria de la sesión actual o convierte un despla
 timezone()
 ```
 
-**Alias**: `timeZone`
+**alias**: `current_timezone`, `timeZone`
 
 **Argumentos**
 
@@ -3418,7 +3420,7 @@ Devuelve el día del mes (1-31) de un valor `Date` o `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Alias**: `DAYOFMONTH`, `DAY`
+**alias**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **Argumentos**
 
@@ -3464,7 +3466,7 @@ y si el valor devuelto debe estar en el rango de 0 a 6 o de 1 a 7.
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Alias**: `DAYOFWEEK`
+**alias**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **Argumentos**
 
@@ -3481,7 +3483,7 @@ Devuelve el día de la semana para el `Date` o `DateTime` especificado [`UInt8`]
 **Ejemplo de uso**
 
 ```sql title=Query
--- La siguiente fecha es el 21 de abril de 2023, que fue un viernes:
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3505,7 +3507,7 @@ Devuelve el número de día dentro del año (1-366) de un valor `Date` o `DateTi
 toDayOfYear(datetime)
 ```
 
-**Alias**: `DAYOFYEAR`
+**alias**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **Argumentos**
 
@@ -3660,6 +3662,8 @@ el 29 de diciembre de 2025 devuelve la semana 1 porque cae en la primera semana 
 toISOWeek(datetime[, timezone])
 ```
 
+**alias**: `WEEK_OF_YEAR`
+
 **Argumentos**
 
 * `datetime` — Fecha o fecha con hora de la que se obtiene el número de semana ISO. [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`Date32`](/es/reference/data-types/date32) o [`DateTime64`](/es/reference/data-types/datetime64)
@@ -3699,7 +3703,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 
 Introducido en: v18.4.0
 
-Convierte una fecha o una fecha y hora en el número de año según ISO.
+Convierte una fecha o una fecha con hora en el número de año según ISO.
 
 **Sintaxis**
 
@@ -3707,9 +3711,11 @@ Convierte una fecha o una fecha y hora en el número de año según ISO.
 toISOYear(datetime)
 ```
 
+**alias**: `YEAR_OF_WEEK`
+
 **Argumentos**
 
-* `datetime` — El valor con fecha o fecha y hora. [`Date`](/es/reference/data-types/date) o [`Date32`](/es/reference/data-types/date32) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
+* `datetime` — El valor con fecha o fecha con hora. [`Date`](/es/reference/data-types/date) o [`Date32`](/es/reference/data-types/date32) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
 
 **Valor devuelto**
 
@@ -3747,7 +3753,7 @@ Redondea una fecha o una fecha con hora al último día del mes.
 toLastDayOfMonth(value)
 ```
 
-**Alias**: `LAST_DAY`
+**alias**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **Argumentos**
 
@@ -5748,7 +5754,7 @@ Devuelve la fecha actual en el momento del análisis de la consulta. Igual que `
 today()
 ```
 
-**Alias**: `current_date`, `curdate`
+**alias**: `curdate`, `current_date`
 
 **Argumentos**
 

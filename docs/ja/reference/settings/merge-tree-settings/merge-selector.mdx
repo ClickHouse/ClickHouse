@@ -73,6 +73,53 @@ Simple および StochasticSimple merge selector で動作します
 すべてのパーツの経過時間がこの秒数以上である範囲では、このヒューリスティックを無効にします。`0` を指定すると、このチェックは無効になります。
 Simple および StochasticSimple のマージセレクタで有効です。
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "小さなパーツに対するマージ制限の経過時間の上限"}]}]} />
+
+小さなパーツに対する制限に適用される経過時間の上限 (秒) です。範囲内のいずれかのパーツがこの経過時間を超えると、`merge_selector_small_parts_min_count` による制限が解除されます。
+そのため、範囲が `merge_selector_small_parts_min_count` に満たない場合でも、
+滞留している古くなった小さなパーツをマージできます。Simple および StochasticSimple のマージセレクターで有効で、
+バックグラウンドマージの対象選択にのみ適用されます。積極的な選択 (`FINAL` を指定しない `OPTIMIZE`) では、
+`small_parts_*` 設定は無視されます。
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "小さく新しいパーツのマージを許可するための最小パーツ数（0 = 無効）"}]}]} />
+
+マージ範囲内のすべてのパーツが小さく (`merge_selector_small_parts_threshold` 未満) 、
+かつ新しい (`merge_selector_small_parts_max_age` 未満) 場合、マージを許可するには少なくともこの数のパーツが必要になります。
+これにより、小さなパーツが高頻度で挿入される状況でのマージ処理の回数を削減できます。
+0 の場合は無効です。Simple および StochasticSimple のマージセレクターで有効です。
+
+このゲートは、バックグラウンドマージにおけるマージ対象の選択にのみ適用されます。積極的な選択 (`FINAL` を伴わない `OPTIMIZE`) は
+パーツの新しさを考慮しない明示的なユーザーリクエストであるため、この設定は無視され、
+小さく新しいパーツはその数にかかわらずマージされます。
+
+セレクターは、`max_parts_to_merge_at_once` を超える数のパーツを含むマージ候補や、
+`merge_selector_window_size` パーツより前まで遡る候補を考慮しません。そのため、
+いずれかをこの最小値未満に設定すると、設定同士が矛盾することになります。この場合、小さく新しいパーツは
+`merge_selector_small_parts_max_age` が経過するまでマージされません (ただし、
+`min_age_to_force_merge_seconds` または `min_partition_age_to_force_merge_seconds` による強制マージが適用されれば、それより早くマージされます) 。両方の設定値を
+この最小値以上にしてください。
+(組み込みの充填率ヒューリスティックによって実効上限が一時的にこの最小値未満に引き下げられた場合でも、
+セレクターは、すべてが小さく新しいパーツからなるこの幅の最初の候補を引き続き考慮します。古くなった候補や
+大きな候補、および `min_age_to_force_merge_seconds` または `min_partition_age_to_force_merge_seconds` によって
+すでに強制マージの対象となっている候補には、引き下げられた上限がそのまま適用されます。)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "merge selector における小さなパーツのバッチ処理ヒューリスティックのサイズしきい値"}]}]} />
+
+バイト単位のサイズしきい値です。マージ範囲内のすべてのパーツがこのサイズ未満の場合、そのマージ範囲は「すべて小さなパーツ」とみなされます。`merge_selector_small_parts_min_count` と組み合わせて使用します。
+Simple および StochasticSimple のマージセレクターで有効で、適用対象はバックグラウンドマージの選択のみです。積極的な選択 (`FINAL` を指定しない `OPTIMIZE`) では、`small_parts_*` 設定は無視されます。
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

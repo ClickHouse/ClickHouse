@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## الصياغة
-</div>
+## الصياغة {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## مصادر القواميس المدعومة
-</div>
+## مصادر القواميس المدعومة {#supported-dictionary-sources}
 
 أنواع المصدر التالية (`SOURCE_TYPE`/`source_type`) متاحة:
 
@@ -96,3 +92,41 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     ```
   </Tab>
 </Tabs>
+
+## ترتيب الأعمدة في الاستعلام المخصص {#custom-query-column-order}
+
+تقبل المصادر [ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse)
+و[MySQL](/ar/reference/statements/create/dictionary/sources/mysql)
+و[PostgreSQL](/ar/reference/statements/create/dictionary/sources/postgresql)
+و[ODBC](/ar/reference/statements/create/dictionary/sources/odbc) حقلًا باسم `query`
+يحلّ محلّ الاستعلام الذي يبنيه ClickHouse في الأحوال العادية من `table` و`where`.
+
+يتوقع القاموس أن تأتي أعمدة تلك النتيجة بترتيب ثابت، يختلف عن الترتيب الذي
+كُتبت به السمات في عبارة `CREATE DICTIONARY`:
+
+1. عمود المفتاح (أو أعمدته)، بترتيب `PRIMARY KEY`؛
+2. في قواميس [`range_hashed`](/ar/reference/statements/create/dictionary/layouts/range-hashed) أو
+   `complex_key_range_hashed`، العمود `range_min` ثم العمود `range_max`؛
+3. بقية السمات، بالترتيب الذي عُرِّفت به.
+
+يطابق مصدر ClickHouse النتيجة مع هذا الترتيب بحسب اسم العمود، لذا لا أهمية لترتيب الأعمدة في
+`query` معه ما دام كل عمود يحمل اسم السمة التي يملؤها. أما مصادر
+MySQL وPostgreSQL وODBC فتأخذ الأعمدة بحسب موضعها، ولذلك فإن أي `query` تأتي أعمدته بترتيب مختلف
+سيحمّل القيم في سمات غير صحيحة. وتبعًا للأنواع
+المعنية، إما أن يفشل تحميل القاموس بسبب error في التحويل، أو أن يخزّن قيمًا خاطئة؛ لذا
+اكتب `query` وفق الترتيب الموضح أعلاه:
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

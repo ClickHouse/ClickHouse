@@ -56,7 +56,7 @@ PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기
 
 `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`과 같은 단순한 `WHERE` 절은 PostgreSQL 서버에서 실행됩니다.
 
-모든 조인, 집계, 정렬, `IN [ array ]` 조건 및 `LIMIT` 샘플링 제약은 PostgreSQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+모든 조인, 집계, 정렬 및 `IN [ array ]` 조건은 PostgreSQL 쿼리가 완료된 후 ClickHouse에서 실행됩니다. `LIMIT` 샘플링 제약은 안전하다고 판단되고 [external&#95;storage&#95;push&#95;down&#95;limit](/ko/reference/settings/session-settings/external-storage#external_storage_push_down_limit)가 활성화된 경우에만 PostgreSQL로 푸시되며, 그렇지 않으면 ClickHouse에서 실행됩니다.
 
 ## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 

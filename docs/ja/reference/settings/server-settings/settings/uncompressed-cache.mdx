@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse サーバーを構成するもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="uncompressed_cache_policy">
-  ## uncompressed_cache_policy
-</div>
+## uncompressed_cache_policy {#uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />非圧縮 cache のポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />非圧縮 cache のエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="uncompressed_cache_size">
-  ## uncompressed_cache_size
-</div>
+## uncompressed_cache_size {#uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -36,9 +32,7 @@ server には共有の cache が 1 つあります。メモリは必要に応じ
   この設定は runtime 中に変更でき、すぐに反映されます。
 </Note>
 
-<div id="uncompressed_cache_size_ratio">
-  ## uncompressed_cache_size_ratio
-</div>
+## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />非圧縮 cache における保護キュー (SLRUポリシーの場合) のサイズの、cache 全体のサイズに対する比率です。
 

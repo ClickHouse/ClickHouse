@@ -824,6 +824,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` 中设置的最大查询处理线程数。
 </Note>
 
+#### 聚合、排序和去重步骤中的溢写 {#explain-analyze-spilling}
+
+当 `GROUP BY`、`ORDER BY` 或 `DISTINCT` 步骤将数据溢写到临时存储时，会输出以下信息：
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+该值表示整个步骤 (包括其各个并行处理器) 累计已写入的压缩后字节数。
+该总数包含已被读取或删除的临时文件；如果数据已多次溢写到磁盘，每次写入都会单独计入。
+若没有已溢写到磁盘的数据，则不显示此行。
+
 #### Join 步骤 {#explain-analyze-join-steps}
 
 对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出用于比较 JOIN 顺序优化器估算值与实际结果的行 (请参阅[估算值与实际 JOIN 指标](#explain-analyze-join-estimation)) ，以及每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。`Left` 和 `Right` 对应 SQL 中的逻辑侧。在大多数情况下，`Left` 同时也是 JOIN 的探测侧，`Right` 则是 JOIN 的构建侧。但由于 JOIN 执行期间可能发生左右交换，情况并非总是如此。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的三种实现：`CROSS` 或 `COMMA` JOIN、用于处理无法确定连接键的 `ON` 子句的[块嵌套循环连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition)，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。

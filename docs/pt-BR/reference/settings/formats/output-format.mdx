@@ -731,8 +731,8 @@ Número aproximado de bits a serem usados para cada valor distinto nos filtros d
 Em que ponto do arquivo Parquet os filtros de Bloom devem ser colocados. Os filtros de Bloom serão gravados em grupos de aproximadamente esse tamanho. Em particular:
 
 * se for 0, os filtros de Bloom de cada grupo de linhas serão gravados imediatamente após o grupo de linhas,
-  * se for maior que o tamanho total de todos os filtros de Bloom, os filtros de Bloom de todos os grupos de linhas serão acumulados na memória e depois gravados juntos perto do fim do arquivo,
-  * caso contrário, os filtros de Bloom serão acumulados na memória e gravados sempre que seu tamanho total ultrapassar esse valor.
+* se for maior que o tamanho total de todos os filtros de Bloom, os filtros de Bloom de todos os grupos de linhas serão acumulados na memória e depois gravados juntos perto do fim do arquivo,
+* caso contrário, os filtros de Bloom serão acumulados na memória e gravados sempre que seu tamanho total ultrapassar esse valor.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -845,6 +845,16 @@ Grava filtros de Bloom em arquivos Parquet.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Nova configuração."}]}]} />
 
 Grava checksums crc32 nos cabeçalhos de página do Parquet.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para gravar uma `Tuple` nomeada com campos do tipo lógico `FILE` do Parquet como um grupo anotado com `FILE`."}]}]} />
+
+Grava uma `Tuple` nomeada cujos nomes de elementos sejam todos campos do tipo lógico `FILE` do Parquet (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; qualquer subconjunto não vazio, em qualquer ordem) como um grupo anotado com o tipo lógico `FILE`, que representa uma referência a um intervalo de bytes armazenado em linha ou em um arquivo externo. Os elementos `offset` e `size` devem ser inteiros (gravados como `INT64`), e os demais devem ser `String` ou `FixedString` (`inline` é gravado como `BYTE_ARRAY` sem anotação, e os outros, como `STRING`). Conforme exigido pela especificação, todos os campos são gravados como `OPTIONAL`. Os valores são gravados sem alterações, sem verificar se formam uma referência válida.
+
+Na leitura, um grupo anotado com `FILE` é sempre lido como uma `Tuple` desse tipo, com elementos `Nullable`.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

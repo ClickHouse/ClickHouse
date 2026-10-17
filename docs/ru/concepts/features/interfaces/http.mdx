@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 Для примеров в этой статье вам понадобятся:
@@ -65,7 +65,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## Выполнение запросов по HTTP/HTTPS
+  ## Выполнение запросов по HTTP/HTTPS {#querying}
 </div>
 
 Для выполнения запросов по HTTP/HTTPS есть три варианта:
@@ -351,7 +351,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 Если запрос уже содержит предложение `FROM`, компонент пути задаёт только имя скачиваемого файла.
 
 <div id="insert-queries">
-  ## INSERT-запросы через HTTP/HTTPS
+  ## INSERT-запросы через HTTP/HTTPS {#insert-queries}
 </div>
 
 Для `INSERT`-запросов необходим метод передачи данных `POST`. В этом случае начало запроса можно указать в параметре URL, а сами данные для вставки передать через POST. Данными для вставки может быть, например, дамп из MySQL с полями, разделёнными табуляцией. Таким образом, запрос `INSERT` заменяет команду `LOAD DATA LOCAL INFILE` из MySQL.
@@ -531,7 +531,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 </Info>
 
 <div id="examples-compression">
-  ## Примеры
+  ## Примеры {#examples-compression}
 </div>
 
 Чтобы отправить сжатые данные на сервер:
@@ -564,7 +564,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## База данных по умолчанию
+  ## База данных по умолчанию {#default-database}
 </div>
 
 Вы можете использовать параметр URL `database` или заголовок `X-ClickHouse-Database`, чтобы задать базу данных по умолчанию.
@@ -586,7 +586,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 По умолчанию используется база данных, указанная в настройках сервера. Изначально это база данных `default`. При необходимости вы всегда можете явно указать базу данных, поставив точку перед именем таблицы.
 
 <div id="authentication">
-  ## Аутентификация
+  ## Аутентификация {#authentication}
 </div>
 
 Имя пользователя и пароль можно указать одним из трёх способов:
@@ -714,9 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   Используйте буферизацию, чтобы избежать ситуаций, когда ошибка при обработке запроса возникает уже после того, как клиенту были отправлены код ответа и HTTP-заголовки. В таком случае сообщение об ошибке записывается в конец тела ответа, и на стороне клиента её можно обнаружить только на этапе разбора.
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## Установка роли с помощью параметров запроса
-</div>
+## Установка роли с помощью параметров запроса {#setting-role-with-query-parameters}
 
 Эта возможность была добавлена в ClickHouse 24.4.
 
@@ -748,6 +746,8 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 ```
 
 В этом случае `?role=my_role&role=my_other_role` эквивалентно выполнению `SET ROLE my_role, my_other_role` перед выполнением оператора.
+
+На параметр запроса `role` не распространяется действие настройки сервера `access_control_improvements.readonly_restricts_set_role`, которая запрещает только оператор `SET ROLE`.
 
 ## Нюансы кодов HTTP-ответов {#http_response_codes_caveats}
 
@@ -841,13 +841,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## Запросы с параметрами
+  ## Запросы с параметрами {#cli-queries-with-parameters}
 </div>
 
 Вы можете создать запрос с параметрами и передать их значения через соответствующие параметры HTTP-запроса. Подробнее см. в разделе [Запросы с параметрами для CLI](/ru/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### Пример
+  ### Пример {#example-3}
 </div>
 
 ```bash
@@ -855,7 +855,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### Табуляции в параметрах URL
+  ### Табуляции в параметрах URL {#tabs-in-url-parameters}
 </div>
 
 Параметры запроса разбираются из формата &quot;escaped&quot;. У этого есть некоторые преимущества, например возможность однозначно разбирать значения NULL как `\N`. Это означает, что символ табуляции должен быть закодирован как `\t` (или как `\` и символ табуляции). Например, ниже между `abc` и `123` стоит настоящий символ табуляции, а входная строка разбивается на два значения:
@@ -885,9 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## Предопределённый HTTP-интерфейс
-</div>
+## Предопределённый HTTP-интерфейс {#predefined_http_interface}
 
 ClickHouse поддерживает выполнение определённых запросов через HTTP-интерфейс. Например, записать данные в таблицу можно следующим образом:
 
@@ -896,6 +894,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ```
 
 ClickHouse также поддерживает предопределённый HTTP-интерфейс, который упрощает интеграцию со сторонними инструментами, такими как [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Давайте рассмотрим пример.
+
+Те же обработчики можно задать и с помощью SQL, не редактируя файл конфигурации сервера, — см. [`CREATE HANDLER`](/ru/reference/statements/create/handler).
 
 Прежде всего, добавьте этот раздел в файл конфигурации сервера.
 
@@ -939,23 +939,23 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
-# HELP "Query" "Количество выполняемых запросов"
+# HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
 "Query" 1
 
-# HELP "Merge" "Количество выполняемых фоновых слияний"
+# HELP "Merge" "Number of executing background merges"
 # TYPE "Merge" counter
 "Merge" 0
 
-# HELP "PartMutation" "Количество мутаций (ALTER DELETE/UPDATE)"
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
 # TYPE "PartMutation" counter
 "PartMutation" 0
 
-# HELP "ReplicatedFetch" "Количество частей данных, загружаемых с реплики"
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
 # TYPE "ReplicatedFetch" counter
 "ReplicatedFetch" 0
 
-# HELP "ReplicatedSend" "Количество частей данных, отправляемых на реплики"
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
 # TYPE "ReplicatedSend" counter
 "ReplicatedSend" 0
 
@@ -1058,7 +1058,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### Виртуальный параметр `_request_body`
+  #### Виртуальный параметр `_request_body` {#virtual-param-request-body}
 </div>
 
 Помимо параметров URL, заголовков и параметров запроса, `predefined_query_handler` поддерживает специальный виртуальный параметр `_request_body`.
@@ -1127,7 +1127,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static
+  ### static {#static}
 </div>
 
 `static` может возвращать [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) и `response_content`. `response_content` позволяет возвращать указанное содержимое.
@@ -1320,7 +1320,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` выполняет перенаправление `302` на `location`
@@ -1343,7 +1343,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## HTTP-заголовки ответа
+  ## HTTP-заголовки ответа {#http-response-headers}
 </div>
 
 ClickHouse позволяет настраивать пользовательские HTTP-заголовки ответа, которые можно применять к любому настраиваемому типу обработчика. Эти заголовки можно задать с помощью настройки `http_response_headers`, которая принимает пары ключ-значение, содержащие имена заголовков и их значения. Эта возможность особенно полезна для настройки пользовательских заголовков безопасности, политик CORS и любых других требований к HTTP-заголовкам в HTTP-интерфейсе ClickHouse.

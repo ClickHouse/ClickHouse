@@ -31,6 +31,14 @@ Número total de endereços usados para criar conexões com pools de conexões
 
 Número total de endereços banidos por apresentarem falha na criação de conexões com pools de conexões
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Memória aproximada, em bytes, usada pelo cache de localizações no código-fonte já resolvidas (file:line:column), utilizado na simbolização de rastreamentos de pilha.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Número de endereços de código no cache de localizações resolvidas no código-fonte (file:line:column) usadas para simbolizar rastreamentos de pilha em system.trace&#95;log, system.errors e system.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Número de threads no pool de threads do Aggregator.
@@ -358,6 +366,10 @@ Número total de slots de CPU adquiridos
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 Número total de slots de CPU adquiridos que não são considerados concorrentes (a primeira thread, caso o escalonador `fair_round_robin` esteja em uso)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Número atual de threads que estacionaram (liberaram) seu slot de CPU durante uma espera não relacionada à CPU, como E/S bloqueante ou falta de tarefas para executar
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -1171,6 +1183,10 @@ Número total de bytes atualmente alocados (aprovados) em reservas de memória
 
 Número total de bytes referentes a solicitações pendentes de aumento de reservas de memória
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Quantidade total de memória recuperável
+
 ### MemoryTracking {#memorytracking}
 
 Quantidade total de memória (em bytes) rastreada pelo servidor. Por padrão, o background memory worker corrige esse valor a cada tick com base em uma medição externa da memória efetivamente usada pelo processo (consulte a configuração de servidor `memory_worker_correct_memory_tracker`). Assim, o valor reflete o uso medido, e não uma simples contagem de alocações. Consulte `MemoryTrackingUncorrected` para obter o valor sem nenhuma correção aplicada.
@@ -1363,6 +1379,10 @@ Número de threads no pool de threads do AzureObjectStorage executando uma taref
 
 Número de jobs na fila ou ativos no pool de threads do AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Número de concessões exclusivas (como a compactação de uma tabela Iceberg) mantidas atualmente por este servidor no armazenamento de objetos.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Tamanho, em bytes, do cache de metadados do ObjectStorageQueue.
@@ -1398,6 +1418,10 @@ Número de threads no thread pool do S3ObjectStorage executando uma tarefa.
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 Número de jobs na fila ou ativos no pool de threads do S3ObjectStorage.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Número de chaves, como snapshots do Iceberg sendo lidos, atualmente alocadas no armazenamento de objetos pelas consultas deste servidor.
 
 ### OpenFileForRead {#openfileforread}
 
@@ -2126,6 +2150,10 @@ Número de arquivos temporários criados para o JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Número de arquivos temporários para a mesclagem vertical
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Número de arquivos temporários criados para conjuntos `IN` em memória externa
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

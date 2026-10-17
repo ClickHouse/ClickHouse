@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
@@ -49,9 +50,23 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 只有当连接键是探测侧的主键列，或被 `minmax`、`set` 或 `bloom_filter` 跳过索引覆盖时，才能进行剪枝。
 如果运行时过滤器保留了精确的键值，就使用由这些值组成的 `IN` 集合作为剪枝谓词；否则使用键值的最小值到最大值范围，剪枝效果较弱。
 
-此设置仅在本地读取连接的探测侧时生效。优化查询计划时，驱动剪枝的描述符会附加到读取步骤；如果为远程执行重新构建该步骤，描述符就不会保留。因此，使用并行副本 (`enable_parallel_replicas = 1`) 或分布式查询计划 (`make_distributed_plan = 1`) 时，不会进行粒度剪枝。在这些模式下，此设置相当于空操作：查询结果不变，JOIN 运行时过滤器本身的行为也与禁用此设置时完全相同，只是不会进行粒度剪枝。
+此设置支持并行副本 (`enable_parallel_replicas = 1`)：每个副本使用自己构建的过滤器，对其读取的粒度进行剪枝。该过滤器可能并不完整——对于 `RIGHT` 连接，在副本之间拆分的是构建侧，因此每个副本的过滤器只覆盖其自身负责的那一部分——但结果仍然正确，因为连接只有一侧被拆分，每一对匹配的行都只会在一个副本上相遇，且各副本输出的结果互不重叠。
+
+使用分布式查询计划 (`make_distributed_plan = 1`) 时，不会进行粒度剪枝。在这种情况下，此设置相当于空操作：查询结果不变，JOIN 运行时过滤器本身的行为也与禁用此设置时完全相同，只是不会进行粒度剪枝。
 
 如果探测侧使用 `FINAL` 读取，也会跳过粒度剪枝 (`FINAL` 读取尚不支持剪枝，而且 `optimizeLazyFinal` 会在不保留描述符的情况下重新构建此类读取) 。对于存在待处理数据、`ALTER` 变更或补丁分区片段的表，同样会跳过粒度剪枝。这些情况也相当于空操作。
+
+## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增实验性设置：使哈希 JOIN 探测侧的读取以构建侧运行时过滤器构建完成为前提，并利用该过滤器剪枝读取范围。"}]}]} />
+
+使哈希 JOIN 探测侧的读取以构建侧运行时过滤器 (参见 `enable_join_runtime_filters`) 构建完成为启用条件：在过滤器构建完成之前，探测侧不读取任何数据；过滤器完成后，除常规的行级过滤外，还会在创建读取任务之前利用该过滤器按主键剪枝整个标记范围。该启用条件表现为查询管道中的一条边。对于受此条件控制的读取，同一运行时过滤器的读取时索引分析 (参见 `enable_join_runtime_filters_index_analysis`) 属于冗余操作，将被跳过。
+
+实验性功能。本地读取 (包括单线程读取和按顺序读取) 均受此条件控制；而使用 FINAL、并行副本或按主键范围分片的连接时，读取会回退为不受此条件控制的方式，仅进行行级过滤。
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 

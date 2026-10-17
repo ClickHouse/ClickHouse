@@ -7,6 +7,7 @@ keywords: ['альтернативные языки запросов', 'диал
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Помимо стандартного SQL, ClickHouse поддерживает различные альтернативные языки запросов для работы с данными.
@@ -54,12 +55,12 @@ ClickHouse использует транспиляцию из PRQL в SQL для
 
 ## Язык запросов Kusto (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 Чтобы включить KQL:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- этот оператор SET требуется только для версий ClickHouse >= 25.1
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
 SET dialect = 'kusto'
 ```
 
@@ -109,7 +110,7 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 Чтобы включить диалект Trino:
 

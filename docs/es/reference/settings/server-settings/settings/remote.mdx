@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 Configuración de los clústeres utilizada por el motor de tabla [Distributed](/es/reference/engines/table-engines/special/distributed) y por la función de tabla `cluster`.
 
@@ -30,9 +28,7 @@ Para el valor del atributo `incl`, consulte la sección &quot;[Archivos de confi
 * [Descubrimiento de clústeres](/es/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de base de datos Replicated](/es/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 Lista de hosts que se pueden usar en motores de almacenamiento y funciones de tabla relacionados con URL.
 
@@ -44,11 +40,23 @@ Al añadir un host con la etiqueta XML `\<host\>`:
 * si el host se especifica como una dirección IP, se comprueba tal como aparece en la URL. Por ejemplo: `[2a02:6b8:a::a]`.
 * si hay redirecciones y la compatibilidad con redirecciones está habilitada, se comprueba cada redirección (el campo location).
 
+Al añadir una expresión regular con la etiqueta XML `\<host_regexp\>`, se utiliza el motor RE2 y se compara el host completo. Por ejemplo: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+Al añadir un único bucket de S3 con la etiqueta XML `\<s3_bucket\>`, con el formato `host/bucket` o `host:port/bucket`:
+
+* resulta útil cuando muchas partes comparten el mismo endpoint, por ejemplo el endpoint de AWS con estilo de ruta `s3.us-west-2.amazonaws.com`, ya que permitir el host completo permitiría todos los buckets que contiene.
+* el bucket se obtiene de la URL de S3 analizada, por lo que la entrada coincide tanto con `https://s3.us-west-2.amazonaws.com/my-bucket/...` como con `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+* solo se aplica a URL de S3: las funciones de tabla y motores `s3`, el motor de base de datos `S3`, `BACKUP`/`RESTORE` a `S3` y los discos S3 creados en SQL con la función `disk`.
+* un disco S3 creado en SQL se comprueba en el momento en que la consulta lo crea. Un disco que ya existía cuando se configuró la lista, o que se creó con una versión sin esta comprobación, se sigue cargando al iniciar el servidor, incluso si pertenece a una tabla eliminada pero aún no borrada, de modo que `UNDROP TABLE` sigue funcionando; el servidor lo notifica en el registro y en `system.warnings`.
+* una redirección permanente (301) devuelta por S3 también se comprueba con las entradas de bucket, pero una redirección temporal (307) se comprueba solo por host, por lo que se rechaza cuando la lista contiene únicamente entradas `\<s3_bucket\>`.
+
 Por ejemplo:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 

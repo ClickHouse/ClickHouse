@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+引入版本：v26.10.0
+
+返回源数组中所有长度为 `k` 的组合 (即不重复选取同一索引的无序选择) 。由于枚举基于索引进行，相等的值可能会在结果中产生重复行。当 `k = 0` 时，返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制，其中每个生成的数组按其大小加一计算。
+
+**语法**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**参数**
+
+* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
+* `k` — 生成的每个组合的长度，不得超过源数组的大小。支持 `Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32` 和 `UInt64`。[`(U)Int*`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+所有长度为 `k` 的组合。[`Array(Array(T))`](/zh/reference/data-types/array)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**`k = 0` 示例**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 引入版本：v20.1.0
@@ -2505,6 +2548,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+引入版本：v26.10.0
+
+与 `arrayPackBitsToFixedString` 相同，区别在于 lambda 返回一个整数，其低 `g` 位构成一个分组，各分组
+按最高有效位优先的顺序连续打包到 `FixedString(n)` 中。结果为
+`arrayPackBitGroupsToString` 的前 `n` 个字节 (跨越边界的分组仅贡献其高位部分) ，不足 `n`
+字节时以零填充。大小 `n` 和分组大小 `g` 都必须是正的常量，且 `g` 不得大于 64。
+
+**语法**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — 结果 `FixedString` 的大小 (以字节为单位) 。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — 一个或多个待打包的等长数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`FixedString(n)`](/zh/reference/data-types/fixedstring)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+引入版本：v26.10.0
+
+与 `arrayPackBitsToString` 类似，但 lambda 返回一个整数，其低 `g` 位构成一组，各组
+按最高有效位优先的顺序连续打包。结果长度为 `ceil(size_of_array * g / 8)` 字节。
+组大小 `g` 必须是 1 到 64 之间的常量。
+
+**语法**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+引入版本：v26.10.0
+
+与 `arrayPackBitsToUInt64` 相同，但 lambda 返回一个整数，其低 `g` 位构成一组，各组
+连续打包 (每个字节内按最高有效位优先，字节按小端序解释，因此
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`) 。结果
+为打包流的前 64 位：如果 `g` 不能整除 64，则跨越边界的那一组
+仅提供其开头的若干位。组大小 `g` 必须是 1 到 64 之间的常量。
+
+**语法**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`UInt64`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+引入版本：v26.10.0
+
+对数组中的每个元素应用 lambda 函数，并将所得的位打包为 `FixedString(n)`。
+lambda 为每个元素返回一个整数，该整数被视为单个比特 (零或非零) 。
+位按最高有效位优先的顺序写入，因此结果即为 `arrayPackBitsToString` 结果的前 `n` 个字节。
+如果数组元素超过 `n * 8` 个，多余的元素将被忽略；如果不足，结果将以零填充至 `n` 个字节。
+大小 `n` 必须为正整数常量。
+
+**语法**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — 结果 `FixedString` 的大小 (以字节为单位) 。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — 一个或多个大小相同、待打包的数组。lambda 对每个数组各接收一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`FixedString(n)`](/zh/reference/data-types/fixedstring)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+引入版本：v26.10.0
+
+对数组中的每个元素应用 lambda 函数，并将得到的位打包为一个 `String`。
+对于每个元素，lambda 返回一个整数，该整数被视为单个比特 (零或非零) 。
+各位按最高有效位优先的顺序写入；结果长度为 `ceil(size_of_array / 8)` 字节。
+
+**语法**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成对应比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — 一个或多个待打包的数组，各数组大小须相同。lambda 的参数个数与数组个数一致，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+引入版本：v26.10.0
+
+对数组中的每个元素应用 lambda 函数，并将所得的位打包为一个 `UInt64`。
+lambda 为每个元素返回一个整数，该整数被视为单个比特 (零或非零) 。
+比特流以最高有效位优先的方式排布到各字节中 (所得字节与 `arrayPackBitsToString` 相同) ，
+这些字节再按小端序解释，因此
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`。
+仅使用前 64 个元素；若元素不足 64 个，其余位均为零。
+
+**语法**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**参数**
+
+* `f` — 为每个元素生成对应比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回打包后的位。[`UInt64`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+引入版本：v26.10.0
+
+返回源数组中所有长度为 `k` 的部分排列 (即不重复选取索引的有序选择) 。由于枚举基于索引进行，相等的值可能会在结果中产生重复行。当 `k = 0` 时，返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制；每个生成的数组计为其大小加一。
+
+**语法**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**参数**
+
+* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
+* `k` — 生成的每个部分排列的长度，不得超过源数组的大小。支持 `Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32` 和 `UInt64`。[`(U)Int*`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+所有长度为 `k` 的部分排列。[`Array(Array(T))`](/zh/reference/data-types/array)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**`k = 0` 示例**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 引入版本：v23.2.0
@@ -2768,6 +3077,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+引入版本：v26.10.0
+
+返回源数组中元素的所有排列。排列是按索引枚举的，因此相等的值可能会在结果中产生重复行。若源数组为空，则返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制，其中每个生成的数组计为其大小加一。
+
+**语法**
+
+```sql
+arrayPermutations(arr)
+```
+
+**参数**
+
+* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+源数组的所有排列。[`Array(Array(T))`](/zh/reference/data-types/array)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3214,6 +3555,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+引入版本：v26.10.0
+
+从 array 中移除指定索引处的元素。
+索引从 1 开始。负索引表示从 array 末尾倒数。
+如果索引超出 array 的范围，则原样返回该 array。
+索引 0 无效。
+
+**语法**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**参数**
+
+* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
+* `index` — 要移除元素的整数索引，类型不能为 Nullable。负数索引表示从末尾开始计数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回移除 `index` 处元素后的源数组；如果 `index` 超出范围，则返回原数组。[`Array(T)`](/zh/reference/data-types/array)
+
+**示例**
+
+**正数索引**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**负索引**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**超出范围**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3761,6 +4158,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**别名**: `slice`
+
 **参数**
 
 * `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
@@ -3773,7 +4172,7 @@ arraySlice(arr, offset [, length])
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
@@ -4122,6 +4521,8 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**别名**：`array_union`
+
 **参数**
 
 * `arrN` — 用于构造新数组的 N 个数组。[`Array(T)`](/zh/reference/data-types/array)
@@ -4282,6 +4683,8 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**别名**：`zip`
+
 **参数**
 
 * `arr1, arr2, ..., arrN` — 将 N 个数组合并为一个数组。[`Array(T)`](/zh/reference/data-types/array)
@@ -4300,6 +4703,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+引入版本：v26.8.0
+
+PostgreSQL 兼容性函数。返回该元素在 array 中首次出现的位置 (从 1 开始索引) ；若该元素不存在，则返回 `NULL`。与 PostgreSQL 一致，若传入的元素为 `NULL`，则查找 array 中第一个 `NULL` 的位置。ClickHouse 中对应的原生函数是 `indexOf`，它在未找到时返回 0 而非 `NULL`。
+
+**语法**
+
+```sql
+array_position(array, element)
+```
+
+**参数**
+
+* `array` — 要搜索的 array。[`Array(T)`](/zh/reference/data-types/array)
+* `element` — 要搜索的元素。[`Any`](/zh/reference/data-types/index)
+
+**返回值**
+
+返回该元素首个匹配项的位置 (从 1 开始索引) ；若该元素不存在，则返回 `NULL`。[`Nullable(UInt64)`](/zh/reference/data-types/nullable)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5283,7 +5719,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 ## length {#length}
 
-Introduced in：v1.1.0
+引入版本：v1.1.0
 
 计算字符串或数组的长度。
 
@@ -5297,13 +5733,13 @@ Introduced in：v1.1.0
 
 字符串中可以包含 ASCII NULL 字节，这些字节也会被计入。
 
-**Syntax**
+**语法**
 
 ```sql
 length(x)
 ```
 
-**别名**: `OCTET_LENGTH`, `CARDINALITY`
+**别名**: `CARDINALITY`, `OCTET_LENGTH`
 
 **参数**
 

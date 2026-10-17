@@ -25,7 +25,7 @@ avg(x)
 
 **القيمة المعادة**
 
-تُرجع الدالة المتوسط الحسابي. إذا كانت `x` عددية، تكون النتيجة من النوع `Float64`، أو `NaN` إذا كانت `x` فارغة. أما إذا كانت `x` من نوع تاريخ أو وقت أو فاصل زمني، فيبقى نوع النتيجة مطابقًا لنوع `x`: يُقرَّب المتوسط إلى أقرب قيمة قابلة للتمثيل، وتكون النتيجة عند فراغ `x` هي القيمة الصفرية لذلك النوع. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64(P)`](/ar/reference/data-types/datetime64) أو [`Time`](/ar/reference/data-types/time) أو [`Time64(P)`](/ar/reference/data-types/time64) أو [`Interval`](/ar/reference/data-types/special-data-types/interval)
+تُرجع الدالة المتوسط الحسابي. إذا كانت `x` عددية، تكون النتيجة من النوع `Float64`، أو `NaN` إذا كانت `x` فارغة. أما إذا كانت `x` من نوع تاريخ أو وقت أو فاصل زمني، فيبقى نوع النتيجة مطابقًا لنوع `x`: يُقرَّب المتوسط إلى أقرب قيمة قابلة للتمثيل، وتكون النتيجة عند فراغ `x` هي القيمة الصفرية لذلك النوع. وإذا كانت `x` من النوع [`Nullable`](/ar/reference/data-types/nullable)، يكون نوع النتيجة `Nullable(T)`، حيث `T` هو نوع النتيجة لقيمة `x` المقابلة من غير النوع `Nullable` (أي `Float64` لقيم الإدخال العددية)؛ ويُرجع الإدخال الفارغ القيمة `NULL`. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64(P)`](/ar/reference/data-types/datetime64) أو [`Time`](/ar/reference/data-types/time) أو [`Time64(P)`](/ar/reference/data-types/time64) أو [`Interval`](/ar/reference/data-types/special-data-types/interval)
 
 **أمثلة**
 

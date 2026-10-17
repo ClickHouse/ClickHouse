@@ -61,7 +61,7 @@ Solo surte efecto cuando `make_distributed_plan` (private preview) está habilit
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "Nueva configuración experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "Nuevo ajuste experimental."}]}]} />
 
 Fuerza el tipo especificado de operadores Exchange entre las etapas de una consulta distribuida.
 
@@ -81,6 +81,16 @@ Valores posibles:
 
 Usa la estrategia de agregación Shuffle en lugar de PartialAggregation + Merge en el plan de consulta distribuida.
 Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, por ejemplo para `GROUPING SETS` o cuando la agregación debe producir los resultados en orden de bucket.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nuevo ajuste experimental."}]}]} />
+
+Con `make_distributed_plan`, envía los filtros de JOIN en tiempo de ejecución generados en una etapa a las etapas que leen el lado de sondeo, de modo que estas filtren las filas antes de enviarlas. Si un filtro no llega, las filas se transmiten sin filtrar. Requiere `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 

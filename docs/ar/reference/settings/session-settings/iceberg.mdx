@@ -98,6 +98,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 العتبة الخاصة بملفات بيانات الدمج في Iceberg.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "إعداد جديد. يرفض `remove_orphan_files` أي قيمة `older_than` تقل عن هذا العدد من الثواني قبل اللحظة الحالية، وبذلك يُبقي على ملفات عملية الكتابة التي بدأت قبل مدة أقصر من ذلك ولم تُثبَّت بعد. يؤدي ضبط `compatibility` على إصدار أقدم من 26.10 إلى استعادة السلوك السابق (دون حد أدنى)."}]}]} />
+
+الحد الأدنى لعمر الملفات، بالثواني، التي يجوز للأمر `ALTER TABLE ... EXECUTE remove_orphan_files` حذفها من جدول Iceberg. تُرفض أي قيمة `older_than` (سواء حُدِّدت صراحةً أو اشتُقَّت من `iceberg_orphan_files_older_than_seconds`) تكون أقرب إلى اللحظة الحالية من هذه القيمة، لأن ملفات عملية الكتابة التي لم تُثبَّت بعد لا تشير إليها البيانات الوصفية للجدول، فستُحذف، مما يُتلف الجدول عند تثبيت عملية الكتابة. احرص على أن تبقى هذه القيمة أكبر من أطول مدة قد تستغرقها عملية الكتابة إلى الجدول حتى تُثبَّت. تؤدي القيمة 0 إلى تعطيل هذا الفحص.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

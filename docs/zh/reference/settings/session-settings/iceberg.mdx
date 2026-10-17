@@ -98,6 +98,16 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 Iceberg 中参与合并整理的数据文件数量阈值。
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "新增设置。`remove_orphan_files` 会拒绝距当前时间不足该秒数的 `older_than`，从而保留那些开始时间距今不足该时长且尚未提交的写入所产生的文件。将 `compatibility` 设置为 26.10 之前的版本可恢复先前的行为（无最小值限制）。"}]}]} />
+
+`ALTER TABLE ... EXECUTE remove_orphan_files` 可从 Iceberg 表中删除的文件的最小存留时间 (以秒为单位) 。如果 `older_than` (显式指定或由 `iceberg_orphan_files_older_than_seconds` 推导得出) 与当前时间的间隔小于该值，则会被拒绝：尚未提交的写入所产生的文件尚未被表元数据引用，因而会被删除，待该写入提交时就会导致表损坏。请将该值设置为大于对该表的单次写入完成提交可能耗费的最长时间。设置为 0 时禁用此检查。
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

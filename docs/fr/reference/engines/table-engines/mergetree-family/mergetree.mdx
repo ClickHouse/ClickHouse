@@ -204,28 +204,30 @@ Vous pouvez utiliser des expressions de type `Nullable` dans les clauses `PRIMAR
 
 ### Sélection d’une clé primaire {#selecting-a-primary-key}
 
-Le nombre de colonnes dans la clé primaire n’est pas explicitement limité. Selon la structure des données, vous pouvez inclure plus ou moins de colonnes dans la clé primaire. Cela peut :
+Le nombre de colonnes dans la clé primaire n’est pas explicitement limité. Selon la structure des données, vous pouvez inclure plus ou moins de colonnes dans la clé primaire. Cela peut :
 
 * Améliorer les performances d’un index.
 
-  Si la clé primaire est `(a, b)`, l’ajout d’une autre colonne `c` améliorera les performances si les conditions suivantes sont réunies :
+  Si la clé primaire est `(a, b)`, l’ajout d’une autre colonne `c` améliorera les performances si les conditions suivantes sont réunies :
 
   * Il existe des requêtes avec une condition sur la colonne `c`.
   * De longues plages de données (plusieurs fois plus longues que `index_granularity`) avec des valeurs identiques pour `(a, b)` sont fréquentes. En d’autres termes, l’ajout d’une colonne supplémentaire permet de sauter des plages de données assez longues.
 
 * Améliorer la compression.
 
-  ClickHouse trie les données par clé primaire ; ainsi, plus la cohérence est élevée, meilleure est la compression.
+  ClickHouse trie les données par clé primaire ; ainsi, plus la cohérence est élevée, meilleure est la compression.
 
-* Fournir une logique supplémentaire lors de la fusion des parties de données dans les moteurs [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) et [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree).
+* Fournir une logique supplémentaire lors de la fusion des parts de données dans les moteurs [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) et [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree).
 
   Dans ce cas, il est judicieux de spécifier une *clé de tri* différente de la clé primaire.
 
 Une clé primaire longue aura un impact négatif sur les performances d’insertion et la consommation de mémoire, mais les colonnes supplémentaires dans la clé primaire n’affectent pas les performances de ClickHouse lors des requêtes `SELECT`.
 
-Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Dans ce cas, ClickHouse stocke les données dans l’ordre d’insertion. Si vous souhaitez conserver l’ordre des données lors de l’insertion via des requêtes `INSERT ... SELECT`, définissez [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings/max-insert#max_insert_threads).
+Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Pour réordonner les lignes de chaque bloc inséré afin d’améliorer la compressibilité, activez le paramètre `optimize_row_order_if_no_order_by`. Celui-ci s’applique aux tables ordinaires de la famille `MergeTree`, y compris `ReplicatedMergeTree`. Les moteurs spécialisés de la famille, comme `ReplacingMergeTree` ou `AggregatingMergeTree`, ne bénéficient jamais de l’optimisation de l’ordre des lignes et conservent l’ordre d’insertion des lignes.
 
-Pour sélectionner les données dans leur ordre initial, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings/max-threads#max_threads).
+Pour activer le réordonnancement, définissez `optimize_row_order_if_no_order_by = 1` dans la clause `SETTINGS` de la table. Lors de l’insertion de données via des requêtes `INSERT ... SELECT`, définissez également [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings/max-insert#max_insert_threads) afin de préserver l’ordre optimisé.
+
+Lorsque le réordonnancement est désactivé, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings/max-threads#max_threads) pour sélectionner les données dans l’ordre d’insertion. Lorsque le réordonnancement est activé, une requête `SELECT` mono-thread préserve l’ordre sur disque.
 
 ### Choisir une clé primaire différente de la clé de tri {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -572,41 +574,43 @@ Les conditions de la clause `WHERE` contiennent des appels à des fonctions qui 
 
 Les index de type `set` peuvent être utilisés par toutes les fonctions. Les autres types d&#39;index sont pris en charge comme suit :
 
-| Fonction (opérateur) / index                                                                                                        | clé primaire | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
-| [equals (=, ==)](/fr/reference/functions/regular-functions/comparison-functions#equals)                                                | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/fr/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [notLike](/fr/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                                                    | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                                                        | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [multiSearchAny](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                     | ✗            | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
-| [multiSearchAnyUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [multiMatchAny](/fr/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [in](/fr/reference/functions/regular-functions/in-functions)                                                                           | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/fr/reference/functions/regular-functions/in-functions)                                                                        | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [less (`<`)](/fr/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greater (`>`)](/fr/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [lessOrEquals (`<=`)](/fr/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greaterOrEquals (`>=`)](/fr/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [empty](/fr/reference/functions/regular-functions/array-functions#empty)                                                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [notEmpty](/fr/reference/functions/regular-functions/array-functions#notEmpty)                                                         | ✗            | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
-| [has](/fr/reference/functions/regular-functions/array-functions#has)                                                                   | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                                             | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                                             | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                                                 | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenOrNull](/fr/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                     | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)             | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull) | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [pointInPolygon](/fr/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                             | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [mapContains (mapContainsKey)](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                 | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                     | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| Fonction (opérateur) / index                                                                                                          | clé primaire | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
+| [equals (=, ==)](/fr/reference/functions/regular-functions/comparison-functions#equals)                                                  | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notEquals(!=, &lt;&gt;)](/fr/reference/functions/regular-functions/comparison-functions#notEquals)                                      | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                                                           | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [notLike](/fr/reference/functions/regular-functions/string-search-functions#notLike)                                                     | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                                                         | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                                                      | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                                                          | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [multiSearchAny](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                       | ✗            | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitive](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8) | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiMatchAny](/fr/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [in](/fr/reference/functions/regular-functions/in-functions)                                                                             | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notIn](/fr/reference/functions/regular-functions/in-functions)                                                                          | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [less (`<`)](/fr/reference/functions/regular-functions/comparison-functions#less)                                                        | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greater (`>`)](/fr/reference/functions/regular-functions/comparison-functions#greater)                                                  | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [lessOrEquals (`<=`)](/fr/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                       | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greaterOrEquals (`>=`)](/fr/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                 | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [empty](/fr/reference/functions/regular-functions/array-functions#empty)                                                                 | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [notEmpty](/fr/reference/functions/regular-functions/array-functions#notEmpty)                                                           | ✗            | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
+| [has](/fr/reference/functions/regular-functions/array-functions#has)                                                                     | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                                               | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                                               | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                                                   | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenOrNull](/fr/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                       | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)               | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)   | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [pointInPolygon](/fr/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [mapContains (mapContainsKey)](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                   | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                       | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                 | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 
 Les fonctions avec un argument constant inférieur à la taille du ngram ne peuvent pas être utilisées par `ngrambf_v1` pour l’optimisation des requêtes.
 

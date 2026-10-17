@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Remove dinamicamente os zeros à direita dos valores de `DateTime64`, arredondando a escala de saída para cima até o próximo
 múltiplo de três que preserva todos os dígitos significativos: [0, 3, 6, 9]. Uma fração composta somente por zeros é removida.
 
-## date_time_input_format
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -47,7 +47,7 @@ Veja também:
 * [Tipo de dado DateTime.](/pt-BR/reference/data-types/datetime)
 * [Funções para trabalhar com datas e horas.](/pt-BR/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -72,18 +72,22 @@ Veja também:
 * [tipo de dado DateTime.](/pt-BR/reference/data-types/datetime)
 * [Funções para trabalhar com datas e horas.](/pt-BR/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-Define o comportamento quando [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64) ou inteiros são convertidos em Date, Date32, DateTime ou DateTime64, mas o valor não pode ser representado no tipo resultante. Também se aplica quando um `Date` ou `DateTime` é convertido a partir de texto, inclusive por um input format.
+Define o comportamento quando valores [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64), [Time](/pt-BR/reference/data-types/time), [Time64](/pt-BR/reference/data-types/time64) ou valores numéricos (inteiros e números de ponto flutuante) são convertidos em `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` ou `Time64`, mas o valor não pode ser representado no tipo de resultado. Valores `Decimal` só podem ser convertidos em `DateTime64` e `Time64`, e essas conversões também seguem esta configuração; um `Decimal` convertido em `Date`, `Date32`, `DateTime` ou `Time` é rejeitado independentemente da configuração. Ela também se aplica quando um `Date` ou `DateTime` é convertido a partir de texto, inclusive por um formato de entrada.
 
-Possible values:
+Valores possíveis:
 
-* `ignore` — Ignora silenciosamente overflows. O resultado é indefinido.
+* `ignore` — Ignora overflows silenciosamente. Em conversões entre tipos de data e hora, o resultado é indefinido (pode ocorrer wrap-around do valor); um valor numérico é saturado nos limites do intervalo do tipo de resultado.
 * `throw` — Lança uma exceção em caso de overflow.
-* `saturate` — Limita o resultado. Se o valor for menor que o menor valor que pode ser representado pelo tipo de destino, o resultado será o menor valor representável. Se o valor for maior que o maior valor que pode ser representado pelo tipo de destino, o resultado será o maior valor representável.
+* `saturate` — Satura o resultado. Se o valor for menor que o menor valor representável pelo tipo de destino, o resultado será o menor valor representável. Se o valor for maior que o maior valor representável pelo tipo de destino, o resultado será o maior valor representável.
 
-default value: `ignore`.
+As conversões exatas (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) não dependem desta configuração: um valor não representável é sempre rejeitado, retornado como `NULL` ou substituído pelo valor default, respectivamente.
+
+A configuração se aplica às conversões feitas por `CAST` e pelas funções de conversão, inclusive as realizadas por um template de expressão de `INSERT ... VALUES` ou por um `INSERT ... SELECT`. Uma expressão constante que o formato `Values` avalia sem template (o fallback habilitado por `input_format_values_interpret_expressions`) e a função de tabela `values` só seguem esta configuração para `DateTime64` e `Time64`: nesses casos, um número fora do intervalo inserido em uma coluna `Date`, `Date32`, `DateTime` ou `Time` não segue esta configuração. A função de tabela `values` o rejeita, e o formato `Values` também, a menos que `input_format_null_as_default` esteja habilitado; nesse caso, é inserido o valor default da coluna.
+
+Valor default: `ignore`.
 
 {/*AUTOGENERATED_END*/}

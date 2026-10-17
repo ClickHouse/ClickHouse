@@ -172,8 +172,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "cpu_slot_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "cpu_slot_parking", path: "/cpu-slot#cpu_slot_parking", default: "1" },
         { name: "cpu_slot_preemption", path: "/cpu-slot#cpu_slot_preemption", default: "1" },
         { name: "cpu_slot_preemption_timeout_ms", path: "/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
         { name: "cpu_slot_quantum_ns", path: "/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
@@ -281,10 +282,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_cache_*",
-      count: 3,
+      count: 6,
       settings: [
         { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
         { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_warmer_max_bytes_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_bytes_in_queue", default: "107374182400" },
+        { name: "distributed_cache_warmer_max_file_segment_size", path: "/distributed-cache#distributed_cache_warmer_max_file_segment_size", default: "33554432" },
+        { name: "distributed_cache_warmer_max_segments_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_segments_in_queue", default: "100000" },
         { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []
@@ -1337,9 +1341,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 125,
+      count: 127,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
+        { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
         { name: "auth_use_forwarded_address", path: "/other#auth_use_forwarded_address", default: "false" },
         { name: "bcrypt_workfactor", path: "/other#bcrypt_workfactor", default: "12" },
@@ -1408,7 +1413,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
         { name: "openSSL.client.cipherSuites", path: "/other#openssl.client.ciphersuites", default: '""' },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
         { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
         { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },
@@ -1458,6 +1463,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "ssh_server", path: "/other#ssh_server" },
         { name: "table_engines_require_grant", path: "/other#table_engines_require_grant", default: "false" },
         { name: "tcp_ssh_port", path: "/other#tcp_ssh_port" },
+        { name: "tcp_with_proxy_allow_interserver_mode", path: "/other#tcp_with_proxy_allow_interserver_mode", default: "1" },
         { name: "text_log", path: "/other#text_log" },
         { name: "thread_pool_queue_size", path: "/other#thread_pool_queue_size", default: "10000" },
         { name: "throw_on_unknown_workload", path: "/other#throw_on_unknown_workload", default: "0" },

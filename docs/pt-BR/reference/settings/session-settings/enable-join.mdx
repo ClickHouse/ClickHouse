@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -42,16 +43,30 @@ Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado dire
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os JOIN runtime filters passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de junção usando análise de índice dinâmica"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilita a poda de grânulos no lado de sondagem (esquerdo) de um JOIN usando o filtro de tempo de execução coletado do lado de construção (direito)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Filtros em Tempo de Execução de JOIN passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de junção usando análise de índice dinâmica"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilita a poda de grânulos no lado de sondagem (esquerdo) de um JOIN usando o Filtro em Tempo de Execução coletado do lado de construção (direito)."}]}]} />
 
-Poda grânulos no lado de sondagem de um JOIN usando o filtro de tempo de execução coletado do lado de construção; consulte `enable_join_runtime_filters`.
+Poda grânulos no lado de sondagem de um JOIN usando o Filtro em Tempo de Execução coletado do lado de construção; consulte `enable_join_runtime_filters`.
 Só tem efeito se `use_skip_indexes_on_data_read = 1`.
 Só é possível podar por uma chave de junção que seja uma coluna da chave primária do lado de sondagem ou que esteja coberta por um índice de salto `minmax`, `set` ou `bloom_filter`.
-Se o filtro de tempo de execução tiver mantido os valores exatos das chaves, o predicado de poda será um conjunto `IN` com esses valores; caso contrário, será usado o intervalo de chaves entre o valor mínimo e o máximo (que tem menor poder de poda).
+Se o Filtro em Tempo de Execução tiver mantido os valores exatos das chaves, o predicado de poda será um conjunto `IN` com esses valores; caso contrário, será usado o intervalo de chaves entre o valor mínimo e o máximo (que tem menor poder de poda).
 
-Só tem efeito quando o lado de sondagem da junção é lido localmente. Os descritores que orientam a poda são anexados ao passo de leitura durante a otimização do plano de consulta e não são preservados quando esse passo é reconstruído para execução remota; por isso, a poda de grânulos não ocorre com réplicas paralelas (`enable_parallel_replicas = 1`) nem com um plano de consulta distribuído (`make_distributed_plan = 1`). Nesses modos, a configuração não tem efeito: a consulta retorna o mesmo resultado e o próprio filtro de tempo de execução de JOIN se comporta exatamente como se esta configuração estivesse desabilitada; perde-se apenas a poda de grânulos.
+Funciona com réplicas paralelas (`enable_parallel_replicas = 1`): cada réplica poda os grânulos que lê usando o filtro que ela mesma construiu. Esse filtro pode ser parcial — em uma junção `RIGHT`, o lado de construção é o que é dividido entre as réplicas, de modo que o filtro de cada réplica cobre apenas a sua própria parcela dele —, mas o resultado continua correto, porque exatamente um lado da junção é dividido, cada par de linhas correspondentes se encontra em exatamente uma réplica e cada réplica emite uma parcela disjunta do resultado.
+
+A poda de grânulos não ocorre com um plano de consulta distribuído (`make_distributed_plan = 1`). Nesse caso, a configuração não tem efeito: a consulta retorna o mesmo resultado e o próprio Filtro em Tempo de Execução de JOIN se comporta exatamente como se esta configuração estivesse desabilitada; perde-se apenas a poda de grânulos.
 
 A poda de grânulos também é ignorada quando o lado de sondagem é lido com `FINAL` (a poda não está implementada para leituras com `FINAL`, e `optimizeLazyFinal` reconstrói esse tipo de leitura sem os descritores) e para tabelas com dados pendentes, mutações `ALTER` ou partes de patch. Nesses casos, a configuração também não tem efeito, no mesmo sentido.
+
+## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração experimental para condicionar a leitura do lado de sondagem de uma junção hash à conclusão do Filtro em Tempo de Execução do lado de construção e eliminar intervalos de leitura com base nele."}]}]} />
+
+Condiciona a leitura do lado de sondagem (probe) de uma junção hash à conclusão do Filtro em Tempo de Execução do lado de construção (build) (consulte `enable_join_runtime_filters`): nada é lido no lado de sondagem até que o filtro esteja concluído. Em seguida, o filtro é usado para eliminar intervalos de marcas inteiros com base na chave primária antes da criação das tarefas de leitura, além da filtragem comum em nível de linha (row-level). Esse condicionamento é expresso como uma aresta do pipeline de consulta. Em uma leitura condicionada, a análise de índice em tempo de leitura do mesmo Filtro em Tempo de Execução (consulte `enable_join_runtime_filters_index_analysis`) é ignorada, por ser redundante.
+
+Experimental. Leituras locais são condicionadas, incluindo leituras de thread única e em ordem. Já leituras com FINAL, réplicas paralelas ou uma junção distribuída em shards por intervalos de chave primária recorrem à leitura não condicionada com filtragem em nível de linha (row-level).
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 

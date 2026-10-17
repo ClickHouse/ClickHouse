@@ -98,6 +98,16 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください
 
 Iceberg における コンパクション data files のしきい値。
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "新しい設定。`remove_orphan_files` は、現在時刻からの差がこの秒数未満となる `older_than` を拒否します。これにより、開始からこの時間が経過しておらず、まだコミットされていない書き込みのファイルは削除されずに保持されます。`compatibility` を 26.10 より前のバージョンに設定すると、以前の動作 (最小値なし) に戻ります。"}]}]} />
+
+`ALTER TABLE ... EXECUTE remove_orphan_files` が Icebergテーブルから削除できるファイルの最小経過時間 (秒) です。`older_than` (明示的に指定された値、または `iceberg_orphan_files_older_than_seconds` から導出された値) が現在時刻からこの値よりも近い場合、その指定は拒否されます。まだコミットされていない書き込みのファイルはテーブルのメタデータから参照されていないため削除対象となり、その書き込みがコミットされた時点でテーブルが破損するためです。テーブルへの書き込みのコミットに要しうる最長時間よりも大きい値を設定してください。0 を指定するとこのチェックは無効になります。
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

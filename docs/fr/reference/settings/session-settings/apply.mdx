@@ -82,9 +82,9 @@ Notez qu’au départ (24.12), il existait un paramètre serveur (`send_settings
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de pousser (pushdown) les conditions de recherche de sous-chaînes sur les colonnes de type String depuis PREWHERE vers le parcours de colonne."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de pousser (pushdown) les conditions de recherche de sous-chaînes sur les colonnes de type `String` depuis `PREWHERE` vers le parcours de colonne, activé par défaut. Le paramètre `compatibility` défini sur une version antérieure à 26.10 le désactive."}]}]} />
 
 Pousse (pushdown) les conditions de recherche de sous-chaînes sur les colonnes de type `String` depuis `PREWHERE` vers le parcours de colonne.
 
@@ -94,13 +94,15 @@ pendant la désérialisation et lit les valeurs qui ne correspondent pas comme d
 est sélective, car les données des valeurs non correspondantes ne sont pas copiées dans la colonne. Le résultat de la requête reste inchangé,
 car les lignes contenant des valeurs non correspondantes sont nécessairement éliminées par `PREWHERE`, et de telles conditions ne correspondent jamais à une chaîne vide.
 
-Le filtre est désactivé de manière adaptative lors de l’exécution s’il s’avère peu sélectif.
+Le filtre est désactivé de manière adaptative lors de l’exécution s’il s’avère peu sélectif, ou si les valeurs non correspondantes
+sont trop courtes pour que le saut de leurs données soit rentable.
 
 Permet également à l’optimisation qui déplace les conditions de `WHERE` vers `PREWHERE` de déplacer les conditions de recherche de sous-chaînes (`LIKE`, `position`, `startsWith`, `endsWith`)
 même lorsqu’elles portent sur toutes les colonnes interrogées (ce qui est normalement inutile, mais avec ce paramètre, le parcours lui-même devient moins coûteux).
 Pour cette raison, l’égalité avec une chaîne constante n’est pas déplacée : elle reste appliquée pendant le parcours lorsqu’elle figure déjà dans `PREWHERE`.
 
-Pris en charge pour la lecture depuis les tables `MergeTree` et depuis le format `Parquet`.
+Pris en charge pour la lecture depuis les tables `MergeTree` et depuis le format `Parquet`. Dans `Parquet`, le filtre s’applique aux pages utilisant
+les encodages `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY` et `DELTA_BYTE_ARRAY`, ainsi que l’encodage par dictionnaire.
 
 Notez que l’estimation des octets en entrée, collectée pour la décision automatique concernant les répliques parallèles
 (`RuntimeDataflowStatisticsInputBytes`), repose sur la taille en mémoire des blocs lus ; elle sous-estime donc

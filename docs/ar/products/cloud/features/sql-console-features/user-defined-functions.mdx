@@ -418,7 +418,7 @@ Code: 754. DB::Exception: User defined function 'isBusinessHours' failed. Comman
 * يرفق [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) إصدار UDF بخدمة. لا يمكن أن تحتوي الخدمة إلا على إصدار واحد من الدالة في الوقت نفسه. يمكنك تثبيت رقم إصدار محدد، أو الإشارة إلى `clickhouse_udf.<name>.version` لترقية الخدمات تلقائيًا إلى أحدث إصدار.
 
 <Note>
-  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة beta، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
+  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة تجريبية، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
 </Note>
 
 على سبيل المثال، لنشر UDF‏ `isBusinessHours` من المثال السابق باستخدام Terraform:
@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-بالإضافة إلى السمات المطلوبة الموضحة أعلاه، يقبل المورد `clickhouse_udf` الخيارات `format` و`pool_size` و`max_command_execution_time` و`command_read_timeout` و`command_write_timeout` و`send_chunk_header` و`sandbox_type` و`sandbox_version` و`return_name` و`fail_on_build_error`؛ راجع [توثيق المورد](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) للاطلاع على المخطط الكامل.
+بالإضافة إلى السمات المطلوبة الموضحة أعلاه، يقبل المورد `clickhouse_udf` الخيارات `format` و`pool_size` و`max_command_execution_time` و`command_read_timeout` و`command_write_timeout` و`send_chunk_header` و`sandbox_type` و`return_name` و`fail_on_build_error`؛ راجع [توثيق المورد](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) للاطلاع على المخطط الكامل.
 
 لاختبار إصدار جديد على خدمة تطوير قبل وصوله إلى بيئة الإنتاج، اجعل أحد الإرفاقين يتتبّع أحدث إصدار، وثبّت الآخر على قيمة متغير. يتبع إرفاق التطوير كل إصدار جديد تلقائيًا، في حين لا ينتقل إرفاق الإنتاج إلى إصدار آخر إلا عند تغيير `var.prod_udf_version`:
 

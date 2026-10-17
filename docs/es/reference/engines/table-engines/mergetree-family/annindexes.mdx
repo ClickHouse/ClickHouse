@@ -33,17 +33,13 @@ El vector de referencia es un Array constante y se define como una expresión de
 Para ello, puede utilizarse cualquiera de las [funciones de distancia](/es/reference/functions/regular-functions/distance-functions) disponibles.
 `<N>` especifica cuántos vecinos se deben devolver.
 
-<div id="exact-nearest-neighbor-search">
-  ## Búsqueda vectorial exacta
-</div>
+## Búsqueda vectorial exacta {#exact-nearest-neighbor-search}
 
 Se puede realizar una búsqueda vectorial exacta usando la consulta SELECT anterior tal cual.
 El tiempo de ejecución de estas consultas suele ser proporcional al número de vectores almacenados, al número de elementos de los vectores (= la dimensión) y al ancho de bits de los elementos de los vectores.
 Además, dado que ClickHouse realiza un escaneo por fuerza bruta de todos los vectores, el tiempo de ejecución también depende del número de hilos que utiliza la consulta (consulta la configuración [max&#95;threads](/es/reference/settings/session-settings/max-threads#max_threads)).
 
-<div id="exact-nearest-neighbor-search-example">
-  ### Ejemplo
-</div>
+### Ejemplo {#exact-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab
@@ -73,13 +69,9 @@ devuelve
    └────┴─────────┘
 ```
 
-<div id="approximate-nearest-neighbor-search">
-  ## Búsqueda vectorial aproximada
-</div>
+## Búsqueda vectorial aproximada {#approximate-nearest-neighbor-search}
 
-<div id="vector-similarity-index">
-  ### Índices de similitud vectorial
-</div>
+### Índices de similitud vectorial {#vector-similarity-index}
 
 ClickHouse proporciona un índice especial de &quot;similitud vectorial&quot; para realizar búsqueda vectorial aproximada.
 
@@ -88,9 +80,7 @@ ClickHouse proporciona un índice especial de &quot;similitud vectorial&quot; pa
   Si tiene algún problema, abra una incidencia en el [repositorio de ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 </Note>
 
-<div id="creating-a-vector-similarity-index">
-  #### Crear un índice de similitud vectorial
-</div>
+#### Crear un índice de similitud vectorial {#creating-a-vector-similarity-index}
 
 Se puede crear un índice de similitud vectorial en una tabla nueva de esta forma:
 
@@ -214,9 +204,7 @@ Consumo de memoria = 3072 + 512 = 3584 MB
 
 La fórmula anterior no contempla la memoria adicional que necesitan los índices de similitud vectorial para asignar estructuras de datos en tiempo de ejecución, como búferes y cachés preasignados.
 
-<div id="using-a-vector-similarity-index">
-  #### Uso de un índice de similitud vectorial
-</div>
+#### Uso de un índice de similitud vectorial {#using-a-vector-similarity-index}
 
 <Note>
   Para usar índices de similitud vectorial, la configuración [compatibility](/es/reference/settings/session-settings/compatibility#compatibility) debe estar establecida en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
@@ -425,9 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   Una consulta ejecutada sin rescoring (`vector_search_with_rescoring = 0`) y con las réplicas paralelas habilitadas puede recurrir al rescoring.
 </Note>
 
-<div id="performance-tuning">
-  #### Optimización del rendimiento
-</div>
+#### Optimización del rendimiento {#performance-tuning}
 
 **Ajuste de la compresión**
 
@@ -578,9 +564,7 @@ result = chclient.query(
 En el ejemplo, el vector de referencia se envía tal cual en formato binario y se reinterpreta como un array de números de coma flotante en el servidor.
 Esto ahorra tiempo de CPU en el servidor y evita generar volumen innecesario en los logs del servidor y en `system.query_log`.
 
-<div id="administration">
-  #### Administración y monitorización
-</div>
+#### Administración y monitorización {#administration}
 
 El tamaño en disco de los índices de similitud vectorial puede consultarse en [system.data&#95;skipping&#95;indices](/es/reference/system-tables/data_skipping_indices):
 
@@ -598,9 +582,15 @@ Salida de ejemplo:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-<div id="differences-to-regular-skipping-indexes">
-  #### Diferencias con los índices de omisión de datos normales
-</div>
+#### Filas eliminadas {#deleted-rows}
+
+Un índice de similitud vectorial se construye cuando una parte se escribe, se fusiona o se modifica mediante una mutación, y no tiene constancia de las filas que se eliminen posteriormente con una [eliminación ligera](/es/reference/statements/delete) o con una mutación `ALTER TABLE ... DELETE` que aún esté pendiente.
+El índice seguiría devolviendo esas filas como candidatos, que luego se descartarían tras la lectura, por lo que la consulta podría devolver menos de `LIMIT N` filas u omitir los vecinos más cercanos restantes.
+Para garantizar que los resultados sean correctos, ClickHouse no utiliza el índice de similitud vectorial en las partes con filas eliminadas y, en su lugar, lee esas partes por completo (búsqueda exacta).
+El índice vuelve a utilizarse en la parte una vez que una fusión o una mutación la reescribe, por ejemplo, tras ejecutar `OPTIMIZE TABLE ... FINAL`.
+Con el parámetro de configuración `apply_deleted_mask = 0`, la consulta devuelve las filas eliminadas mediante eliminación ligera, por lo que el índice se sigue utilizando, salvo que la consulta filtre explícitamente por `_row_exists`.
+
+#### Diferencias con los índices de omisión de datos normales {#differences-to-regular-skipping-indexes}
 
 Como todos los [índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes) normales, los índices de similitud vectorial se construyen sobre gránulos, y cada bloque indexado consta de `GRANULARITY = [N]` gránulos (`[N]` = 1 de forma predeterminada para los índices de omisión de datos normales).
 Por ejemplo, si la granularidad del índice primario de la tabla es 8192 (configuración `index_granularity = 8192`) y `GRANULARITY = 2`, entonces cada bloque indexado contendrá 16384 filas.
@@ -626,9 +616,7 @@ Tenga en cuenta que la exactitud de la búsqueda es igual de buena en ambos caso
 En general, se recomienda usar un valor grande de `GRANULARITY` para los índices de similitud vectorial y recurrir a valores más pequeños de `GRANULARITY` solo en caso de problemas, como un consumo excesivo de memoria de las estructuras de similitud vectorial.
 Si no se especifica `GRANULARITY` para los índices de similitud vectorial, el valor predeterminado es 100 millones.
 
-<div id="approximate-nearest-neighbor-search-example">
-  #### Ejemplo
-</div>
+#### Ejemplo {#approximate-nearest-neighbor-search-example}
 
 Consultas:
 
@@ -666,18 +654,14 @@ Más conjuntos de datos de ejemplo que usan búsqueda vectorial aproximada:
 * [dbpedia](/es/get-started/sample-datasets/dbpedia)
 * [hackernews](/es/get-started/sample-datasets/hacker-news-vector-search)
 
-<div id="vector-search-with-quantized-codecs">
-  ### Búsqueda vectorial con códecs cuantizados
-</div>
+### Búsqueda vectorial con códecs cuantizados {#vector-search-with-quantized-codecs}
 
 <ExperimentalBadge />
 
 Para habilitar el códec `Quantized`, primero ejecuta `SET enable_quantized_codec = 1`.
 Si tienes algún problema, abre un issue en el [repositorio de ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 
-<div id="quantized-codecs-introduction">
-  #### Introducción
-</div>
+#### Introducción {#quantized-codecs-introduction}
 
 Un [índice de similitud vectorial](#vector-similarity-index) responde a una consulta de vecinos más cercanos recorriendo un grafo y ofrece un rendimiento muy bueno cuando el grafo cabe en memoria.
 Dos condiciones limitan su aplicabilidad:
@@ -702,9 +686,7 @@ El códec es adecuado para ClickHouse porque la parte costosa (el escaneo) es pr
 * **Distribuido.** En un clúster segmentado, el trabajo se distribuye entre las máquinas: cada segmento escanea su propia porción en paralelo y el coordinador fusiona las listas reducidas.
 * **Sin costes de construcción adicionales.** Los códigos cuantizados se generan a medida que se escriben los vectores. No hay ningún índice adicional que construir, ajustar o reconstruir, por lo que una tabla está lista para realizar búsquedas en cuanto se cargan sus datos.
 
-<div id="quantized-codecs-declaring">
-  #### Aplicar el códec
-</div>
+#### Aplicar el códec {#quantized-codecs-declaring}
 
 Especifique el códec `Quantized(...)` para la columna `Array(Float32)` (o `Array(Float64)` / `Array(BFloat16)`).
 
@@ -722,9 +704,7 @@ ORDER BY ...;
 
 El códec no se puede añadir ni cambiar posteriormente con `ALTER TABLE`.
 
-<div id="quantized-codecs-methods">
-  #### Métodos de cuantización
-</div>
+#### Métodos de cuantización {#quantized-codecs-methods}
 
 Cada método de cuantización presenta distintos equilibrios entre tamaño y exactitud. El argumento `dimensions` es la longitud del vector.
 
@@ -736,9 +716,7 @@ Cada método de cuantización presenta distintos equilibrios entre tamaño y exa
 
 `rabitq` y `turboquant` requieren que `dimensions` sea múltiplo de 8.
 
-<div id="quantized-codecs-searching">
-  #### Uso del códec
-</div>
+#### Uso del códec {#quantized-codecs-searching}
 
 El códec se utiliza automáticamente con la estructura habitual de las consultas top-`k` (consulta la [búsqueda exacta](#exact-nearest-neighbor-search)):
 
@@ -760,9 +738,7 @@ La configuración `vector_search_index_fetch_multiplier` especifica cuántos can
 Los multiplicadores más altos mejoran la exhaustividad a costa de realizar más reclasificación.
 El valor predeterminado es `1` (sin sobremuestreo); normalmente es necesario aumentarlo (por ejemplo, a `10`) para obtener una buena exhaustividad.
 
-<div id="approximate-nearest-neighbor-search-qbit">
-  ### Bit cuantizado (QBit)
-</div>
+### Bit cuantizado (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 Un enfoque habitual para acelerar la búsqueda vectorial exacta es usar un [tipo de dato float](/es/reference/data-types/float) de menor precisión.
 Por ejemplo, si los vectores se almacenan como `Array(BFloat16)` en lugar de `Array(Float32)`, el tamaño de los datos se reduce a la mitad y cabe esperar que los tiempos de ejecución de las consultas disminuyan proporcionalmente.
@@ -789,9 +765,7 @@ Donde:
 * `dimension` – la cantidad de elementos de cada vector
 * `stride` – opcional. Un divisor de `dimension` que particiona las dimensiones en `dimension / stride` grupos contiguos almacenados en flujos separados, de modo que una búsqueda solo sobre las dimensiones iniciales lea menos flujos (útil para los embeddings Matryoshka). El valor predeterminado es `dimension`, en cuyo caso el tipo es idéntico, byte por byte, a un `QBit` sin `stride`. Consulta la [página del tipo de dato `QBit`](/es/reference/data-types/qbit) para obtener más información.
 
-<div id="qbit-create">
-  #### Creación de una tabla `QBit` y adición de datos
-</div>
+#### Creación de una tabla `QBit` y adición de datos {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -809,9 +783,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div id="qbit-search">
-  #### Búsqueda vectorial con `QBit`
-</div>
+#### Búsqueda vectorial con `QBit` {#qbit-search}
 
 Busquemos los vecinos más cercanos a un vector que representa la palabra &#39;lemon&#39; mediante la distancia L2. El tercer parámetro de la función de distancia especifica la precisión en bits: los valores más altos ofrecen mayor precisión, pero requieren más procesamiento.
 
@@ -861,18 +833,14 @@ ORDER BY distance;
 
 Observa que, con una cuantización de 12 bits, obtenemos una buena aproximación de las distancias y las consultas se ejecutan más rápido. El orden relativo se mantiene prácticamente igual, y &#39;apple&#39; sigue siendo la coincidencia más cercana.
 
-<div id="qbit-performance">
-  #### Consideraciones de rendimiento
-</div>
+#### Consideraciones de rendimiento {#qbit-performance}
 
 La mejora de rendimiento de `QBit` se debe a la reducción de las operaciones de E/S, ya que al usar una precisión menor es necesario leer menos datos desde el almacenamiento. Además, cuando `QBit` contiene datos `Float32`, si el parámetro de precisión es 16 o menos, se obtienen beneficios adicionales al reducirse el cómputo. El parámetro de precisión controla directamente el equilibrio entre exactitud y velocidad:
 
 * **Mayor precisión** (más cercana al ancho original de los datos): resultados más precisos, consultas más lentas
 * **Menor precisión**: consultas más rápidas con resultados aproximados y menor uso de memoria
 
-<div id="references">
-  ### Referencias
-</div>
+### Referencias {#references}
 
 Blogs:
 

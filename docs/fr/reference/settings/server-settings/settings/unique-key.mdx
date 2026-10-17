@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres servent à configurer le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="unique_key_bitmap_cache_policy">
-  ## unique_key_bitmap_cache_policy
-</div>
+## unique_key_bitmap_cache_policy {#unique_key_bitmap_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique du cache delete-bitmap pour UNIQUE KEY (SLRU ou LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d&#39;éviction du cache des bitmaps de suppression pour UNIQUE KEY. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_bitmap_cache_size_bytes">
-  ## unique_key_bitmap_cache_size_bytes
-</div>
+## unique_key_bitmap_cache_size_bytes {#unique_key_bitmap_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Taille maximale, en octets, du cache en mémoire du processus pour les bitmaps de suppression par part de UNIQUE KEY. Définissez-la sur 0 pour désactiver le cache.
 
-<div id="unique_key_bitmap_cache_size_ratio">
-  ## unique_key_bitmap_cache_size_ratio
-</div>
+## unique_key_bitmap_cache_size_ratio {#unique_key_bitmap_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Taille de la file d’attente protégée (dans le cas de la politique SLRU) dans le cache de delete-bitmap de UNIQUE KEY, par rapport à la taille totale de ce cache.
 
-<div id="unique_key_index_cache_policy">
-  ## unique_key_index_cache_policy
-</div>
+## unique_key_index_cache_policy {#unique_key_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique de cache de l’index UNIQUE KEY (SLRU ou LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d’éviction du cache d’index UNIQUE KEY. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_index_cache_size_bytes">
-  ## unique_key_index_cache_size_bytes
-</div>
+## unique_key_index_cache_size_bytes {#unique_key_index_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="No" />Taille maximale (en octets) du cache en mémoire du processus pour les blocs d’index UNIQUE KEY (SST). Définissez-la sur 0 pour désactiver ce cache.
 
-<div id="unique_key_index_cache_size_ratio">
-  ## unique_key_index_cache_size_ratio
-</div>
+## unique_key_index_cache_size_ratio {#unique_key_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Taille de la file d’attente protégée (dans le cas de la politique SLRU) dans le cache d’index UNIQUE KEY, par rapport à la taille totale du cache.
 

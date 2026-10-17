@@ -56,6 +56,20 @@ Valeurs possibles :
 
 S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, la jointure hash sera automatiquement convertie en jointure grace hash pour permettre le déversement sur disque lorsque les données du côté droit dépassent ce nombre d&#39;octets. Conjointement avec `max_bytes_ratio_before_external_join`, il constitue le déclencheur de déversement basé sur un seuil pour tout `join_algorithm` reposant sur le hachage, y compris `grace_hash`, qui exige que l&#39;un des deux soit non nul. Dès qu&#39;un seuil non nul rend une jointure capable de déverser sur disque, `enable_adaptive_memory_spill_scheduler` peut la forcer à déverser sous pression mémoire avant que le seuil ne soit atteint. Lorsqu&#39;il est défini sur `0` (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`). Si les deux paramètres valent `0`, la jointure ne déverse jamais et le scheduler n&#39;a donc rien à déclencher. L&#39;exception est `legacy_join_size_limits_trigger_spilling` : lorsqu&#39;il est activé, un `grace_hash` standalone ignore les deux paramètres et déverse en fonction de `max_rows_in_join` / `max_bytes_in_join` à la place. Cela empêche l&#39;optimisation de lecture `read in order` via jointure. Le seuil limite également le côté droit matérialisé par la [jointure block nested loop](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition), quelle que soit la valeur de `join_algorithm`.
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le seuil indiqué, en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_set` s’applique."}]}]} />
+
+Seuil de mémoire de la requête, en octets, au-delà duquel le set d’un `IN` avec sous-requête est déversé sur le disque, pendant la construction du set ou pendant son utilisation par la requête. L’utilisation réelle de la mémoire peut dépasser ce seuil. Un set qui occupe
+moins de mémoire que ce seuil ou que 16 Mio (la plus petite de ces deux valeurs étant retenue) reste en mémoire.
+
+`0` désactive ce seuil. Si `max_bytes_ratio_before_external_set` définit également un seuil, la
+plus petite des deux valeurs est utilisée. Définissez les deux paramètres à `0` pour désactiver le déversement sur le disque.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -168,6 +182,21 @@ Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utili
 Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` sont tous deux définis, c&#39;est le plus petit seuil obtenu qui est utilisé. Si le ratio vaut `0`, seule la valeur absolue s&#39;applique.
 
 A un effet pour tous les `join_algorithm` basés sur le hachage, y compris `grace_hash`, à condition qu&#39;un chemin de données temporaire soit configuré.
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
+
+Fraction de la mémoire disponible du serveur ou de l’utilisateur servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN`
+avec sous-requête est déversé sur le disque. Par exemple, `0.5` correspond à la moitié de la mémoire disponible.
+
+Les valeurs doivent être supérieures ou égales à `0` et strictement inférieures à `1`. `0` désactive ce seuil. En l’absence de
+limite de mémoire applicable au niveau du serveur ou de l’utilisateur, le ratio est sans effet.
+
+`max_memory_usage` n’intervient pas dans ce calcul. Pour configurer le déversement sur le disque en fonction de cette limite,
+utilisez `max_bytes_before_external_set`, en prévoyant une marge pour l’utilisation de mémoire supplémentaire.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

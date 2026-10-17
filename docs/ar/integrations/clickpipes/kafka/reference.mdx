@@ -15,21 +15,39 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 ## مصادر البيانات المدعومة {#supported-data-sources}
 
-| الاسم            | الشعار                                                                                               | النوع | الحالة | الوصف                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------------------------- | ----- | ------ | ------------------------------------------------------------------------------------ |
-| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="شعار Apache Kafka" width="32" />                | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Apache Kafka إلى ClickHouse Cloud.     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="شعار Confluent Cloud" width="32" />         | البث  | مستقر  | استفد من الإمكانات المشتركة لـ Confluent وClickHouse Cloud من خلال تكاملنا المباشر.  |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="شعار Redpanda" width="32" />           | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Redpanda إلى ClickHouse Cloud.         |
-| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="شعار AWS MSK" width="32" />                       | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من AWS MSK إلى ClickHouse Cloud.          |
-| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="شعار Azure Event Hubs" width="32" /> | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Azure Event Hubs إلى ClickHouse Cloud. |
-| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="شعار WarpStream" width="32" />             | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من WarpStream إلى ClickHouse Cloud.       |
+| الاسم                                   | الشعار                                                                                                | النوع | الحالة      | الوصف                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----- | ----------- | ------------------------------------------------------------------------------------ |
+| Apache Kafka                            | <img src="/images/integrations/logos/kafka.svg" alt="شعار Apache Kafka" width="32" />                 | البث  | مستقر       | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Apache Kafka إلى ClickHouse Cloud.     |
+| Confluent Cloud                         | <img src="/images/integrations/logos/confluent.svg" alt="شعار Confluent Cloud" width="32" />          | البث  | مستقر       | استفد من الإمكانات المشتركة لـ Confluent وClickHouse Cloud من خلال تكاملنا المباشر.  |
+| Redpanda                                | <img src="/images/integrations/logos/logo_redpanda.webp" alt="شعار Redpanda" width="32" />            | البث  | مستقر       | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Redpanda إلى ClickHouse Cloud.         |
+| AWS MSK                                 | <img src="/images/integrations/logos/msk.svg" alt="شعار AWS MSK" width="32" />                        | البث  | مستقر       | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من AWS MSK إلى ClickHouse Cloud.          |
+| Google Managed Service for Apache Kafka | <img src="/images/icons/cloud-providers/google-cloud-color.svg" alt="شعار Google Cloud" width="32" /> | البث  | معاينة خاصة | اتصل بـ Google Managed Kafka باستخدام Workload Identity من GCP.                      |
+| Azure Event Hubs                        | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="شعار Azure Event Hubs" width="32" />  | البث  | مستقر       | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Azure Event Hubs إلى ClickHouse Cloud. |
+| WarpStream                              | <img src="/images/integrations/logos/warpstream.svg" alt="شعار WarpStream" width="32" />              | البث  | مستقر       | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من WarpStream إلى ClickHouse Cloud.       |
+
+## هوية عبء العمل (Workload Identity) في GCP {#gcp-workload-identity}
+
+<Note>
+  تتوفر خدمة Google Managed Kafka ومصادقة هوية عبء العمل (Workload Identity) في GCP حاليًا في مرحلة المعاينة الخاصة. اتبع [دليل هوية عبء العمل (Workload Identity) في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) لاسترداد حساب الخدمة الذي تديره ClickPipes ومنحه التفويض اللازم.
+</Note>
+
+امنح حساب خدمة ClickPipes الدور `roles/managedkafka.client` في المشروع الذي يضم عنقود Managed Kafka. يوفّر هذا الدور، عند الاتصال بالوسيط، الصلاحية `managedkafka.clusters.connect` اللازمة لمصادقة SASL، لكنه لا يُغني عن قوائم التحكم في الوصول (ACLs) الخاصة بـ Kafka.
+
+إذا كانت لدى عنقودك قوائم تحكم في الوصول مطبّقة على الموارد المحددة، فامنح الكيان الأمني لحساب الخدمة (`User:<service-account-email>`) العمليات التالية:
+
+| مورد Kafka                              | العمليات           |
+| --------------------------------------- | ------------------ |
+| الموضوعات المحددة                       | `READ`، `DESCRIBE` |
+| مجموعات المستهلكين الخاصة بـ ClickPipes | `READ`، `DESCRIBE` |
+
+يمكنك قصر نطاق قائمة التحكم في الوصول الخاصة بمجموعة المستهلكين على البادئة `clickpipes-`. تتطلب هوية عبء العمل (Workload Identity) استخدام TLS، ولا تُدعم إلا مع نوع المصدر Google Managed Kafka (`gcmk`).
 
 ## مستوى العزل {#isolation-level}
 
 يحدد مستوى عزل مستهلك Kafka ما إذا كان ClickPipe يقرأ ويُدرج الرسائل التي تم تثبيتها ضمن معاملات Kafka فقط. فعّل إعداد `kafka_read_committed` لاستخدام `read_committed` وتخطي الرسائل الناتجة عن معاملات Kafka المُجهضة. عطّله لاستخدام `read_uncommitted` وقراءة جميع الرسائل. يمكنك تهيئة هذا الإعداد ضمن **الإعدادات المتقدمة**.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## تنسيقات البيانات المدعومة {#supported-data-formats}
 </div>
 
 التنسيقات المدعومة هي:
@@ -39,11 +57,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## أنواع البيانات المدعومة
+  ## أنواع البيانات المدعومة {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### الأنواع القياسية
+  ### الأنواع القياسية {#standard-types-support}
 </div>
 
 أنواع بيانات ClickHouse القياسية التالية مدعومة حاليًا في ClickPipes:
@@ -75,7 +93,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * حقول JSON. يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON في مصدر تدفق البيانات. لا تُدعَم الأنواع الفرعية المعقدة (arrays/maps/tuples). بالإضافة إلى ذلك، ونظرًا للطريقة التي يحدد بها ClickPipes النوع الفرعي الصحيح من Variant الذي يجب استخدامه، لا يمكن استخدام أكثر من نوع عدد صحيح واحد أو نوع DateTime واحد في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
 
 <div id="json-type-support">
-  ### دعم نوع JSON
+  ### دعم نوع JSON {#json-type-support}
 </div>
 
 تدعم ClickPipes نوع JSON في الحالات التالية:
@@ -88,11 +106,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 لاحظ أنك ستحتاج إلى تغيير عمود الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متخطاة.
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
 <div id="supported-avro-data-types">
-  #### أنواع بيانات Avro المدعومة
+  #### أنواع بيانات Avro المدعومة {#supported-avro-data-types}
 </div>
 
 تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
@@ -106,7 +124,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * Tuple مُسمّى تحتوي على جميع القيم الافتراضية/الصفرية لـ Avro Record null
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
 #### أنواع بيانات Protobuf المدعومة {#supported-protobuf-data-types}
@@ -151,7 +169,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
 <div id="protobuf-one-ofs">
-  #### ‏Protobuf `oneof`
+  #### ‏Protobuf `oneof` {#protobuf-one-ofs}
 </div>
 
 أثناء استنتاج المخطط، تُربَط حقول Protobuf `oneof` افتراضيًا بـ `Tuple` مُسمّى، بحيث لا يحمل قيمة غير افتراضية سوى حقل واحد كحد أقصى.
@@ -159,7 +177,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 وبدلاً من ذلك، يمكن ربط كل حقل مكوّن يدويًا بعمود ClickHouse خاص به؛ ونظرًا إلى أن حقول `oneof` متنافية فيما بينها، فلن يُملأ لكل سجل سوى عمود واحد.
 
 <div id="protobuf-message-lists">
-  #### قوائم الرسائل
+  #### قوائم الرسائل {#protobuf-message-lists}
 </div>
 
 إذا كان مخطط Protobuf المعرّف لـ ClickPipe على المستوى الأعلى يحتوي على حقل متكرر واحد يكون بحد ذاته رسالة protobuf، فسيعتمد استنتاج المخطط وتعيين الأعمدة على حقل الرسالة &quot;المضمَّنة&quot;. وستُعالَج رسالة Kafka على أنها قائمة من هذه الرسائل، كما ستُفكَّك رسالة Kafka واحدة إلى عدة صفوف في ClickHouse.

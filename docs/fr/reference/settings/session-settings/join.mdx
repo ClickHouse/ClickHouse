@@ -17,7 +17,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déprécié au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déconseillé au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
 
 Spécifie quel algorithme de [JOIN](/fr/reference/statements/select/join) est utilisé.
 
@@ -47,13 +47,13 @@ Prend en charge `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 * hash
 
-L&#39;[algorithme de jointure de hachage](https://en.wikipedia.org/wiki/Hash_join) est utilisé. Il s&#39;agit de l&#39;implémentation la plus générique, qui prend en charge toutes les combinaisons de type et de strictness ainsi que plusieurs clés de jointure combinées avec `OR` dans la section `JOIN ON`.
+L&#39;[algorithme de jointure par hachage](https://en.wikipedia.org/wiki/Hash_join) est utilisé. Il s&#39;agit de l&#39;implémentation la plus générique, qui prend en charge toutes les combinaisons de type et de strictness ainsi que plusieurs clés de jointure combinées avec `OR` dans la section `JOIN ON`.
 
 Lors de l&#39;utilisation de l&#39;algorithme `hash`, la partie droite du `JOIN` est chargée en RAM.
 
 * parallel&#95;hash
 
-Une variante de la jointure `hash` qui découpe les données en buckets et construit plusieurs hashtables simultanément au lieu d&#39;une seule afin d&#39;accélérer ce processus.
+Une variante de la jointure par hachage `hash` qui découpe les données en buckets et construit plusieurs hashtables simultanément au lieu d&#39;une seule afin d&#39;accélérer ce processus.
 
 Lors de l&#39;utilisation de l&#39;algorithme `parallel_hash`, la partie droite du `JOIN` est chargée en RAM.
 
@@ -76,7 +76,7 @@ Prend en charge les jointures `INNER` et `LEFT`, et uniquement des clés de join
 
 * auto
 
-Lorsqu&#39;il est défini sur `auto`, la jointure `hash` est essayée en premier, et l&#39;algorithme bascule à la volée vers un autre algorithme si la limite de mémoire est dépassée.
+Lorsqu&#39;il est défini sur `auto`, la jointure par hachage `hash` est essayée en premier, et l&#39;algorithme bascule à la volée vers un autre algorithme si la limite de mémoire est dépassée.
 
 * full&#95;sorting&#95;merge
 
@@ -100,13 +100,13 @@ Le partitionnement par hachage sur les clés de jointure n&#39;est appliqué qu&
 * Les côtés déjà triés (une lecture MergeTree dans l&#39;ordre, ou toute entrée prétriée) : une dispersion préservant l&#39;ordre dans les fusions par partition peut provoquer un interblocage du pipeline. La lecture dans l&#39;ordre et son optimisation `read_in_order_use_virtual_row` sont conservées à la place.
 * Pendant que l&#39;initiateur construit un plan distribué (`make_distributed_plan`), car le tri dispersé n&#39;est pas sérialisable pour une exécution distante. Le plan local à fragment unique et les fragments par worker se réoptimisent avec ce paramètre désactivé, afin qu&#39;ils puissent tout de même être partitionnés.
 
-L&#39;ignorer désactive uniquement cette réécriture, et non le parallélisme en général : la jointure s&#39;exécute comme une seule `full_sorting_merge`, et les côtés MergeTree lus dans l&#39;ordre peuvent toujours être partitionnés à la source par plages de clé primaire (qui ordonnent selon la même comparaison que celle utilisée par la jointure, de sorte que les clés égales restent ensemble) lorsque `query_plan_join_shard_by_pk_ranges` est activé.
+L&#39;ignorer désactive uniquement cette réécriture, et non le parallélisme en général : la jointure s&#39;exécute comme une seule `full_sorting_merge`, et les côtés MergeTree lus dans l&#39;ordre peuvent toujours être partitionnés à la source par plages de clé primaire (qui ordonnent selon la même comparaison que celle utilisée par la jointure, de sorte que les clés égales restent ensemble) grâce à `query_plan_join_shard_by_pk_ranges` (activé par défaut).
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possible, sinon il utilise `hash`. *Deprecated*, identique à `partial_merge,hash`.
+ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possible, sinon il utilise `hash`. *Déconseillé*, identique à `partial_merge,hash`.
 
-* default (deprecated)
+* default (déconseillé)
 
 Valeur legacy, à ne plus utiliser.
 Identique à `direct,hash`, c&#39;est-à-dire essayer d&#39;utiliser la jointure directe puis la jointure par hachage (dans cet ordre).

@@ -34,6 +34,19 @@ Especifica el nombre de la base de datos que usa el dialecto &#39;promql&#39;. U
 
 Establece el tiempo de evaluación que se usará con el dialecto promql, como una marca temporal Unix en segundos con una parte fraccionaria opcional. &#39;auto&#39; significa la hora actual.
 
+## promql_push_down_label_matchers {#promql_push_down_label_matchers}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para copiar los comparadores de etiquetas de PromQL entre operadores binarios."}]}]} />
+
+Copia los comparadores de etiquetas de un lado de un operador binario de PromQL a los selectores del otro lado, para las etiquetas por las que el operador empareja las series. Así, `b / on(job) a{job="x"}` lee solo las series de `b` con `job="x"`.
+Un comparador no se copia cuando las series que excluye podrían hacer que Prometheus devuelva series duplicadas: hacia el lado &quot;one&quot; del operador, salvo que se trate de una agregación por las etiquetas emparejadas; hacia un operador entre dos vectores distinto de `and` y `unless`; y a través de una función sobre un rango o de un operador con un escalar, salvo que su entrada sea una única métrica seleccionada por nombre.
+Una comparación sin `bool` conserva el nombre de la métrica, por lo que los comparadores siempre la atraviesan. El resto de funciones y el menos unario detienen la propagación de los comparadores.
+Un comparador copiado convierte un selector de una métrica completa en uno filtrado, lo que puede resultar más lento en una tabla [TimeSeries](/es/reference/engines/table-engines/integrations/time-series) con un `id` agrupado por métrica (el valor predeterminado) si el comparador conserva la mayoría de las series de la métrica. Desactive esta configuración para ese tipo de consultas.
+
 ## promql_table {#promql_table}
 
 <PrivatePreviewBadge />

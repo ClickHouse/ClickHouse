@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Alias**: `mapFromString`, `str_to_map`
+**Alias**: `str_to_map`, `mapFromString`
 
 **Argumentos**
 
@@ -843,6 +843,8 @@ La consulta `SELECT mapKeys(m) FROM table` se transforma en `SELECT m.keys FROM 
 mapKeys(map)
 ```
 
+**Alias**: `map_keys`
+
 **Argumentos**
 
 * `map` — Mapa del que extraer las claves. [`Map(K, V)`](/es/reference/data-types/map)
@@ -958,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Valor devuelto**
 
-Devuelve un mapa o una Tuple de dos arrays, donde el primero contiene las claves en orden y el segundo los valores correspondientes a esas claves. [`Map(K, V)`](/es/reference/data-types/map) o [`Tuple(Array(UInt*), Array(Any))`](/es/reference/data-types/tuple)
+Devuelve un mapa o una tupla de dos arrays, donde el primero contiene las claves en orden y el segundo los valores correspondientes a esas claves. [`Map(K, V)`](/es/reference/data-types/map) o [`Tuple(Array(UInt*), Array)`](/es/reference/data-types/tuple)
 
 **Ejemplos**
 
@@ -1174,6 +1176,8 @@ La consulta `SELECT mapValues(m) FROM table` se transforma en `SELECT m.values F
 ```sql
 mapValues(map)
 ```
+
+**Alias**: `map_values`
 
 **Argumentos**
 

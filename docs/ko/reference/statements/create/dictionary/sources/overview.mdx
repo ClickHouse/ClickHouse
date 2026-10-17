@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## 구문
-</div>
+## 구문 {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## 지원되는 딕셔너리 소스
-</div>
+## 지원되는 딕셔너리 소스 {#supported-dictionary-sources}
 
 다음 소스 유형(`SOURCE_TYPE`/`source_type`)을 지원합니다:
 
@@ -96,3 +92,40 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
     ```
   </Tab>
 </Tabs>
+
+## 사용자 정의 쿼리의 컬럼 순서 {#custom-query-column-order}
+
+[ClickHouse](/ko/reference/statements/create/dictionary/sources/clickhouse),
+[MySQL](/ko/reference/statements/create/dictionary/sources/mysql),
+[PostgreSQL](/ko/reference/statements/create/dictionary/sources/postgresql) 및
+[ODBC](/ko/reference/statements/create/dictionary/sources/odbc) 소스는 `query` 필드를 지원합니다. 이 필드를 지정하면
+ClickHouse가 `table`과 `where`를 바탕으로 빌드하는 쿼리 대신 해당 쿼리가 사용됩니다.
+
+딕셔너리는 이 결과의 컬럼이 정해진 순서대로 나열된다고 가정합니다. 이 순서는 `CREATE DICTIONARY` SQL 문에서
+속성을 작성한 순서와 다릅니다.
+
+1. 키 컬럼(Key column): `PRIMARY KEY`에 지정된 순서대로
+2. [`range_hashed`](/ko/reference/statements/create/dictionary/layouts/range-hashed) 또는
+   `complex_key_range_hashed` 딕셔너리라면 `range_min` 컬럼, 이어서 `range_max` 컬럼
+3. 나머지 속성: 선언된 순서대로
+
+ClickHouse 소스는 컬럼명을 기준으로 결과를 이 순서에 맞추므로, 각 컬럼 이름이 해당 컬럼이 채우는 속성 이름과 같다면
+`query`의 컬럼 순서는 상관없습니다. 반면 MySQL, PostgreSQL 및 ODBC 소스는 컬럼을 위치 기준으로 가져오므로,
+컬럼 순서가 위와 다른 `query`를 사용하면 값이 엉뚱한 속성에 로드됩니다. 관련 타입에 따라
+딕셔너리가 변환 오류로 로드되지 않거나 잘못된 값이 저장되므로,
+`query`는 위 순서대로 작성하십시오.
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

@@ -18,9 +18,7 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
   HTTP Connector는 [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license)에 따라 배포됩니다.
 </Note>
 
-<div id="quick-start-steps">
-  ### 빠른 시작 단계
-</div>
+### 빠른 시작 단계 {#quick-start-steps}
 
 <Steps>
   <Step title="연결 정보 수집" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
 </Steps>
 
 <div id="troubleshooting">
-  ### 문제 해결
+  ### 문제 해결 {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink가 메시지를 배칭하지 않는 경우
+  #### HTTP Sink가 메시지를 배칭하지 않는 경우 {#http-sink-doesnt-batch-messages}
 </div>
 
 [Sink 문서](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp)에 따르면 다음과 같습니다.
@@ -121,11 +119,11 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
 2. HTTP API URL에 매개변수를 추가하면 각 레코드마다 고유한 URL이 생성될 수 있습니다. 따라서 추가 URL 매개변수를 사용하면 배칭이 비활성화됩니다.
 
 <div id="400-bad-request">
-  #### 400 잘못된 요청
+  #### 400 잘못된 요청 {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 JSON 객체를 `String` 컬럼에 삽입할 때 HTTP Sink가 다음 메시지와 함께 실패하는 경우:
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 URL에서 `input_format_json_read_objects_as_strings=1` 설정을 인코딩된 문자열 `SETTINGS%20input_format_json_read_objects_as_strings%3D1`로 지정하십시오
 
 <div id="load-the-github-dataset-optional">
-  ### GitHub 데이터셋 로드(선택 사항)
+  ### GitHub 데이터셋 로드(선택 사항) {#load-the-github-dataset-optional}
 </div>
 
 이 예시에서는 GitHub 데이터셋의 배열 필드를 그대로 유지합니다. 예시에서는 비어 있는 `github` topic이 있다고 가정하고, Kafka에 메시지를 삽입하기 위해 [kcat](https://github.com/edenhill/kcat)을 사용합니다.

@@ -825,6 +825,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads`에 설정된 최대 쿼리 처리 스레드 수
 </Note>
 
+#### 집계, 정렬(sorting), DISTINCT 간격의 스필 {#explain-analyze-spilling}
+
+`GROUP BY`, `ORDER BY` 또는 `DISTINCT` 간격에서 데이터가 임시 저장소로 디스크 유출(spill)되면 다음 정보가 보고됩니다:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+이는 병렬 프로세서를 포함하여 해당 간격 전체에서 기록된 압축된 바이트 수의 누적값입니다.
+이미 소비되었거나 삭제된 임시 파일도 합계에 포함되며, 데이터가 두 번 이상 디스크로 유출된 경우에는 매 기록이 모두 집계됩니다.
+디스크로 유출된 데이터가 없으면 이 줄은 표시되지 않습니다.
+
 #### 조인 단계 {#explain-analyze-join-steps}
 
 조인 단계에서 `EXPLAIN ANALYZE`는 조인 순서 최적화기의 추정치와 실제 결과를 비교하는 행([추정 조인 메트릭과 실제 조인 메트릭 비교](#explain-analyze-join-estimation) 참고)과 각 측의 *참여* 행인 `Left`와 `Right`를 출력한 후, 조인 구현에 특화된 행을 출력합니다. `Left`와 `Right`는 SQL상의 논리적인 측에 해당합니다. 대부분 `Left`는 조인의 프로브(probe) 측이기도 하며, `Right`는 조인의 빌드(build) 측이기도 합니다. 그러나 조인 실행 중에 스왑이 발생할 수 있으므로 항상 그런 것은 아닙니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 모든 값(`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`)이 지원됩니다. 또한 이 설정으로 선택할 수 없는 세 가지 구현, 즉 `CROSS` 또는 `COMMA` 조인, 조인 키를 결정하지 않는 `ON` 절을 사용하는 [블록 중첩 루프 조인(block nested loop join)](/ko/reference/statements/select/join#join-with-an-arbitrary-on-condition), 그리고 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진도 지원됩니다. 대부분은 양쪽 모두에 대한 정보를 보고하지만, 일부는 구체화하는 측에 대해서만 보고합니다(예: `direct`는 `Left:`만 출력합니다).

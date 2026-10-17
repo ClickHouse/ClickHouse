@@ -109,13 +109,14 @@ schema 管理工具通常分为两类。
 
 以下工具也支持 ClickHouse。它们是否更合适，取决于您的技术栈和工作流。不过，我们通常还是推荐使用上面提到的工具。
 
-| 工具                                                                                            | 许可证  | 适用场景                                                                                                      |
-| :-------------------------------------------------------------------------------------------- | :--- | :-------------------------------------------------------------------------------------------------------- |
-| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | Open Core | 适合需要在多个环境中进行治理、审批工作流和审计追踪的大型组织                                                                            |
-| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 开源   | 适合已标准化使用 Flyway，或采用基于 JVM 基础设施的团队                                                                         |
-| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | Open Core | 适合在多个数据库中使用 Liquibase，并希望保持一致性的团队                                                                         |
-| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 开源   | 适合希望使用简单、专注于 ClickHouse 的迁移工具的 Node.js 或 TypeScript 团队                                                   |
-| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 开源   | 适合希望使用具备环境感知能力的 ClickHouse 特有工具的 Python 团队                                                                |
-| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 开源   | 适合偏好使用原生 ClickHouse 客户端部署脚本，或在复杂部署中进行显式依赖管理的团队                                                            |
-| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 开源   | 适合已使用 SQLAlchemy 进行数据库访问的 Python 团队                                                                       |
-| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 开源   | 适合希望使用简单的、基于文件的迁移工具、命令行客户端和库，并支持 ClickHouse 集群、可选择启用基于 Keeper 的锁以处理并发运行、schema 转储与差异比较，以及离线验证的 Python 团队 |
+| 工具                                                                                            | 许可证       | 适用场景                                                                                                     |
+| :-------------------------------------------------------------------------------------------- | :-------- | :------------------------------------------------------------------------------------------------------- |
+| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | Open Core | 适合需要在多个环境中进行治理、审批工作流和审计轨迹的大型组织                                                                           |
+| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 开源        | 适合已标准化使用 Flyway，或采用基于 JVM 基础设施的团队                                                                        |
+| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | Open Core | 适合在多个数据库中使用 Liquibase，并希望保持一致性的团队                                                                        |
+| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 开源        | 适合希望使用简单、专注于 ClickHouse 的迁移工具的 Node.js 或 TypeScript 团队                                                   |
+| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 开源        | 适合希望使用具备环境感知能力的 ClickHouse 特有工具的 Python 团队                                                               |
+| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 开源        | 适合偏好使用原生 ClickHouse 客户端部署脚本，或在复杂部署中进行显式依赖管理的团队                                                           |
+| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 开源        | 适合已使用 SQLAlchemy 进行数据库访问的 Python 团队                                                                      |
+| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 开源        | 适合希望使用简单的、基于文件的迁移工具、命令行客户端和库，并支持 ClickHouse 集群、可选择启用基于 Keeper 的锁以处理并发运行、schema 转储与差异比较，以及离线验证的 Python 团队 |
+| [Ptah](https://docs.ptah.run/edge/databases/clickhouse/)                                      | 开源 (MIT)  | 适合希望为 ClickHouse 提供完全开源的声明式模式管理、自动生成迁移、漂移检测和版本化迁移，且无专有功能开关或付费许可证限制的团队；还提供兼容 Atlas 的命令行客户端，支持 Pro 级功能。    |
