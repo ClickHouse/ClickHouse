@@ -69,6 +69,7 @@ public:
     MergeTreeConditionBloomFilterText(
             const ActionsDAG::Node * predicate,
             ContextPtr context,
+            StorageMetadataPtr metadata_snapshot_,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
@@ -149,6 +150,7 @@ private:
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
+    StorageMetadataPtr metadata_snapshot;
     Names index_columns;
     /// Argument types of the JSON index functions of this index, by position in `index_columns`.
     JSONIndexArgumentTypes json_argument_types;

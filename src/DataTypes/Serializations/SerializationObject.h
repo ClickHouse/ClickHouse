@@ -81,6 +81,12 @@ public:
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
+    /// Whether a substream descends into one JSON path; the path is in `object_path_name`.
+    static bool isPathStep(const Substream & substream);
+
+    /// Whether a substream adds nothing to a subcolumn's name and may sit between an object and its path steps.
+    static bool isTransparentWrapper(const Substream & substream);
+
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
         SerializeBinaryBulkSettings & settings,

@@ -93,6 +93,7 @@ public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
+        StorageMetadataPtr metadata_snapshot_,
         const Block & index_sample_block,
         const std::optional<String> & normalized_index_column_name_,
         TokenizerPtr tokenizer_,
@@ -234,6 +235,7 @@ private:
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
+    StorageMetadataPtr metadata_snapshot;
     Block header;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
