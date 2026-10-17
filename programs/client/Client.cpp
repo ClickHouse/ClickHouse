@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -410,6 +411,8 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    /// The engines are not registered, so the secrets of their arguments are shown.
+    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 
     processConfig();
     adjustSettings(client_context);
@@ -1068,18 +1071,17 @@ void Client::connect()
         prompt = prompt_escaped;
     }
 
-    /// Substitute placeholders in the form of {name}:
+    /// Substitute placeholders in the form of {name}.
+    /// The {display_name} placeholder is kept: it is substituted in getPrompt on every
+    /// call, because the current dialect is rendered next to the display name.
     const std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
         {"port", toString(connection_parameters.port)},
         {"user", connection_parameters.user},
-        {"display_name", server_display_name},
     };
 
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt, "{" + key + "}", value);
-
-    prompt = appendSmileyIfNeeded(prompt);
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
@@ -1423,7 +1425,8 @@ void Client::processOptions(
         }
     }
 
-    if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
+    create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>();
+    if (create_query_fuzzer_runs)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);

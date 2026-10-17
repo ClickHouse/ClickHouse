@@ -24,6 +24,7 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
+#include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Core/UUID.h>
@@ -130,7 +131,21 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserFunction().parse(pos, node, expected);
+    /// Keep the name as written: the function parser can normalize the names of special functions, e.g. `OVERLAY` to `overlay`,
+    /// but it is the name of an engine here, like `Overlay`.
+    ASTPtr name;
+    auto begin = pos;
+    if (!ParserIdentifier().parse(pos, name, expected))
+        return false;
+    pos = begin;
+
+    if (!ParserFunction().parse(pos, node, expected))
+        return false;
+
+    String written_name = getIdentifierName(name);
+    if (auto * function = node->as<ASTFunction>(); function && Poco::toLower(function->name) == Poco::toLower(written_name))
+        function->name = std::move(written_name);
+    return true;
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -924,7 +939,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;
@@ -2141,6 +2156,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 For both features, you can specify a different engine for the table.
 If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+A copy of the schema needs the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks, the copy also needs the `SELECT` privilege, because the new table can read the data with those credentials.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
@@ -2552,6 +2569,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
+- The number of temporary tables in a session and their sizes can be limited with the [max_temporary_tables](/reference/settings/session-settings/max-temporary#max_temporary_tables), [max_temporary_table_memory_usage](/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (for the `Memory` engine), [max_temporary_table_size_bytes_compressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) and [max_temporary_table_size_bytes_uncompressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (for the `MergeTree` family) settings.
 
 ## Syntax {#syntax}
 
@@ -2795,6 +2813,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
+Codec names are case-insensitive, so `CODEC(ZSTD)`, `CODEC(zstd)` and `CODEC(ZStd)` all name the same codec.
+
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 </Tip>
@@ -2882,6 +2902,22 @@ The codec accepts an optional variant argument:
 
 <Note>
 This codec is in beta and requires `SET enable_alp_codec = 1` to use.
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge/>
+
+`PCO(level)` — Lossless compression for sequences of fixed-width numbers, using the [pcodec](https://github.com/pcodec/pcodec) library. Applicable to all numeric types of 1, 2, 4 or 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, and the types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, and `Enum`). `Decimal128`/`Decimal256` and non-numeric types are not supported.
+
+pcodec identifies an approximate structure of the numbers (a "mode", e.g. an approximate common multiplier) and splits each value into "latents" that it then compresses with delta encoding and an interleaved [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entropy coder. On numeric columns with smooth, multimodal, or high-entropy distributions (measurements, timings, counters, identifiers) it often compresses better than `Gorilla`/`FPC`/`ZSTD`/`ALP`; it has no run-length or match-based path, so constant or low-cardinality columns compress worse. Encoding is several times slower than `ZSTD`; decoding is workload-dependent.
+
+The optional `level` argument sets the compression level from 0 to 12; the default is 8. When a block would not compress (e.g. incompressible data), it is stored uncompressed, so the codec never expands data by more than a small constant per block.
+
+The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
+
+<Note>
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
 </Note>
 
 ### FPC {#fpc}
@@ -3254,6 +3290,9 @@ To change SQL security for an existing view, use
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
+
+A `DEFINER` that is not the current user requires the `SET DEFINER` grant on that user, both when the view is created and with `MODIFY SQL SECURITY`.
+To change the query of a `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view with [`ALTER TABLE ... MODIFY QUERY`](/reference/statements/alter/view#required-privileges), the same grants are necessary as to declare its SQL security.
 
 ### Examples {#examples}
 ```sql
@@ -3749,6 +3788,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
 
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
+
 **Example**
 
 ```sql
@@ -3842,6 +3886,8 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ## Attach MergeTree table as ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
+
+The conversion is supported for tables in `Atomic` and `Ordinary` databases. A table in an `Ordinary` database has no UUID, so the conversion generates a UUID, expands `default_replica_path` with it once, and stores the resulting path explicitly in the engine arguments of the converted table. To add further replicas of such a table, specify this path explicitly in the first argument of the `ReplicatedMergeTree` engine; it can be found in the `zookeeper_path` column of `system.replicas`. Because the stored path no longer contains the `{uuid}` macro, the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{uuid}` in `default_replica_name` is not supported for any conversion.
 
 Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
 

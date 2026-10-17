@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 /// Highlight types for syntax highlighting of parsed queries.
 /// APPLY_FOR_HIGHLIGHTS lists the publicly visible types (used in the output of `highlightQuery`).
-/// string_like and string_regexp are internal types used by the parser before expansion.
+/// string_like, string_similar_to, and string_regexp are internal types used by the parser before expansion.
 #define APPLY_FOR_HIGHLIGHTS(M) \
     M(none) \
     M(keyword) \
@@ -44,9 +44,10 @@ enum class Highlight : uint8_t
 #define M(NAME) NAME,
     APPLY_FOR_HIGHLIGHTS(M)
 #undef M
-    /// These two are used internally by the parser to mark LIKE/REGEXP string ranges.
+    /// These are used internally by the parser to mark LIKE/SIMILAR_TO/REGEXP string ranges.
     /// They are expanded into string/string_escape/string_metacharacter by `expandHighlights`.
     string_like,
+    string_similar_to,
     string_regexp,
 };
 
@@ -62,7 +63,7 @@ struct HighlightedRange
     }
 };
 
-/// Expand string_like and string_regexp ranges into character-level sub-ranges
+/// Expand string_like, string_similar_to, and string_regexp ranges into character-level sub-ranges
 /// with string, string_escape, and string_metacharacter highlight types.
 /// Other ranges are passed through unchanged.
 std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> & highlights);
@@ -82,7 +83,7 @@ struct Expected
 
     /// Optional map for capturing literal token positions during parsing.
     /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
-    /// and for LIKE/REGEXP syntax highlighting.
+    /// and for LIKE/SIMILAR_TO/REGEXP syntax highlighting.
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
 
