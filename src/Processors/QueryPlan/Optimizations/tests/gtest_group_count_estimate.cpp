@@ -8,7 +8,7 @@ using namespace DB::QueryPlanOptimizations;
 TEST(GroupCountEstimate, SharedFormula)
 {
     /// No keys: one group.
-    auto global = estimateGroupCount({}, 1000, 1000);
+    auto global = estimateGroupCount(std::vector<UInt64>{}, 1000, 1000);
     EXPECT_EQ(global.estimated_rows, 1);
     EXPECT_EQ(global.max_rows, 1);
 
