@@ -142,9 +142,13 @@ public:
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
         }
 
-        if (which.isDateTime64())
+        /// A bare `NULL` key with `DateTime64` bounds (`toDateTime64(...)`) is handled as a `DateTime64`
+        /// x-axis of scale 0: the bounds arrive as `DecimalField<DateTime64>` and cannot be read as integers.
+        if (which.isDateTime64()
+            || (which.isNothing()
+                && (params[n - 2].getType() == Field::Types::Decimal64 || params[n - 1].getType() == Field::Types::Decimal64)))
         {
-            const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*key_type).getScale();
+            const UInt32 col_scale = which.isDateTime64() ? typeid_cast<const DataTypeDateTime64 &>(*key_type).getScale() : 0;
 
             const auto & begin_dec = params[n - 2].safeGet<DecimalField<DateTime64>>();
             const auto & end_dec   = params[n - 1].safeGet<DecimalField<DateTime64>>();

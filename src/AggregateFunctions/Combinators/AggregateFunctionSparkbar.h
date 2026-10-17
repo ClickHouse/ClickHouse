@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <limits>
 #include <string_view>
 
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -130,15 +131,17 @@ private:
             }
             else
             {
+                /// The overflow of v * (BAR_LEVELS - 1) is checked by comparison rather than by
+                /// `common::mulOverflow`, because the latter does not detect overflow for wide
+                /// integers (`Int128`, `Int256`, ...) and would return a wrapped negative product.
                 const V levels_num = V{BAR_LEVELS - 1};
                 V level{};
-                V scaled{};
-                if (common::mulOverflow(v, levels_num, scaled))
-                    /// v * (BAR_LEVELS - 1) overflowed, which implies y_max >= v is at least
+                if (v > std::numeric_limits<V>::max() / levels_num)
+                    /// v * (BAR_LEVELS - 1) would overflow, which implies y_max >= v is at least
                     /// max<V> / (BAR_LEVELS - 1), so y_max / levels_num is never zero here.
                     level = v / (y_max / levels_num) + V{1};
                 else
-                    level = scaled / y_max + V{1};
+                    level = v * levels_num / y_max + V{1};
                 levels[i] = level > V{BAR_LEVELS} ? UInt8{BAR_LEVELS} : static_cast<UInt8>(level);
             }
         }
