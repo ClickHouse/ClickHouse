@@ -212,6 +212,7 @@
           "pages": [
             "get-started/migrate/snowflake/overview",
             "get-started/migrate/snowflake/migration-guide",
+            "get-started/migrate/snowflake/equivalent-concepts",
             "get-started/migrate/snowflake/sql-translation-reference"
           ]
         },
