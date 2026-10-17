@@ -24,6 +24,44 @@ ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPo
     return result;
 }
 
+/// Compares `row` of `column` with row 0 of `threshold` the way `sortBlock` orders them, including the collation.
+int compareWithThresholdRow(const IColumn & column, size_t row, const IColumn & threshold, const SortColumnDescription & description)
+{
+    int res = description.collator && column.isCollationSupported()
+        ? column.compareAtWithCollation(row, 0, threshold, description.nulls_direction, *description.collator)
+        : column.compareAt(row, 0, threshold, description.nulls_direction);
+    return description.direction * res;
+}
+
+/// `IColumn::compareColumn` against row 0 of `threshold`, honoring the collation (which has no vectorized form).
+void compareColumnWithThreshold(
+    const IColumn & column, const IColumn & threshold, const SortColumnDescription & description,
+    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results)
+{
+    if (!description.collator || !column.isCollationSupported())
+    {
+        column.compareColumn(threshold, 0, row_indexes, compare_results, description.direction, description.nulls_direction);
+        return;
+    }
+
+    if (!row_indexes)
+    {
+        for (size_t row = 0; row < column.size(); ++row)
+            compare_results[row] = static_cast<Int8>(compareWithThresholdRow(column, row, threshold, description));
+        return;
+    }
+
+    /// Same contract as `compareColumn`: `row_indexes` keeps only the rows equal to the threshold.
+    size_t equal_rows = 0;
+    for (size_t row : *row_indexes)
+    {
+        compare_results[row] = static_cast<Int8>(compareWithThresholdRow(column, row, threshold, description));
+        if (compare_results[row] == 0)
+            (*row_indexes)[equal_rows++] = row;
+    }
+    row_indexes->resize(equal_rows);
+}
+
 size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & threshold_columns,
                      const SortDescription & description, size_t num_rows, IColumn::Filter & filter,
                      PaddedPODArray<UInt64> & rows_to_compare, PaddedPODArray<Int8> & compare_results)
@@ -34,8 +72,7 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     if (description.size() == 1)
     {
         /// Fast path for single column
-        raw_block_columns[0]->compareColumn(*threshold_columns[0], 0, nullptr, compare_results,
-                              description[0].direction, description[0].nulls_direction);
+        compareColumnWithThreshold(*raw_block_columns[0], *threshold_columns[0], description[0], nullptr, compare_results);
     }
     else
     {
@@ -45,8 +82,7 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
         size_t size = description.size();
         for (size_t i = 0; i < size; ++i)
         {
-            raw_block_columns[i]->compareColumn(*threshold_columns[i], 0, &rows_to_compare, compare_results,
-                                  description[i].direction, description[i].nulls_direction);
+            compareColumnWithThreshold(*raw_block_columns[i], *threshold_columns[i], description[i], &rows_to_compare, compare_results);
 
             if (rows_to_compare.empty())
                 break;
@@ -73,7 +109,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
     size_t raw_block_columns_size = raw_block_columns.size();
     for (size_t i = 0; i < raw_block_columns_size; ++i)
     {
-        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(min_block_index, 0, *threshold_columns[i], sort_description[i].nulls_direction);
+        int res = compareWithThresholdRow(*raw_block_columns[i], min_block_index, *threshold_columns[i], sort_description[i]);
 
         if (res < 0)
             return true;
