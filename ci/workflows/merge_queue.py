@@ -27,8 +27,10 @@ workflow = Workflow.Config(
         # covering its changed lines) against the merge group state. A PR tested
         # against an older `master` can break tests that landed after its last CI
         # run, e.g. https://github.com/ClickHouse/ClickHouse/pull/117198 broke two
-        # `test_storage_delta` tests added to `master` meanwhile. Both jobs stop
-        # at 30 minutes from their start, so they bound the queue latency.
+        # `test_storage_delta` tests added to `master` meanwhile. Besides the
+        # PR's selection, they rerun the tests `master` changed after the PR's
+        # last CI run (see `Targeting.get_merge_queue_drift_tests`). Both jobs
+        # stop at 30 minutes from their start, so they bound the queue latency.
         *JobConfigs.stateless_tests_targeted_mq_jobs,
         *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a

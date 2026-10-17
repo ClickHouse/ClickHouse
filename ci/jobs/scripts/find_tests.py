@@ -8,6 +8,7 @@ from pathlib import Path
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import time
+from collections import Counter
 
 sys.path.append("./")
 
@@ -407,7 +408,6 @@ class Targeting:
 
     def get_changed_tests(self, strict=False):
         # TODO: add support for integration tests
-        result = set()
         if hasattr(self, "_diff_text") and self._diff_text:
             # Reuse already-fetched diff text to extract changed file names — avoids
             # a second diff fetch and works when the diff was pre-fetched via --diff-file.
@@ -431,8 +431,16 @@ class Targeting:
             raise RuntimeError(
                 "Failed to get changed files required for test selection"
             )
+        return self.tests_from_changed_files(changed_files)
+
+    @classmethod
+    def tests_from_changed_files(cls, changed_files, verbose=True):
+        """The stateless tests to rerun for the given changed files: the changed
+        tests themselves and the owners of changed data files."""
+        log = print if verbose else lambda *args: None
+        result = set()
         if not changed_files:
-            return result
+            return []
 
         # Tests removed by the change, with no source file left under that name.
         # Their supporting files (`.reference`, the `.python` helper of a `.sh`
@@ -447,20 +455,20 @@ class Targeting:
         }
         removed_tests = set()
         for fname in removed_files:
-            for ext in self._TEST_FILE_EXTENSIONS:
+            for ext in cls._TEST_FILE_EXTENSIONS:
                 if not fname.endswith(ext):
                     continue
                 name = fname[: -len(ext)]
                 if (
                     f"{name}.reference" in removed_files
                     or f"{name}.reference.j2" in removed_files
-                ) and not self.functional_test_source_file(name):
+                ) and not cls.functional_test_source_file(name):
                     removed_tests.add(name)
 
         for fpath in changed_files:
-            if self.is_test_data_submodule(fpath):
-                for base_name in self._tests_using_test_data_submodule(fpath):
-                    print(
+            if cls.is_test_data_submodule(fpath):
+                for base_name in cls._tests_using_test_data_submodule(fpath):
+                    log(
                         f"Detected changed test data submodule '{fpath}' used by test '{base_name}'"
                     )
                     result.add(f"{base_name}.")
@@ -469,7 +477,7 @@ class Targeting:
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
                     # Log any other changed file under tests/queries for future debugging
-                    print(
+                    log(
                         f"File '{fpath}' changed, but doesn't match expected test pattern"
                     )
                 continue
@@ -478,11 +486,11 @@ class Targeting:
             # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
             # test shares its base name.
             if Path(fpath).parent == Path("tests/queries/0_stateless"):
-                test_base_name = self._derive_test_name(fpath)
-                if test_base_name is not None and self.functional_test_source_file(
+                test_base_name = cls._derive_test_name(fpath)
+                if test_base_name is not None and cls.functional_test_source_file(
                     test_base_name
                 ):
-                    print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                    log(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
                     # The '.' suffix marks a whole-test name; `selection_pattern`
                     # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
@@ -497,7 +505,7 @@ class Targeting:
                         if candidate in removed_tests:
                             break
                     if candidate in removed_tests:
-                        print(
+                        log(
                             f"File '{fpath}' belongs to the removed test '{candidate}' — skipping"
                         )
                         continue
@@ -511,21 +519,159 @@ class Targeting:
             # change affects. Emit only real tests: `_tests_owning_data_file` returns
             # an empty list when nothing maps, so we never fabricate a no-match
             # pattern (which would make clickhouse-test exit 1).
-            owning_tests = self._tests_owning_data_file(fpath)
+            owning_tests = cls._tests_owning_data_file(fpath)
             if owning_tests:
                 for base_name in owning_tests:
-                    print(
+                    log(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
                     # The '.' suffix marks a whole-test name; `selection_pattern`
                     # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
-                print(
+                log(
                     f"File '{fpath}' is not a test source and has no owning test — skipping"
                 )
 
         return sorted(result)
+
+    # The merge queue reruns at most this many of the tests that `master` added
+    # or changed after the PR's last CI run, per job type: the integration
+    # targeted job has a 30-minute budget and its modules are much longer.
+    MERGE_QUEUE_DRIFT_TESTS_LIMIT = {STATELESS_JOB_TYPE: 30, INTEGRATION_JOB_TYPE: 10}
+
+    # Name words that say nothing about the tested feature.
+    _NAME_STOP_WORDS = frozenset(
+        {
+            "test",
+            "with",
+            "from",
+            "into",
+            "when",
+            "without",
+            "check",
+            "data",
+            "impl",
+            "common",
+            "core",
+            "base",
+            "stateless",
+            "queries",
+            "reference",
+            "integration",
+            "storage",
+        }
+    )
+
+    @classmethod
+    def _name_words(cls, name):
+        """Lowercase words of a test name or a source file name, split at
+        underscores and CamelCase, with the plural `s` removed, so that
+        `05339_string_filters_during_scan_parquet` and `ParquetFilter.cpp`
+        share `parquet` and `filter`."""
+        words = set()
+        for word in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+", name):
+            word = word.lower()
+            if len(word) > 4 and word.endswith("s"):
+                word = word[:-1]
+            if len(word) >= 4 and word not in cls._NAME_STOP_WORDS:
+                words.add(word)
+        return words
+
+    @classmethod
+    def _path_words(cls, fpath):
+        return cls._name_words(Path(fpath).name.split(".")[0]) | cls._name_words(
+            Path(fpath).parent.name
+        )
+
+    @classmethod
+    def get_merge_queue_drift_tests(cls, changed_files):
+        """The tests that `master` added or changed after the last CI run of the
+        PR in a merge-queue entry, by job type: stateless test names and
+        integration test modules.
+
+        The PR CI tested the PR merged into the `master` of that time. The tests
+        that landed later never ran with the PR's code, so a PR can break them
+        while every check is green on both sides: e.g.
+        https://github.com/ClickHouse/ClickHouse/pull/117198 broke
+        `test_storage_delta/test_writes_interop.py`, added to `master` after its
+        last CI run. The coverage selection cannot see such tests until a
+        `master` coverage run records them.
+
+        Runs in the `Config Workflow` job of the merge queue, which unshallows
+        the repository. HEAD is the merge-queue commit: the merge of the queue
+        base (`master` with the entries ahead) and the PR head. The PR CI cannot
+        have been based on a `master` older than the PR head commit, so the tests
+        changed on the first-parent history of the queue base after the PR head
+        commit time are the ones the PR CI may have missed. When the PR has
+        merged `master` since, its merge base bounds the range more tightly.
+
+        When there are more such tests than `MERGE_QUEUE_DRIFT_TESTS_LIMIT`, the
+        ones whose names share more words with the names of the files changed by
+        the PR come first, then the newest.
+        """
+        commits = Shell.get_output_or_raise("git rev-list --parents -n 1 HEAD").split()
+        if len(commits) != 3:
+            raise RuntimeError(
+                f"Expected the merge-queue commit to have two parents, got: {commits}"
+            )
+        _, queue_base, pr_head = commits
+        pr_head_time = Shell.get_output_or_raise(f"git log -1 --format=%cI {pr_head}")
+        drift_base = Shell.get_output_or_raise(
+            f"git rev-list -n 1 --first-parent --before={pr_head_time} {queue_base}"
+        )
+        merge_base = Shell.get_output_or_raise(f"git merge-base {queue_base} {pr_head}")
+        if Shell.check(f"git merge-base --is-ancestor {drift_base} {merge_base}"):
+            drift_base = merge_base
+        print(
+            f"Tests changed in the merge-queue base after the PR head {pr_head[:12]} "
+            f"({pr_head_time}): {drift_base[:12]}..{queue_base[:12]}"
+        )
+        drift_files = Shell.get_output_or_raise(
+            f"git diff --no-renames --diff-filter=AM --name-only {drift_base} {queue_base}"
+            f" -- tests/queries/0_stateless/ tests/integration/"
+        ).splitlines()
+        candidates = {
+            cls.STATELESS_JOB_TYPE: cls.tests_from_changed_files(
+                [f for f in drift_files if f.startswith("tests/queries/")],
+                verbose=False,
+            ),
+            cls.INTEGRATION_JOB_TYPE: sorted(
+                f.removeprefix("tests/integration/")
+                for f in drift_files
+                if cls.is_integration_test_file(f)
+            ),
+        }
+
+        # A word weighs as many as the files of the PR whose names have it.
+        word_weights = Counter()
+        for fpath in changed_files:
+            word_weights.update(cls._path_words(fpath))
+        result = {}
+        for job_type, tests in candidates.items():
+            limit = cls.MERGE_QUEUE_DRIFT_TESTS_LIMIT[job_type]
+            scores = {
+                test: sum(word_weights[word] for word in cls._path_words(test))
+                for test in tests
+            }
+            tests.sort(key=lambda test: (scores[test], test), reverse=True)
+            print(f"{job_type} tests changed on master since the PR CI ({len(tests)}):")
+            for test in tests[:limit]:
+                print(f"  {test} (relevance {scores[test]})")
+            if len(tests) > limit:
+                print(f"Skipped {len(tests) - limit} less related tests: {tests[limit:]}")
+            result[job_type] = sorted(tests[:limit])
+        return result
+
+    def get_merge_queue_drift_tests_with_info(self):
+        """The tests `master` changed after the PR's last CI run, stored by the
+        `Config Workflow` job of the merge queue (see `get_merge_queue_drift_tests`)."""
+        tests = self.info.get_kv_data()["merge_queue_drift_tests"][self.job_type]
+        return tests, Result(
+            name="tests changed on master since the PR CI",
+            status=Result.Status.OK,
+            info=f"Found {len(tests)} tests: {tests}",
+        )
 
     def get_previously_failed_tests(self):
         assert self.job_type, "Unsupported job type"
@@ -1057,6 +1203,12 @@ class Targeting:
         if not self.info.is_merge_queue_event:
             failed, result = self.get_previously_failed_tests_with_info(strict=True)
             results.append(result)
+        drift = []
+        # The tests `master` changed after the PR's last CI run never ran with the
+        # PR's code, and the coverage selection may not know them yet.
+        if self.info.is_merge_queue_event:
+            drift, result = self.get_merge_queue_drift_tests_with_info()
+            results.append(result)
         _, result = self.get_most_relevant_tests()
         candidates = self._coverage_candidates
         results.append(result)
@@ -1066,7 +1218,7 @@ class Targeting:
             else lambda test: test
         )
         selection = protect_selection(
-            changed, failed, candidates, normalize, self.config
+            changed, failed, candidates, normalize, self.config, drift=drift
         )
         self.selection_diagnostics.update(
             {

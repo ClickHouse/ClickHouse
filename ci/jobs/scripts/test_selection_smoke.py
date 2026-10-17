@@ -360,6 +360,37 @@ class SelectionSmoke(unittest.TestCase):
         self.assertEqual(result["mandatory_overflow"], 1)
         self.assertEqual(result["selected_count"], 3)
 
+    def test_merge_queue_drift_tests_are_mandatory(self):
+        candidates = [
+            {
+                "test": "coverage",
+                "score": 1,
+                "features": [],
+                "source": "primary_coverage",
+            }
+        ]
+        config = replace(SELECTION_CONFIG, max_selected_tests_temporary=1)
+        result = protect_selection(
+            [], [], candidates, str, config, drift=["drift_a", "drift_b"]
+        )
+        self.assertEqual(
+            [r["test"] for r in result["selected"]], ["drift_a", "drift_b"]
+        )
+        self.assertEqual(result["selected"][0]["sources"], ["merge_queue_drift"])
+
+    def test_merge_queue_drift_name_words(self):
+        # The test that https://github.com/ClickHouse/ClickHouse/pull/124131 broke
+        # shares feature words with the files the PR changed.
+        self.assertTrue(
+            {"parquet", "filter"}
+            <= Targeting._name_words("05339_string_filters_during_scan_parquet")
+            & Targeting._path_words("src/Processors/Formats/Impl/ParquetFilter.cpp")
+        )
+        self.assertEqual(
+            Targeting._path_words("tests/integration/test_storage_delta/test.py"),
+            {"delta"},
+        )
+
     def test_selection_pattern_selects_only_its_own_test(self):
         """A selected test's selector must select that test's file and no other.
 
