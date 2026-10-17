@@ -18,8 +18,9 @@
 /// constant array, so that a row costs a lookup per element instead of a search of the constant array for each element.
 ///
 /// The table is built for every block. The rows of a block are first searched as in `sliceHasImplAnyAll`, and the table is built
-/// only when the search has compared about as many elements as building the table costs. So a block where the search settles each
-/// row with a few comparisons does not pay for the table, and any other block takes at most about twice as long as the faster way.
+/// only when the search has compared about as many elements as building the table and looking up the searched rows would cost. So
+/// a block where the search settles each row with a few comparisons does not pay for the table, and a block that builds it takes at
+/// most about twice as long as with the table from the start.
 ///
 /// The results are the same as in `sliceHasImplAnyAll`: a NULL element matches only a NULL, and values are compared with
 /// `accurate::equalsOp`, as both arguments are cast to their common type before.
@@ -94,6 +95,14 @@ constexpr size_t minConstSize(Operation operation)
 template <typename T>
 constexpr size_t search_work_per_const_element = is_vector_searched<T> ? 64 : 8;
 
+/// Looking up an element of a row costs about as much as comparing this many elements in a search. A bitmap or an array is tested
+/// about as fast as two elements are compared, and elements that are not searched with vectors take longer to compare.
+template <typename T>
+constexpr size_t lookupWork(bool in_hash_table)
+{
+    return in_hash_table && is_vector_searched<T> ? 8 : 2;
+}
+
 /// Lookups mostly miss, and a miss probes until an empty cell, so a small hash table is kept at most 1/8 full: at 1/4 to 1/2, a
 /// miss took twice as long because of mispredicted branches. A large table is kept at most 1/2 full: it does not fit in the cache
 /// either way, and is built for every block and every thread.
@@ -122,31 +131,52 @@ ALWAYS_INLINE bool contains(const T * data, const UInt8 * null_map, size_t size,
     }
     else
     {
-        /// `==` is `accurate::equalsOp` for values of the same type.
+        /// `==` is `accurate::equalsOp` for values of the same type. `Decimal` compares its value, as its `==` is not inlined.
+        auto equals = [](T a, T b) ALWAYS_INLINE
+        {
+            if constexpr (is_decimal<T>)
+                return a.value == b.value;
+            else
+                return a == b;
+        };
         for (size_t i = 0; i < size; ++i)
-            if ((!has_null_map || !null_map[i]) && data[i] == value)
+            if ((!has_null_map || !null_map[i]) && equals(data[i], value))
                 return true;
         return false;
     }
 }
 
-/// Searches a value in the constant array, and adds the number of compared elements to `work`.
-template <typename T>
-ALWAYS_INLINE bool constContains(const Elements<T> & array, T value, size_t & work)
+/// Searches a value, and adds the number of compared elements to `work`. The elements are searched in parts that grow from
+/// `first_part_size` to 1024, so that a value found early is counted as about the work that the search did.
+template <bool has_null_map, typename T>
+ALWAYS_INLINE bool countedContains(const T * data, const UInt8 * null_map, size_t size, T value, size_t first_part_size, size_t & work)
 {
-    /// The array is searched in parts that grow from the size of a few vectors, so that a value found early is counted as about
-    /// the work that the search did.
-    size_t part_size = 32;
-    for (size_t begin = 0; begin < array.size; begin += part_size, part_size = std::min(2 * part_size, size_t(1024)))
+    if (size <= first_part_size)
     {
-        const size_t size = std::min(part_size, array.size - begin);
         work += size;
-        const bool found = array.null_map ? contains<true>(array.data + begin, array.null_map + begin, size, value)
-                                          : contains<false>(array.data + begin, nullptr, size, value);
-        if (found)
+        return contains<has_null_map>(data, null_map, size, value);
+    }
+    size_t part_size = first_part_size;
+    for (size_t begin = 0; begin < size; begin += part_size, part_size = std::min(2 * part_size, size_t(1024)))
+    {
+        const size_t part = std::min(part_size, size - begin);
+        work += part;
+        if (contains<has_null_map>(data + begin, has_null_map ? null_map + begin : nullptr, part, value))
             return true;
     }
     return false;
+}
+
+/// The constant array is searched in parts from the size of a few vectors. A row is searched in larger parts, as a part is an extra
+/// call for each searched value, and the search of a row is usually not stopped early by a value at its start.
+constexpr size_t const_first_part_size = 32;
+constexpr size_t row_first_part_size = 256;
+
+template <typename T>
+ALWAYS_INLINE bool constContains(const Elements<T> & array, T value, size_t & work)
+{
+    return array.null_map ? countedContains<true>(array.data, array.null_map, array.size, value, const_first_part_size, work)
+                          : countedContains<false>(array.data, nullptr, array.size, value, const_first_part_size, work);
 }
 
 /// The set of the non-NULL values of the constant array.
@@ -275,14 +305,27 @@ private:
     size_t count = 0;
 };
 
-/// Calls `search_row` for the rows until it has done `search_work` work, then `lookup_rows` for the rest. `search_row` returns false
-/// without a result when the work is done in the middle of the row, so that a long row does not take much longer than the work.
-template <typename SearchRow, typename LookupRows>
-void searchThenLookup(const ColumnArray::Offsets & offsets, size_t size, size_t search_work, SearchRow && search_row, LookupRows && lookup_rows)
+/// The number of elements compared by the search of the rows so far, and estimates in the same unit of building the table and of
+/// looking up the elements of these rows.
+struct Work
 {
-    size_t work = 0;
+    size_t search = 0;
+    size_t lookup = 0;
+    size_t build = 0;
+
+    /// The table is faster for the rows searched so far, including building it.
+    bool exceeded() const { return search >= build + lookup; }
+};
+
+/// Calls `search_row` for the rows until the work is exceeded, then `lookup_rows` for the rest. `search_row` returns false without a
+/// result when the work is exceeded in the middle of the row, so that a long row does not take much longer than the lookup.
+template <typename SearchRow, typename LookupRows>
+void searchThenLookup(
+    const ColumnArray::Offsets & offsets, size_t size, size_t build_work, SearchRow && search_row, LookupRows && lookup_rows)
+{
+    Work work{.build = build_work};
     size_t row = 0;
-    while (row < size && search_row(row, offsets[row - 1], offsets[row], work, search_work))
+    while (row < size && search_row(row, offsets[row - 1], offsets[row], work))
         ++row;
     if (row < size)
         lookup_rows(row);
@@ -296,6 +339,7 @@ void lookupElements(
     UInt8 * result, size_t size)
 {
     static constexpr bool all = search_type == ArraySearchType::All;
+    static constexpr size_t lookup_work = lookupWork<T>(!uses_bitmap<T>);
     const bool const_has_null = hasNull(array.null_map, array.size);
 
     /// As in `sliceHasImplAnyAll`, a NULL of the row settles the result before its values if the constant has a NULL for `hasAny`, or
@@ -312,7 +356,7 @@ void lookupElements(
         return !(has_null_map && elements.null_map[i]) && is_in_const(elements.data[i]) != all;
     };
 
-    auto search_row = [&](size_t row, size_t begin, size_t end, size_t & work, size_t search_work) ALWAYS_INLINE
+    auto search_row = [&](size_t row, size_t begin, size_t end, Work & work) ALWAYS_INLINE
     {
         /// The constant is not empty, so only `hasAll(constant, column)` is true for an empty row.
         if (begin == end)
@@ -325,9 +369,10 @@ void lookupElements(
         {
             for (size_t i = begin; i < end && !settled; ++i)
             {
-                if (work >= search_work)
+                if (work.exceeded())
                     return false;
-                settled = settles(i, [&](T value) ALWAYS_INLINE { return constContains(array, value, work); });
+                work.lookup += lookup_work;
+                settled = settles(i, [&](T value) ALWAYS_INLINE { return constContains(array, value, work.search); });
             }
         }
         else
@@ -335,14 +380,18 @@ void lookupElements(
             /// `hasAny(column, constant)` searches each element of the constant in the row.
             const size_t row_size = end - begin;
             const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+            /// The lookup would go through the row until an element is in the constant.
+            if (!settled)
+                work.lookup += lookup_work * row_size;
             for (size_t j = 0; j < array.size && !settled; ++j)
             {
                 if (array.null_map && array.null_map[j])
                     continue;
-                if (work >= search_work)
+                if (work.exceeded())
                     return false;
-                work += row_size + 1;
-                settled = contains<has_null_map>(elements.data + begin, null_map, row_size, array.data[j]);
+                ++work.search;
+                settled = countedContains<has_null_map>(
+                    elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
             }
         }
         result[row] = settled != all;
@@ -383,27 +432,28 @@ void lookupAllOfConst(
         return;
     }
 
-    /// Whether the row contains the non-NULL values, and a NULL if the constant has one. Returns `std::nullopt` if `can_search`
-    /// returns false before a value is searched.
+    /// Values of 1 byte are counted in an array, others in a hash table.
+    static constexpr size_t lookup_work = lookupWork<T>(sizeof(T) > 1);
+
+    /// Whether the row contains the non-NULL values, and a NULL if the constant has one. `row_contains` searches a value in the row,
+    /// and returns `std::nullopt` to stop without a result.
     auto has_all_values_of = [&](size_t begin, size_t end, const T * values, const UInt8 * values_null_map, size_t num_values,
-                                 auto && can_search) ALWAYS_INLINE -> std::optional<bool>
+                                 auto && row_contains) ALWAYS_INLINE -> std::optional<bool>
     {
-        const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
-        if (needs_null && !hasNull(null_map, end - begin))
+        if (needs_null && !hasNull(has_null_map ? elements.null_map + begin : nullptr, end - begin))
             return false;
         for (size_t j = 0; j < num_values; ++j)
         {
             if (values_null_map && values_null_map[j])
                 continue;
-            if (!can_search())
-                return std::nullopt;
-            if (!contains<has_null_map>(elements.data + begin, null_map, end - begin, values[j]))
-                return false;
+            const std::optional<bool> found = row_contains(values[j]);
+            if (!found || !*found)
+                return found;
         }
         return true;
     };
 
-    auto search_row = [&](size_t row, size_t begin, size_t end, size_t & work, size_t search_work) ALWAYS_INLINE
+    auto search_row = [&](size_t row, size_t begin, size_t end, Work & work) ALWAYS_INLINE
     {
         /// The constant is not empty, and a row must contain a NULL for each NULL of it.
         if (begin == end)
@@ -411,13 +461,20 @@ void lookupAllOfConst(
             result[row] = 0;
             return true;
         }
-        const auto all = has_all_values_of(begin, end, array.data, array.null_map, array.size, [&]() ALWAYS_INLINE
+        /// The lookup goes through the row until all values are found. A row shorter than the constant usually has fewer elements
+        /// than it has distinct values, and the lookup does not go through it.
+        const size_t row_size = end - begin;
+        const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+        if (row_size >= array.size)
+            work.lookup += lookup_work * row_size;
+        auto row_contains = [&](T value) ALWAYS_INLINE -> std::optional<bool>
         {
-            if (work >= search_work)
-                return false;
-            work += end - begin + 1;
-            return true;
-        });
+            if (work.exceeded())
+                return std::nullopt;
+            ++work.search;
+            return countedContains<has_null_map>(elements.data + begin, null_map, row_size, value, row_first_part_size, work.search);
+        };
+        const auto all = has_all_values_of(begin, end, array.data, array.null_map, array.size, row_contains);
         if (!all)
             return false;
         result[row] = *all;
@@ -460,7 +517,13 @@ void lookupAllOfConst(
         {
             const size_t begin = offsets[row - 1];
             const size_t end = offsets[row];
-            bool all = end - begin >= min_row_size && *has_all_values_of(begin, end, searched_values.data(), nullptr, num_searched, [] { return true; });
+            const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+            auto row_contains = [&](T value) ALWAYS_INLINE -> std::optional<bool>
+            {
+                return contains<has_null_map>(elements.data + begin, null_map, end - begin, value);
+            };
+            bool all = end - begin >= min_row_size
+                && *has_all_values_of(begin, end, searched_values.data(), nullptr, num_searched, row_contains);
             if (all && num_counted)
             {
                 const auto row_mark = static_cast<UInt32>(row + 1);
@@ -479,7 +542,8 @@ void lookupAllOfConst(
 template <typename T>
 Elements<T> getElements(const NumericArraySource<T> & source, bool is_nullable)
 {
-    const UInt8 * null_map = is_nullable ? static_cast<const NullableArraySource<NumericArraySource<T>> &>(source).null_map.data() : nullptr;
+    const UInt8 * null_map
+        = is_nullable ? static_cast<const NullableArraySource<NumericArraySource<T>> &>(source).null_map.data() : nullptr;
     return {source.elements.data(), null_map, source.elements.size()};
 }
 
