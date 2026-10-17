@@ -15,14 +15,23 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+namespace
+{
+
+/// Resolved from the executing thread rather than from the context that built the caller: a function
+/// instance can be stored in table metadata and then run by any later query.
+QueryStatusPtr tryGetProcessListElement()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return query_context->getProcessListElementSafe();
+    return nullptr;
+}
+
+}
+
 std::function<void()> makeCancellationCheck(const char * function_name)
 {
-    /// Resolved from the executing thread rather than from the context that built the caller: a function
-    /// instance can be stored in table metadata and then run by any later query.
-    QueryStatusPtr process_list_element;
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        process_list_element = query_context->getProcessListElementSafe();
-
+    QueryStatusPtr process_list_element = tryGetProcessListElement();
     if (!process_list_element)
         return {};
 
@@ -40,8 +49,13 @@ std::function<void()> makeCancellationCheck(const char * function_name)
 
 void rethrowIfQueryCancelled(const Exception & e)
 {
+    /// `throwIf` can raise this code too, so it is a timeout only if the query is past its deadline.
     if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
-        throw;
+    {
+        QueryStatusPtr process_list_element = tryGetProcessListElement();
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            throw;
+    }
     CurrentThread::checkIfNotCancelled();
 }
 

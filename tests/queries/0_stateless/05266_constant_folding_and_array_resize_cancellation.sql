@@ -51,6 +51,8 @@ DROP TABLE IF EXISTS t_join_fold;
 CREATE TABLE t_join_fold (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
 SELECT count() FROM t_join_fold AS l LEFT JOIN t_join_fold AS r ON l.k = r.k WHERE length(arrayResize([], 8000, repeat(r.s || 'x', 16384))) = 0 SETTINGS query_plan_convert_outer_join_to_inner_join = 1, max_execution_time = 0.001, timeout_overflow_mode = 'break', join_use_nulls = 0; -- { serverError TIMEOUT_EXCEEDED }
 SELECT count() FROM t_join_fold AS l ANY LEFT JOIN (SELECT k, arrayResize(materialize([]), 8000, materialize(repeat('x', 16384))) AS a FROM t_join_fold) AS r ON l.k = r.k WHERE length(r.a) = 0 SETTINGS query_plan_convert_outer_join_to_inner_join = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1, max_execution_time = 0.001, timeout_overflow_mode = 'break', join_use_nulls = 0; -- { serverError TIMEOUT_EXCEEDED }
+-- A query that is not past its deadline still ignores the same code raised by `throwIf` there.
+SELECT count() FROM (SELECT 1 AS k) AS l LEFT JOIN (SELECT 1 AS k) AS r ON l.k = r.k WHERE throwIf(isNull(r.k), 'not a timeout', toInt16(159)) = 0 SETTINGS allow_custom_error_code_in_throwif = 1, join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
 DROP TABLE t_join_fold;
 
 DROP TABLE IF EXISTS t_key_fold;
