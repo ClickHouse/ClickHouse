@@ -11,6 +11,7 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
 
 #include <cstdint>
 #include <mutex>
@@ -118,5 +119,11 @@ private:
     class Impl;
     std::unique_ptr<Impl> impl;
 };
+
+/// Installs the IO scheduling hooks of the current thread (`CurrentThread::getReadResourceLink` and
+/// `CurrentThread::getWriteResourceLink`) on a session for `request`, the same ones the connections of
+/// `HTTPConnectionPools` install, or removes the hooks of a previous request when the thread has none.
+/// For sessions that are not created by `HTTPConnectionPools` (the native GCS transport).
+void setIOSchedulingSessionHooks(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request);
 
 }

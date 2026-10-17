@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- A server-managed `google_adc_*` identity for the prefix the URL-only named collection test reads
+         from. The collection must not pick it up: it has to read anonymously. The endpoint contains the
+         dynamically allocated emulator port, so it comes from the environment. -->
+    <s3>
+        <native_gcs_url_only_collection>
+            <endpoint from_env="NATIVE_GCS_URL_ONLY_COLLECTION_ENDPOINT"/>
+            <google_adc_client_id>server-client-id</google_adc_client_id>
+            <google_adc_client_secret>server-client-secret</google_adc_client_secret>
+            <google_adc_refresh_token>server-refresh-token</google_adc_refresh_token>
+        </native_gcs_url_only_collection>
+    </s3>
+</clickhouse>

@@ -1404,4 +1404,17 @@ HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
     return impl->getSocketInodes();
 }
 
+void setIOSchedulingSessionHooks(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request)
+{
+    static LoggerPtr log = getLogger("HTTPSessionIOScheduling");
+    if (ResourceLink link = CurrentThread::getReadResourceLink())
+        session.setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
+    else
+        session.setReceiveDataHooks();
+    if (ResourceLink link = CurrentThread::getWriteResourceLink())
+        session.setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
+    else
+        session.setSendDataHooks();
+}
+
 }
