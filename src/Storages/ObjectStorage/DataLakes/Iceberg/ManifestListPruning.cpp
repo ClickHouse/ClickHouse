@@ -62,6 +62,18 @@ std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     const auto non_nullable_type = removeNullable(type);
     const WhichDataType which(non_nullable_type);
 
+    /// A `uuid` pair is ordered by unsigned bytes, not in the order of ClickHouse `UUID`, so only a
+    /// pair that describes a single value is usable.
+    if (which.isUUID())
+    {
+        if (*summary.lower_bound != *summary.upper_bound)
+            return {};
+        auto point = deserializeUUIDFromBinaryRepr(*summary.lower_bound);
+        if (!point.has_value())
+            return {};
+        return std::pair{*point, *point};
+    }
+
     std::optional<Field> lower;
     std::optional<Field> upper;
     if (which.isUInt())
