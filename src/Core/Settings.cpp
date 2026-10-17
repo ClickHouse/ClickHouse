@@ -4368,6 +4368,12 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
+- partitioned_hash
+
+ An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache. A separate thread inserts each partition into its own range of one shared hash table. The left table is probed against that table and is not partitioned.
+
+ The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage. A query with `max_bytes_before_external_join` set also uses the next enabled algorithm, or `hash`.
+
 - partial_merge
 
  A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
@@ -4424,6 +4430,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
 )", 0, \
         {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
+        {"26.9", "direct,parallel_hash,hash,ie_join", "direct,parallel_hash,hash,ie_join", "New allowed value `partitioned_hash`: an experimental hash join that partitions the right table while building one shared hash table, and probes the left table without partitioning it. The default value is unchanged."}, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
@@ -10130,6 +10137,7 @@ The largest value, `18446744073709551615`, always builds one part, also when the
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
+`partitioned_hash` uses the same threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. At or above the threshold, the build uses at least one partition per thread.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
@@ -10599,6 +10607,14 @@ Initial number of grace hash join buckets
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, R"(
+Maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
+)", EXPERIMENTAL, \
+        {"26.11", 8192, 8192, "New setting: the maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes."}) \
+    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, R"(
+Limit how many partitions a `partitioned_hash` join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
+)", EXPERIMENTAL, \
+        {"26.11", true, true, "New setting: limit the number of partitions of a `partitioned_hash` join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."}) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 )", EXPERIMENTAL, \

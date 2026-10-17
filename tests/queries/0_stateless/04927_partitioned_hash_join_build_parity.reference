@@ -1,0 +1,38 @@
+1
+uint64 inner	300000	1	1
+uint64 left	600000	1	1
+uint64 inner duplicates	1800000	1	1
+uint32 inner	300000	1	1
+keys64 composite inner	300000	1	1
+keys128 composite inner	300000	1	1
+keys128 composite left	600000	1	1
+keys256 composite inner	300000	1	1
+hashed fixed inner	300000	1	1
+string inner	300000	1	1
+string left	600000	1	1
+fixedstring inner	300000	1	1
+nullable inner	231428	1	1
+nullable left	600000	1	1
+lowcardinality inner	900000	1	1
+hashed generic inner	300000	1	1
+uint8 inner (one partition)	131072	1	1
+uint16 inner (one partition)	8192	1	1
+partition plans
+04927 fixedstring inner	1	1	1
+04927 hashed fixed inner	1	1	1
+04927 hashed generic inner	1	1	1
+04927 keys128 composite inner	1	1	1
+04927 keys128 composite left	1	1	1
+04927 keys256 composite inner	1	1	1
+04927 keys64 composite inner	1	1	1
+04927 lowcardinality inner	1	1	1
+04927 nullable inner	1	1	1
+04927 nullable left	1	1	1
+04927 string inner	1	1	1
+04927 string left	1	1	1
+04927 uint32 inner	1	1	1
+04927 uint64 inner	1	1	1
+04927 uint64 inner duplicates	1	1	1
+04927 uint64 left	1	1	1
+04927 single uint16 inner	1	1
+04927 single uint8 inner	1	1

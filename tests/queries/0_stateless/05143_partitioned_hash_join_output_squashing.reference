@@ -1,0 +1,7 @@
+-- hash: no squashing after the join
+1	50
+-- partitioned_hash, bare join: the blocks pass through
+1	50
+1	50
+1	50
+1	50

@@ -44,6 +44,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 
@@ -683,7 +684,7 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const FunctionNode & function_node)
 {
     const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
-    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+    const auto is_hash_join_enabled = TableJoin::isHashFamilyEnabled(join_algorithms)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
     if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
     {
@@ -1238,9 +1239,25 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
+        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
+        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
+            && GraceHashJoin::isSupported(table_join);
+
+        /// The partitioned join has no spilling mode yet, so an external-join limit is one more shape
+        /// that `hash` takes.
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && !spill_to_disk && PartitionedHashJoin::isSupported(*table_join))
+            return std::make_shared<PartitionedHashJoin>(
+                table_join,
+                right_table_expression_header,
+                params.max_threads,
+                params.join_any_take_last_row,
+                stats_collecting_params,
+                params.rhs_size_estimation);
+
+        if (spill_to_disk)
         {
             return std::make_shared<SpillingHashJoin>(
                 table_join,
@@ -1392,7 +1409,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params)
 {
     if (table_join->getMixedJoinExpression()
-        && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !table_join->isHashFamilyEnabled()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1429,8 +1446,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
         return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+    if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled() && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Only `hash` and `partitioned_hash` joins support multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {
