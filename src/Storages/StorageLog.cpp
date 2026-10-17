@@ -1132,7 +1132,7 @@ void StorageLog::readImpl(
     QueryPlan & plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -1145,6 +1145,7 @@ void StorageLog::readImpl(
         local_context,
         std::static_pointer_cast<StorageLog>(shared_from_this()),
         storage_snapshot,
+        query_info.storage_limits,
         max_block_size,
         num_streams));
 }
@@ -1425,6 +1426,7 @@ ReadFromStorageLogStep::ReadFromStorageLogStep(
         ContextPtr local_context_,
         std::shared_ptr<StorageLog> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
         size_t max_block_size_,
         size_t num_streams_
 )
@@ -1433,6 +1435,7 @@ ReadFromStorageLogStep::ReadFromStorageLogStep(
     , local_context(local_context_)
     , storage(std::move(storage_))
     , storage_snapshot(storage_snapshot_)
+    , storage_limits(std::move(storage_limits_))
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
 {
@@ -1441,6 +1444,11 @@ ReadFromStorageLogStep::ReadFromStorageLogStep(
 void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
     auto pipe = storage->createReadingPipe(column_names, local_context, storage_snapshot, max_block_size, num_streams);
+
+    /// Add storage limits.
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(storage_limits);
+
     pipeline.init(std::move(pipe));
 }
 
