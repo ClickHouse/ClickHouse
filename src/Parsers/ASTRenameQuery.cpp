@@ -23,7 +23,9 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
     exchange = r.getBool("exchange");
     database = r.getBool("database");
     dictionary = r.getBool("dictionary");
-    rename_if_cannot_exchange = r.getBool("rename_if_cannot_exchange");
+    if (r.getBool("rename_if_cannot_exchange"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'rename_if_cannot_exchange' is internal-only and is not allowed during AST JSON deserialization");
 
     cluster = r.getString("cluster");
 
@@ -129,7 +131,7 @@ void ASTRenameQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("exchange", exchange);
     w.writeBool("database", database);
     w.writeBool("dictionary", dictionary);
-    w.writeBool("rename_if_cannot_exchange", rename_if_cannot_exchange);
+    /// `rename_if_cannot_exchange` is internal interpreter state with no SQL spelling, so it is not serialized.
 
     if (!cluster.empty())
         w.writeString("cluster", cluster);

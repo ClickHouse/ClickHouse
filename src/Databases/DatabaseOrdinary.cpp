@@ -653,6 +653,10 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
         return false;
 
+    /// A lazy proxy would hide the dictionary kind from the access checks of `DROP` and `RENAME`.
+    if (query.storage && query.storage->engine && query.storage->engine->name == "Dictionary")
+        return false;
+
     if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
