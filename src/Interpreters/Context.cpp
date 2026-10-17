@@ -172,6 +172,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -315,6 +316,7 @@ namespace Setting
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
+    extern const SettingsNameMatchMode database_and_table_name_matching;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
@@ -489,6 +491,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -8963,14 +8966,43 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (look_for_external_table)
     {
         auto resolved_id = StorageID::createEmpty();
+        /// Under `standard` matching a name that is not double-quoted finds a temporary table through
+        /// the ASCII-case-folded namespace, the same way as tables in databases.
+        const bool fold_table_name = !is_internal_query
+            && (*settings)[Setting::database_and_table_name_matching] == NameMatchMode::Standard
+            && IdentifierPart{storage_id.table_name, storage_id.table_name_quote}.isCaseFoldable();
         auto try_resolve = [&](ContextPtr context) -> bool
         {
             const auto & tables = context->external_tables_mapping;
-            auto it = tables.find(storage_id.getTableName());
-            if (it == tables.end())
-                return false;
-            resolved_id = it->second->getGlobalTableID();
-            return true;
+            if (!fold_table_name)
+            {
+                auto it = tables.find(storage_id.getTableName());
+                if (it == tables.end())
+                    return false;
+                resolved_id = it->second->getGlobalTableID();
+                return true;
+            }
+
+            const String folded_name = foldIdentifierCaseASCII(storage_id.getTableName());
+            std::vector<String> candidates;
+            for (const auto & [table_name, table_holder] : tables)
+            {
+                if (foldIdentifierCaseASCII(table_name) == folded_name)
+                {
+                    candidates.push_back(table_name);
+                    resolved_id = table_holder->getGlobalTableID();
+                }
+            }
+            if (candidates.size() > 1)
+            {
+                std::sort(candidates.begin(), candidates.end());
+                resolved_id = StorageID::createEmpty();
+                if (exception)
+                    exception->emplace(Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Temporary table name {} is ambiguous: it matches temporary tables {}. Double-quote the name to select one exactly",
+                        backQuoteIfNeed(storage_id.getTableName()), fmt::join(candidates, ", ")));
+            }
+            return !candidates.empty();
         };
 
         /// Firstly look for temporary table in current context

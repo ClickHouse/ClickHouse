@@ -59,6 +59,7 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -482,13 +483,22 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
+/// The table identifier AST carries the quoting of the parts, so double-quoted parts stay exact under `standard` name matching.
+ASTPtr makeTableIdentifierAST(const IdentifierNode & identifier_node)
+{
+    const auto & identifier_name = identifier_node.getIdentifierName();
+    if (identifier_name.size() != 1 && identifier_name.size() != 2)
+        return {};
+    return make_intrusive<ASTTableIdentifier>(identifier_name);
+}
+
 bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
 {
     QueryTreeNodePtr resolved_table = join_tree;
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -524,7 +534,7 @@ bool hasLateAttachedTableFilter(
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -1678,7 +1688,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, makeTableIdentifierAST(first_argument_identifier)).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
