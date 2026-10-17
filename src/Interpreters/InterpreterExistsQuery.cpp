@@ -88,6 +88,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             else
             {
                 getContext()->checkAccess(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name);
+                /// With the asynchronous loading of tables, a table is attached only by its load job, so
+                /// wait for it the same way `tryGetTable` does: a table that is still loading exists.
+                if (auto db = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name))
+                    db->waitTableStarted(storage_id.table_name);
                 result = DatabaseCatalog::instance().isTableExist(storage_id, getContext());
             }
         }

@@ -72,7 +72,9 @@ expect "bash) "
 # each, so that the throttler sleeps on every read for a fraction of a second: the sleeps are
 # reported to the client often enough for the meter of the waited time to warm up within a few
 # packets.
-send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_block_size 500 --max_read_buffer_size 8192 --max_remote_read_network_bandwidth 50000 --max_local_read_bandwidth 50000 --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query \"SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(length(s)) AS n FROM s3('http://localhost:11111/test/05233_\$CLICKHOUSE_DATABASE/data.bin', 'clickhouse', 'clickhouse', 'RowBinary', 's String')) AS build ON toUInt64(length(probe_side.s)) = build.n\" >/dev/null 2>&1\r"
+# The data was just written and is in the OS page cache: the `read` method cannot tell such reads
+# from the device reads, so the throttler accounts every one of them.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_block_size 500 --max_read_buffer_size 8192 --max_remote_read_network_bandwidth 50000 --max_local_read_bandwidth 50000 --local_filesystem_read_method read --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query \"SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(length(s)) AS n FROM s3('http://localhost:11111/test/05233_\$CLICKHOUSE_DATABASE/data.bin', 'clickhouse', 'clickhouse', 'RowBinary', 's String')) AS build ON toUInt64(length(probe_side.s)) = build.n\" >/dev/null 2>&1\r"
 
 # A repaint of the second phase with a yellow cell in it (`0;33` in the bar, or `30;43` in the
 # annotation rendered on top of it). The phases are told apart by the number of rows: the first

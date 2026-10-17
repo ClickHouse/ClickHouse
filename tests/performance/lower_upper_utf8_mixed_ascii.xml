@@ -34,6 +34,8 @@
                 <value>unicode_16_late</value>
                 <value>mixed_50_16_late</value>
                 <value>mixed_01_block_tail</value>
+                <!-- The three-byte character is first, so ICU maps the whole row. -->
+                <value>three_byte_first</value>
             </values>
         </substitution>
     </substitutions>
@@ -56,7 +58,8 @@
             unicode_16 String,
             unicode_16_late String,
             mixed_50_16_late String,
-            mixed_01_block_tail String
+            mixed_01_block_tail String,
+            three_byte_first String
         ) ENGINE = Memory
     </create_query>
 
@@ -78,7 +81,8 @@
             unicode_16,
             unicode_16_late,
             if(number % 2 = 0, unicode_16_late, ascii_16),
-            if(number % 65409 >= 65345, unicode, ascii)
+            if(number % 65409 >= 65345, unicode, ascii),
+            three_byte_first
         FROM
         (
             SELECT
@@ -94,7 +98,11 @@
                 'AbCdEfGhIjKlMnOp' AS ascii_16,
                 'é' AS unicode_short,
                 repeat('é', 8) AS unicode_16,
-                concat(repeat('A', 14), 'é') AS unicode_16_late
+                concat(repeat('A', 14), 'é') AS unicode_16_late,
+                concat(
+                    '€',
+                    repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
+                    rightPad(toString(number), 17, 'x')) AS three_byte_first
             FROM numbers(500000)
         )
     </fill_query>

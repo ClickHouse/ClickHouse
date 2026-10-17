@@ -278,8 +278,15 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// `read` unites the destination with the buffers, so anything past `FetchColumns` has to be merged above both.
+        const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
+        if (merged_above)
+            to_stage = QueryProcessingStage::WithMergeableState;
+
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(
+            local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -607,7 +614,7 @@ void StorageBuffer::read(
     {
         /// The buffers plan is united with the table plan in the same process, where nothing
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto buffers_select_query_options = SelectQueryOptions(processed_stage);
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
         auto storage = std::make_shared<StorageValues>(
@@ -1647,6 +1654,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,

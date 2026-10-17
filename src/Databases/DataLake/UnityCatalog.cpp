@@ -1,5 +1,6 @@
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
 
 #if USE_PARQUET
 
@@ -10,7 +11,9 @@
 #include <Common/checkStackSize.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -82,7 +85,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
@@ -137,13 +140,17 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
-Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & table_id) const
+Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id, const String & operation) const
 {
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
-    request_body.set("operation", "READ");
+    request_body.set("operation", operation);
 
-    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body, out); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
@@ -177,7 +184,7 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return;
 
-    auto response = requestReadCredentials(table_id);
+    auto response = requestCredentials(table_id, "READ");
 
     std::shared_ptr<IStorageCredentials> creds;
     switch (storage_type)
@@ -335,11 +342,15 @@ void UnityCatalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
         auto response = postJSONRequest(
             TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
@@ -384,6 +395,31 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
+}
+
+std::optional<std::string> UnityCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
+void UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    checkNamespaceExists(namespace_name);
 }
 
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
@@ -560,10 +596,28 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid] () -> std::shared_ptr<IStorageCredentials>    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
+    return getCredentialsCallbackForOperation(*table_uuid, "READ");
+}
 
-        return parseS3Credentials(requestReadCredentials(unity_table_id));
+/// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
+ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (table_id.uuid == DB::UUIDHelpers::Nil)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
+            table_id.getNameForLogs());
+
+    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), "READ_WRITE");
+}
+
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
+{
+    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
+
+        return parseS3Credentials(requestCredentials(unity_table_id, operation));
     };
 }
 
