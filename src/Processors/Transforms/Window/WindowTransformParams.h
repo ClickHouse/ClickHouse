@@ -36,8 +36,7 @@ public:
         const WindowDescription & window_description,
         const std::vector<WindowFunctionDescription> & functions);
 
-    bool arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
-
+    /// Compares the ORDER BY keys the way the input was sorted, i.e. with the collation if there is one.
     ALWAYS_INLINE bool haveEqualOrderByValues(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
     {
         if (unlikely(has_order_by_collation))
