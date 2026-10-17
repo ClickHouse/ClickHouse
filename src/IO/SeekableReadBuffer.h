@@ -94,15 +94,18 @@ public:
     /// Must be called at least once before any readBigAt calls (could be renamed to prepareReadAt()).
     virtual bool supportsReadAt() { return false; }
 
-    /// A contiguous region of cached data that the caller can reference directly (zero-copy).
-    /// The `handle` keeps the underlying cache cell alive; the data is valid as long as the handle
-    /// exists. Regions are returned in file order and cover the requested range contiguously.
+    /// A contiguous region of data that the caller can reference directly (zero-copy). The data is valid as long as
+    /// the `handle` exists (it keeps a page cache cell alive), or as long as the read buffer if the handle is empty.
+    /// Regions are returned in file order and cover the requested range contiguously.
     struct CachedRegion
     {
         std::shared_ptr<void> handle;
         const char * data;
         size_t size;
         size_t file_offset;
+        /// Bytes that may be read before `data` and after `data + size`.
+        size_t readable_before = 0;
+        size_t readable_after = 0;
     };
 
     /// Like readBigAt, but instead of copying data into a caller-provided buffer, returns
@@ -112,7 +115,7 @@ public:
     /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
     virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
 
-    /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
+    /// Whether readBigAtRetainCells is available: with an in-memory page cache, or for a memory-mapped file.
     virtual bool supportsReadAtRetainCells() const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
