@@ -16,7 +16,7 @@ CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIE
 # The trace line is printed by join reordering, which the randomized settings can turn off.
 PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_limit=10
     --use_hash_table_stats_for_join_reordering=0 --enable_join_runtime_filters=0 --enable_parallel_replicas=0
-    --use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1 --use_statistics=1"
+    --use_iceberg_manifest_statistics=1 --use_statistics=1"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"

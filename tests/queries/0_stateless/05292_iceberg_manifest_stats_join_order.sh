@@ -2,8 +2,8 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: with `use_iceberg_manifest_statistics` and `use_iceberg_manifest_column_statistics`, join reordering
-# gets Iceberg row counts and column statistics from the manifests.
+# Issue 120440: with `use_iceberg_manifest_statistics`, join reordering gets Iceberg row counts and column statistics
+# from the manifests.
 # - T1: order of a 3-way join with the settings off and on, and the rows its hash tables get.
 # - T2: the smaller table becomes the build side.
 # - T3: a table that was never written has 0 rows.
@@ -25,9 +25,8 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1"
-ON="--use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1"
-# The column flag alone does nothing.
-OFF="--use_iceberg_manifest_statistics=0 --use_iceberg_manifest_column_statistics=1"
+ON="--use_iceberg_manifest_statistics=1"
+OFF="--use_iceberg_manifest_statistics=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
