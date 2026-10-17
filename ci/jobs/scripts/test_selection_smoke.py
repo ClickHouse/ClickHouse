@@ -115,6 +115,7 @@ class SelectionSmoke(unittest.TestCase):
                 pr_number=1,
                 repo_name="ClickHouse/ClickHouse",
                 is_local_run=False,
+                is_merge_queue_event=False,
                 sha="head",
             )
         )
@@ -125,6 +126,30 @@ class SelectionSmoke(unittest.TestCase):
         diff = SimpleNamespace(raise_for_status=lambda: None, text=FIXTURE_DIFF)
         with patch("requests.get", side_effect=[metadata, diff]) as get:
             self.assertEqual(target.get_diff_text(), FIXTURE_DIFF)
+        self.assertTrue(get.call_args.args[0].endswith("/compare/base...head"))
+
+    def test_merge_queue_diff_is_the_linked_pr_diff(self):
+        # The merge group commit is not the PR head: select by the PR's own diff.
+        target = Targeting(
+            SimpleNamespace(
+                job_name="Stateless tests",
+                pr_number=0,
+                linked_pr_number=1,
+                repo_name="ClickHouse/ClickHouse",
+                is_local_run=False,
+                is_merge_queue_event=True,
+                sha="merge-group",
+            )
+        )
+        self.assertEqual(target.pr_number, 1)
+        metadata = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"head": {"sha": "head"}, "base": {"sha": "base"}},
+        )
+        diff = SimpleNamespace(raise_for_status=lambda: None, text=FIXTURE_DIFF)
+        with patch("requests.get", side_effect=[metadata, diff]) as get:
+            self.assertEqual(target.get_diff_text(), FIXTURE_DIFF)
+        self.assertTrue(get.call_args_list[0].args[0].endswith("/pulls/1"))
         self.assertTrue(get.call_args.args[0].endswith("/compare/base...head"))
 
     def test_cutoff_is_pinned_per_attempt(self):
@@ -170,7 +195,11 @@ class SelectionSmoke(unittest.TestCase):
         for path in canonical_coverage_paths("src/Interpreters/Fixture.cpp"):
             with self.subTest(path=path):
                 target = Targeting(
-                    SimpleNamespace(job_name="Stateless tests", pr_number=1)
+                    SimpleNamespace(
+                        job_name="Stateless tests",
+                        pr_number=1,
+                        is_merge_queue_event=False,
+                    )
                 )
                 target._cidb = FixtureCIDB(path)
                 target._coverage_snapshots = fixture_snapshots()
@@ -330,6 +359,37 @@ class SelectionSmoke(unittest.TestCase):
         result = protect_selection(["a", "b", "c"], [], candidates, str, config)
         self.assertEqual(result["mandatory_overflow"], 1)
         self.assertEqual(result["selected_count"], 3)
+
+    def test_merge_queue_drift_tests_are_mandatory(self):
+        candidates = [
+            {
+                "test": "coverage",
+                "score": 1,
+                "features": [],
+                "source": "primary_coverage",
+            }
+        ]
+        config = replace(SELECTION_CONFIG, max_selected_tests_temporary=1)
+        result = protect_selection(
+            [], [], candidates, str, config, drift=["drift_a", "drift_b"]
+        )
+        self.assertEqual(
+            [r["test"] for r in result["selected"]], ["drift_a", "drift_b"]
+        )
+        self.assertEqual(result["selected"][0]["sources"], ["merge_queue_drift"])
+
+    def test_merge_queue_drift_name_words(self):
+        # The test that https://github.com/ClickHouse/ClickHouse/pull/124131 broke
+        # shares feature words with the files the PR changed.
+        self.assertTrue(
+            {"parquet", "filter"}
+            <= Targeting._name_words("05339_string_filters_during_scan_parquet")
+            & Targeting._path_words("src/Processors/Formats/Impl/ParquetFilter.cpp")
+        )
+        self.assertEqual(
+            Targeting._path_words("tests/integration/test_storage_delta/test.py"),
+            {"delta"},
+        )
 
     def test_selection_pattern_selects_only_its_own_test(self):
         """A selected test's selector must select that test's file and no other.
