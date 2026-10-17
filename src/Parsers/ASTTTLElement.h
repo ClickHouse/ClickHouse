@@ -19,17 +19,10 @@ public:
     String destination_name;
     bool if_exists = false;
 
-    ASTs group_by_key;
-    ASTs group_by_assignments;
-
-    ASTPtr recompression_codec;
-
     ASTTTLElement()
         : mode(TTLMode::DELETE)
         , destination_type(DataDestinationType::DELETE)
         , if_exists(false)
-        , ttl_expr_pos(-1)
-        , where_expr_pos(-1)
     {
     }
 
@@ -38,8 +31,6 @@ public:
         , destination_type(destination_type_)
         , destination_name(destination_name_)
         , if_exists(if_exists_)
-        , ttl_expr_pos(-1)
-        , where_expr_pos(-1)
     {
     }
 
@@ -52,19 +43,32 @@ public:
 
     ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
     ASTPtr where() const { return getExpression(where_expr_pos); }
+    /// `ASTExpressionList` of the `GROUP BY` keys.
+    ASTPtr groupByKey() const { return getExpression(group_by_key_pos); }
+    /// `ASTExpressionList` of `ASTAssignment` after `GROUP BY ... SET`.
+    ASTPtr groupByAssignments() const { return getExpression(group_by_assignments_pos); }
+    ASTPtr recompressionCodec() const { return getExpression(recompression_codec_pos); }
 
-    void setTTL(ASTPtr && ast) { setExpression(ttl_expr_pos, std::forward<ASTPtr>(ast)); }
-    void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::forward<ASTPtr>(ast)); }
+    /// Passing null removes the child.
+    void setTTL(ASTPtr && ast) { setExpression(ttl_expr_pos, std::move(ast)); }
+    void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::move(ast)); }
+    void setGroupByKey(ASTPtr && ast) { setExpression(group_by_key_pos, std::move(ast)); }
+    void setGroupByAssignments(ASTPtr && ast) { setExpression(group_by_assignments_pos, std::move(ast)); }
+    void setRecompressionCodec(ASTPtr && ast) { setExpression(recompression_codec_pos, std::move(ast)); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
-    int ttl_expr_pos;
-    int where_expr_pos;
+    /// Indexes into `children`, -1 when absent.
+    int ttl_expr_pos = -1;
+    int where_expr_pos = -1;
+    int group_by_key_pos = -1;
+    int group_by_assignments_pos = -1;
+    int recompression_codec_pos = -1;
 
     void setExpression(int & pos, ASTPtr && ast);
-    ASTPtr getExpression(int pos, bool clone = false) const;
+    ASTPtr getExpression(int pos) const { return pos != -1 ? children[pos] : ASTPtr{}; }
 };
 
 }

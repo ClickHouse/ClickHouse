@@ -1538,7 +1538,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
             /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
             /// and is rejected as before.
-            ASTs group_by_key = ttl_element->group_by_key;
+            ASTs group_by_key = ttl_element->groupByKey()->children;
             if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
             {
                 if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
@@ -1556,8 +1556,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", group_by_key[i]->getColumnName(), pk_columns[i]);
             }
 
+            const ASTs group_by_assignments = ttl_element->groupByAssignments() ? ttl_element->groupByAssignments()->children : ASTs{};
             std::vector<std::pair<String, ASTPtr>> aggregations;
-            for (const auto & ast : ttl_element->group_by_assignments)
+            for (const auto & ast : group_by_assignments)
             {
                 const auto assignment = ast->as<const ASTAssignment &>();
                 auto ass_expression = assignment.expression();
@@ -1577,7 +1578,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 aggregation_columns_set.insert(assignment.column_name);
             }
 
-            if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
+            if (aggregation_columns_set.size() != group_by_assignments.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + group_by_key.size());
@@ -1616,7 +1617,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {},
+                    ttl_element->recompressionCodec(), {},
                     skip_validation ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
         }
     }

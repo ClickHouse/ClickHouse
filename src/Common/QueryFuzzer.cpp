@@ -8581,9 +8581,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
             /// Clear all mode-specific fields so no stale data from the old mode remains.
             ttl_elem->if_exists = false;
-            ttl_elem->group_by_key.clear();
-            ttl_elem->group_by_assignments.clear();
-            ttl_elem->recompression_codec.reset();
+            ttl_elem->setGroupByKey({});
+            ttl_elem->setGroupByAssignments({});
+            ttl_elem->setRecompressionCodec({});
 
             if (ttl_elem->mode == TTLMode::MOVE)
             {
@@ -8591,7 +8591,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (ttl_elem->mode == TTLMode::RECOMPRESS)
             {
-                ttl_elem->recompression_codec = makeASTFunction("CODEC", makeASTFunction("LZ4"));
+                ttl_elem->setRecompressionCodec(makeASTFunction("CODEC", makeASTFunction("LZ4")));
             }
         }
         if (ttl_elem->mode == TTLMode::MOVE)
@@ -8604,26 +8604,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (ttl_elem->mode == TTLMode::GROUP_BY)
         {
-            if (ttl_elem->group_by_key.empty())
+            auto keys = ttl_elem->groupByKey();
+            if (!keys || keys->children.empty())
             {
                 /// GROUP_BY requires at least one key; seed with the TTL expression.
-                ttl_elem->group_by_key.push_back(ttl_elem->ttl()->clone());
+                keys = make_intrusive<ASTExpressionList>();
+                keys->children.push_back(ttl_elem->ttl()->clone());
+                ttl_elem->setGroupByKey(ASTPtr(keys));
             }
             /// The key has to be a prefix of the sorting key, so permuting it reaches that check
-            if (ttl_elem->group_by_key.size() > 1 && fuzz_rand() % 20 == 0)
-                std::shuffle(ttl_elem->group_by_key.begin(), ttl_elem->group_by_key.end(), fuzz_rand);
-            if (ttl_elem->group_by_assignments.size() > 1 && fuzz_rand() % 20 == 0)
-                std::shuffle(ttl_elem->group_by_assignments.begin(), ttl_elem->group_by_assignments.end(), fuzz_rand);
-            fuzz(ttl_elem->group_by_key);
-            fuzz(ttl_elem->group_by_assignments);
+            if (keys->children.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(keys->children.begin(), keys->children.end(), fuzz_rand);
+            if (auto assignments = ttl_elem->groupByAssignments(); assignments && assignments->children.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(assignments->children.begin(), assignments->children.end(), fuzz_rand);
         }
         else if (ttl_elem->mode == TTLMode::RECOMPRESS && fuzz_rand() % 10 == 0)
         {
             /// RECOMPRESS requires a codec; synthesize CODEC(LZ4) and immediately randomize it.
-            ttl_elem->recompression_codec.reset();
-            ttl_elem->recompression_codec = makeASTFunction("CODEC", makeASTFunction("LZ4"));
-            fuzzCodecFunction(*ttl_elem->recompression_codec->as<ASTFunction>());
+            auto codec = makeASTFunction("CODEC", makeASTFunction("LZ4"));
+            fuzzCodecFunction(*codec->as<ASTFunction>());
+            ttl_elem->setRecompressionCodec(std::move(codec));
         }
+        /// Keys, assignments and the codec are children, so they are fuzzed here as well.
         fuzz(ttl_elem->children);
     }
     else if (auto * stats_decl = typeid_cast<ASTStatisticsDeclaration *>(ast.get()))

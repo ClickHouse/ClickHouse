@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
@@ -92,10 +93,15 @@ void rejectArgumentlessFunctions(const IAST & ast, const char * key)
             "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
             "which the SQL parser produces only outside an expression", function->name, key);
 
+    /// A `RECOMPRESS CODEC(...)` element without parameters, such as `LZ4`, is a function without an
+    /// `arguments` list; the TTL element validates that slot itself when reading it.
+    const auto * ttl_element = ast.as<ASTTTLElement>();
+    const ASTPtr recompression_codec = ttl_element ? ttl_element->recompressionCodec() : nullptr;
+
     /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
     for (const auto & child : ast.children)
     {
-        if (child)
+        if (child && child != recompression_codec)
             rejectArgumentlessFunctions(*child, key);
     }
 }
