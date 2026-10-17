@@ -81,7 +81,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
     if (result_column->hasDynamicStructure())
         result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
     if (result_column->hasStatistics())
-        result_column->takeOrCalculateStatisticsFrom(source_columns);
+        result_column->takeOrCalculateStatisticsFrom(source_columns, {});
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -108,7 +108,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+            col->takeOrCalculateStatisticsFrom({result_column->getPtr()}, {});
             res.addColumn(std::move(col));
         }
         else
@@ -166,7 +166,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+            col->takeOrCalculateStatisticsFrom({result_column->getPtr()}, {});
             res.addColumn(std::move(col));
         }
         else
