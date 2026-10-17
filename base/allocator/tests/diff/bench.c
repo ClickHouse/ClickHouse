@@ -31,8 +31,6 @@ static inline uint64_t xorshift(uint64_t * state)
     return *state = x;
 }
 
-static volatile uintptr_t sink;
-
 struct bench_args
 {
     int kind;
@@ -78,6 +76,8 @@ static void * bench_thread(void * arg)
     uint64_t rng = args->seed;
     void * batch[BATCH];
     size_t n = args->iterations;
+    /* Per-thread, so the multithreaded runs neither race on it nor contend for its cache line. */
+    volatile uintptr_t sink = 0;
     switch (args->kind)
     {
         case PAIR_16:
