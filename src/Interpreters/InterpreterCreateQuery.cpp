@@ -3526,6 +3526,9 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
+                if (create.storage && create.storage->engine)
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+
                 /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                 /// what the worker builds, not what our settings give
                 auto preflight_context = Context::createCopy(getContext());
