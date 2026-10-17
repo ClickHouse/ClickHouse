@@ -5775,6 +5775,11 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands, co
     const NameSet key_dependencies = getUniqueKeyDependencies(metadata);
     for (const auto & command : commands)
     {
+        /// Only an attached table has TTL. A rewritten part applies it, which can change a key the copied index still holds.
+        if (metadata.hasAnyTTL() && command.type != MutationCommand::ALTER_WITHOUT_MUTATION && command.type != MutationCommand::EMPTY)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Mutations are not supported on UNIQUE KEY tables with TTL: REMOVE TTL first");
+
         switch (command.type)
         {
             /// `READ_COLUMN` comes from MODIFY COLUMN, `DROP_COLUMN` also from CLEAR COLUMN.
