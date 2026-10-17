@@ -1779,6 +1779,7 @@ const char * auto_contributors[] {
     "Yatian Xu",
     "Yatsishin Ilya",
     "Yağızcan Değirmenci",
+    "Ye Yuan",
     "Yecine Megdiche",
     "Yegor Andreenko",
     "Yegor Levankov",
