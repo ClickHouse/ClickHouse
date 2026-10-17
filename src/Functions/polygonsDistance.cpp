@@ -53,9 +53,9 @@ public:
         return 2;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeFloat64>();
+        return "(Any, Any) -> Float64";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

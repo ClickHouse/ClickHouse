@@ -57,13 +57,9 @@ public:
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-        return std::make_shared<DataTypeString>();
+        return "(String) -> String";
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

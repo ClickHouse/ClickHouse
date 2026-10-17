@@ -30,7 +30,10 @@ namespace
 
         [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
+        String getSignatureString() const override
+        {
+            return "(Any) -> String";
+        }
 
         [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {

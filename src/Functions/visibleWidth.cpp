@@ -59,9 +59,9 @@ public:
         return 1;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "(Any) -> UInt64";
     }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }

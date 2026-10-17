@@ -31,7 +31,13 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    String getSignatureString() const override
+    {
+        return
+            "() -> String"
+            " OR (const UInt | Nothing) -> String"
+            " OR (const UInt | Nothing, const UInt | Nothing) -> String";
+    }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 

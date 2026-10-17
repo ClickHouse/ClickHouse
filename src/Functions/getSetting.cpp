@@ -48,6 +48,15 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — the result type is the dynamic type of the
+    /// setting value resolved at query time from its const-string name.
+    String getSignatureString() const override
+    {
+        if (mode == ErrorHandlingMode::Default)
+            return "(const String, Any) -> Any";
+        return "(const String) -> Any";
+    }
+
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);

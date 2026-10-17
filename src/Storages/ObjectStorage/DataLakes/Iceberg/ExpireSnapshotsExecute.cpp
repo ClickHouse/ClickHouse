@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
@@ -348,51 +349,6 @@ std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 // File collection helpers
 // ---------------------------------------------------------------------------
 
-void collectAllFilePaths(
-    const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
-    std::set<Iceberg::IcebergPathFromMetadata> & out)
-{
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
-        out.insert(entry->parsed_entry->file_path_key);
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-        out.insert(entry->parsed_entry->file_path_key);
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-        out.insert(entry->parsed_entry->file_path_key);
-}
-
-void collectRetainedFiles(
-    const Poco::JSON::Array::Ptr & retained_snapshots,
-    ObjectStoragePtr object_storage,
-    const PersistentTableComponents & persistent_table_components,
-    ContextPtr context,
-    LoggerPtr log,
-    Int32 current_schema_id,
-    std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_paths,
-    std::set<Iceberg::IcebergPathFromMetadata> & retained_data_file_paths,
-    std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_list_paths)
-{
-    for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
-    {
-        auto snapshot = retained_snapshots->getObject(i);
-        if (!snapshot->has(Iceberg::f_manifest_list))
-            continue;
-
-        auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
-        retained_manifest_list_paths.insert(manifest_list_path);
-
-        auto manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
-
-        for (const auto & manifest_entry : manifest_keys)
-        {
-            retained_manifest_paths.insert(manifest_entry.manifest_file_path);
-            auto entries_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log,
-                manifest_entry, current_schema_id);
-            collectAllFilePaths(entries_handle, retained_data_file_paths);
-        }
-    }
-}
-
 struct ExpiredFile
 {
     Iceberg::IcebergPathFromMetadata path;
@@ -417,9 +373,7 @@ void countFile(ExpireSnapshotsResult & result, FileCategory category)
 
 ExpiredFiles collectExpiredFiles(
     const std::vector<Iceberg::IcebergPathFromMetadata> & expired_manifest_list_paths,
-    const std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_list_paths,
-    const std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_paths,
-    const std::set<Iceberg::IcebergPathFromMetadata> & retained_data_file_paths,
+    const SnapshotReferencedFiles & retained,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
@@ -432,7 +386,7 @@ ExpiredFiles collectExpiredFiles(
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_file_paths;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
-        if (retained_manifest_list_paths.contains(manifest_list_path))
+        if (retained.manifest_list_paths.contains(manifest_list_path))
             continue;
 
         if (seen_expired_manifest_list_paths.contains(manifest_list_path))
@@ -451,7 +405,7 @@ ExpiredFiles collectExpiredFiles(
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            if (retained_manifest_paths.contains(manifest_entry.manifest_file_path))
+            if (retained.manifest_paths.contains(manifest_entry.manifest_file_path))
                 continue;
 
             if (seen_expired_manifest_paths.contains(manifest_entry.manifest_file_path))
@@ -466,19 +420,19 @@ ExpiredFiles collectExpiredFiles(
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
                         result.push_back({key, FileCategory::DATA_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
                         result.push_back({key, FileCategory::POSITION_DELETE_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
                         result.push_back({key, FileCategory::EQUALITY_DELETE_FILE});
                 }
             }
@@ -771,15 +725,11 @@ ExpireSnapshotsResult expireSnapshots(
         /// The files of the expired snapshots that none of `retained_snapshots` references.
         auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots)
         {
-            std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_paths;
-            std::set<Iceberg::IcebergPathFromMetadata> retained_data_file_paths;
-            std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;
-            collectRetainedFiles(
-                retained_snapshots, object_storage, persistent_table_components, context, log,
-                current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+            auto retained = collectSnapshotReferencedFiles(
+                retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
             return collectExpiredFiles(
-                partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
-                object_storage, persistent_table_components, context, log, current_schema_id);
+                partition.expired_manifest_list_paths, retained, object_storage, persistent_table_components, context, log,
+                current_schema_id);
         };
 
         /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.

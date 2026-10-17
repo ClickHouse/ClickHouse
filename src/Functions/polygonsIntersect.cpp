@@ -39,7 +39,10 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 

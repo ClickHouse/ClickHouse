@@ -129,6 +129,10 @@ public:
 
     [[nodiscard]] virtual SerializationPtr tryGetSerialization(const String & column_name) const = 0;
 
+    /// A static subcolumn's serialization from the part. Defaults to nothing, so an implementation that
+    /// does not provide it resolves subcolumns against the column's serialization instead.
+    virtual SerializationPtr tryGetSubcolumnSerialization(const String & /*column_name*/, const String & /*subcolumn_name*/) const { return nullptr; }
+
     [[nodiscard]] virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     [[nodiscard]] virtual String getTableName() const = 0;

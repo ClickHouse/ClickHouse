@@ -48,17 +48,9 @@ namespace
         [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
         [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        String getSignatureString() const override
         {
-            FunctionArgumentDescriptors mandatory_args{
-                {"s", &isString, nullptr, "String"},
-                {"delim", &isString, nullptr, "String"},
-                {"count", &isNativeInteger, nullptr, "UInt or Int"}
-            };
-
-            validateFunctionArguments(*this, arguments, mandatory_args);
-
-            return std::make_shared<DataTypeString>();
+            return "(String, const String, NativeInteger) -> String";
         }
 
         [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

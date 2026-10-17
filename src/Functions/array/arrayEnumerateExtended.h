@@ -39,6 +39,13 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — accepts one or more arrays of any element
+    /// type and returns an array of `UInt32` enumeration ranks.
+    String getSignatureString() const override
+    {
+        return "(Array, ...) -> Array(UInt32)";
+    }
+
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())

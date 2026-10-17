@@ -38,7 +38,10 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    String getSignatureString() const override
+    {
+        return "(T, Array, ...) -> Array(T)";
+    }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;
 };

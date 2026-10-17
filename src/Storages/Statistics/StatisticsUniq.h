@@ -23,6 +23,7 @@ public:
     [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
 
     [[nodiscard]] String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
+    size_t allocatedBytes() const override;
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;

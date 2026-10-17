@@ -50,9 +50,9 @@ public:
         return 2;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return DataTypeFactory::instance().get("MultiPolygon");
+        return "(Any, Any) -> MultiPolygon";
     }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

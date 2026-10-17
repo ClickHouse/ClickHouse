@@ -142,6 +142,18 @@ public:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
+    /// No declarative signature yet. These variants (`tumble`, `tumbleStart`,
+    /// `tumbleEnd`, `hop`, `hopStart`, `hopEnd`) return either a `DateTime`
+    /// (for `*Start`/`*End`) or a `Tuple(DateTime, DateTime)` (for
+    /// `tumble` and `hop`). The DSL has no return-type union, so a documentation-only
+    /// `... -> DateTime | Tuple(...)` cannot be parsed — it raises `SYNTAX_ERROR` on the
+    /// types-only path. Keep it empty until return-type unions are supported; the
+    /// `getReturnTypeImpl(ColumnsWithTypeAndName)` override resolves the exact shape.
+    String getSignatureString() const override
+    {
+        return "";
+    }
+
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;

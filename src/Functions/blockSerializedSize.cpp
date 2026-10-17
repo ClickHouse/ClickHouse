@@ -30,9 +30,9 @@ public:
     [[nodiscard]] bool isDeterministic() const override { return false; }
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "(...) -> UInt64";
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

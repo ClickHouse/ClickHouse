@@ -197,6 +197,11 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
+    String getSignatureString() const override
+    {
+        return "(Array(Number), Array(Number)) -> Tuple(Float64, Float64, Float64)";
+    }
+
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)

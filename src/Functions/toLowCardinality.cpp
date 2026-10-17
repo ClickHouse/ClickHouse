@@ -33,12 +33,9 @@ public:
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments[0]->lowCardinality())
-            return arguments[0];
-
-        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
+        return "(T) -> LowCardinality(T)";
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override

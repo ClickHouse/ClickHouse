@@ -26,6 +26,7 @@ public:
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] String getNameForLogs() const override;
+    size_t allocatedBytes() const override;
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"
