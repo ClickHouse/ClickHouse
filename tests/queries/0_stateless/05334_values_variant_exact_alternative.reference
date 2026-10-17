@@ -1,0 +1,8 @@
+1	UInt64	20000
+2	Date	2024-10-04
+1	Array(UInt64)	[20000]
+2	Array(UInt64)	[99999999999]
+3	Array(UInt64)	[20000]
+4	None	\N
+1	Tuple(UInt64)	(20000)
+1	Map(String, UInt64)	{'a':20000}
