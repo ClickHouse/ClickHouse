@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -761,17 +762,50 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
-    /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
-    /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
-    for (const auto & table : tables)
-        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
-
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         for (auto & table : tables)
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
+    }
+
+    /// `renameDatabase` changes each table's `StorageID` via `renameInMemory` below without going
+    /// through any rename guard. Enforce a database-rename-specific guard here so storages whose
+    /// shared path is fixed at startup (e.g. `MergeTree` with `leader_election = 1`) are not
+    /// silently renamed by a database-level rename.
+    ///
+    /// Note: this must NOT reuse `checkTableCanBeRenamed`. That check encodes table-rename
+    /// semantics (UUID transitions, moving a table between databases) and would reject a
+    /// `ReplicatedMergeTree` with implicit macros / `KeeperMap` / `ObjectStorageQueue` carried by
+    /// the rename — including the final `RENAME DATABASE` of the Ordinary-to-Atomic startup
+    /// conversion, which a previous version of this code broke. See
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename`.
+    for (const auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
+    /// The same guard for the tables that are currently detached. `DETACH TABLE` moves a table out
+    /// of `tables` into `snapshot_detached_tables` and keeps its metadata file, which this method
+    /// renames along with the rest of the database, so a later `ATTACH TABLE` would bring the table
+    /// back under the new database name — precisely the rename the loop above rejects. Both flavours
+    /// of detach are covered: a permanently detached table is in the same map.
+    ///
+    /// There is no storage object to ask, so the answer comes from the table's own metadata,
+    /// resolved by the same predicate the lazy-table proxy uses. Unreadable metadata propagates as
+    /// an error and fails the rename: the guard must not be skipped because the answer is unknown.
+    for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+    {
+        auto ast = parseQueryFromMetadata(log, getContext(), getDisk(), snapshot.metadata_path);
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        if (!DatabaseRenameGuardHint::fromCreateQuery(create).mayNeedGuard(getContext()))
+            continue;
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME DATABASE is not supported for a database with the detached `leader_election` table {}: "
+            "the data path of such a table is shared between nodes and its lease path is fixed at startup, "
+            "so attaching it back under a new database name would diverge from the peers that still track the "
+            "old one. Drop the table instead of detaching it, or recreate it under the desired name.",
+            backQuote(detached_table_name));
     }
 
     /// The rename re-keys every table of the database under the new name in the server-wide dependency
@@ -791,7 +825,6 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point, and
     /// that a concurrent `CREATE TABLE` in another database cannot close a cycle that this check missed.
     FailPointInjection::pauseFailPoint(FailPoints::rename_database_after_dependency_check);
-
 
     try
     {

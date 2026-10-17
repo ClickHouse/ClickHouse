@@ -42,6 +42,7 @@ public:
     bool isStoredOnRemoteDisk() const override;
     std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
+    bool supportsHardLinks() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
@@ -146,7 +147,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         LoggerPtr log,
-        const std::function<void()> & cancellation_hook
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure
         ) const override;
 
     void rename(

@@ -66,14 +66,22 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    TemporaryClonedPart clonePart(
+        const MergeTreeMoveEntry & moving_part,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<UInt64> admission_epoch = {}) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
     /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    void swapClonedPart(TemporaryClonedPart & cloned_part) const;
+    void swapClonedPart(TemporaryClonedPart & cloned_part, std::optional<UInt64> admission_epoch = {}) const;
+
+    /// Under `leader_election`, throw if this node may no longer write to shared storage for this move:
+    /// the lease is stale, or, for an explicit command, the leadership epoch differs from `admission_epoch`.
+    void assertLeaderMayContinueMove(std::optional<UInt64> admission_epoch) const;
 
     /// Rename cloned part from `moving/` directory to the actual part storage
     void renameClonedPart(IMergeTreeDataPart & part) const;
