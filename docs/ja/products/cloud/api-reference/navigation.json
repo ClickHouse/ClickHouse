@@ -151,11 +151,11 @@
       {
         "group": "Saved queries",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}"
         ]
       }
     ]

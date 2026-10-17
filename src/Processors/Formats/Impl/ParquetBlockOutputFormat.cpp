@@ -119,6 +119,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 task_queue.size() <= format_settings.max_threads * 4)
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -155,6 +156,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
         for (size_t offset = 0; offset < staging_rows; offset += row_group_size)
         {
+            /// A sink does not call onCancel() while it writes, so `is_stopped` alone misses a killed query.
+            CurrentThread::checkIfNotCancelled();
+
             size_t count = std::min(row_group_size, staging_rows - offset);
             MutableColumns columns = concatenated.cloneEmptyColumns();
             for (size_t i = 0; i < columns.size(); ++i)
@@ -200,6 +204,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             if (row_groups.empty())
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -385,6 +390,8 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 {
     while (!row_groups.empty() && row_groups.front().tasks_in_flight == 0 && !is_stopped)
     {
+        CurrentThread::checkIfNotCancelled();
+
         RowGroupState & r = row_groups.front();
 
         /// Write to the file.

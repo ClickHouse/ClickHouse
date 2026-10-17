@@ -1,0 +1,38 @@
+-- the filter of the query and PREWHERE, before and after the data change
+10
+10
+10	50
+10	50
+18
+18	86
+15
+15	75
+90
+90	437
+100
+100	487
+-- ARRAY JOIN changes the number of rows
+33
+33
+99
+-- an explicit PREWHERE is not a part of the filter of the query
+1
+100
+99
+100
+-- a row policy and the TopN filter remove rows before PREWHERE
+50	250
+100	487
+90009	90009
+90008	90008
+90007	90007
+100
+-- the oldest blocks are removed by max_rows_to_keep
+0
+0	0
+20000
+10000
+10000	50000
+-- the results are the same without the cache
+100
+10000
