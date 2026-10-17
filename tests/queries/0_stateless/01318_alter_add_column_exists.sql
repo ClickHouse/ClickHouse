@@ -204,11 +204,9 @@ DROP TABLE IF EXISTS add_nested_rename_child;
 
 DROP TABLE IF EXISTS add_nested_cond_rename;
 
--- The mutation-planning replay (getMutationCommands -> tryConvertToMutationCommand) must not diverge from
--- the committed metadata when a later command is ignored by prepare(). With share_nested_offsets = 0 and
--- only `n.a`, `ADD COLUMN IF NOT EXISTS n Nested(a, b), RENAME COLUMN IF EXISTS n.b TO m` adds the missing
--- `n.b`; the RENAME is ignored because the prepare-time snapshot had no `n.b`. An ignored command reports
--- isRequireMutationStage() == false, so no RENAME_COLUMN mutation is queued and the final schema keeps `n.b`.
+-- A conditional command sees the columns the preceding commands of the same ALTER produce, so with
+-- share_nested_offsets = 0 and only `n.a`, `ADD COLUMN IF NOT EXISTS n Nested(a, b)` adds `n.b` and the
+-- following `RENAME COLUMN IF EXISTS n.b TO m` renames it, exactly as the unguarded spelling above does.
 CREATE TABLE add_nested_cond_rename
 (
     `n.a` Array(UInt32)
@@ -222,3 +220,98 @@ ALTER TABLE add_nested_cond_rename ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b
 SHOW CREATE TABLE add_nested_cond_rename;
 
 DROP TABLE IF EXISTS add_nested_cond_rename;
+
+DROP TABLE IF EXISTS add_nested_absent_rename;
+
+-- The mutation-planning replay (getMutationCommands -> tryConvertToMutationCommand) must not diverge from
+-- the committed metadata when a later command is ignored by prepare(). Here `ADD COLUMN IF NOT EXISTS
+-- n Nested(a)` adds nothing and `n.b` never exists, so the RENAME is ignored: an ignored command requires
+-- no mutation stage, so no RENAME_COLUMN mutation is queued and the final schema keeps `n.a`.
+CREATE TABLE add_nested_absent_rename
+(
+    `n.a` Array(UInt32)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_absent_rename ADD COLUMN IF NOT EXISTS n Nested(a UInt32), RENAME COLUMN IF EXISTS `n.b` TO `m`;
+
+SHOW CREATE TABLE add_nested_absent_rename;
+
+DROP TABLE IF EXISTS add_nested_absent_rename;
+
+DROP TABLE IF EXISTS replace_column_if_exists;
+
+-- `DROP COLUMN IF EXISTS c, ADD COLUMN IF NOT EXISTS c <type>` is the idempotent way to give a column a new
+-- type: the add is judged against the columns after the drop, so `c` is re-added rather than treated as
+-- already present.
+CREATE TABLE replace_column_if_exists
+(
+    key UInt64,
+    value1 UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key;
+
+ALTER TABLE replace_column_if_exists DROP COLUMN IF EXISTS value1, ADD COLUMN IF NOT EXISTS value1 String;
+
+SHOW CREATE TABLE replace_column_if_exists;
+
+DROP TABLE IF EXISTS replace_column_if_exists;
+
+DROP TABLE IF EXISTS replace_only_column;
+
+-- Replacing the table's only column keeps the table alterable: dropping the last column without re-adding it
+-- would leave metadata with no column list at all, which cannot be stored or loaded back.
+CREATE TABLE replace_only_column
+(
+    value1 UInt64
+)
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+ALTER TABLE replace_only_column DROP COLUMN IF EXISTS value1, ADD COLUMN IF NOT EXISTS value1 String;
+
+SHOW CREATE TABLE replace_only_column;
+
+ALTER TABLE replace_only_column ADD COLUMN value2 UInt64;
+
+SHOW CREATE TABLE replace_only_column;
+
+-- Dropping the only column with nothing re-adding it is still refused.
+ALTER TABLE replace_only_column DROP COLUMN value1, DROP COLUMN value2; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS replace_only_column;
+
+DROP TABLE IF EXISTS add_then_rename_if_exists;
+
+-- Mirror direction: a conditional RENAME of a column the same ALTER just added is applied, not skipped.
+CREATE TABLE add_then_rename_if_exists
+(
+    key UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key;
+
+ALTER TABLE add_then_rename_if_exists ADD COLUMN b UInt64, RENAME COLUMN IF EXISTS b TO c;
+
+SHOW CREATE TABLE add_then_rename_if_exists;
+
+DROP TABLE IF EXISTS add_then_rename_if_exists;
+
+DROP TABLE IF EXISTS add_then_modify_if_exists;
+
+-- Same for a conditional MODIFY: the column the same ALTER just added exists by the time it runs.
+CREATE TABLE add_then_modify_if_exists
+(
+    key UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key;
+
+ALTER TABLE add_then_modify_if_exists ADD COLUMN b UInt64, MODIFY COLUMN IF EXISTS b String;
+
+SHOW CREATE TABLE add_then_modify_if_exists;
+
+DROP TABLE IF EXISTS add_then_modify_if_exists;
