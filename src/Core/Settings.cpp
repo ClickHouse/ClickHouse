@@ -11227,7 +11227,7 @@ setting on or off does not change views that already exist.
 > A view that exposes a declared schema also enforces it: querying it throws `TYPE_MISMATCH` if the
 > actual schema after parameter substitution differs from the declared one.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting. When enabled, the column schema declared explicitly in a parameterized view is exposed (e.g. in `SHOW COLUMNS`/`system.columns`) and validated after parameter substitution, throwing `TYPE_MISMATCH` if the actual schema differs from the declared one."}) \
+        {"26.11", false, false, "New experimental setting. When enabled, the column schema declared explicitly in a parameterized view is exposed (e.g. in `SHOW COLUMNS`/`system.columns`) and validated after parameter substitution, throwing `TYPE_MISMATCH` if the actual schema differs from the declared one."}) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL, \
