@@ -1,0 +1,42 @@
+-- the query filter implies the filter of the projection, the optimizer reads the second part from the base table
+Baseline (after PK + partition + existing indexes):
+marks: 350
+rows: 35000
+With p (normal projection, hypothetical):
+status: applicable
+marks: 54
+rows: 5400
+verdict: chosen
+real: 54 marks, 5400 rows
+-- a sample of the first part, the span contains the read of the optimizer
+Baseline (after PK + partition + existing indexes):
+marks: 300
+With p (normal projection, hypothetical):
+marks: 4
+marks_span: 0 to 8
+verdict: chosen
+sampled_marks: 30 / 300
+real: 4 marks, 400 rows
+-- the query filter does not imply it
+status: not_applicable
+reason: the query WHERE does not imply the projection WHERE
+real, filter implied: 54 marks, from the projection
+real, filter not implied: 350 marks, from the base table
+-- the rows of the filter in one granule, with a full scan
+Baseline (after PK + partition + existing indexes):
+marks: 100
+With p (normal projection, hypothetical):
+status: applicable
+marks: 1
+verdict: chosen
+-- the same with a sample
+empirical_status: unsupported
+empirical_reason: No row of the sample of part all_1_1_0 passes the filter of the projection, so the sample cannot show its projection part (see projection_scan_budget_rows)
+-- a part with a lightweight delete
+marks: 100
+rows: 10000
+With p (normal projection, hypothetical):
+marks: 1
+rows: 100
+verdict: chosen
+real: 1 marks, 100 rows

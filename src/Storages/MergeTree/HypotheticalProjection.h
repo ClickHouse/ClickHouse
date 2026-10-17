@@ -25,6 +25,8 @@ struct HypotheticalProjection
         /// empty until the optimizer analyzes the projection
         std::optional<UInt64> marks;
         UInt64 rows = 0;
+        /// the rows read from the base table for the parts with no projection part
+        UInt64 base_table_rows = 0;
         bool chosen = false;
         /// chosen only because a forcing setting cancels a rejection
         bool forced = false;
