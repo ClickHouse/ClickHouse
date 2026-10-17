@@ -13,10 +13,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-}
-
 /**
   * -OrDefault and -OrNull combinators for aggregate functions.
   * If there are no input values, return NULL or a default value, accordingly.
@@ -41,7 +37,7 @@ public:
         , inner_nullable{nested_function->getResultType()->isNullable()}
         , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
-        // nothing
+        nested_function->throwIfCannotProduceFinalizedResult();
     }
 
     String getName() const override

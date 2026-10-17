@@ -24,11 +24,24 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_AGGREGATION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
+}
+
+static void assertCombinatorIsSupported(
+    const IAggregateFunction & function,
+    const String & combinator_name)
+{
+    if (!function.supportsCombinator(combinator_name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} does not support combinator {}",
+            function.getName(),
+            combinator_name);
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -118,7 +131,16 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
+        if (has_null_arguments && properties.has_value() && properties->rejects_only_null_arguments)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} does not support arguments whose type can only be NULL",
+                name);
+
         AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+
+        if (nested_function)
+            assertCombinatorIsSupported(*nested_function, combinator->getName());
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -345,6 +367,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             for (const auto & nested_arguments : nested_arguments_list)
                 nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
 
+            if (!nested_functions.empty())
+                assertCombinatorIsSupported(*nested_functions.front(), combinator_name);
+
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
             /// to a placeholder for only-null elements and drop the other elements' state).
@@ -357,6 +382,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+            assertCombinatorIsSupported(*nested_function, combinator_name);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
