@@ -10,6 +10,7 @@ from .prometheus_test_utils import (
     get_response_to_remote_write,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
+    types_pb2,
 )
 import re
 import requests
@@ -185,6 +186,47 @@ def test_remote_write_zstd():
     assert len(read_response.results) == 1
     assert len(read_response.results[0].timeseries) == 1
     assert len(read_response.results[0].timeseries[0].samples) == count
+
+
+def get_dropped_exemplars():
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedExemplars'"
+        )
+    )
+
+
+def test_remote_write_counts_dropped_exemplars():
+    timestamp = 1724118000
+    write_request = convert_time_series_to_protobuf(
+        [
+            ({"__name__": "exemplar_data", "series": "a"}, {timestamp: 1.0}),
+            ({"__name__": "exemplar_data", "series": "a"}, {}),
+            ({"__name__": "exemplar_data", "series": "b"}, {timestamp: 2.0}),
+        ]
+    )
+    exemplar = types_pb2.Exemplar(
+        labels=[types_pb2.Label(name="trace_id", value="abc")],
+        value=1.0,
+        timestamp=timestamp * 1000,
+    )
+    # Prometheus sends each exemplar in its own series without samples.
+    write_request.timeseries[1].exemplars.append(exemplar)
+    # Exemplars next to a sample are dropped too.
+    write_request.timeseries[2].exemplars.extend([exemplar, exemplar])
+
+    before = get_dropped_exemplars()
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", write_request)
+    assert get_dropped_exemplars() - before == 3
+
+    # The samples are stored even though the exemplars are dropped.
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesData(prometheus) WHERE id IN "
+            "(SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = 'exemplar_data')"
+        )
+        == "2\n"
+    )
 
 
 def test_remote_write_unsupported_content_encoding():
