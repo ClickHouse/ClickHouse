@@ -322,7 +322,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     {
         chassert(it->cache);
         cache_chain.push_back(std::make_shared<DiskCacheProvider>(
-            it->cache, it->cache_settings, query_id, settings.local_throttler,
+            it->cache, it->cache_settings, settings.local_throttler,
             it->custom_cache_key, it->custom_origin));
     }
 
