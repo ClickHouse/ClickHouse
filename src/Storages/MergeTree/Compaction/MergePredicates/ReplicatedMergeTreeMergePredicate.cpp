@@ -54,6 +54,28 @@ PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(const
     return MergeCore::getPatchesToApplyOnMerge(range);
 }
 
+DataVersionsByPartition ReplicatedMergeTreeBaseMergePredicate::collectDataVersionsNotToSpan() const
+{
+    /// 'virtual_parts' is an ActiveDataPartSet, so it keeps only the topmost covering part of a block range.
+    /// Read the two sets that feed it instead: the parts the replica has, and the results of the entries it has
+    /// not applied yet. Every data version that a part of the range can hold is in one of them.
+    auto infos = queue.current_parts.getPartInfos();
+
+    for (const auto & entry : queue.queue)
+    {
+        for (const auto & part_name : entry->getVirtualPartNames(queue.format_version))
+        {
+            auto info = MergeTreePartInfo::fromPartName(part_name, queue.format_version);
+
+            /// A DROP_RANGE result is not a version any part carries.
+            if (!info.isFakeDropRangePart())
+                infos.push_back(std::move(info));
+        }
+    }
+
+    return getDataVersionsByPartition(infos);
+}
+
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : ReplicatedMergeTreeBaseMergePredicate(queue_, std::nullopt)
 {
@@ -65,10 +87,8 @@ ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(R
         std::lock_guard lock(queue_.state_mutex);
         auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
 
-        /// Virtual parts also contain the results of the entries that are still in the queue,
-        /// so a data version assigned by a mutation is seen before that mutation is executed.
         if (!patch_infos.empty())
-            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
+            data_versions_by_partition = collectDataVersionsNotToSpan();
 
         patches_by_partition = getPatchPartsByPartition(patch_infos, {});
     }
@@ -122,10 +142,8 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
         std::lock_guard lock(queue.state_mutex);
         auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
 
-        /// Virtual parts also contain the results of the entries that are still in the queue,
-        /// so a data version assigned by a mutation is seen before that mutation is executed.
         if (!patch_infos.empty())
-            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
+            data_versions_by_partition = collectDataVersionsNotToSpan();
 
         patches_by_partition = getPatchPartsByPartition(patch_infos, *committing_blocks_ptr);
     }
