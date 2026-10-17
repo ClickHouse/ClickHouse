@@ -89,6 +89,52 @@ TEST(ProfileEvents, ChainAccountsWithPerCPUDisabled)
     EXPECT_EQ(global[ProfileEvents::Query], num_threads * increments_per_thread);
 }
 
+/// Query-scoped events must start at the outermost Process counters so Thread and nested Process
+/// scopes (materialized views, nested async-insert flushes) never observe them.
+TEST(ProfileEvents, IncrementAtOutermostProcessSkipsNestedScopes)
+{
+    ProfileEvents::Counters global(VariableContext::Global, nullptr);
+    ProfileEvents::Counters user(VariableContext::User, &global);
+    ProfileEvents::Counters query_process(VariableContext::Process, &user);
+    ProfileEvents::Counters nested_process(VariableContext::Process, &query_process);
+    ProfileEvents::Counters thread(VariableContext::Thread, &nested_process);
+    ProfileEvents::Counters scope(VariableContext::Thread, &thread);
+
+    const ProfileEvents::Count amount = 42;
+    scope.incrementAtOutermostProcess(ProfileEvents::Query, amount);
+
+    EXPECT_EQ(scope[ProfileEvents::Query], 0u);
+    EXPECT_EQ(thread[ProfileEvents::Query], 0u);
+    EXPECT_EQ(nested_process[ProfileEvents::Query], 0u);
+    EXPECT_EQ(query_process[ProfileEvents::Query], amount);
+    EXPECT_EQ(user[ProfileEvents::Query], amount);
+    EXPECT_EQ(global[ProfileEvents::Query], amount);
+}
+
+TEST(ProfileEvents, IncrementAtOutermostProcessNoProcessIsNoOp)
+{
+    ProfileEvents::Counters global(VariableContext::Global, nullptr);
+    ProfileEvents::Counters thread(VariableContext::Thread, &global);
+
+    thread.incrementAtOutermostProcess(ProfileEvents::Query, 7);
+
+    EXPECT_EQ(thread[ProfileEvents::Query], 0u);
+    EXPECT_EQ(global[ProfileEvents::Query], 0u);
+}
+
+TEST(ProfileEvents, SnapshotSetOverwritesSingleEvent)
+{
+    ProfileEvents::Counters counters(VariableContext::Process, nullptr);
+    counters.increment(ProfileEvents::Query, 5);
+
+    auto snapshot = counters.getPartiallyAtomicSnapshot();
+    EXPECT_EQ(snapshot[ProfileEvents::Query], 5u);
+
+    snapshot.set(ProfileEvents::Query, 99);
+    EXPECT_EQ(snapshot[ProfileEvents::Query], 99u);
+    EXPECT_EQ(counters[ProfileEvents::Query], 5u);
+}
+
 TEST(ProfileEvents, TraceProfileEventPublishedWhileIncrementing)
 {
     ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
