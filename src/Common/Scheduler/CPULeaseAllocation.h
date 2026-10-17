@@ -232,7 +232,6 @@ private:
         return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
     }
 
-    /// No thread is running or preempted, and at least one is parked
     bool allParked() const { return threads.running_count == 0 && threads.parked_count > 0 && threads.preempted.none(); }
 
     /// Resource request failed.
