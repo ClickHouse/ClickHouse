@@ -6,6 +6,7 @@ namespace DB
 struct QueryFlags
 {
     bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
+    bool inherit_process_list_element = false; /// If true, run under the process list element already present in the context.
     /// If true, the query was written by the user even though it is executed as an `internal` query, i.e. it is not
     /// initiated by the server itself. Subqueries of `PARALLEL WITH` are like that: they are re-executed as nested
     /// queries, but their text comes from the user. Such queries must be subject to all the restrictions of a regular
@@ -28,6 +29,9 @@ struct QueryFlags
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.
     bool run_as_submitting_user = false;
+    /// If true, the query is not accounted in the quota. Used by the internal `DETACH`/`ATTACH` pair of the
+    /// `reattach_tables_before_query_execution` testing hook, which must not consume the user's quota.
+    bool ignore_quota = false;
 };
 
 }

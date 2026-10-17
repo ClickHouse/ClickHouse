@@ -105,6 +105,11 @@ public:
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
+    /// Whether a mutation created by a transaction that is not committed yet is registered. Such a
+    /// transaction keeps the storage referenced until it is finalized, even when the mutation has no
+    /// parts to process.
+    bool hasMutationsOfUnfinishedTransactions() const;
+
     CancellationCode killMutation(const String & mutation_id) override;
 
     /// Makes backup entries to backup the data of the storage.
