@@ -3,6 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileView.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -101,6 +103,18 @@ static ReadSettings patchSettings(ReadSettings settings)
     settings.local_fs_settings.direct_io_threshold = 0;
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
         settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    /// Callers may size `buffer_size` for the member they ask for, while the threshold still
+    /// describes the whole session. Keep the threshold no larger than the current buffer; it applies
+    /// for the reader's whole lifetime, so gaps inside a member are seeked over rather than bridged.
+    settings.remote_fs_settings.min_bytes_for_seek
+        = std::min(settings.remote_fs_settings.min_bytes_for_seek, settings.remote_fs_settings.buffer_size);
+#if ENABLE_DISTRIBUTED_CACHE
+    /// `wrapAsyncPrefetch` substitutes this field for the remote one when distributed cache is
+    /// active, so clamping only the remote field would leave that path unclamped.
+    settings.distributed_cache_settings.min_bytes_for_seek
+        = std::min<size_t>(settings.distributed_cache_settings.min_bytes_for_seek, settings.remote_fs_settings.buffer_size);
+#endif
     return settings;
 }
 
