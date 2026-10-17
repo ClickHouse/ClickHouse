@@ -3630,11 +3630,12 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     {
         filter_with_default_value_inputs = buildFilterActionsDAG({filter_node}, input_node_name_to_default_input_column);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /** It is possible that duing DAG construction, some functions cannot be executed for constant default value inputs
           * and exception will be thrown.
           */
+        rethrowIfQueryCancelled(e);
         return false;
     }
 
