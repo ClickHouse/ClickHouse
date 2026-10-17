@@ -10,6 +10,8 @@ SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
 SET max_threads = 4;
+-- A randomized join order has no row estimate, and the queries below need the estimate to choose the build layout.
+SET query_plan_optimize_join_order_randomize = 0;
 SET join_algorithm = 'partitioned_hash';
 
 DROP TABLE IF EXISTS t_sf_build;

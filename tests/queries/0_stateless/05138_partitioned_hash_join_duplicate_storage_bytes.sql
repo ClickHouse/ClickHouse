@@ -13,6 +13,8 @@ SET max_bytes_in_join = 0;
 SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_joins = 0;
 SET max_threads = 8;
+-- The duplicates of one key must arrive in build blocks of 100000 rows, so a random `max_block_size` would change the runs.
+SET max_block_size = 100000;
 
 DROP TABLE IF EXISTS t_sc_b;
 DROP TABLE IF EXISTS t_sc_p;

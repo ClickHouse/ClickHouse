@@ -13,6 +13,8 @@ SET max_bytes_in_join = 0;
 -- The ProfileEvents assertions below read this server's query_log; with parallel replicas the
 -- join builds (and their events) can land on other replicas.
 SET enable_parallel_replicas = 0;
+-- The assertions below need several build threads; a random `max_threads` of 1 would give one partition.
+SET max_threads = 4;
 
 DROP TABLE IF EXISTS t_build;
 DROP TABLE IF EXISTS t_probe;

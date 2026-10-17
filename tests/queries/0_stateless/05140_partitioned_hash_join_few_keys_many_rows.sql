@@ -11,6 +11,8 @@ SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
 SET max_threads = 4;
+-- The hint that an earlier join of the same right side leaves in the statistics would replace the build-row estimate.
+SET collect_hash_table_stats_during_joins = 0;
 
 DROP TABLE IF EXISTS t_pf_build;
 DROP TABLE IF EXISTS t_pf_probe;
