@@ -22,6 +22,7 @@ void registerCodecGCD(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
 void registerCodecQuantized(CompressionCodecFactory & factory);
 void registerCodecZXC(CompressionCodecFactory & factory);
+void registerCodecByteReverse(CompressionCodecFactory & factory);
 void registerCodecSZ3(CompressionCodecFactory & factory);
 void registerCodecPco(CompressionCodecFactory & factory);
 

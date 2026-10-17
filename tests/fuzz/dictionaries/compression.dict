@@ -18,6 +18,7 @@
 "\x9D"  # SZ3
 "\x9E"  # Quantized
 "\x9F"  # ZXC
+"\xA0"  # ByteReverse
 # 0x99 (DeflateQpl) and 0x9B (ZSTD_QPL) were removed from the enum and are
 # rejected by `CompressionCodecFactory::get` before any codec code runs, so they
 # are deliberately not listed here.
