@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/LazyPreformattedMessage/fwd.h>
 
 #include <expected>
 #include <memory>
@@ -14,7 +14,7 @@ class IMergePredicate
 public:
     virtual ~IMergePredicate() = default;
 
-    virtual std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const = 0;
+    virtual std::expected<void, LazyPreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const = 0;
 
     /// Returns maximal version of patch part required to be applied to the part during merge.
     /// Returns 0 if there are no patch parts to apply.
