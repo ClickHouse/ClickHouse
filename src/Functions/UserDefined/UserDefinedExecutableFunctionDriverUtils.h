@@ -21,6 +21,10 @@ String formatArgsSignature(const ASTPtr & arguments_ast);
 /// Format the declared return type for passing to the driver.
 String formatReturnType(const ASTPtr & return_type_ast);
 
+/// Validate all declared argument and return types before passing their textual representation to a driver.
+/// This rejects syntax that is valid only in a column declaration, such as a `DEFAULT` inside a `Tuple` type.
+void validateSignatureTypes(const ASTPtr & arguments_ast, const ASTPtr & return_type_ast);
+
 /// Convert an engine argument literal to the string passed to the driver.
 /// String literals are passed verbatim, without quoting.
 String engineArgumentToString(const ASTLiteral & literal);
