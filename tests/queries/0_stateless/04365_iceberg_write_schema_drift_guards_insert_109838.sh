@@ -72,41 +72,33 @@ SELECT 'rename', c0, c1_renamed FROM t ORDER BY c0;
 rm -rf "${RENAME_DIR}"
 
 # --- No drift, but the write mapping collapses the type: accepted -----------------------------
-# UInt32/UInt64/Date each share an Iceberg primitive with a signed or wider type, so the schema
-# check must compare Iceberg-equivalent types. The materialized view is what makes it reachable,
-# and no target may receive a direct INSERT first: that refreshes the cached metadata.
+# UInt32/Date each share an Iceberg primitive with a signed or wider type, so the schema check
+# must compare Iceberg-equivalent types. The materialized view is what makes it reachable, and
+# no target may receive a direct INSERT first: that refreshes the cached metadata.
 # Values are read back, not counted: a count also passes when the row is written corrupted.
+# Each type runs in its own clickhouse-local invocation, so a failure in one does not hide the others.
+# `UInt64` is absent: `CREATE` of an Iceberg table rejects it, because Iceberg `long` cannot
+# represent every `UInt64` value.
 # DateTime/DateTime64(3) are deliberately absent - they map to `timestamp`, whose reader is
 # DateTime64(6), and the value survives neither this path nor a plain INSERT on master. That is a
 # separate pre-existing write-side scale bug, so asserting on it here would pin corrupted data.
-LOSSY_DIR="${CLICKHOUSE_TMP}/04365_insert_lossy_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -rf "${LOSSY_DIR}"; mkdir -p "${LOSSY_DIR}"/t_u32 "${LOSSY_DIR}"/t_u64 "${LOSSY_DIR}"/t_date "${LOSSY_DIR}"/t_dt64
-${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery -q "
-CREATE TABLE src_u32 (c0 UInt32) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t_u32 (c0 UInt32) ENGINE = IcebergLocal('${LOSSY_DIR}/t_u32/', 'Avro');
-CREATE MATERIALIZED VIEW mv_u32 TO t_u32 AS SELECT c0 FROM src_u32;
-INSERT INTO src_u32 VALUES (7);
-SELECT 'ok_u32', toString(c0) FROM t_u32;
+lossy_insert() {
+    local label="$1" type="$2" value="$3"
+    local dir="${CLICKHOUSE_TMP}/04365_insert_lossy_${label}_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    rm -rf "${dir}"; mkdir -p "${dir}/t"
+    ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery -q "
+CREATE TABLE src (c0 ${type}) ENGINE = MergeTree ORDER BY c0;
+CREATE TABLE t (c0 ${type}) ENGINE = IcebergLocal('${dir}/t/', 'Avro');
+CREATE MATERIALIZED VIEW mv TO t AS SELECT c0 FROM src;
+INSERT INTO src VALUES (${value});
+SELECT 'ok_${label}', toString(c0) FROM t;
+" -- --user_files_path="${dir}" < /dev/null 2>&1 | grep -oE "^ok_${label}\s\S.*$"
+    rm -rf "${dir}"
+}
 
-CREATE TABLE src_u64 (c0 UInt64) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t_u64 (c0 UInt64) ENGINE = IcebergLocal('${LOSSY_DIR}/t_u64/', 'Avro');
-CREATE MATERIALIZED VIEW mv_u64 TO t_u64 AS SELECT c0 FROM src_u64;
-INSERT INTO src_u64 VALUES (123456789012);
-SELECT 'ok_u64', toString(c0) FROM t_u64;
-
-CREATE TABLE src_date (c0 Date) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t_date (c0 Date) ENGINE = IcebergLocal('${LOSSY_DIR}/t_date/', 'Avro');
-CREATE MATERIALIZED VIEW mv_date TO t_date AS SELECT c0 FROM src_date;
-INSERT INTO src_date VALUES ('2020-01-02');
-SELECT 'ok_date', toString(c0) FROM t_date;
-
-CREATE TABLE src_dt64 (c0 DateTime64(6)) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t_dt64 (c0 DateTime64(6)) ENGINE = IcebergLocal('${LOSSY_DIR}/t_dt64/', 'Avro');
-CREATE MATERIALIZED VIEW mv_dt64 TO t_dt64 AS SELECT c0 FROM src_dt64;
-INSERT INTO src_dt64 VALUES ('2020-01-02 03:04:05.123456');
-SELECT 'ok_dt64', toString(c0) FROM t_dt64;
-" -- --user_files_path="${LOSSY_DIR}" < /dev/null 2>&1 | grep -oE "^ok_(u32|u64|date|dt64)\s\S.*$"
-rm -rf "${LOSSY_DIR}"
+lossy_insert u32 UInt32 7
+lossy_insert date Date "'2020-01-02'"
+lossy_insert dt64 "DateTime64(6)" "'2020-01-02 03:04:05.123456'"
 
 # --- INSERT after a sibling MODIFY COLUMN (int -> long): the value is widened, not truncated --
 # Same column name, genuinely different Iceberg primitive: the view's Int32 value must arrive
