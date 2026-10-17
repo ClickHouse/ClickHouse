@@ -4,6 +4,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
@@ -129,6 +131,9 @@ public:
     /// Send a chat completion request and return the parsed response.
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
 
+    /// Provider-specific headers (credentials, API version) sent with every request.
+    virtual HTTPHeaderEntries getHeaders() const = 0;
+
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }
 
@@ -138,6 +143,9 @@ public:
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
-AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
+/// Also validates the provider's headers with `HTTPHeaderFilter`.
+AIProviderPtr createAIProvider(
+    const ContextPtr & context,
+    const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
 }

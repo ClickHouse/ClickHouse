@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
@@ -37,9 +38,21 @@ namespace Setting
     extern const SettingsUInt64 max_http_get_redirects;
 }
 
+static String authorizationHeaderValue(const String & oauth_token)
+{
+    return fmt::format("OAuth {}", oauth_token);
+}
+
 YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_)
     : context(context_), connection_info(connection_info_), log(getLogger("YTsaurusClient"))
 {
+    checkHeaders(context, connection_info.oauth_token);
+}
+
+void YTsaurusClient::checkHeaders(const ContextPtr & context, const String & oauth_token)
+{
+    HTTPHeaderEntries headers{{"Authorization", authorizationHeaderValue(oauth_token)}};
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 YTsaurusClient::YTsaurusClient(const YTsaurusClient & other)
@@ -215,7 +228,7 @@ ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI& uri, const ReadWrit
         /// Always use json format for input and output.
         {"Accept", "application/json"},
         {"Content-Type", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+        {"Authorization", authorizationHeaderValue(connection_info.oauth_token)},
         {"X-YT-Header-Format", "<format=text>yson"},
         {"X-YT-Output-Format", fmt::format("{}json", output_params)},
     };
