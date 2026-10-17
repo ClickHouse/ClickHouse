@@ -124,16 +124,30 @@ public:
     /** Check whether the function has an ORDER BY combinator clause.
       * Example: groupArray(x ORDER BY y LIMIT 10) — the ORDER BY clause is stored as a sort list child.
       */
-    bool hasOrderByCombinator() const { return children[order_by_columns_child_index] != nullptr; }
+    bool hasOrderByCombinator() const { return children.size() > order_by_columns_child_index; }
 
     /** Get the ORDER BY combinator sort list (a ListNode of SortNode children).
       * Valid only when hasOrderByCombinator() is true.
       */
-    const QueryTreeNodePtr & getOrderByColumnsNode() const { return children[order_by_columns_child_index]; }
+    const QueryTreeNodePtr & getOrderByColumnsNode() const { return children.at(order_by_columns_child_index); }
 
-    /** Get the ORDER BY combinator sort list (mutable).
+    /** Set the ORDER BY combinator sort list.
+      * The child is appended only when the clause is present, so that the tree hash of
+      * ordinary functions does not depend on the existence of this feature.
       */
-    QueryTreeNodePtr & getOrderByColumnsNode() { return children[order_by_columns_child_index]; }
+    void setOrderByColumnsNode(QueryTreeNodePtr order_by_columns_node)
+    {
+        chassert(order_by_columns_node);
+        children.resize(order_by_columns_child_index + 1);
+        children[order_by_columns_child_index] = std::move(order_by_columns_node);
+    }
+
+    /// Remove the ORDER BY combinator sort list and the LIMIT value.
+    void clearOrderByCombinator()
+    {
+        children.resize(children_size);
+        order_by_limit.reset();
+    }
 
     /** Get the LIMIT N value of the ORDER BY combinator, if specified.
       * Example: groupArray(x ORDER BY y LIMIT 10) returns 10.
@@ -258,8 +272,9 @@ private:
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
-    static constexpr size_t order_by_columns_child_index = 3;
-    static constexpr size_t children_size = order_by_columns_child_index + 1;
+    static constexpr size_t children_size = window_child_index + 1;
+    /// Optional child, present only when the function has the ORDER BY combinator clause.
+    static constexpr size_t order_by_columns_child_index = children_size;
 };
 
 }

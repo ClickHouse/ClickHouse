@@ -219,7 +219,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 
     /// ORDER BY combinator: LIMIT value participates in identity.
     /// (Sort columns are children — they participate via base class hashing.)
-    hash_state.update(order_by_limit.has_value());
+    /// Nothing is hashed without the LIMIT to keep the hash of ordinary functions unchanged.
     if (order_by_limit.has_value())
         hash_state.update(*order_by_limit);
 

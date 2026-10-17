@@ -845,7 +845,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 /// Aggregate function combinator: ORDER BY [LIMIT N].
                 if (function->order_by_combinator && function->order_by_combinator_columns)
                 {
-                    function_node->getOrderByColumnsNode() = buildSortList(function->order_by_combinator_columns, context);
+                    function_node->setOrderByColumnsNode(buildSortList(function->order_by_combinator_columns, context));
 
                     if (function->order_by_combinator_limit.has_value())
                         function_node->setOrderByLimit(function->order_by_combinator_limit);

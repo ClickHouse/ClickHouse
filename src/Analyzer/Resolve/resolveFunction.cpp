@@ -2985,7 +2985,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name),
                 scope.scope_node->formatASTForErrorMessage());
 
-        auto & order_by_list_node = function_node.getOrderByColumnsNode();
+        const auto & order_by_list_node = function_node.getOrderByColumnsNode();
         auto & order_by_nodes = order_by_list_node->as<ListNode &>().getNodes();
 
         /// 1. Resolve the expressions inside SortNode children against the table columns.
@@ -3093,8 +3093,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_name = function_name + "OrderBy";
 
         /// 7. Clear the combinator markers so subsequent passes don't try to re-process them.
-        function_node.getOrderByColumnsNode().reset();
-        function_node.setOrderByLimit(std::nullopt);
+        function_node.clearOrderByCombinator();
     }
 
     /// Initialize function argument columns
