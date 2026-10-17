@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLTask.h>
@@ -37,6 +38,12 @@ protected:
 
     virtual NameSet getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper);
 
+    /// When true (and the connected Keeper advertises LIST_WITH_STAT_AND_DATA), generate() lists the finished
+    /// nodes together with their data in a single atomic request and caches it, so a subclass can read a finished
+    /// node's status without a separate get that could race the cleaner. Defaults to false: the ON CLUSTER path
+    /// keeps the plain listing.
+    virtual bool wantsFinishedNodeData() const { return false; }
+
     Strings getNewAndUpdate(const Strings & current_finished_hosts);
     /// When node_exists is provided it reports whether the status node was present. An absent node yields the same
     /// (-1, "Cannot obtain error message") sentinel as a present-but-unreadable one, so callers that must tell the
@@ -68,6 +75,11 @@ protected:
 
     NameSet waiting_hosts; /// hosts from task host list
     NameSet finished_hosts; /// finished hosts from host list
+    /// finished/<host_id> -> payload, populated in generate() only when wantsFinishedNodeData() and the Keeper
+    /// advertises LIST_WITH_STAT_AND_DATA. Lets a subclass read a just-listed finished node's status atomically.
+    std::map<String, String> finished_node_data;
+    /// True for the current generate() pass when finished_node_data was filled from an atomic list-with-data.
+    bool finished_node_data_available = false;
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
     Strings current_active_hosts; /// Hosts that are currently executing the task
     NameSet offline_hosts; /// Hosts that are not currently running
