@@ -681,9 +681,13 @@ void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
             text.erase(start, end - start + 1);
         else
         {
+            /* The range reaches the end of the input: also remove the preceding newline, and
+             * place the cursor at the start of the line that is now the last one, like vim does. */
             if (start > 0)
                 start--;
             text.erase(start, end - start);
+            for (; start > 0 && text[start - 1] != '\n'; start--)
+                ;
         }
         pos = start;
     }
@@ -757,27 +761,27 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                 i);
         }
 
+        /* Go through `historyNavigate`, so the recalled line does not pop hints. In insert mode
+         * the recalled line stays editable with the cursor at its end; in normal mode the cursor
+         * is normalized to the last character. */
+        auto history_navigate = [this, i](Replxx::ACTION action, char32_t code)
+        {
+            resetVim();
+            Replxx::ACTION_RESULT ret = historyNavigate(action, code);
+            if (i != MODE_INSERT)
+            {
+                rx.set_editing_mode(MODE_NORMAL);
+                withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
+            }
+            return ret;
+        };
         rx.bind_key(
             Replxx::KEY::control('P'),
-            [this](char32_t code)
-            {
-                resetVim();
-                rx.set_editing_mode(MODE_NORMAL);
-                Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code);
-                withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
-                return ret;
-            },
+            [history_navigate](char32_t code) { return history_navigate(Replxx::ACTION::HISTORY_PREVIOUS, code); },
             i);
         rx.bind_key(
             Replxx::KEY::control('N'),
-            [this](char32_t code)
-            {
-                resetVim();
-                rx.set_editing_mode(MODE_NORMAL);
-                Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_NEXT, code);
-                withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
-                return ret;
-            },
+            [history_navigate](char32_t code) { return history_navigate(Replxx::ACTION::HISTORY_NEXT, code); },
             i);
         rx.bind_key(
             Replxx::KEY::control('C'),
@@ -1403,9 +1407,13 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                         text.erase(pos, end - pos + 1);
                     else
                     {
+                        /* The last line: also remove the preceding newline, and place the
+                         * cursor at the start of the line that is now the last one. */
                         if (pos > 0)
                             pos--;
                         text.erase(pos, end - pos);
+                        for (; pos > 0 && text[pos - 1] != '\n'; pos--)
+                            ;
                         break;
                     }
                 }

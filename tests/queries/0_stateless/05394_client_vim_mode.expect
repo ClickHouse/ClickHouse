@@ -166,5 +166,43 @@ submit
 expect "9041"
 expect ":) "
 
+# `dd` and `dG` on the last line leave the cursor at the start of the remaining last line.
+send -- "SELECT 1200\r+ 34"
+escape
+send -- "ddwi9"
+submit
+expect "91200"
+expect ":) "
+
+send -- "SELECT 1300\r+ 34"
+escape
+send -- "dGwi9"
+submit
+expect "91300"
+expect ":) "
+
+# Ctrl-P in insert mode recalls the previous query and keeps editing it at its end.
+send -- "SELECT 1400+1"
+submit
+expect "1401"
+expect ":) "
+send -- "\x10"
+send -- "0"
+submit
+expect "1410"
+expect ":) "
+
+# Ctrl-P in normal mode recalls the previous query with the cursor on its last character.
+send -- "SELECT 1500+12"
+submit
+expect "1512"
+expect ":) "
+escape
+send -- "\x10"
+send -- "x"
+submit
+expect "1501"
+expect ":) "
+
 send -- "\4"
 expect eof
