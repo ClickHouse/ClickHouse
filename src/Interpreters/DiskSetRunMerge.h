@@ -44,6 +44,9 @@ struct Run
     }
 
     static Run inFile(TemporaryDataBuffer & file, const Key & first, const Key & last) { return {{}, &file, first, last}; }
+
+    /// Returns the number of keys of the run. A file holds raw keys, so its size gives their number.
+    size_t size() const { return file ? file->getStat().uncompressed_size / sizeof(Key) : keys.size(); }
 };
 
 /// Runs that follow each other, each starting where or after the previous one ends.
@@ -534,12 +537,20 @@ template <typename Key, typename Consume>
 void merge(std::vector<Chain<Key>> chains, size_t batch_size, Consume && consume)
 {
     chassert(!chains.empty());
+
+    /// The runs hold every key that the merge passes, so a batch never takes more keys than they do. A merge
+    /// of fewer keys than `batch_size` then reserves room only for its keys.
+    size_t run_keys = 0;
+    for (const auto & chain : chains)
+        for (const auto & run : chain)
+            run_keys += run.size();
+
     std::vector<ChainReader<Key>> readers;
     readers.reserve(chains.size());
     for (auto & chain : chains)
         readers.emplace_back(std::move(chain)); /// Reads the first batch of each chain
 
-    OutputBatches<Key, std::remove_reference_t<Consume>> out(batch_size, consume);
+    OutputBatches<Key, std::remove_reference_t<Consume>> out(std::min(batch_size, run_keys), consume);
 
     /// A single chain needs no comparisons, and two or more play a tournament.
     const bool passed_all = readers.size() == 1 ? readers.front().passTo(out) : Tournament<Key>(readers).passTo(out);
@@ -551,7 +562,7 @@ void merge(std::vector<Chain<Key>> chains, size_t batch_size, Consume && consume
 /// that buffers of `buffer_size` bytes wrote, and batches take `batch_size` keys. A chain reads one file at a
 /// time, so the files take at most a reader each: a batch of keys, the compressed and the decompressed blocks
 /// of the buffer size, and a file buffer of at most `DBMS_DEFAULT_BUFFER_SIZE`. The batch being filled takes
-/// `batch_size` keys.
+/// at most `batch_size` keys.
 template <typename Key>
 size_t estimateMemoryToMerge(size_t file_runs, size_t batch_size, size_t buffer_size)
 {
