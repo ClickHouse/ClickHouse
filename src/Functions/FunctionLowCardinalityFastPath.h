@@ -37,7 +37,7 @@ concept HasLowCardinalityFastPath = requires(
   *
   * The mixin inherits from Base instead of wrapping it, because IFunction has dozens of other
   * virtual methods (isDeterministic, getMonotonicityForRange, ...) that a wrapper would have to
-  * forward one by one, and a missed one would go unnoticed. Only four methods are overridden:
+  * forward one by one, and a missed one would go unnoticed. Only five methods are overridden:
   *
   * - useDefaultImplementationForLowCardinalityColumns() returns false, so executeImpl sees the
   *   original LowCardinality columns.
@@ -55,6 +55,9 @@ concept HasLowCardinalityFastPath = requires(
   *   reimplementing the default handling here: the declared type and the produced column must
   *   agree, and the rules for wrapping results in LowCardinality and for handling
   *   Nullable inside LowCardinality are easy to get wrong.
+  *
+  * - executeImplDryRun() does the same, keeping the redone call a dry run. Losing that would let
+  *   the delegate evaluate for real while planning.
   *
   * - getReturnTypeImpl(ColumnsWithTypeAndName) is likewise redone on the plain Base instance
   *   whenever an argument type contains LowCardinality, since disabling the conversion also
@@ -100,16 +103,31 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeCommon(arguments, result_type, input_rows_count, /*dry_run=*/ false);
+    }
+
+    ColumnPtr executeImplDryRun(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeCommon(arguments, result_type, input_rows_count, /*dry_run=*/ true);
+    }
+
+private:
+    /// The redone call must stay a dry run when the outer call was one, otherwise the delegate
+    /// evaluates for real while planning.
+    ColumnPtr executeCommon(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
         if (auto result = Base::tryExecuteLowCardinality(arguments, result_type, input_rows_count))
             return result;
 
         if (hasLowCardinalityTypes(arguments) || allArgumentColumnsAreConstant(arguments))
-            return FunctionToExecutableFunctionAdaptor(delegate).execute(arguments, result_type, input_rows_count, /*dry_run=*/ false);
+            return FunctionToExecutableFunctionAdaptor(delegate).execute(arguments, result_type, input_rows_count, dry_run);
 
-        return Base::executeImpl(arguments, result_type, input_rows_count);
+        return dry_run ? Base::executeImplDryRun(arguments, result_type, input_rows_count)
+                       : Base::executeImpl(arguments, result_type, input_rows_count);
     }
 
-private:
     /// The delegate is stateless, so it is created once and shared across calls.
     std::shared_ptr<Base> delegate;
 };

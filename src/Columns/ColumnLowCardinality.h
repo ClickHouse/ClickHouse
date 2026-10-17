@@ -14,6 +14,9 @@ namespace DB
 
 [[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
 
+/// Whether an index column is non-empty and every position in it is the same.
+bool indexesHaveSingleValue(const IColumn & indexes);
+
 /**
  * How data is stored (in a nutshell):
  * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
