@@ -38,7 +38,24 @@ HTTPHeaderEntries getTraceContextHeaders()
     return headers;
 }
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+/// Parameters of the start request that tell the worker which scheduling group the task joins; an
+/// older worker ignores them.
+void addSchedulingParameters(Poco::URI & uri, const DistributedQueryTaskDescription & task_description)
+{
+    if (task_description.sched_id.empty())
+        return;
+    const auto & settings = task_description.sched_settings;
+    uri.addQueryParameter("sched_id", task_description.sched_id);
+    uri.addQueryParameter("sched_workload", task_description.sched_workload);
+    uri.addQueryParameter("sched_weight", fmt::format("{}", settings.weight));
+    uri.addQueryParameter("sched_weight_lowering_factor", fmt::format("{}", settings.weight_lowering_factor));
+    uri.addQueryParameter("sched_weight_lowering_age_seconds", fmt::format("{}", settings.weight_lowering_age_seconds));
+    uri.addQueryParameter("sched_weight_lowering_cpu_seconds", fmt::format("{}", settings.weight_lowering_cpu_seconds));
+    uri.addQueryParameter("sched_weight_lowering_io_bytes", fmt::format("{}", settings.weight_lowering_io_bytes));
+    uri.addQueryParameter("sched_priority", fmt::format("{}", settings.priority.value));
+}
+
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const DistributedQueryTaskDescription & task_description, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -66,6 +83,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
+    addSchedulingParameters(uri, task_description);
 
     auto write_body_callback = [&task_serializer] (WriteBuffer & out)
     {
@@ -110,7 +128,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
 
     try
     {
-        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, task_description, context);
     }
     catch (...)
     {
