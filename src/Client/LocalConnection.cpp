@@ -358,13 +358,10 @@ void LocalConnection::sendQuery(
     next_packet_type.reset();
 
     /// Prepare input() function
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription & columns_description, const Block & sample)
     {
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-        Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
         state->block = sample;
@@ -498,7 +495,6 @@ void LocalConnection::sendQuery(
             settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
-        auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & header)

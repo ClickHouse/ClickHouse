@@ -1,5 +1,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
+#include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -927,6 +930,23 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 }
 
 
+/// For INSERT ... RETURNING with the data sent by the client separately, the client receives the result while sending the data.
+static void checkClientSupportsReturningWithDataSentSeparately(const ContextPtr & context)
+{
+    auto query_context = context->getQueryContext();
+    const auto & client_info = query_context->getClientInfo();
+
+    bool supported = query_context->getInputBlocksReaderCallback()
+        && (client_info.interface == ClientInfo::Interface::LOCAL
+            || (client_info.interface == ClientInfo::Interface::TCP
+                && client_info.client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INSERT_RETURNING));
+
+    if (!supported)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RETURNING is not supported for INSERT with the data sent separately by this client or interface. "
+            "Put the data into the query, or use INSERT SELECT");
+}
+
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     auto context = getContext();
@@ -1095,6 +1115,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
+    }
+    else if (query.returning)
+    {
+        /// The data is sent by the client separately. Read it inside the pipeline, the same way as for the `input` table function,
+        /// so the result of RETURNING is sent to the client while it is sending the data.
+        auto query_context = context->getQueryContext();
+        checkClientSupportsReturningWithDataSentSeparately(query_context);
+
+        query_context->initializeInput(metadata_snapshot->getColumns(), *query_sample_block);
+        pipeline.complete(StorageInput::createInputFromClient(query_context, query_sample_block));
     }
 
     return pipeline;
@@ -1482,8 +1512,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (query.returning)
     {
-        if (query.table_function)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RETURNING is not supported for INSERT INTO FUNCTION");
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
 
@@ -1491,12 +1519,9 @@ BlockIO InterpreterInsertQuery::execute()
         {
             ASTPtr input_function;
             query.tryFindInputFunction(input_function);
-            if (input_function)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RETURNING is not supported for INSERT SELECT from the `input` table function");
+            if (input_function && context->getQueryContext()->getInputBlocksReaderCallback())
+                checkClientSupportsReturningWithDataSentSeparately(context);
         }
-        else if (!query.hasInlinedData())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "RETURNING is supported only for INSERT SELECT and for INSERT with the data inlined into the query or passed in the HTTP request body");
     }
 
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
@@ -1661,6 +1686,11 @@ void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StorageP
 
     auto select_context = Context::createCopy(context);
     select_context->addViewSource(inserted_data_storage);
+
+    /// The RETURNING query without FROM reads the inserted data. This is the only way to refer to the data inserted into a table function.
+    const auto & inserted_data_storage_id = inserted_data_storage->getStorageID();
+    select_context->setSetting("implicit_table_at_top_level",
+        backQuote(inserted_data_storage_id.getDatabaseName()) + "." + backQuote(inserted_data_storage_id.getTableName()));
 
     InterpreterSelectQueryAnalyzer interpreter(query.returning->clone(), select_context, SelectQueryOptions(), inserted_data_storage);
     res.pipeline = QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());

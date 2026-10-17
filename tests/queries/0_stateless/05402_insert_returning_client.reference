@@ -5,10 +5,20 @@ HTTP with the data in the request body
 {"x":12}
 {"x":13}
 7
-Data from stdin is not supported
-NOT_IMPLEMENTED
+Data from stdin
+14
+15
+170
+180
+FROM INFILE
+41
+13
+A large result is received while the data is sent
+3000000 4500001500000
+3000013
 clickhouse-local
 1	2
 2	4
 10
 12
+6

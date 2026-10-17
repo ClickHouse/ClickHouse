@@ -18,6 +18,12 @@ LIMIT does not stop the insert
 2000000
 2000001
 20000
+Without FROM, the RETURNING query reads the inserted data
+2	15
+Hello
+Hello
+INSERT INTO FUNCTION
+1000	499500	999
 The RETURNING query does not read the table
 Hello
 0

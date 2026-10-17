@@ -42,8 +42,15 @@ INSERT INTO t_returning (id, s) RETURNING (SELECT id FROM t_returning LIMIT 0)
 SELECT number + 2100000, '' FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100;
 SELECT count() FROM t_returning WHERE id >= 2000000 AND id < 3000000;
 
+SELECT 'Without FROM, the RETURNING query reads the inserted data';
+INSERT INTO t_returning (id, s) RETURNING (SELECT count(), sum(id)) VALUES (7, 'g'), (8, 'h');
+INSERT INTO t_returning (id, s) RETURNING (SELECT 'Hello') VALUES (9, 'i'), (10, 'j');
+
+SELECT 'INSERT INTO FUNCTION';
+INSERT INTO FUNCTION null('x UInt64, y String') RETURNING (SELECT count(), sum(x), max(y)) SELECT number, toString(number) FROM numbers(1000);
+
 SELECT 'The RETURNING query does not read the table';
-INSERT INTO t_returning (id, s) RETURNING (SELECT 'Hello') VALUES (3000000, 'x');
+INSERT INTO t_returning (id, s) RETURNING (SELECT 'Hello' FROM system.one) VALUES (3000000, 'x');
 INSERT INTO t_returning (id, s) RETURNING (SELECT count() FROM t_returning WHERE 0) VALUES (3000001, 'x');
 SELECT count() FROM t_returning WHERE id >= 3000000 AND id < 4000000;
 
