@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import time
+import urllib.parse
 from datetime import datetime, timezone
 
 import boto3
@@ -959,6 +960,66 @@ PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT = (
     "object_storage_queue_pause_after_move_source_lookup"
 )
 PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_move_of_a_non_ascii_name(started_cluster, engine_name):
+    """Azure refuses non-ASCII metadata and S3 returns it encoded, so the source path that a
+    flattening move stamps on its copy is percent-encoded."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_non_ascii_{engine_name}_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/日本語.csv"
+    destination_key = f"{processed_prefix}/日本語.csv"
+    is_s3 = engine_name == "S3Queue"
+
+    if is_s3:
+        put_s3_file_content(started_cluster, source_key, b"1,2,3\n")
+    else:
+        put_azure_file_content(started_cluster, source_key, b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, engine_name, None, files_path, processed_prefix
+        )
+        == (1, 0),
+        timeout=60,
+    )
+    assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1
+    if is_s3:
+        client = boto3.client(
+            "s3",
+            endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            aws_access_key_id=started_cluster.minio_access_key,
+            aws_secret_access_key=started_cluster.minio_secret_key,
+        )
+        head = client.head_object(
+            Bucket=started_cluster.minio_bucket, Key=destination_key
+        )
+        stamped = head["Metadata"]["clickhouse_move_source_path"]
+    else:
+        stamped = (
+            started_cluster.blob_service_client.get_blob_client(
+                started_cluster.azurite_container, destination_key
+            )
+            .get_blob_properties()
+            .metadata["clickhouse_move_source_path"]
+        )
+    assert stamped == urllib.parse.quote(source_key)
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])

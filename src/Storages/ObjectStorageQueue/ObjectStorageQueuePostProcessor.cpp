@@ -19,6 +19,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <base/scope_guard.h>
 
+#include <Poco/URI.h>
+
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -117,7 +119,10 @@ std::optional<ObjectAttributes> makeMoveProvenance(
 {
     if (source_etag.empty())
         return std::nullopt;
-    source_attributes[move_source_path_attribute] = source_path;
+    /// Azure metadata values must be ASCII, so the path is percent-encoded.
+    String encoded_source_path;
+    Poco::URI::encode(source_path, /*reserved=*/"", encoded_source_path);
+    source_attributes[move_source_path_attribute] = encoded_source_path;
     source_attributes[move_source_etag_attribute] = source_etag;
     source_attributes[move_source_last_modified_attribute] = toString(size_t(source_last_modified));
     source_attributes[move_token_attribute]
