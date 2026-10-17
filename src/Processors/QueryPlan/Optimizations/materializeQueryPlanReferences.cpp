@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromSealedViewStep.h>
 
 #include <memory>
 
@@ -68,6 +69,13 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)
                 continue;
+            if (const auto * read_from_sealed_view = typeid_cast<const ReadFromSealedViewStep *>(node->step.get()))
+            {
+                auto child_sets = extractSetsForMaterialization(*child_root);
+                read_from_sealed_view->sealSets(child_sets);
+                std::move(child_sets.begin(), child_sets.end(), std::back_inserter(sets));
+                continue;
+            }
             if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(child_root->step.get()))
             {
                 auto step_sets = delayed->detachSets();

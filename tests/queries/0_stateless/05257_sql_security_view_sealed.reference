@@ -44,6 +44,38 @@ alice	visible
 visible
 --- a plan fragment that reads the view can be cloned
 visible
+join_view
+1	1
+3	3
+in_view
+1	1
+3	3
+top_view
+1	1
+2	2
+order_view
+1	1
+2	2
+3	3
+join_view
+1	1
+3	3
+in_view
+1	1
+3	3
+top_view
+1	1
+2	2
+order_view
+1	1
+2	2
+3	3
+the plan of the view is still optimized
+1
+a set built by the outer plan stays hidden
+0
+1	1
+3	3
 --- only a view that runs with other privileges and can hide rows is sealed
 definer_view: 1
 none_view: 1
