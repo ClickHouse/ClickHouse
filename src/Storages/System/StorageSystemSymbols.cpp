@@ -94,24 +94,30 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(it->name);
 #if USE_XRAY
-            const auto function_name = demangle(it->name);
-            const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
-
-            /// Not every function is instrumented, so we need to look for those which are.
-            if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+            /// Demangling every symbol dominates the scan, so skip it unless an XRay column is read.
+            if (columns_mask[src_index] || columns_mask[src_index + 1])
             {
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(instrumentation_function->function_name);
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(instrumentation_function->function_id);
+                const auto function_name = demangle(it->name);
+                const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
+
+                /// Not every function is instrumented, so we need to look for those which are.
+                if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+                {
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(instrumentation_function->function_name);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(instrumentation_function->function_id);
+                }
+                else
+                {
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(Field());
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(Field());
+                }
             }
             else
-            {
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(Field());
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(Field());
-            }
+                src_index += 2;
 #endif
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));

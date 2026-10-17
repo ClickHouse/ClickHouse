@@ -273,7 +273,7 @@ def test_bare_stack_trace_uses_the_same_addresses_as_the_symbolized_one(started_
     for block in blocks:
         # Subtracting the load base is what makes the two comparable, so this is substantive only for
         # a position independent binary; with a fixed load address the base is zero and both sides are
-        # the runtime address. Every Linux glibc amd64 and aarch64 build is position independent.
+        # the runtime address. The static-PIE build is position independent.
         assert block["resolved"], (
             "no frame resolved to a symbol, so the symbol index is unusable here and the comparison "
             "below cannot tell a normalized address from a runtime one"
@@ -283,43 +283,23 @@ def test_bare_stack_trace_uses_the_same_addresses_as_the_symbolized_one(started_
                 f"bare trace address {address:#018x} is in a different address space than the "
                 "symbolized lines of the same fault"
             )
-            if object_name is None:
-                # The bound is the size of the whole ELF file, which is larger than the part of it
-                # that gets loaded, so it is weaker than the loaded image's own span. It is still
-                # orders of magnitude below a runtime address, which is the distinction being made.
-                assert address < main_size, (
-                    f"bare trace address {address:#018x} is not an offset into {main_path} "
-                    f"(its size is {main_size}), so it is still a runtime address"
-                )
-            elif object_name != "<unknown>":
-                # An offset is only interpretable together with its object, so a frame outside the
-                # main executable has to name the file that `addr2line` should be pointed at.
-                quoted_object = shlex.quote(object_name)
-                size = started_node.exec_in_container(
-                    ["bash", "-c", f"stat -c %s {quoted_object} 2>/dev/null || echo missing"]
-                ).strip()
-                assert size != "missing", f"bare trace names {object_name}, which does not exist"
-                # `SymbolIndex` bounds each object by the size of the ELF file it was built from, so
-                # an offset into that object is always below it, while a runtime address is far above.
-                assert address < int(size), (
-                    f"bare trace address {address:#018x} is not an offset into {object_name} "
-                    f"(its size is {size}), so it is still a runtime address"
-                )
+            # The binary is statically linked, C library included, so the main executable is the
+            # only object a frame can be in, and a frame there is printed with no object. A named
+            # object or an `<unknown>` one means the lookup failed to place the address in it.
+            assert object_name is None, (
+                f"bare trace address {address:#018x} is annotated with {object_name}, but a "
+                "statically linked binary has no other object for a frame to be in"
+            )
+            # The bound is the size of the whole ELF file, which is larger than the part of it that
+            # gets loaded, so it is weaker than the loaded image's own span. It is still orders of
+            # magnitude below a runtime address, which is the distinction being made.
+            assert address < main_size, (
+                f"bare trace address {address:#018x} is not an offset into {main_path} "
+                f"(its size is {main_size}), so it is still a runtime address"
+            )
 
-    # Collection level, not per block: one fault's trace could in principle be entirely main-object.
-    annotated = [(a, o) for b in blocks for a, o in b["entries"] if o is not None and o != "<unknown>"]
-    assert annotated, (
-        "no bare trace frame was annotated with an object, so the ` in <object>` form that makes "
-        "a non-main-executable offset interpretable is not being produced (an <unknown> annotation "
-        "does not count: it names no file to point addr2line at)"
-    )
-    # The unannotated form is the main executable's, and a healthy binary recognizes most frames as
-    # its own, so a trace made only of other objects and failed lookups means the classification
-    # itself regressed, and it also leaves the executable-size bound above with nothing to check.
-    in_main_object = [a for b in blocks for a, o in b["entries"] if o is None]
-    assert in_main_object, (
-        "no bare trace frame was left unannotated, so not one frame was recognized as being in the "
-        "main executable"
+    assert any(b["entries"] for b in blocks), (
+        "the bare traces of this fault hold no frames, so the checks above had nothing to check"
     )
 
 

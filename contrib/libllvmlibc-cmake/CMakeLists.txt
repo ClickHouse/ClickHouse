@@ -66,6 +66,9 @@ set(SRCS
 # there and let the interceptor wrap the system memmem, as before this PR.
 if (NOT SANITIZE)
     list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
+    # x86_64-only strong memchr/strlen (the file is empty on other arches, where
+    # the Arm Optimized Routines already provide vectorized versions).
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
 endif ()
 
 set(LIBC_NAMESPACE "__llvm_libc")

@@ -11,10 +11,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `system.stack_trace` stores frames inside the main binary as file offsets, which `system.symbols`
 # bounds, and leaves every other frame as a runtime address, which is far above that bound. Threads
 # waiting in the C library keep both kinds present in any snapshot of a running server.
+# A statically linked binary (`USE_MUSL`) carries the C library inside the main executable, so there
+# the second kind appears only when a thread happens to be caught inside the vDSO, and the second
+# column is not measured.
 query="
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
     countIf(x > (SELECT max(address_end) FROM system.symbols)) > 0
+        OR (SELECT value IN ('1', 'ON') FROM system.build_options WHERE name = 'USE_MUSL')
 FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace)
 SETTINGS allow_introspection_functions = 1"
 

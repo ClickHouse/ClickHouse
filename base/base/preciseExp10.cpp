@@ -81,7 +81,7 @@ double preciseExp10(double x)
 
     /// `x - trunc(x)` is exact in binary floating point, so this splits `x` the same way `modf` does,
     /// but `trunc` is a single instruction while `modf` is a libm call, and the call dominated the cost.
-    const double n = std::trunc(x);
+    const double n = trunc(x);
     const double y = x - n;
     if (n > 308) return std::numeric_limits<double>::infinity();
     if (n < -323) return 0;

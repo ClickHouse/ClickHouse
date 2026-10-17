@@ -20,6 +20,14 @@ if (ENABLE_LLVM_LIBC_MATH)
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
+    if (ARCH_AARCH64)
+        # AdvSIMD/MTE string routines from ARM's optimized-routines
+        # (see contrib/optimized-routines-cmake).
+        link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
+        target_link_libraries(global-libs INTERFACE aor)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
+    endif()
+
     if (NOT SANITIZE)
         # Force every llvm-libc member into the link ahead of all objects and archives
         # (linker flags precede them on the link line; -L placement does not matter to ld).
@@ -33,6 +41,9 @@ if (ENABLE_LLVM_LIBC_MATH)
         # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
         # instead (same reason the -u forcing was skipped before).
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
+        if (ARCH_AARCH64)
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -laor -Wl,--no-whole-archive")
+        endif()
         # Redundant with --whole-archive above, but kept as a backstop for the mem functions
         # in case the whole-archive link is ever weakened or repositioned.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
@@ -73,8 +84,21 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
+    # Sanitizer builds link the copy of musl with the intercepted functions
+    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan is
+    # the one sanitizer without libc interceptors (no REAL() bindings), so it
+    # links the plain musl; contrib/compiler-rt-cmake does not produce
+    # musl_intercepted for it. Any future sanitizer mode intentionally falls
+    # into the musl_intercepted branch: if compiler-rt does not build the
+    # archive for it, the configure fails loudly instead of silently linking
+    # a libc whose functions the runtime expects to intercept.
+    if (SANITIZE AND NOT SANITIZE STREQUAL "undefined")
+        set (MUSL_LIBC_TARGET musl_intercepted)
+    else ()
+        set (MUSL_LIBC_TARGET musl)
+    endif ()
     # musl provides pthread in libc.
-    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})
 else ()
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 endif ()

@@ -23,10 +23,13 @@ $CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets', toInt16(300)) SET
 # offset into a library is indistinguishable from a main executable offset once stored as a bare number,
 # and the stack of a thrown exception ends in the C library.
 # Keep the throw above shallow: a trace holds at most 32 frames and those C library ones are last.
+# A statically linked binary (`USE_MUSL`) carries the C library inside the main executable, so there every
+# frame is a file offset and the same column asserts that none was left as a runtime address.
 $CLICKHOUSE_CLIENT -m -q "
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
-    countIf(x > (SELECT max(address_end) FROM system.symbols)) > 0
+    (countIf(x > (SELECT max(address_end) FROM system.symbols)) > 0)
+        = NOT (SELECT value IN ('1', 'ON') FROM system.build_options WHERE name = 'USE_MUSL')
 FROM (
     SELECT arrayJoin(last_error_trace) AS x
     FROM system.errors
