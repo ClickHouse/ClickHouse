@@ -1652,7 +1652,17 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(default_settings, request);
+        HTMLForm params = [&]()
+        {
+            try
+            {
+                return HTMLForm(default_settings, request);
+            }
+            catch (const Poco::URISyntaxException &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed HTTP request URI");
+            }
+        }();
 
         if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
             with_stacktrace = true;

@@ -338,7 +338,7 @@ bool hasHTTPPathFormatSuffix(const String & path)
     }
 
     /// Quoted identifiers are not part of the PUT upload path syntax.
-    if (component.find('`') != String::npos)
+    if (component.contains('`'))
         return false;
 
     const auto dot = component.rfind('.');
