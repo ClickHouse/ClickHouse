@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <Interpreters/convertFieldToType.h>
 
@@ -16,6 +17,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <optional>
 #include <ranges>
 
@@ -248,6 +250,7 @@ WindowTransformParams WindowTransformParams::create(
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
+    const bool has_order_by_collation = std::ranges::any_of(window_description.order_by, [](const auto & column) { return column.collator != nullptr; });
 
     return WindowTransformParams{
         std::move(header),
@@ -256,7 +259,32 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
+        has_order_by_collation,
     };
+}
+
+NO_INLINE bool WindowTransformParams::haveEqualCollatedOrderByValues(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
+{
+    for (size_t i = 0; i < order_by_indices.size(); ++i)
+    {
+        const IColumn & lhs_column = *lhs[order_by_indices[i]];
+        const IColumn & rhs_column = *rhs[order_by_indices[i]];
+        const auto & collator = window_description.order_by[i].collator;
+
+        const int res = collator && lhs_column.isCollationSupported()
+            ? lhs_column.compareAtWithCollation(lhs_row, rhs_row, rhs_column, /*nan_direction_hint=*/1, *collator)
+            : lhs_column.compareAt(lhs_row, rhs_row, rhs_column, /*nan_direction_hint=*/1);
+        if (res != 0)
+            return false;
+    }
+
+    return true;
+}
+
+NO_INLINE size_t WindowTransformParams::getCollatedOrderByEqualRangeEnd(const Columns & columns, size_t begin, size_t end) const
+{
+    return findEqualRangeEndAssumeSorted(
+        begin, end, /*linear_probe=*/8, [&](size_t row) { return haveEqualCollatedOrderByValues(columns, row, columns, begin); });
 }
 
 }

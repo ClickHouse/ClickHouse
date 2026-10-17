@@ -1,0 +1,13 @@
+count	4	4
+rank	1	1
+dense_rank	1	1
+nullable	4	4
+low_cardinality	4	4
+multiple_keys	4	4
+descending	4	4
+cross_block	4	4
+cross_block_rank	1	1
+cume_dist	1	1
+many_rows	1000	1	1
+groups	1000	1000
+no_collation	2	4
