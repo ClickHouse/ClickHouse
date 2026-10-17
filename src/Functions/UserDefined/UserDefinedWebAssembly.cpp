@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyBatchRows.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyColumnarCodec.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
@@ -977,7 +978,7 @@ public:
                     return result_column;
                 }
 
-                const BatchMeasurer measure_columnar
+                const WasmBatchMeasurer measure_columnar
                     = [cv1](const ColumnsWithTypeAndName & batch_cols, size_t start_idx, size_t length,
                             const VectorWithMemoryTracking<size_t> & declared_positions)
                     { return cv1->measureColumnarBytes(batch_cols, start_idx, length, declared_positions); };
@@ -986,7 +987,9 @@ public:
                 while (batch_start < input_rows_count)
                 {
                     const size_t batch_rows
-                        = chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget, measure_columnar);
+                        = chooseWasmBatchRows(
+                            arguments, batch_start, input_rows_count - batch_start, *budget,
+                            compartment_ptr->getMaxLinearMemorySize(), measure_columnar);
                     flush_columnar_batch(batch_start, batch_start + batch_rows);
                     batch_start += batch_rows;
                 }
@@ -1090,10 +1093,6 @@ private:
         return static_cast<size_t>(static_cast<Float64>(*budget_basis) * memory_ratio);
     }
 
-    /// How a candidate batch is priced. An ABI that builds its own buffer passes its layout pass.
-    using BatchMeasurer = std::function<size_t(
-        const ColumnsWithTypeAndName &, size_t, size_t, const VectorWithMemoryTracking<size_t> &)>;
-
     /// The exact bytes one call carrying `[start, start + length)` puts on the wire. Measured
     /// per batch because frame header, dictionaries and structure prefixes are paid once per call.
     ///
@@ -1114,158 +1113,6 @@ private:
         measure_out->write(block);
         measure_out->finalize();
         return measure_buf.count();
-    }
-
-    /// The bytes a call pays regardless of row count: the frame header and descriptors, plus
-    /// const arguments on a wire that keeps them const.
-    size_t measureFixedBatchBytes(
-        const ColumnsWithTypeAndName & arguments, size_t start_idx, const BatchMeasurer & measure) const
-    {
-        return measure(arguments, start_idx, 0, {});
-    }
-
-    /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
-    ///
-    /// The cost of a batch is monotone in its row count - adding a row can only grow the payload,
-    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix and
-    /// can be bracketed. Each probe measures a candidate exactly, keeps the largest candidate known
-    /// to fit and the smallest known to overflow, and picks the next candidate inside that bracket,
-    /// so the bracket shrinks on every step and the walk ends on the real boundary rather than on
-    /// the first prefix that looked full enough.
-    ///
-    /// The next candidate follows the marginal cost of a row, taken as the slope between the last
-    /// two measurements, not the average bytes per row of the candidate. The average carries the
-    /// batch-wide part of the payload - framing, a `LowCardinality` dictionary, `Dynamic` and
-    /// `Variant` structure prefixes, and any single wide row already in the prefix - which is paid
-    /// once and does not grow with the rows added next. Dividing by it prices every further row at
-    /// the cost of the whole prefix, so a block whose first row is far wider than the rest would be
-    /// handed to the guest one row per call while hundreds of its rows still fit.
-    ///
-    /// Every candidate is bounded by rows already measured: the walk starts at one row and grows by
-    /// a bounded factor per probe. Nothing is carried over from a previous batch or block, because a
-    /// row count only means something for rows of a known width - a count fitted by narrow rows
-    /// would have the next batch materialize that many wide rows before any measurement justified
-    /// it, recreating the oversized call the split exists to avoid.
-    /// `measure` prices a candidate; by default the buffered path's wire.
-    size_t chooseBatchRows(
-        const ColumnsWithTypeAndName & arguments,
-        size_t start_idx,
-        size_t remaining,
-        size_t budget,
-        const BatchMeasurer & measure) const
-    {
-        /// A function without arguments is handed no input buffer, so no size bounds its calls.
-        if (arguments.empty())
-            return remaining;
-
-        static constexpr size_t max_probes = 24;
-        /// A probe may only ask for this many times the rows the previous probe measured. The
-        /// extrapolated count is read off a prefix, and a prefix of narrow rows says nothing about
-        /// wider rows later in the block, so growth is paid for by rows already materialized.
-        /// Reaching any batch size still costs a logarithmic number of probes.
-        static constexpr size_t max_growth_per_probe = 4;
-
-        /// Probe upwards from a single row, rather than downwards from the whole block. A probe
-        /// serializes the candidate, and for a wire that does not carry constness a `ColumnConst`
-        /// argument is materialized to do it, so a first probe of the whole block would expand
-        /// exactly the input the splitting exists to rescue.
-        size_t candidate = 1;
-        size_t largest_fitting = 0;
-        size_t smallest_overflowing = remaining + 1;
-
-        /// The previous measurement, so the next candidate can be read off a slope. There is no
-        /// previous measurement while `previous_rows` is zero.
-        size_t previous_rows = 0;
-        size_t previous_bytes = 0;
-
-        for (size_t probe = 0; probe < max_probes; ++probe)
-        {
-            const size_t measured = measure(arguments, start_idx, candidate, {});
-            if (measured > budget && candidate == 1)
-            {
-                const size_t fixed = measureFixedBatchBytes(arguments, start_idx, measure);
-                /// A row that does not fit next to a fixed part that does is still sent alone.
-                if (fixed < budget)
-                    break;
-                /// Every call repeats a fixed part over the budget, so the budget can only bound
-                /// the rows on top of it. Sending the whole block instead would leave the call unbounded.
-                budget += fixed;
-            }
-
-            if (measured <= budget)
-            {
-                largest_fitting = candidate;
-                if (candidate == remaining)
-                    break;
-            }
-            else
-            {
-                smallest_overflowing = candidate;
-                if (candidate == 1)
-                    break;
-            }
-
-            /// The boundary is known exactly once the bracket has nothing left between its ends.
-            if (largest_fitting + 1 >= smallest_overflowing)
-                break;
-
-            /// An empty payload gives no slope to follow, so nothing bounds the batch but the block.
-            if (measured == 0)
-            {
-                candidate = remaining;
-                continue;
-            }
-
-            /// The marginal bytes a row adds. With one measurement in hand the average is all there
-            /// is; it over-states the marginal cost, so the step it proposes is an undershoot, and
-            /// the clamp below still moves the walk on by a row, which buys the second measurement
-            /// the slope needs.
-            Float64 bytes_per_row = static_cast<Float64>(measured) / static_cast<Float64>(candidate);
-            if (previous_rows != 0 && candidate != previous_rows)
-            {
-                const Float64 slope = (static_cast<Float64>(measured) - static_cast<Float64>(previous_bytes))
-                    / (static_cast<Float64>(candidate) - static_cast<Float64>(previous_rows));
-                if (slope > 0.0)
-                    bytes_per_row = slope;
-            }
-            previous_rows = candidate;
-            previous_bytes = measured;
-
-            const Float64 target = static_cast<Float64>(candidate)
-                + (static_cast<Float64>(budget) - static_cast<Float64>(measured)) / bytes_per_row;
-
-            size_t next = 1;
-            if (target >= static_cast<Float64>(remaining))
-                next = remaining;
-            else if (target > 1.0)
-                next = static_cast<size_t>(target);
-
-            if (next > candidate)
-                next = std::min(next, candidate * max_growth_per_probe);
-            /// The bracket both keeps the candidate meaningful and guarantees progress: a candidate
-            /// that fits raises the lower end past itself, one that overflows lowers the upper end
-            /// below itself, and the check above leaves at least one row between the ends.
-            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
-
-            /// A slope is only as good as the rows it was measured across. Two measurements that
-            /// straddle one very wide row describe that row rather than the rows around it, and the
-            /// step they propose lands next to the end of the bracket the walk came from, so the
-            /// bracket shrinks by a row per probe and the batch stops far short of what the budget
-            /// allows. Once both ends of the bracket are known, a proposal that falls in an outer
-            /// quarter is replaced by the midpoint, which halves the bracket however wrong the
-            /// slope was. A wire whose cost is close to affine is unaffected: its proposals land on
-            /// the boundary itself, which is in the middle of the bracket by the time it is known.
-            if (largest_fitting > 0 && smallest_overflowing <= remaining)
-            {
-                const size_t width = smallest_overflowing - largest_fitting;
-                if (width > 3 && (next < largest_fitting + width / 4 || next > smallest_overflowing - width / 4))
-                    next = largest_fitting + width / 2;
-            }
-
-            candidate = next;
-        }
-
-        return std::max<size_t>(largest_fitting, 1);
     }
 
     void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
@@ -1320,14 +1167,17 @@ private:
             /// Take the rows a call can hold, measure the call, and start the next one where
             /// it ended. A stride derived from an average row size cannot bound a skewed block:
             /// one huge row among many tiny ones would still share a call with its neighbours.
-            const BatchMeasurer measure_wire = [this](
+            const WasmBatchMeasurer measure_wire = [this](
                 const ColumnsWithTypeAndName & batch_cols, size_t start_idx, size_t length,
                 const VectorWithMemoryTracking<size_t> & declared_positions)
             { return measureBatchBytes(batch_cols, start_idx, length, declared_positions); };
 
             while (batch_start < input_rows_count)
                 flush_batch(
-                    batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget, measure_wire));
+                    batch_start
+                    + chooseWasmBatchRows(
+                        arguments, batch_start, input_rows_count - batch_start, *budget,
+                        compartment->getMaxLinearMemorySize(), measure_wire));
         }
         else if (fixed_block_size > 0)
         {
