@@ -79,7 +79,10 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     /// source as the distributed executor.
     context.cluster_node_count = getCascadesClusterNodeCountParam(query_context);
     if (context.cluster_node_count == 0)
-        context.cluster_node_count = getCascadesPlanningNodeCount(query_context);
+        context.cluster_node_count = getCascadesPlanningNodeCount(
+            query_context,
+            optimization_settings.distributed_plan_execute_locally,
+            optimization_settings.distributed_plan_workers_num);
     /// Reject rather than silently plan for one node, which would skip every distributed alternative.
     if (context.cluster_node_count == 0)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
