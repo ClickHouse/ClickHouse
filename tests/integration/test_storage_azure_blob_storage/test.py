@@ -2061,3 +2061,54 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
     )
 
     azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
+
+
+def test_rejected_parquet_field_ids_definition_does_not_create_container(cluster):
+    # A `CREATE TABLE` whose Parquet `field_id` settings can only be checked once the writer header
+    # is known - here a `hive`-partitioned table, whose partition column is kept out of the data
+    # file - used to build a write-capable Azure client first, which provisions the container. The
+    # definition was then rejected, leaving the container behind. The container must not appear.
+    node = cluster.instances["node"]
+    container = "cont-rejected-field-ids"
+
+    def container_exists():
+        return container in [
+            c.name for c in cluster.blob_service_client.list_containers()
+        ]
+
+    assert not container_exists()
+
+    error = azure_query(
+        node,
+        f"CREATE TABLE test_rejected_field_ids (p Int32, x Int64) "
+        f"ENGINE = AzureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
+        f"container = '{container}', blob_path = 'data', format = 'Parquet', partition_strategy = 'hive') "
+        f"PARTITION BY p "
+        f"SETTINGS output_format_parquet_column_field_ids = {{'p': '1', 'x': '2'}}",
+        expect_error=True,
+    )
+    assert (
+        "output_format_parquet_column_field_ids references unknown column 'p'" in error
+    )
+
+    assert not container_exists()
+
+    # An accepted definition still provisions the container, so the table can be written to.
+    azure_query(
+        node,
+        f"CREATE TABLE test_accepted_field_ids (p Int32, x Int64) "
+        f"ENGINE = AzureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
+        f"container = '{container}', blob_path = 'data', format = 'Parquet', partition_strategy = 'hive') "
+        f"PARTITION BY p "
+        f"SETTINGS output_format_parquet_column_field_ids = {{'x': '1'}}",
+    )
+    assert container_exists()
+
+    azure_query(node, "INSERT INTO test_accepted_field_ids VALUES (1, 10)")
+    assert (
+        azure_query(node, "SELECT p, x FROM test_accepted_field_ids").strip() == "1\t10"
+    )
+
+    azure_query(node, "DROP TABLE test_accepted_field_ids")

@@ -27,6 +27,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
@@ -78,6 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsString kafka_keeper_path;
+    extern const KafkaSettingsBool kafka_map_virtual_columns_on_write;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;
@@ -280,6 +282,21 @@ void registerStorageKafka(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
                 "See https://clickhouse.com/docs/reference/engines/table-engines/integrations/kafka#configuration");
+        }
+
+        /// `StorageKafka::write` and `StorageKafka2::write` apply the format settings of the definition and
+        /// pass the payload columns to the output format.
+        {
+            Block write_header;
+            for (const auto & column : args.columns.getOrdinary())
+                write_header.insert({column.type->createColumn(), column.type, column.name});
+
+            validateParquetFieldIdSettingsInMessageQueueDefinition(
+                args,
+                args.getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_format].value),
+                kafka_settings->getFormatSettings(),
+                StorageKafkaUtils::splitPayloadColumns(write_header, (*kafka_settings)[KafkaSetting::kafka_map_virtual_columns_on_write])
+                    .format_header.getNamesAndTypesList());
         }
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();

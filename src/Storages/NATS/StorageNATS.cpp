@@ -35,6 +35,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -1478,6 +1479,13 @@ void registerStorageNATS(StorageFactory & factory)
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
+
+        /// `StorageNATS::write` applies the format settings of the definition.
+        validateParquetFieldIdSettingsInMessageQueueDefinition(
+            args,
+            macros->expand((*nats_settings)[NATSSetting::nats_format]),
+            nats_settings->getFormatSettings(),
+            args.columns.getOrdinary());
 
         return std::make_shared<StorageNATS>(
             args.table_id,
