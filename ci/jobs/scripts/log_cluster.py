@@ -242,6 +242,7 @@ class LogCluster:
         params = {
             "query": "SELECT 1",
         }
+        answers = []
         try:
             response = requests.post(
                 url=self.url,
@@ -249,6 +250,9 @@ class LogCluster:
                 data="",
                 headers=self._auth,
                 timeout=3,
+                # Runs when the headers of a response arrived, a redirect
+                # included, before its body is read.
+                hooks={"response": lambda r, **kwargs: answers.append(r)},
             )
             if not response.ok:
                 print("ERROR: No connection to LogCluster")
@@ -258,7 +262,8 @@ class LogCluster:
                 return False
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
-            self._probe_error = ex
+            if not answers:
+                self._probe_error = ex
             return False
         return True
 

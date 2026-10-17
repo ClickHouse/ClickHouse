@@ -230,18 +230,21 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
     skipped. Upload failures are NOT swallowed either: an INSERT rejection
     propagates so the lost telemetry stays visible and the hook fails loudly
     (an endpoint that never answered is reported as a warning by check()).
-    Both of those stop the upload where they happen, which is why the order is
-    not the caller's to choose (see _UPLOAD_ORDER).
+    Every required artifact is checked before the first upload, and an upload
+    failure stops the upload where it happens, which is why the order is not
+    the caller's to choose (see _UPLOAD_ORDER).
     """
     required = _REQUIRED_ARTIFACTS.get(build_type, ())
-    for insert, file in _in_upload_order(artifacts):
+    artifacts = _in_upload_order(artifacts)
+    for _, file in artifacts:
+        if Path(file).name in required and not _has_data(file):
+            raise RuntimeError(
+                f"Build [{build_type}] produced no profile data in [{file}], "
+                "but this artifact is required for it (see _REQUIRED_ARTIFACTS): "
+                "the profile producer is broken"
+            )
+    for insert, file in artifacts:
         if not _has_data(file):
-            if Path(file).name in required:
-                raise RuntimeError(
-                    f"Build [{build_type}] produced no profile data in [{file}], "
-                    "but this artifact is required for it (see _REQUIRED_ARTIFACTS): "
-                    "the profile producer is broken"
-                )
             print(f"No build profile data in [{file}], skipping upload")
             continue
         insert(build_name=build_type, start_time=start_time, file=file)
