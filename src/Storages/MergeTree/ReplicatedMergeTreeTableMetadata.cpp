@@ -435,10 +435,12 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
-    if (projections != parsed_zk_projections)
+    auto parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context);
+    String parsed_zk_projections_str = parsed_zk_projections.toString();
+    if (projections != parsed_zk_projections_str
+        && ProjectionsDescription::parse(projections, columns, nullptr, context) != parsed_zk_projections)
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections_str, projections, strict_check, logger);
         is_equal = false;
     }
 

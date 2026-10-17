@@ -111,7 +111,8 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
-        const MergeTreeSettings & projection_settings);
+        const MergeTreeSettings & projection_settings,
+        const IAST * declared_columns = nullptr);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
@@ -198,6 +199,10 @@ struct ProjectionsDescription : public IHints<>
     bool has(const String & projection_name) const;
     const ProjectionDescription & get(const String & projection_name) const;
 
+    /// Check the name before analyzing an `ADD PROJECTION` declaration. Return false for an
+    /// `IF NOT EXISTS` no-op, including a declaration that could not be analyzed on load.
+    bool shouldAdd(const String & projection_name, bool if_not_exists) const;
+
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
@@ -224,5 +229,10 @@ private:
     Map map;
     ASTs unavailable;
 };
+
+/// The new projection column-list grammar cannot be replayed by older servers.
+bool hasProjectionColumnCodecs(const IAST & ast);
+bool hasProjectionColumnCodecs(const ProjectionsDescription & projections);
+void checkProjectionColumnCodecPublication(const ContextPtr & context, bool queued_ddl);
 
 }
