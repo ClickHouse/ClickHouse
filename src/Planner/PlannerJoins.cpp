@@ -913,11 +913,15 @@ static JoinClausesAndActions buildJoinClausesAndActions(
                     throw;
                 }
 
+                /// The join keys remove the trailing zero bytes of `FixedString` in the conversion to `String`,
+                /// as the comparison of `FixedString` with `String` is zero-padded (see `predicateOperandsToCommonType`).
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {}, context);
+                    left_key_node = &left_join_actions.addCast(
+                        *left_key_node, common_type, {}, context, /* fixed_string_to_string_strip_trailing_zeros= */ true);
 
                 if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {}, context);
+                    right_key_node = &right_join_actions.addCast(
+                        *right_key_node, common_type, {}, context, /* fixed_string_to_string_strip_trailing_zeros= */ true);
             }
 
             if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))

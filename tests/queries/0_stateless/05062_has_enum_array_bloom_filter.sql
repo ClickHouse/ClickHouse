@@ -91,7 +91,7 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SE
 DROP TABLE t_has_wide_enum_bf;
 
 -- `hasAny`/`hasAll` over an indexed `Array(Enum)` with a constant `Array(String)` or `Array(FixedString)`
--- compare by the name of the enum value, stripping the padding of a `FixedString`. The index has to
+-- compare by the name of the enum value, keeping the padding of a `FixedString`. The index has to
 -- hash the value of the enum, and decline a name that is not in the `Enum` instead of throwing.
 DROP TABLE IF EXISTS t_has_any_enum_column_bf;
 

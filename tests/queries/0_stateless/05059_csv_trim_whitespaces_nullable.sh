@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `input_format_csv_trim_whitespaces = 0` keeps the whitespace that surrounds an unquoted CSV field
 # when the column is a String or a FixedString. 02764_csv_trim_whitespaces covers the plain types;
 # this covers their Nullable form, and a NULL next to whitespace, for both values of the setting.
+# `toStringCutToZero` drops the zero padding of the `FixedString` values, which `toString` keeps.
 
 for trim in 0 1
 do
@@ -16,7 +17,7 @@ do
         printf ' padded ,\\N, \\N ,unpadded\n' \
             | $CLICKHOUSE_LOCAL -S "c1 ${type}, c2 ${type}, c3 ${type}, c4 ${type}" \
                 --input-format=CSV --input_format_csv_trim_whitespaces=${trim} \
-                -q "SELECT toString(c1), toString(c2), toString(c3), toString(c4) FROM table FORMAT CSV"
+                -q "SELECT toStringCutToZero(c1), toStringCutToZero(c2), toStringCutToZero(c3), toStringCutToZero(c4) FROM table FORMAT CSV"
     done
 done
 

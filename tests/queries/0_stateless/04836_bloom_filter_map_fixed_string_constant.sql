@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS o_lcfs;
 DROP TABLE IF EXISTS k_lcfs;
 
 -- `String` keys, `FixedString(3)` values: keys compare the constant's raw padded bytes, values
--- coerce through the least supertype.
+-- coerce through the least supertype, which keeps the padding of both sides.
 CREATE TABLE o_map (id UInt64, m Map(String, FixedString(3))) ENGINE = Log;
 CREATE TABLE k_map (id UInt64, m Map(String, FixedString(3)),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1,
@@ -38,8 +38,8 @@ SELECT (SELECT count() FROM k_map WHERE has(m, 'K1')) = (SELECT count() FROM o_m
 SELECT id FROM k_map WHERE mapContainsKey(m, toFixedString('K1', 3)) ORDER BY id;
 SELECT id FROM k_map WHERE mapContainsValue(m, toFixedString('V0', 5)) ORDER BY id;
 
--- `FixedString(3)` keys: both sides coerce through the least supertype, so an over-wide padded
--- constant still matches.
+-- `FixedString(3)` keys: both sides coerce through the least supertype, which keeps the padding of
+-- both sides, so an over-wide padded constant matches nothing.
 CREATE TABLE o_fs (id UInt64, m Map(FixedString(3), UInt8)) ENGINE = Log;
 CREATE TABLE k_fs (id UInt64, m Map(FixedString(3), UInt8),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1)
@@ -52,7 +52,7 @@ SELECT (SELECT count() FROM k_fs WHERE mapContainsKey(m, toFixedString('K1', 2))
 SELECT (SELECT count() FROM k_fs WHERE mapContainsKey(m, toFixedString('K1', 3))) = (SELECT count() FROM o_fs WHERE mapContainsKey(m, toFixedString('K1', 3)));
 SELECT (SELECT count() FROM k_fs WHERE mapContainsKey(m, toFixedString('K1', 5))) = (SELECT count() FROM o_fs WHERE mapContainsKey(m, toFixedString('K1', 5)));
 
--- `LowCardinality(String)` keys: the constant casts straight to the dictionary type, which strips
+-- `LowCardinality(String)` keys: the constant casts straight to the dictionary type, which keeps
 -- the `FixedString` padding.
 CREATE TABLE o_lc (id UInt64, m Map(LowCardinality(String), UInt8)) ENGINE = Log;
 CREATE TABLE k_lc (id UInt64, m Map(LowCardinality(String), UInt8),
@@ -81,7 +81,8 @@ SELECT count() FROM o_lcfs WHERE mapContainsKey(m, toFixedString('K1', 5)); -- {
 SELECT count() FROM k_lcfs WHERE mapContainsKey(m, toFixedString('K1', 5)); -- { serverError TOO_LARGE_STRING_SIZE }
 
 -- Pruning is preserved where the index can hash exactly: some stage selects more than zero and
--- fewer than all granules.
+-- fewer than all granules. An over-wide constant matches no element, and the index declines it
+-- instead: those cells answer 0.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_map WHERE mapContainsValue(m, toFixedString('V0', 5))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_fs WHERE mapContainsKey(m, toFixedString('K1', 5))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 

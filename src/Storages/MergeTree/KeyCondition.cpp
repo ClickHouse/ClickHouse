@@ -5926,6 +5926,31 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 if (!common_type)
                     return std::nullopt;
 
+                /// A `FixedString` key is compared with a value of another string-like type, such as
+                /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
+                /// A range over the cast key would prune matching granules. A value that fits into
+                /// the key width compares with the key as the value padded to the key width does,
+                /// both for equality and for the order, so use the padded value instead, as for a
+                /// `String` constant above. The functions that use the constant as a pattern or
+                /// prefix are declined: padding would change the pattern.
+                if (isFixedString(key_expr_type_not_null) && isString(common_type))
+                {
+                    if (func_name == "like" || func_name == "notLike" || func_name == "startsWith"
+                        || func_name == "startsWithUTF8" || func_name == "match")
+                        return std::nullopt;
+
+                    Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    if (as_string.isNull()
+                        || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN())
+                        return std::nullopt;
+
+                    const_value = convertFieldToType(as_string, *key_expr_type_not_null);
+                    if (const_value.isNull())
+                        return std::nullopt;
+                    common_type = key_expr_type_not_null;
+                    const_type = key_expr_type_not_null;
+                }
+
                 if (!const_type->equals(*common_type))
                 {
                     /// An unrepresentable constant cannot supply a comparison bound.

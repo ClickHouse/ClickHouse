@@ -13,6 +13,7 @@ namespace Setting
     extern const SettingsBool optimize_multiif_to_if;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace
@@ -32,6 +33,11 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_multiif_to_if])
+            return;
+
+        /// With this setting `multiIf` removes the zero padding of a `FixedString` branch converted to `String`,
+        /// but `if` keeps it, so the rewrite would change the result.
+        if (getSettings()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
             return;
 
         auto * function_node = node->as<FunctionNode>();

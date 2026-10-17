@@ -1025,6 +1025,8 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
     if (!has_some_to_do)
         return {};
 
+    /// The comparison of `FixedString` with `String` is zero-padded (see `FunctionComparison`), and the join keys follow it,
+    /// so the conversion of a `FixedString` key to `String` removes the trailing zero bytes.
     return ActionsDAG::makeConvertingActions(
         /* source= */ cols_src,
         /* result= */ cols_dst,
@@ -1032,7 +1034,10 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
         /* context= */ context,
         /* ignore_constant_values= */ true,
         /* add_cast_columns= */ add_new_cols,
-        /* new_names= */ &key_column_rename);
+        /* new_names= */ &key_column_rename,
+        /* columns_contain_compiled_function= */ nullptr,
+        /* materialize_constants= */ true,
+        /* fixed_string_to_string_strip_trailing_zeros= */ true);
 }
 
 static std::optional<ActionsDAG> changeTypesToNullable(

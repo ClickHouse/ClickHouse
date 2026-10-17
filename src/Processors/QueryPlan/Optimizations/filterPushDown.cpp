@@ -986,6 +986,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// context-dependent conversion settings apply - they concern parsing from `String` and
             /// serialization to `String`, which never appear as a supertype cast - and the date-time
             /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
+            /// The conversion of `FixedString` to `String` removes the trailing zero bytes, as the key
+            /// matching does (see `predicateOperandsToCommonType`).
             required_actions.push_back(JoinActionRef::transform({replacement.source},
                 [&](ActionsDAG & dag, auto && args)
                 {
@@ -993,7 +995,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                     const auto & arg = *args.at(0);
                     if (arg.result_type->equals(*replacement.target_type))
                         return &dag.addAlias(arg, replacement.name);
-                    return &dag.addCast(arg, replacement.target_type, replacement.name, nullptr);
+                    return &dag.addCast(
+                        arg, replacement.target_type, replacement.name, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
                 }));
         }
     };
