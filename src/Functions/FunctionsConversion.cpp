@@ -2711,9 +2711,10 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(const DataTypePtr & fr
         return createStringToEnumWrapper<ColumnString, EnumType>();
     else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
         return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-    else if (isNativeNumber(from_type))
+    else if (isNativeNumber(from_type) || isEnum(from_type))
     {
-        if (!settings.check_conversion_from_numbers_to_enum && cast_type == CastType::nonAccurate)
+        /// Enum columns use the same checked numeric conversion in accurate casts.
+        if (cast_type == CastType::nonAccurate && (isEnum(from_type) || !settings.check_conversion_from_numbers_to_enum))
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
@@ -2739,18 +2740,10 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(const DataTypePtr & fr
             return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
         else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
             return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
-    }
-    else if (isEnum(from_type))
-    {
-        if (cast_type != CastType::nonAccurate)
-        {
-            if (checkAndGetDataType<DataTypeEnum8>(from_type.get()))
-                return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+        else if (checkAndGetDataType<DataTypeEnum8>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+        else if (checkAndGetDataType<DataTypeEnum16>(from_type.get()))
             return createNumberToEnumWrapper<ColumnInt16, EnumType>();
-        }
-
-        auto function = Function::createFromSettings(settings);
-        return createFunctionAdaptor(function, from_type);
     }
     else if (cast_type == CastType::accurateOrNull)
         return createToNullableColumnWrapper();
@@ -2876,12 +2869,11 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
             }
 
             FieldType converted_value;
-            const bool converted = accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(
-                in_data[i], converted_value);
-            const bool use_value = converted
-                && (!check_exactness || accurate::equalsOp(in_data[i], converted_value))
-                && (!failure_map || result_type.hasValue(converted_value));
-            if (!use_value)
+            const bool valid_conversion = accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(
+                in_data[i], converted_value)
+                && (!check_exactness || accurate::equalsOp(in_data[i], converted_value));
+            const bool valid_enum_value = valid_conversion && (!failure_map || result_type.hasValue(converted_value));
+            if (!valid_enum_value)
             {
                 if (!failure_map)
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
