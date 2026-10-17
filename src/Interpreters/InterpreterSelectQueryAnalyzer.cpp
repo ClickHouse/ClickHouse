@@ -172,6 +172,16 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options, const StoragePtr & storage)
+{
+    auto result_context = buildContext(context, select_query_options);
+    bool substituted = storage && storage == result_context->getViewSource();
+    result_context->setViewSourceSubstituted(substituted);
+    result_context->setViewSourceInSubqueries(
+        substituted || (select_query_options.keep_view_source_in_subqueries && context->isViewSourceInSubqueries()));
+    return result_context;
+}
+
 template <typename... Args>
 PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
@@ -433,7 +443,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const Names & column_names,
     const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
-    , context(buildContext(context_, select_query_options_))
+    , context(buildContext(context_, select_query_options_, nullptr /*storage*/))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
@@ -456,7 +466,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const StoragePtr & storage_,
     const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
-    , context(buildContext(context_, select_query_options_))
+    , context(buildContext(context_, select_query_options_, storage_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)

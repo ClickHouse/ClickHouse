@@ -370,9 +370,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
-    /// The inner query of an ordinary view reads the table itself.
+    /// An analysis that does not swap it, like the inner query of an ordinary view, reads the table itself.
     if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
+        view_source && context->isViewSourceSubstituted() && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
         metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
 
