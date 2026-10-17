@@ -7765,6 +7765,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 }
 
+void StorageReplicatedMergeTree::disableMetadataRestoreOnAttach()
+{
+    if (attach_thread)
+        attach_thread->setRestoreMissingMetadata(false);
+}
+
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     assertNotReadonly();

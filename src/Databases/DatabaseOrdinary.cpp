@@ -798,7 +798,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     return load_table[name.table] = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
+DiskPtr DatabaseOrdinary::getConvertToReplicatedDisk(const StoragePtr & table, const QualifiedTableName & name)
 {
     /// With `lazy_load_tables` the catalog holds a stand-in whose `startup` did nothing, so a cast would not see
     /// the real engine and the whole restore would be skipped - the table would stay replicated with no metadata
@@ -819,7 +819,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
             std::lock_guard lock(mutex);
             auto it = lazy_replicated_create_queries.find(name.table);
             if (it == lazy_replicated_create_queries.end())
-                return;
+                return nullptr;
             create_query = std::move(it->second);
             lazy_replicated_create_queries.erase(it);
         }
@@ -828,23 +828,29 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         /// converts such a table.
         storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false);
         if (!storage_policy)
-            return;
+            return nullptr;
     }
     else
     {
         auto loaded_rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
         if (!loaded_rmt)
-            return;
+            return nullptr;
         storage_policy = loaded_rmt->getStoragePolicy();
     }
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
-    auto convert_to_replicated_parts_path = getConvertToReplicatedPartsPath(name.table);
-
     auto storage_disks = storage_policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
-    if (!checking_disk->existsFile(convert_to_replicated_flag_path) && !checking_disk->existsFile(convert_to_replicated_parts_path))
-        return;
+    if (!checking_disk->existsFile(getConvertToReplicatedFlagPath(name.table))
+        && !checking_disk->existsFile(getConvertToReplicatedPartsPath(name.table)))
+        return nullptr;
+    return checking_disk;
+}
+
+void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(
+    StoragePtr table, const QualifiedTableName & name, const DiskPtr & checking_disk)
+{
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    auto convert_to_replicated_parts_path = getConvertToReplicatedPartsPath(name.table);
 
     auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
     if (!rmt)
@@ -905,12 +911,16 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         return;
     }
 
+    auto interrupted_restore = readConvertToReplicatedParts(checking_disk, convert_to_replicated_parts_path);
+    /// The journal of an interrupted restore is kept: replacing a file is not atomic on every disk.
+    const bool write_journal = !interrupted_restore.has_value();
     StorageReplicatedMergeTree::RestoreReplicaJournal journal{
-        .interrupted_restore = readConvertToReplicatedParts(checking_disk, convert_to_replicated_parts_path),
+        .interrupted_restore = std::move(interrupted_restore),
         .before_moving_parts = [&](const StorageReplicatedMergeTree::RestoredReplicaParts & parts)
         {
-            writeConvertToReplicatedParts(
-                checking_disk, convert_to_replicated_parts_path, parts, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+            if (write_journal)
+                writeConvertToReplicatedParts(
+                    checking_disk, convert_to_replicated_parts_path, parts, getContext()->getSettingsRef()[Setting::fsync_metadata]);
             checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
             LOG_INFO(log, "Removing convert to replicated flag for {}, the parts to attach are listed in {}.",
                 backQuote(name.getFullName()), CONVERT_TO_REPLICATED_PARTS_FILE_NAME);
@@ -956,11 +966,18 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
                 /// until startup finished.
                 auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+                /// A pending conversion restores the metadata below with its journal; `force_restore_data` must not restore it without one.
+                auto convert_to_replicated_disk = getConvertToReplicatedDisk(table, name);
+                if (auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip); rmt && convert_to_replicated_disk)
+                    rmt->disableMetadataRestoreOnAttach();
+
                 table->startup();
 
                 /// If table is ReplicatedMergeTree after conversion from MergeTree,
                 /// it is in readonly mode due to metadata in zookeeper missing.
-                restoreMetadataAfterConvertingToReplicated(table, name);
+                if (convert_to_replicated_disk)
+                    restoreMetadataAfterConvertingToReplicated(table, name, convert_to_replicated_disk);
 
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }

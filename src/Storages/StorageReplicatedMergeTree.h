@@ -348,6 +348,9 @@ public:
     void restoreMetadataInZooKeeper(
         const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach, const RestoreReplicaJournal * journal = nullptr);
 
+    /// Called before `startup` by a caller that restores the missing metadata itself, so that the attach does not.
+    void disableMetadataRestoreOnAttach();
+
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
     {

@@ -170,7 +170,9 @@ private:
         LoadingStrictnessLevel mode);
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
-    void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
+    /// The disk with the markers of the table's pending conversion to replicated, or nullptr if there is none.
+    DiskPtr getConvertToReplicatedDisk(const StoragePtr & table, const QualifiedTableName & name);
+    void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name, const DiskPtr & checking_disk);
     /// The flag lives in the table's data directory. Take the create query for a table that is not
     /// attached yet: the data path then comes from the UUID in the query, whereas the name overload
     /// resolves the path through the database's attached-table map.

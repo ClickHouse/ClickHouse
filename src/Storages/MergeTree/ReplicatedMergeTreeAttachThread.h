@@ -26,6 +26,8 @@ public:
 
     void setSkipSanityChecks(bool skip_sanity_checks_);
 
+    void setRestoreMissingMetadata(bool restore_missing_metadata_);
+
     static void checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path);
 
 private:
@@ -42,6 +44,8 @@ private:
     UInt64 retry_period;
 
     bool skip_sanity_checks{false};
+    /// With `skip_sanity_checks`, the metadata missing in ZooKeeper is restored.
+    bool restore_missing_metadata{true};
 
     void run();
     void runImpl();

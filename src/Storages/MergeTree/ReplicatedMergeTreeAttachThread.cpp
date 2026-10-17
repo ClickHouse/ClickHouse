@@ -179,7 +179,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
-    if (!metadata_exists && skip_sanity_checks)
+    if (!metadata_exists && skip_sanity_checks && restore_missing_metadata)
     {
         LOG_INFO(log, "Missing metadata in keeper. Force restoring it");
         try
@@ -255,6 +255,11 @@ void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAF
 void ReplicatedMergeTreeAttachThread::setSkipSanityChecks(bool skip_sanity_checks_)
 {
     skip_sanity_checks = skip_sanity_checks_;
+}
+
+void ReplicatedMergeTreeAttachThread::setRestoreMissingMetadata(bool restore_missing_metadata_)
+{
+    restore_missing_metadata = restore_missing_metadata_;
 }
 
 }

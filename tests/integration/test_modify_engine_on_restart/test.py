@@ -242,6 +242,28 @@ def test_modify_engine_on_restart_resumes_after_kill(started_cluster):
     ch1.query(f"DROP DATABASE {database} SYNC")
 
 
+def test_modify_engine_on_restart_resumes_after_kill_with_force_restore_data(
+    started_cluster,
+):
+    database = "modify_engine_resume_force_restore"
+    zk = cluster.get_kazoo_client("zoo1")
+    uuid = prepare_versioned_table(ch1, zk, database)
+    table_path = get_table_path(ch1, "mt", database)
+
+    # With the global flag, a table without metadata in ZooKeeper restores it when it is attached.
+    # The server dies after the first of the two parts is moved to detached/, and the flag is consumed.
+    ch1.exec_in_container(["touch", "/var/lib/clickhouse/flags/force_restore_data"])
+    pause_at(ch1, "rmt_restore_replica_pause_after_detaching_active_part")
+    kill_paused(ch1)
+    assert "force_restore_data" not in ls(ch1, "/var/lib/clickhouse/flags")
+    assert len(ls(ch1, f"{table_path}detached")) == 1
+
+    ch1.start_clickhouse()
+    check_converted(database, uuid, zk, 200)
+
+    ch1.query(f"DROP DATABASE {database} SYNC")
+
+
 def test_modify_engine_on_restart_resumes_after_kill_before_merge_sources_are_moved(
     started_cluster,
 ):
