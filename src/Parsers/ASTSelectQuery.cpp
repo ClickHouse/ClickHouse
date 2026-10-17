@@ -68,6 +68,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
+    hash_state.update(group_by_rollup_or_cube_tuple_key_from_function_syntax);
     hash_state.update(group_by_with_grouping_sets);
     hash_state.update(limit_with_ties);
     hash_state.update(group_by_all);
@@ -167,9 +168,29 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws << indent_str << "GROUP BY";
         if (!group_by_with_grouping_sets)
         {
+            ASTPtr group_by_for_format = groupBy();
+
+            /// `ROLLUP((a, b))` / `CUBE((a, b))` has one tuple-valued key, while
+            /// `(a, b) WITH ROLLUP/CUBE` is the historical shorthand for two keys.
+            /// The parser keeps the tuple AST untouched, so only canonicalize this
+            /// ambiguous case to an explicit tuple(...) call while formatting.
+            if (group_by_rollup_or_cube_tuple_key_from_function_syntax)
+            {
+                const auto & group_by_elements = group_by_for_format->as<ASTExpressionList &>().children;
+                if (group_by_elements.size() == 1)
+                {
+                    if (const auto * tuple = group_by_elements.front()->as<ASTFunction>();
+                        tuple && tuple->name == "tuple" && tuple->isOperator())
+                    {
+                        group_by_for_format = group_by_for_format->clone();
+                        group_by_for_format->as<ASTExpressionList &>().children.front()->as<ASTFunction &>().setIsOperator(false);
+                    }
+                }
+            }
+
             s.one_line
-            ? groupBy()->format(ostr, s, state, frame)
-            : groupBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+            ? group_by_for_format->format(ostr, s, state, frame)
+            : group_by_for_format->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
         }
     }
 
@@ -692,6 +713,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("group_by_with_rollup", true);
     if (group_by_with_cube)
         w.writeBool("group_by_with_cube", true);
+    if (group_by_rollup_or_cube_tuple_key_from_function_syntax)
+        w.writeBool("group_by_rollup_or_cube_tuple_key_from_function_syntax", true);
     /// `group_by_with_constant_keys` is not SQL syntax: `ExpressionAnalyzer` derives it after
     /// inspecting/optimizing constant `GROUP BY` keys, so a parsed AST never legitimately carries it.
     /// It is intentionally not serialized (and not read back) so `clickhouse_json` cannot lie about
@@ -740,6 +763,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     group_by_with_totals = r.getBool("group_by_with_totals");
     group_by_with_rollup = r.getBool("group_by_with_rollup");
     group_by_with_cube = r.getBool("group_by_with_cube");
+    group_by_rollup_or_cube_tuple_key_from_function_syntax = r.getBool("group_by_rollup_or_cube_tuple_key_from_function_syntax");
     /// `group_by_with_constant_keys` is analysis-derived, not parser-produced, so it is intentionally
     /// not read from JSON (see `writeJSON`): accepting it would let `clickhouse_json` lie about analysis
     /// state (e.g. drive the constant-key empty-result path with no constant `GROUP BY` in the SQL).
@@ -795,6 +819,12 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExpr("prewhere", Expression::PREWHERE);
     setExpr("where", Expression::WHERE);
     setExprList("group_by", Expression::GROUP_BY);
+
+    if (group_by_rollup_or_cube_tuple_key_from_function_syntax
+        && (!groupBy() || (!group_by_with_rollup && !group_by_with_cube)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ROLLUP/CUBE function-syntax tuple-key marker requires a GROUP BY clause with ROLLUP or CUBE");
+
     setExpr("having", Expression::HAVING);
     setExprList("window", Expression::WINDOW);
     setExpr("qualify", Expression::QUALIFY);

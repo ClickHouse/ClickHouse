@@ -103,6 +103,7 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
+    bool group_by_rollup_or_cube_tuple_key_from_function_syntax = false;
     bool group_by_with_constant_keys = false;
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
