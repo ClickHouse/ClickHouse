@@ -13,7 +13,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -205,14 +204,7 @@ private:
         if (qualified_columns_regexp_matcher.transformers)
         {
             for (const auto & transformer : qualified_columns_regexp_matcher.transformers->children)
-            {
-                if (transformer->as<ASTColumnsApplyTransformer>() ||
-                    transformer->as<ASTColumnsExceptTransformer>() ||
-                    transformer->as<ASTColumnsReplaceTransformer>())
-                    applyColumnsTransformer(transformer, columns);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must only have children of IASTColumnsTransformer type");
-            }
+                applyColumnsTransformer(transformer, columns);
         }
     }
 
@@ -252,14 +244,7 @@ private:
                 if (qualified_asterisk->transformers)
                 {
                     for (const auto & transformer : qualified_asterisk->transformers->children)
-                    {
-                        if (transformer->as<ASTColumnsApplyTransformer>() ||
-                            transformer->as<ASTColumnsExceptTransformer>() ||
-                            transformer->as<ASTColumnsReplaceTransformer>())
-                            applyColumnsTransformer(transformer, columns);
-                        else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
-                    }
+                        applyColumnsTransformer(transformer, columns);
                 }
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
