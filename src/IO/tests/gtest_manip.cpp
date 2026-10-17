@@ -79,3 +79,25 @@ TEST(OperatorsManipTest, binary)
     std::string_view sr1 = s1;
     checkString(sr1, binary, "\x5Hello");
 }
+
+TEST(WriteHelpersTest, MySQLStringLiteral)
+{
+    FormatSettings settings;
+    settings.values.use_mysql_compatible_escaping = true;
+
+    WriteBufferFromOwnString quoted;
+    writeStringForValues("Hello 'world'", quoted, settings);
+    EXPECT_EQ("'Hello ''world'''", quoted.str());
+
+    std::string value = "3c6f395fc759";
+    value += static_cast<char>(0x45);
+    value += static_cast<char>(0x00);
+    value += static_cast<char>(0x0C);
+    value += static_cast<char>(0x5C);
+    value += static_cast<char>(0x8F);
+    value += "18";
+
+    WriteBufferFromOwnString binary_value;
+    writeStringForValues(value, binary_value, settings);
+    EXPECT_EQ("X'33633666333935666337353945000C5C8F3138'", binary_value.str());
+}
