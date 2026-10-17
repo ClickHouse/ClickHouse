@@ -1,31 +1,41 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
 
+#include <algorithm>
 
 namespace DB
 {
 
-namespace ActionLocks
+namespace ErrorCodes
 {
-    extern const StorageActionBlockType PartsMerge = 1;
-    extern const StorageActionBlockType PartsFetch = 2;
-    extern const StorageActionBlockType PartsSend = 3;
-    extern const StorageActionBlockType ReplicationQueue = 4;
-    extern const StorageActionBlockType DistributedSend = 5;
-    extern const StorageActionBlockType PartsTTLMerge = 6;
-    extern const StorageActionBlockType PartsMove = 7;
-    extern const StorageActionBlockType PullReplicationLog = 8;
-    extern const StorageActionBlockType Cleanup = 9;
-    extern const StorageActionBlockType ViewRefresh = 10;
-    extern const StorageActionBlockType VirtualPartsUpdate = 11;
-    extern const StorageActionBlockType ReduceBlockingParts = 12;
-    extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType StreamConsume = 14;
+    extern const int LOGICAL_ERROR;
 }
 
+namespace ActionLocks
+{
+    ACTION_LOCK_TYPES(ACTION_LOCK_DEFINE)
+}
+
+namespace
+{
+
+const char * getActionName(StorageActionBlockType action_type)
+{
+    switch (action_type)
+    {
+#define ACTION_NAME_CASE(ID, VALUE, NAME) case ActionLocks::ID: return NAME;
+        ACTION_LOCK_TYPES(ACTION_NAME_CASE)
+#undef ACTION_NAME_CASE
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", action_type);
+    }
+}
+
+}
 
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
 {
@@ -41,10 +51,16 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 {
     ActionLock action_lock = table->getActionLock(action_type);
 
+    std::lock_guard lock(mutex);
+    auto it = storage_locks.find(table.get());
+    if (it != storage_locks.end() && !it->second.belongsTo(table))
+        storage_locks.erase(it);
+
     if (!action_lock.expired())
     {
-        std::lock_guard lock(mutex);
-        storage_locks[table.get()][action_type] = std::move(action_lock);
+        auto & entry = storage_locks[table.get()];
+        entry.storage = table;
+        entry.locks[action_type] = std::move(action_lock);
     }
 }
 
@@ -58,8 +74,40 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 {
     std::lock_guard lock(mutex);
 
-    if (storage_locks.contains(table.get()))
-        storage_locks[table.get()].erase(action_type);
+    const auto it = storage_locks.find(table.get());
+    if (it == storage_locks.end())
+        return;
+
+    if (it->second.belongsTo(table))
+    {
+        it->second.locks.erase(action_type);
+        if (it->second.locks.empty())
+            storage_locks.erase(it);
+    }
+    else
+        storage_locks.erase(it);
+}
+
+Names ActionLocksManager::getStoppedActions(const StoragePtr & table) const
+{
+    Names actions;
+    {
+        std::lock_guard lock(mutex);
+        const auto it = storage_locks.find(table.get());
+        if (it == storage_locks.end() || !it->second.belongsTo(table))
+            return actions;
+
+        for (const auto & [action_type, action_lock] : it->second.locks)
+        {
+            /// Expired locks may remain until the next control query calls `cleanExpired`.
+            if (!action_lock.expired())
+                actions.emplace_back(getActionName(action_type));
+        }
+    }
+
+    std::ranges::sort(actions);
+    actions.erase(std::unique(actions.begin(), actions.end()), actions.end());
+    return actions;
 }
 
 void ActionLocksManager::cleanExpired()
@@ -68,7 +116,7 @@ void ActionLocksManager::cleanExpired()
 
     for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {
-        auto & locks = it_storage->second;
+        auto & locks = it_storage->second.locks;
         for (auto it_lock = locks.begin(); it_lock != locks.end();)
         {
             if (it_lock->second.expired())

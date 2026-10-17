@@ -1,0 +1,8 @@
+stopped_actions_replica	[]
+stopped_actions_replica_other	[]
+stopped_actions_replica	['cleanup','fetches','merges','moves','pull_replication_log','replicated_sends','replication_queue','ttl_merges']
+stopped_actions_replica_other	[]
+['cleanup','merges','moves','ttl_merges']
+[]
+['fetches']
+[]

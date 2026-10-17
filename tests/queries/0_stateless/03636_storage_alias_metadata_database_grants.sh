@@ -48,6 +48,17 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SHOW COLUMNS ON ${alias_database}.* TO ${access_username};
 "
 
+# Stop merges through the alias itself: the registry is keyed by the storage receiving the
+# command, so the alias row reports ['merges']. This makes the empty(stopped_actions)
+# assertion below actually exercise the target metadata gate: without it, a caller with
+# only SHOW TABLES on the alias database would observe the target's stopped actions.
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES ${alias_database}.${shortcut_alias_table}"
+echo "Test stopped_actions of an Alias target with the target grant"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT stopped_actions FROM system.tables
+    WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}';
+"
+
 echo "Test system.tables with an Alias database-level grant"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
@@ -63,7 +74,8 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
              AND isNull(total_bytes)
              AND isNull(total_bytes_uncompressed)
              AND empty(data_paths)
-             AND empty(storage_policy))
+             AND empty(storage_policy)
+             AND empty(stopped_actions))
          FROM system.tables
          WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
         (SELECT count()
@@ -75,6 +87,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
 "
 
 echo "Test other metadata tables with an Alias database-level grant"
+${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES ${alias_database}.${shortcut_alias_table}"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         (SELECT count() FROM system.columns WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
