@@ -180,6 +180,62 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'qcc_jrf_late_covered' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+SELECT '-- an ON condition with the same nodes in another shape is not covered';
+-- The ON copy `(v > 1000 AND (v % 2 = 1 OR v > 3000 OR v < 64)) OR v = 1025` visits the same nodes in the same
+-- order as the subquery's `(v > 1000 AND (v % 2 = 1 OR v > 3000)) OR v < 64 OR v = 1025`, but drops the even rows.
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0
+    SELECT count() FROM tab_late RIGHT JOIN
+        (SELECT * FROM tab_late WHERE v + w < 100 AND ((v > 1000 AND (v % 2 = 1 OR v > 3000)) OR v < 64 OR v = 1025)) AS a
+        ON tab_late.v = a.v AND ((tab_late.v > 1000 AND (a.v % 2 = 1 OR a.v > 3000 OR a.v < 64)) OR a.v = 1025)
+        WHERE tab_late.v > 5
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+             join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+             query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1, query_plan_max_step_description_length = 1000)
+WHERE explain ILIKE '%prewhere filter column: %or(equals(modulo(%v, 2\_UInt8), 1\_UInt8), greater(%v, 3000\_UInt16), less(%v, 64\_UInt8))%'
+  AND explain NOT ILIKE '%\_\_applyFilter%';
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_late RIGHT JOIN
+    (SELECT * FROM tab_late WHERE v + w < 100 AND ((v > 1000 AND (v % 2 = 1 OR v > 3000)) OR v < 64 OR v = 1025)) AS a
+    ON tab_late.v = a.v AND ((tab_late.v > 1000 AND (a.v % 2 = 1 OR a.v > 3000 OR a.v < 64)) OR a.v = 1025)
+    WHERE tab_late.v > 5
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+         join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+         query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+         query_plan_optimize_prewhere = 1;
+SELECT count() FROM tab_late WHERE (v + w < 100 AND ((v > 1000 AND (v % 2 = 1 OR v > 3000)) OR v < 64 OR v = 1025)) AND v > 5
+SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM tab_late WHERE (v + w < 100 AND ((v > 1000 AND (v % 2 = 1 OR v > 3000)) OR v < 64 OR v = 1025)) AND v > 5
+SETTINGS use_query_condition_cache = 0;
+
+SELECT '-- an ON condition built with other settings is not covered';
+-- With `splitby_max_substrings_includes_remaining_string = 1`, `splitByChar(',', 'x,a,b', 2)[2]` is `'a,b'`, so the
+-- ON copy drops the even rows, while the subquery's copy, built with its own value 0, keeps them.
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0
+    SELECT count() FROM tab_late RIGHT JOIN
+        (SELECT * FROM tab_late WHERE v + w < 100 AND splitByChar(',', if(v + v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a'
+         SETTINGS splitby_max_substrings_includes_remaining_string = 0) AS a
+        ON tab_late.v = a.v AND splitByChar(',', if(tab_late.v + a.v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a' WHERE tab_late.v > 5
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+             join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+             query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1, splitby_max_substrings_includes_remaining_string = 1,
+             query_plan_max_step_description_length = 1000)
+WHERE explain ILIKE '%prewhere filter column: %splitByChar(%splitByChar(%' AND explain NOT ILIKE '%\_\_applyFilter%';
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_late RIGHT JOIN
+    (SELECT * FROM tab_late WHERE v + w < 100 AND splitByChar(',', if(v + v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a'
+     SETTINGS splitby_max_substrings_includes_remaining_string = 0) AS a
+    ON tab_late.v = a.v AND splitByChar(',', if(tab_late.v + a.v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a' WHERE tab_late.v > 5
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+         join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+         query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+         query_plan_optimize_prewhere = 1, splitby_max_substrings_includes_remaining_string = 1;
+SELECT count() FROM tab_late WHERE (v + w < 100 AND splitByChar(',', if(v + v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a') AND v > 5
+SETTINGS use_query_condition_cache = 1, splitby_max_substrings_includes_remaining_string = 0;
+SELECT count() FROM tab_late WHERE (v + w < 100 AND splitByChar(',', if(v + v > 2000, 'x,a', 'x,a,b'), 2)[2] = 'a') AND v > 5
+SETTINGS use_query_condition_cache = 0, splitby_max_substrings_includes_remaining_string = 0;
+
 -- The PREWHERE below matches every row, so the only thing that can prune marks on the second run is
 -- the cache entry the WHERE filter wrote. Both runs return 1 row; only the second one prunes.
 SELECT '-- a deterministic PREWHERE must not stop the WHERE filter from populating the cache';

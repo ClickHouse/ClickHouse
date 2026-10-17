@@ -740,6 +740,7 @@ static void collectConjuncts(const ActionsDAG::Node & node, std::vector<const Ac
 }
 
 /// A function's result name is derived from its arguments, so it is never hashed, not even as an argument name.
+/// The function object itself is hashed instead: an equally named copy built elsewhere may compute something else.
 static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash, bool allow_non_deterministic_constants)
 {
     const auto & value = skipAliases(node);
@@ -779,6 +780,7 @@ static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash, b
     if (function_name == "formatRow" || function_name == "formatRowNoNewline" || !FunctionFactory::instance().hasNameOrAlias(function_name))
         return false;
     hash.update(function_name);
+    hash.update(reinterpret_cast<uintptr_t>(value.function_base.get()));
 
     const bool name_insensitive = value.function_base->isNameInsensitive();
     for (const auto * child : value.children)
