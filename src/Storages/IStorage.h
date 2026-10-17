@@ -127,6 +127,13 @@ public:
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
     virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
 
+    /// Returns true if the storage hands back already-processed, mergeable partial state that
+    /// must be combined like a remote shard's output, regardless of data locality.
+    /// The planner and interpreter use it to decide how to merge aggregated data.
+    /// Covers remote storages and `MergeTree` with parallel replicas (hence the context). A storage that
+    /// executes the query itself up to the requested processing stage should return true as well.
+    virtual bool producesMergeableState(const ContextPtr & /*query_context*/) const { return isRemote(); }
+
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
