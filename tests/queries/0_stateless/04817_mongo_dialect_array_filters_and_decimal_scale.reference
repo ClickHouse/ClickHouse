@@ -1,0 +1,28 @@
+-- $in and $nin on an array field test its elements
+1
+2
+3
+2
+-- $in and $nin on a scalar field
+1
+2
+3
+-- $size matches arrays only
+1
+3
+-- $numberDecimal keeps the scale of its value
+1
+2
+1
+2
+-- a $numberDecimal that fits no Decimal128 is an error
+Code: 36. The value '1E+40' of '$numberDecimal' cannot be represented exactly by a Decimal128
+Code: 36. The value 'NaN' of '$numberDecimal' cannot be represented exactly by a Decimal128
+-- a single query needs no trailing semicolon
+alpha
+-- a semicolon inside a string is data, not a terminator
+2
+2
+-- statements of a multi query are split at the terminator outside strings
+2
+3

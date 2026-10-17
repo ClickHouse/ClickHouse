@@ -1,0 +1,17 @@
+both collections
+1	first-one
+2	first-two
+1	second-one
+2	second-two
+a filter applies to the named database only
+1	first-one
+1	second-one
+a projection
+first-one
+first-two
+deleteMany affects the named database only
+2	first-two
+1	second-one
+2	second-two
+an unknown database is an error
+UNKNOWN_DATABASE
