@@ -3,6 +3,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -64,7 +65,6 @@ bool hasNestedNullable(const DataTypePtr & type)
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionTopKFilter final : public IFunction
@@ -79,6 +79,7 @@ public:
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
+        threshold_type = recursiveRemoveLowCardinality(threshold_tracker_->getDataType());
         direction = threshold_tracker_->getDirection();
         nulls_direction = threshold_tracker_->getNullsDirection();
         collator = threshold_tracker_->getCollator();
@@ -109,16 +110,9 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} can't be {}, should be 1",
-                getName(),
-                arguments.size());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
@@ -216,7 +210,9 @@ private:
         Mode mode) const
     {
         const auto & function = mode == Mode::NotWorse ? compare_function : (mode == Mode::Better ? better_function : equals_function);
-        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
+        /// The threshold is a value of the tracker's type, which a `Field` does not carry (an `Interval` is a plain `Int64`).
+        ColumnPtr threshold_column = data_type->createColumnConst(
+            input_rows_count, convertFieldToType(current_threshold, *data_type, threshold_type.get()));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = function->build(args);
         /// getReturnTypeImpl always declares UInt8, so a comparison resolving to anything else
@@ -236,7 +232,7 @@ private:
     {
         const auto & col = *argument.column;
 
-        auto threshold_field = convertFieldToType(current_threshold, *data_type);
+        auto threshold_field = convertFieldToType(current_threshold, *data_type, threshold_type.get());
         auto threshold_col = data_type->createColumn();
         threshold_col->insert(threshold_field);
 
@@ -278,6 +274,8 @@ private:
     }
 
     TopKThresholdTrackerPtr threshold_tracker;
+    /// The type of the threshold value as this function receives it (the default implementation removes LowCardinality).
+    DataTypePtr threshold_type;
     FunctionOverloadResolverPtr compare_function;
     FunctionOverloadResolverPtr better_function;
     FunctionOverloadResolverPtr equals_function;

@@ -34,6 +34,7 @@ Un objeto de tabla que representa el conjunto de datos remoto. El esquema se inf
 **Configuración**
 
 * `arrow_flight_request_descriptor_type` — Controla cómo se envía el nombre del conjunto de datos al servidor de Flight. Valores: `path` (predeterminado) o `command`. Consulta el [motor de tabla ArrowFlight](/es/reference/engines/table-engines/integrations/arrowflight#settings) para obtener más detalles.
+* `arrow_flight_request_timeout_sec` — Tiempo de espera en segundos para una solicitud individual de Arrow Flight; el valor predeterminado es `300` y `0` significa que no hay límite de tiempo. Consulta el [motor de tabla ArrowFlight](/es/reference/engines/table-engines/integrations/arrowflight#settings) para obtener más detalles.
 
 **Ejemplos**
 

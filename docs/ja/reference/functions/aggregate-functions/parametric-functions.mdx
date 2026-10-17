@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 一部の集約関数は、引数のカラム (圧縮に使用) だけでなく、初期化用の定数である一連のパラメータも受け取ることができます。構文では、括弧を1組ではなく2組使用します。最初の組はパラメータ用、2番目の組は引数用です。
 
-<div id="histogram">
-  ## histogram
-</div>
+## histogram {#histogram}
 
 適応型ヒストグラムを計算します。厳密な結果は保証されません。
 
@@ -84,9 +82,7 @@ FROM
 
 この場合、ヒストグラムのビン境界は分からないことに注意してください。
 
-<div id="sequencematch">
-  ## sequenceMatch
-</div>
+## sequenceMatch {#sequencematch}
 
 数列に、パターンに一致するイベントチェーンが含まれているかを判定します。
 
@@ -97,35 +93,33 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-  同じ秒に発生したイベントは、数列内での順序が未定義になる場合があり、その結果に影響することがあります。
+  同じタイムスタンプを持つイベントは、数列内での順序が未定義になる場合があり、その結果に影響することがあります。`DateTime64` のタイムスタンプは秒未満の部分も含めて順序付けされるため、順序が曖昧になるのは同じティックを持つイベントのみです。
 </Note>
 
-**Arguments**
+**引数**
 
-* `timestamp` — 時刻データを含むと見なされるカラムです。一般的なデータ型は `Date` と `DateTime` です。また、サポートされている [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
+* `timestamp` — 時刻データを含むと見なされるカラムです。一般的なデータ型は `Date`、`DateTime`、`DateTime64` です。また、サポートされている [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
 
 * `cond1`, `cond2` — イベントチェーンを記述する条件です。データ型: `UInt8`。条件引数は最大 32 個まで渡せます。この関数は、これらの条件で記述されたイベントのみを対象にします。数列に条件で記述されていないデータが含まれている場合、関数はそれらをスキップします。
 
-**Parameters**
+**パラメータ**
 
 * `pattern` — パターン文字列です。[パターン構文](#pattern-syntax) を参照してください。
 
-**Returned values**
+**戻り値**
 
 * パターンに一致した場合は 1。
 * パターンに一致しなかった場合は 0。
 
 型: `UInt8`。
 
-<div id="pattern-syntax">
-  #### パターン構文
-</div>
+#### パターン構文 {#pattern-syntax}
 
 * `(?N)` — 位置 `N` の条件引数に一致します。条件には `[1, 32]` の範囲で番号が振られます。たとえば、`(?1)` は `cond1` パラメータに渡された引数に一致します。
 
 * `.*` — 任意の数のイベントに一致します。パターンのこの要素に一致させるための条件引数は必要ありません。
 
-* `(?t operator value)` — 2 つのイベントの間隔を秒単位で指定します。たとえば、パターン `(?1)(?t>1800)(?2)` は、発生時刻の差が 1800 秒を超えるイベントに一致します。これらのイベントの間には、任意の数の任意のイベントを挟めます。`>=`、`>`、`<`、`<=`、`==` の演算子を使用できます。
+* `(?t operator value)` — 2 つのイベントの間隔を指定します。たとえば、パターン `(?1)(?t>1800)(?2)` は、発生時刻の差が 1800 秒を超えるイベントに一致します。これらのイベントの間には、任意の数の任意のイベントを挟めます。`>=`、`>`、`<`、`<=`、`==` の演算子を使用できます。`DateTime` または `DateTime64` のタイムスタンプでは、`DateTime64` の精度にかかわらず値の単位は秒です。そのため、カラムを `DateTime` から任意のスケールの `DateTime64` に変更しても、またその逆に変更しても、同じパターンの意味は変わりません。`Date` のタイムスタンプでは値の単位は日、符号なし整数のタイムスタンプでは整数の単位です。
 
 **例**
 
@@ -179,14 +173,12 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 * [sequenceCount](#sequencecount)
 
-<div id="sequencecount">
-  ## sequenceCount
-</div>
+## sequenceCount {#sequencecount}
 
 パターンに一致したイベントチェーンの数をカウントします。この関数は、互いに重ならないイベントチェーンを検索します。現在のチェーンが一致すると、その後から次のチェーンの検索を開始します。
 
 <Note>
-  同じ秒に発生したイベントは、数列内で未定義の順序になる場合があり、結果に影響する可能性があります。
+  同じタイムスタンプを持つイベントは、数列内で未定義の順序になる場合があり、結果に影響する可能性があります。`DateTime64` のタイムスタンプは秒未満の部分も含めて順序付けられるため、順序があいまいになるのは同じティックを共有するイベントのみです。
 </Note>
 
 **構文**
@@ -197,7 +189,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **引数**
 
-* `timestamp` — 時刻データを含むと見なされるカラム。一般的なデータ型は `Date` と `DateTime` です。また、サポートされている任意の [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
+* `timestamp` — 時刻データを含むと見なされるカラム。一般的なデータ型は `Date`、`DateTime`、`DateTime64` です。また、サポートされている任意の [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
 
 * `cond1`, `cond2` — イベントチェーンを表す条件。データ型: `UInt8`。条件引数は最大 32 個まで指定できます。関数は、これらの条件で記述されたイベントだけを考慮します。数列にいずれの条件にも記述されていないデータが含まれている場合、関数はそれらをスキップします。
 
@@ -238,14 +230,12 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="sequencematchevents">
-  ## sequenceMatchEvents
-</div>
+## sequenceMatchEvents {#sequencematchevents}
 
 パターンに一致した最長のイベントチェーンに含まれるイベントのタイムスタンプを返します。
 
 <Note>
-  同じ秒に発生したイベントは、数列内での順序が未定義となる場合があり、結果に影響することがあります。
+  同じタイムスタンプを持つイベントは、数列内での順序が未定義となる場合があり、結果に影響することがあります。`DateTime64` のタイムスタンプは秒未満の部分も含めて順序付けされるため、順序が曖昧になるのは同じティック内のイベントに限られます。
 </Note>
 
 **構文**
@@ -256,11 +246,11 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **引数**
 
-* `timestamp` — 時刻データを含むと見なされるカラム。一般的なデータ型は `Date` と `DateTime` です。サポートされている任意の [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
+* `timestamp` — 時刻データを含むと見なされるカラム。一般的なデータ型は `Date`、`DateTime`、`DateTime64` です。サポートされている任意の [UInt](/ja/reference/data-types/int-uint) データ型も使用できます。
 
 * `cond1`, `cond2` — イベントチェーンを記述する条件。データ型: `UInt8`。条件引数は最大 32 個まで渡せます。この関数は、これらの条件で記述されたイベントだけを対象にします。数列に条件で記述されていないデータが含まれている場合、関数はそれらをスキップします。
 
-**パラメーター**
+**パラメータ**
 
 * `pattern` — パターン文字列。[パターン構文](#pattern-syntax) を参照してください。
 
@@ -301,9 +291,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 * [sequenceMatch](#sequencematch)
 
-<div id="windowfunnel">
-  ## windowFunnel
-</div>
+## windowFunnel {#windowfunnel}
 
 スライディング時間ウィンドウ内でイベントチェーンを検索し、そのチェーン内で発生したイベントの最大数を計算します。
 
@@ -428,9 +416,7 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-<div id="retention">
-  ## retention
-</div>
+## retention {#retention}
 
 この関数は引数として、イベントに対して特定の条件が満たされたかどうかを示す `UInt8` 型の条件のセットを 1 個から 32 個まで受け取ります。
 任意の条件を引数として指定できます ([WHERE](/ja/reference/statements/select/where) と同様です) 。
@@ -577,9 +563,7 @@ FROM
 * `r2` - 2020-01-01 から 2020-01-02 までの特定の期間 (`cond1` および `cond2` 条件) にサイトを訪れたユニーク訪問者数。
 * `r3` - 2020-01-01 と 2020-01-03 の特定の期間 (`cond1` および `cond3` 条件) にサイトを訪れたユニーク訪問者数。
 
-<div id="uniquptonx">
-  ## uniqUpTo(N)(x)
-</div>
+## uniqUpTo(N)(x) {#uniquptonx}
 
 指定した上限 `N` までの、引数の異なる値の数を計算します。異なる引数値の数が `N` を超える場合、この関数は `N` + 1 を返し、それ以外の場合は正確な値を計算します。
 
@@ -599,9 +583,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` は、各 `SearchPhrase` について一意な `UserID` の数を計算しますが、数えるのは最大 4 個までです。ある `SearchPhrase` に対して一意な `UserID` が 4 個を超える場合、この関数は 5 (4 + 1) を返します。次に、`HAVING` 句によって、一意な `UserID` の数が 5 未満の `SearchPhrase` は除外されます。これにより、少なくとも 5 人の異なるユーザーが使用した検索キーワードの一覧を取得できます。
 
-<div id="summapfiltered">
-  ## sumMapFiltered
-</div>
+## sumMapFiltered {#summapfiltered}
 
 この関数は、フィルタに使用するキーの配列をパラメータとして受け取る点を除き、[sumMap](/ja/reference/functions/aggregate-functions/sumMap) と同様に動作します。これは、キーのカーディナリティが高い場合に特に役立ちます。
 
@@ -647,9 +629,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="summapfilteredwithoverflow">
-  ## sumMapFilteredWithOverflow
-</div>
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
 この関数は、フィルタに使用するキーの配列をパラメータとして受け取る点を除き、[sumMap](/ja/reference/functions/aggregate-functions/sumMap) と同様に動作します。特に、キーのカーディナリティが高い場合に有用です。[sumMapFiltered](#summapfiltered) 関数との違いは、オーバーフローを許容したまま合計を行う点です。つまり、合計結果のデータ型は引数のデータ型と同じになります。
 
@@ -707,9 +687,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-<div id="sequencenextnode">
-  ## sequenceNextNode
-</div>
+## sequenceNextNode {#sequencenextnode}
 
 イベントチェーンに一致する次のイベントの値を返します。
 
