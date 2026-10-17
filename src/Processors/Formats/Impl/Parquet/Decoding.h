@@ -113,7 +113,7 @@ struct PageDecoder
     /// Fused decode-and-gather for dictionary-encoded data pages: append the *dictionary values*
     /// at the decoded indexes directly to `out`, without materializing the indexes as a column.
     /// An RLE run of a repeated index becomes a single dictionary lookup and a bulk fill, and
-    /// bit-packed indexes are gathered from a small stack buffer, saving a full write + read pass
+    /// bit-packed indexes are gathered as they are unpacked, saving a full write + read pass
     /// over an indexes column (most values in typical files sit in RLE runs). Returns false if
     /// this decoder (or this dictionary mode) does not support the fusion; the caller then falls
     /// back to `decode` into an indexes column + `Dictionary::index`.
