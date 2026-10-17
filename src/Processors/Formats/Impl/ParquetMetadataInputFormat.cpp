@@ -19,6 +19,7 @@
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
+#include <parquet/geospatial/statistics.h>
 #include <parquet/size_statistics.h>
 #include <parquet/statistics.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
@@ -102,8 +103,21 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                                      std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
                                  Names{"unencoded_byte_array_data_bytes", "repetition_level_histogram", "definition_level_histogram"}),
+                             DataTypeFactory::instance().get("Bool"),
+                             std::make_shared<DataTypeTuple>(
+                                 DataTypes{
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
+                                 Names{"xmin", "xmax", "ymin", "ymax", "zmin", "zmax", "mmin", "mmax", "geospatial_types"}),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "have_size_statistics", "size_statistics"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "have_size_statistics", "size_statistics", "have_geospatial_statistics", "geospatial_statistics"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -370,8 +384,51 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         auto size_statistics = column_chunk_metadata->size_statistics();
         assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(size_statistics != nullptr);
         fillColumnSizeStatistics(size_statistics, tuple_column.getColumn(8));
+        /// Present only for columns with the `GEOMETRY` or `GEOGRAPHY` logical type.
+        auto geospatial_statistics = column_chunk_metadata->geo_statistics();
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(9)).insertValue(geospatial_statistics != nullptr);
+        fillColumnGeospatialStatistics(geospatial_statistics, tuple_column.getColumn(10));
     }
     array_column.getOffsets().push_back(tuple_column.size());
+}
+
+void ParquetMetadataInputFormat::fillColumnGeospatialStatistics(
+    const std::shared_ptr<parquet::geospatial::GeoStatistics> & geospatial_statistics, IColumn & column)
+{
+    auto & geospatial_statistics_column = assert_cast<ColumnTuple &>(column);
+    if (!geospatial_statistics)
+    {
+        geospatial_statistics_column.insertDefault();
+        return;
+    }
+
+    const auto lower_bound = geospatial_statistics->lower_bound();
+    const auto upper_bound = geospatial_statistics->upper_bound();
+    const auto dimension_valid = geospatial_statistics->dimension_valid();
+    /// The bounds are in XYZM order, the columns are xmin, xmax, ymin, ymax, ...
+    for (size_t dimension = 0; dimension < dimension_valid.size(); ++dimension)
+    {
+        for (size_t is_max = 0; is_max < 2; ++is_max)
+        {
+            auto & bound_column = assert_cast<ColumnNullable &>(geospatial_statistics_column.getColumn(dimension * 2 + is_max));
+            if (dimension_valid[dimension])
+            {
+                assert_cast<ColumnFloat64 &>(bound_column.getNestedColumn()).insertValue(is_max ? upper_bound[dimension] : lower_bound[dimension]);
+                bound_column.getNullMapData().push_back(false);
+            }
+            else
+            {
+                bound_column.insertDefault();
+            }
+        }
+    }
+
+    auto & types_column = assert_cast<ColumnArray &>(geospatial_statistics_column.getColumn(8));
+    auto & types_data = assert_cast<ColumnInt32 &>(types_column.getData());
+    if (auto geometry_types = geospatial_statistics->geometry_types())
+        for (const auto geometry_type : *geometry_types)
+            types_data.insertValue(geometry_type);
+    types_column.getOffsets().push_back(types_data.size());
 }
 
 void ParquetMetadataInputFormat::fillColumnSizeStatistics(
@@ -604,6 +661,10 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
       - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values as recorded in the footer, NULL when the writer did not record it
       - `repetition_level_histogram` - the number of values at each repetition level as recorded in the footer, empty when the writer did not record it
       - `definition_level_histogram` - the number of values at each definition level as recorded in the footer, empty when the writer did not record it
+    - `have_geospatial_statistics` - boolean flag that indicates if column chunk metadata contains geospatial statistics, which are written only for columns with the `GEOMETRY` or `GEOGRAPHY` logical type
+    - `geospatial_statistics` - column chunk geospatial statistics (all fields are NULL or empty if have_geospatial_statistics = false) with the next structure:
+      - `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`, `mmin`, `mmax` - the bounding box of the geometries in the column chunk, NULL for the dimensions that the writer did not record
+      - `geospatial_types` - the WKB (ISO) codes of the geometry types in the column chunk (for example, 1 for `Point`, 3 for `Polygon`, 1001 for `Point Z`), empty when unknown
 
 ## Example usage {#example-usage}
 

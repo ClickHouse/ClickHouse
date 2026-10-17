@@ -22,6 +22,10 @@ struct SpatialFilter
 
     /// Bounding box of the constant query geometry.
     double query_xmin = 0, query_ymin = 0, query_xmax = 0, query_ymax = 0;
+
+    /// Whether the geometry column is read as a single point (a `Tuple`), so the predicate cannot
+    /// interpret its value as a line or a polygon connecting several vertices.
+    bool column_is_point = false;
 };
 
 /// Walk filter_actions_dag looking for calls to spatial functions with isSpatialPredicate()==true
