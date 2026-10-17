@@ -76,8 +76,31 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def all_nodes_running(started_cluster):
+    # A failed test can leave a node stopped; do not let it fail every test after it too.
+    for node in ALL_NODES:
+        if node.get_process_pid("clickhouse") is None:
+            node.start_clickhouse(start_wait_sec=240)
+    yield
+
+
 def get_fake_zk(node, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
+
+
+def wait_for_leader(nodes, timeout=120):
+    """The leader among `nodes` once it accepts sessions. After the leader is killed there is
+    none until the others elect one, and node2 can be the leader: it wins the first election
+    whenever it starts first."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for node in nodes:
+            if keeper_utils.is_leader(cluster, node):
+                keeper_utils.wait_until_connected(cluster, node)
+                return node
+        time.sleep(0.5)
+    raise Exception(f"no leader among {[node.name for node in nodes]} within {timeout}s")
 
 
 def start_and_connect(node):
@@ -135,7 +158,7 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
     node2.stop_clickhouse(kill=True)
 
     # 4) Put the leader ahead, so it has entries to send after the restart.
-    zk = get_fake_zk(node1)
+    zk = get_fake_zk(wait_for_leader([node1, node3]))
     try:
         for i in range(10):
             zk.create(f"/ahead_of_node2_{i}", b"")
@@ -238,7 +261,7 @@ def check_divergent_local_logs_are_reconciled(snapshot_at_common_index):
         pool.close()
         pool.join()
 
-    zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+    zk = get_fake_zk(wait_for_leader([node1, node3]))
     try:
         for i in range(10):
             zk.create(f"{root}_written_without_node2_{i}", b"")
@@ -348,7 +371,7 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         # 2) Disable the pause on node2 only; waits now run to their deadline.
         node2.replace_in_config(NODE2_CONFIG, CONFIG_END, NEVER_PAUSE_ONLY + CONFIG_END)
 
-        zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+        zk = get_fake_zk(wait_for_leader([node1, node3]))
         try:
             for i in range(10):
                 zk.create(f"/ahead_of_unpaused_{i}", b"")
@@ -395,7 +418,7 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         stop_writing = threading.Event()
 
         def keep_writing():
-            writer_zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+            writer_zk = get_fake_zk(wait_for_leader([node1, node3]))
             try:
                 seq = 0
                 while not stop_writing.is_set():
@@ -451,8 +474,12 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             "with the pause disabled and the bound was never put under pressure"
         )
 
-        # And the bound held.
-        events = waiting_thread_events(node2)
+        # And the bound held. The released thread logs the end of its wait only after it resumes.
+        for _ in range(240):
+            events = waiting_thread_events(node2)
+            if events and sum(delta for _, _, delta in events) == 0:
+                break
+            time.sleep(0.5)
         assert events, (
             "no thread entered the wait, so the bound below is checked against nothing - the "
             "failpoint held one, so its start and its release both have to be in the log"
@@ -532,7 +559,7 @@ def test_replay_overtaken_by_an_installed_snapshot_is_finished(started_cluster):
 
     # 2) Write past node2's tail, then snapshot and compact both possible leaders. The session is
     #    closed first, so nothing is left for the leader to send right after the install.
-    zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+    zk = get_fake_zk(wait_for_leader([node1, node3]))
     try:
         for i in range(10):
             zk.create(f"{root}/without_node2_{i}", b"")
@@ -588,7 +615,7 @@ def test_replay_overtaken_by_an_installed_snapshot_is_finished(started_cluster):
     # Let a few post-install heartbeats (100 ms) go by before writing.
     time.sleep(1)
 
-    zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+    zk = get_fake_zk(wait_for_leader([node1, node3]))
     try:
         zk.create(f"{root}/after_install", b"")
     finally:
