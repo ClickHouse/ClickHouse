@@ -137,6 +137,14 @@ struct ProjectionDescription
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
+    /// Whether the projection provides the column `column_name` of the table with columns `table_columns`, either stored
+    /// or as a virtual column. A name that the table declares as a column in its own right (such as `a.size0` next
+    /// to an `Array` column `a`) is provided only by a projection column of that exact name, never by a same-named
+    /// subcolumn of another projection column, and a subcolumn of a table column only by the same subcolumn of the
+    /// same projection column, never by a same-named path of another column (`a.x.y` with a column `a.x` next
+    /// to a `JSON` column `a`).
+    bool providesColumn(const String & column_name, const ColumnsDescription & table_columns) const;
+
     /**
      * @brief Calculates the projection result for a given input block.
      *

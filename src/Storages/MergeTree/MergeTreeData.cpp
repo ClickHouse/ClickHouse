@@ -6042,6 +6042,39 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 ++old_i;
             }
         }
+
+        /// A column added under the name of a subcolumn that a partition or sorting key reads (`a.size0` of an `Array`
+        /// column `a`, or `a.x` whose subcolumn `a.x.y` is a path of a `JSON` column `a`) would change what the key
+        /// expression reads: the parts written before hold no such column, so they read its default, while their
+        /// primary index, partition minmax index, partition ID and physical order were all computed from the old
+        /// subcolumn. Pruning and in-order reads would then use values the key no longer evaluates to. The same holds
+        /// for the key of a projection, by which the projection parts are indexed and sorted.
+        if (is_initial_alter && std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_COLUMN && !c.ignore; }))
+        {
+            Names key_columns;
+            if (old_metadata.hasPartitionKey())
+                key_columns = old_metadata.getColumnsRequiredForPartitionKey();
+            if (old_metadata.hasSortingKey())
+                std::ranges::copy(old_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            for (const auto & projection : old_metadata.getProjections())
+                if (projection.metadata)
+                    std::ranges::copy(projection.metadata->getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+
+            const auto & new_columns = new_metadata.getColumns();
+            for (const auto & key_column : key_columns)
+            {
+                auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                if (old_column && new_column && old_column->isSubcolumn() && old_column->getNameInStorage() != new_column->getNameInStorage())
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot add column {}: the key expression reads {} as a subcolumn of column {}, and the new column "
+                        "would change it, while the existing parts are indexed and sorted by the old value",
+                        backQuoteIfNeed(new_column->getNameInStorage()),
+                        backQuoteIfNeed(key_column),
+                        backQuoteIfNeed(old_column->getNameInStorage()));
+            }
+        }
     }
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
@@ -9362,11 +9395,16 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
+    /// A column of the table that shadows a subcolumn of another column (e.g. `a.size0` added next to
+    /// an `Array` column `a`) is not taken for that subcolumn in the parts that do not hold it.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto & table_columns = metadata_snapshot->getColumns();
+
     for (const auto & part : parts)
     {
         for (const auto & col_name : subcolumn_names)
         {
-            auto column = part->tryGetColumn(col_name);
+            auto column = part->tryGetColumnForTable(col_name, table_columns);
             if (column && column->isSubcolumn())
                 result[col_name].add(part->getSubcolumnSize(col_name));
         }
