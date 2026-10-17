@@ -88,4 +88,11 @@ ALTER TABLE db.t2 RENAME COLUMN IF EXISTS c3 TO c6, ADD COLUMN IF NOT EXISTS c6 
 SELECT groupArray(name) FROM system.columns WHERE database = 'db' AND table = 't2';
 "
 
+# CREATE HYPOTHETICAL INDEX checks the body of a SQL UDF, as ALTER ... ADD INDEX does
+# (here, because clickhouse-local keeps the UDF out of the server's global namespace).
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+CREATE FUNCTION alias_udf AS x -> (x * 1000 AS c9);
+CREATE HYPOTHETICAL INDEX h ON db.t2 alias_udf(c0) TYPE minmax;
+" 2>&1 | grep -c "Alias 'c9' is not allowed in INDEX"
+
 rm -rf "${WORKING_DIR}"

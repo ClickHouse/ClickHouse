@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -111,7 +113,11 @@ BlockIO createHypotheticalIndex(
             return {};
     }
 
-    KeyDescription::checkNoAlias(query.index_decl.get(), "INDEX");
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
+    ASTPtr expanded_index_decl = query.index_decl->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
+    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
 
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
