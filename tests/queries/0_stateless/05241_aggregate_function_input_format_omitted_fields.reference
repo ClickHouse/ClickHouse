@@ -1,0 +1,31 @@
+omitted field
+0	nan
+omitted and present rows in one block
+1	0	nan
+2	1	7
+3	0	nan
+nested in a tuple, omitted then present
+0
+1
+an omitted state merges as nothing, not as a default value
+-5	1
+every function shape
+0		0	0	0	
+fewer columns in the row, and a column absent from the file
+0	nan
+0	nan
+a null and an empty field carry no value either
+nan
+nan
+control: the other two modes
+0	nan
+0	nan
+control: an omitted array or map has no elements, a present array keeps all of them
+1	[]	0
+2	[5,6]	0
+known boundary of input_format_defaults_for_omitted_fields = 0
+1	0
+known boundary of an element defaulted inside a present tuple
+0
+known boundary of an explicit null in JSONColumns
+0
