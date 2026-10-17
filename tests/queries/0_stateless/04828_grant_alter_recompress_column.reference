@@ -1,0 +1,8 @@
+no recompress privilege:
+ACCESS_DENIED
+privilege on another column:
+ACCESS_DENIED
+recompress column privilege:
+OK
+column group privilege:
+OK
