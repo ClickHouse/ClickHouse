@@ -1,0 +1,12 @@
+<functions>
+    <function>
+        <type>executable</type>
+        <name>listed_executable_udf</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>listed_executable_udf.py</command>
+    </function>
+</functions>
