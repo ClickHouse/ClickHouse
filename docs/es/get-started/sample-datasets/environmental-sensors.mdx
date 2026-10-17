@@ -13,8 +13,12 @@ import { Image } from "/snippets/es/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/) es una red global de sensores impulsada por la comunidad que crea Open Environmental Data. Los datos se recopilan a partir de sensores de todo el mundo. Cualquiera puede comprar un sensor y colocarlo donde quiera. Las API para descargar los datos están en [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) y los datos están disponibles libremente bajo la [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
-  El conjunto de datos tiene más de 20 mil millones de registros, así que tenga cuidado al copiar y pegar los comandos a continuación, a menos que sus recursos puedan manejar ese volumen. Los comandos a continuación se ejecutaron en una instancia de **producción** de [ClickHouse Cloud](https://clickhouse.cloud).
+  El conjunto de datos tiene más de 20 mil millones de registros, así que tenga cuidado al copiar y pegar los comandos a continuación, a menos que sus recursos puedan manejar ese volumen. Estos comandos se ejecutaron en un servicio de [ClickHouse Cloud](/es/products/cloud/getting-started/intro) con capacidad suficiente.
 </Warning>
+
+<Tip>
+  Para probar estos comandos, puede registrarse para obtener una [prueba gratuita de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors) o configurar una [instancia autogestionada de ClickHouse](/es/get-started/setup/install).
+</Tip>
 
 1. Los datos están en S3, así que podemos usar la función de tabla `s3` para crear una tabla a partir de los archivos. También podemos consultar los datos directamente. Veamos algunas filas antes de intentar insertarlos en ClickHouse:
 
@@ -74,7 +78,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. Los servicios de ClickHouse Cloud tienen un clúster llamado `default`. Usaremos la table function `s3Cluster`, que lee archivos de S3 en paralelo desde los nodos del clúster. (Si no tienes un clúster, simplemente usa la función `s3` y elimina el nombre del clúster.)
+3. Usaremos la función de tabla [`s3Cluster`](/es/reference/functions/table-functions/s3Cluster), que distribuye los archivos de S3 entre los nodos de tu clúster para que se lean en paralelo. En ClickHouse Cloud, tu clúster se llama `default` y puedes ejecutar la consulta como se muestra. En un servidor autogestionado, sustituye `default` por el nombre de tu clúster o, si usas un solo servidor, utiliza la función de tabla [`s3`](/es/reference/functions/table-functions/s3) y elimina el primer argumento para que la llamada comience con la URL.
 
 Esta consulta tardará un poco: son aproximadamente 1,67 T de datos sin comprimir:
 
@@ -137,7 +141,7 @@ GROUP BY
 ORDER BY size DESC;
 ```
 
-El 1,67 T se comprime hasta 310 GiB y hay 20 690 millones de filas:
+Los 1,67 T se comprimen hasta 310 GiB y hay 20 690 millones de filas:
 
 ```response
 ┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬────────rows─┬─part_count─┐
