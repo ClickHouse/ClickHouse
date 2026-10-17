@@ -1,5 +1,6 @@
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsScatter.h>
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
@@ -1530,6 +1531,7 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
 void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;
+    const UInt8 * skip = fill.skipData();
     insertPartitionSection(
         ctx,
         /*worker=*/0,
@@ -1539,9 +1541,11 @@ void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
         /*locators=*/nullptr,
         /*narrow_locators_data=*/nullptr,
         fill.block_no,
-        fill.skipData());
-    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
-    ctx.worker_state[0].inserted_rows += fill.rows;
+        skip);
+    /// Rows with a NULL key or a filtered ON condition do not reach the table.
+    const size_t inserted = fill.rows - (skip ? countBytesInFilter(skip, 0, fill.rows) : 0);
+    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, inserted);
+    ctx.worker_state[0].inserted_rows += inserted;
     fill.releaseInputs();
 }
 
