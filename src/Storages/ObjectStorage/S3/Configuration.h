@@ -121,12 +121,6 @@ public:
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override
-    {
-        keys = paths;
-    }
-
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
     String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
@@ -168,6 +162,12 @@ public:
     String biglake_adc_refresh_token;
 
 protected:
+    const Paths & getPathsImpl() const override { return keys; }
+    void setPathsImpl(const Paths & paths) override
+    {
+        keys = paths;
+    }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
