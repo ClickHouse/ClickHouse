@@ -1065,6 +1065,8 @@ def get_zookeeper_session_uptime(args):
 
 def wait_for_exit(proc: Popen, timeout: float) -> None:
     """Like `proc.wait(timeout)`, but wakes on the exit instead of polling with up to 50 ms sleeps."""
+    if proc.returncode is not None:
+        return
     try:
         pidfd = os.pidfd_open(proc.pid)
     except (AttributeError, OSError):
