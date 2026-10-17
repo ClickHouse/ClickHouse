@@ -8,10 +8,10 @@
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 namespace DB
 {
-class StorageTimeSeries;
 class PrometheusQueryTree;
 class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
@@ -126,7 +126,10 @@ private:
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
 
-    std::shared_ptr<const StorageTimeSeries> time_series_storage;
+    ConstStoragePtr time_series_storage;
+    /// Read once: the generated query and the response reader must name the same outer samples column.
+    UInt64 outer_samples_version;
+    std::optional<PrometheusQueryDistributedTarget> distributed_target;
     FormatSettings format_settings;
     LoggerPtr log;
 };

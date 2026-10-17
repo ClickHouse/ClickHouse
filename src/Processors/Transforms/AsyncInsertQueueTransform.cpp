@@ -111,6 +111,7 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     SharedHeader header_,
     AsynchronousInsertQueue * queue_,
     ContextMutablePtr context_,
+    ContextMutablePtr queue_context_,
     ASTPtr query_ast_,
     Names insert_column_names_,
     UInt64 max_data_size_,
@@ -125,6 +126,7 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     : ExceptionKeepingTransform(header_, header_, /* ignore_on_start_and_finish */ false)
     , queue(queue_)
     , context(std::move(context_))
+    , queue_context(std::move(queue_context_))
     , query_ast(std::move(query_ast_))
     , insert_column_names(std::move(insert_column_names_))
     , max_data_size(max_data_size_)
@@ -291,7 +293,7 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         async_insert_query.columns = make_intrusive<ASTExpressionList>();
         for (const auto & name : insert_column_names)
             async_insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(name));
-        auto result = queue->pushQueryWithBlock(async_query, std::move(block), context);
+        auto result = queue->pushQueryWithBlock(async_query, std::move(block), queue_context);
 
         /// The queue owns the block, and the flush relocks the table under a fresh query id, so it
         /// cannot join the reader group of this query: a share lock kept across the wait below lets an
