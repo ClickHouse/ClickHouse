@@ -55,3 +55,52 @@ def test_metrics(start_cluster):
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS;")
 
     assert node.query(get_metrics_query) == "0\n0\n"
+
+
+def test_aggregate_metrics(start_cluster):
+    """Regression test for gh-49182: aggregate dictionary metrics are emitted."""
+    node.query("DROP DICTIONARY IF EXISTS d_agg;")
+    node.query("DROP TABLE IF EXISTS t_agg;")
+    node.query("CREATE TABLE t_agg (k UInt64, v String) ENGINE = Memory;")
+    node.query("INSERT INTO t_agg VALUES (1, 'one'), (2, 'two'), (3, 'three');")
+    node.query(
+        "CREATE DICTIONARY d_agg (k UInt64, v String) PRIMARY KEY k "
+        "SOURCE(CLICKHOUSE(TABLE 't_agg')) LAYOUT(HASHED()) LIFETIME(0);"
+    )
+    node.query("SYSTEM RELOAD DICTIONARY d_agg;")
+    # One query so DictionaryMaxQueryCount becomes >= 1.
+    assert node.query("SELECT dictGet('d_agg', 'v', toUInt64(2))").strip() == "two"
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS;")
+
+    new_metrics = [
+        "DictionaryFailedCount",
+        "DictionaryLoadedCount",
+        "DictionaryLoadingCount",
+        "DictionaryMaxQueryCount",
+        "DictionaryTotalBytesAllocated",
+        "DictionaryTotalCount",
+        "DictionaryTotalElementCount",
+    ]
+    in_list = ",".join(f"'{m}'" for m in new_metrics)
+
+    rows = node.query(
+        "SELECT name, value, length(description) "
+        f"FROM system.asynchronous_metrics WHERE name IN ({in_list}) "
+        "ORDER BY name FORMAT TabSeparated"
+    ).strip().splitlines()
+    values = {n: float(v) for n, v, _ in (r.split("\t") for r in rows)}
+    description_lengths = [int(d) for _, _, d in (r.split("\t") for r in rows)]
+
+    assert len(values) == 7
+    assert all(v >= 0 for v in values.values())
+    assert all(d >= 10 for d in description_lengths)
+
+    # Functional checks against the live dictionary we just created.
+    assert values["DictionaryTotalCount"] >= 1
+    assert values["DictionaryLoadedCount"] >= 1
+    assert values["DictionaryTotalElementCount"] >= 3
+    assert values["DictionaryTotalBytesAllocated"] > 0
+    assert values["DictionaryMaxQueryCount"] >= 1
+
+    node.query("DROP DICTIONARY d_agg;")
+    node.query("DROP TABLE t_agg;")
