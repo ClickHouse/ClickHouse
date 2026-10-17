@@ -1,3 +1,7 @@
+-- Tags: no-random-settings
+-- no-random-settings: the test pins whole EXPLAIN outputs, and the harness randomizes several
+-- settings that move the join order and with it those plans.
+
 -- The pushed side of a `cascades_aggregation_pushdown` here is a JOIN SUBTREE, not a table scan
 -- (the header, statistics and condition columns all come from a join), plus the repeated
 -- pushdown through two joins. Every executed scenario runs twice - through the cascades
