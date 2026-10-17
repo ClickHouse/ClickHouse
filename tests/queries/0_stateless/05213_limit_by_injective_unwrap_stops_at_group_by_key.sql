@@ -43,6 +43,7 @@ SET optimize_injective_functions_in_group_by = 0;
 SELECT toString(c0) AS s FROM t_limit_by_injective GROUP BY toString(c0) WITH ROLLUP ORDER BY s LIMIT 1 BY s;
 SELECT c0 + 1 AS expr FROM t_limit_by_injective GROUP BY c0 + 1 WITH CUBE ORDER BY expr LIMIT 1 BY expr;
 SELECT c0 + 1 AS expr, c1 FROM t_limit_by_injective GROUP BY GROUPING SETS ((c0 + 1), (c1)) ORDER BY expr, c1 LIMIT 1 BY expr;
+SELECT toString(c0) AS s FROM t_limit_by_injective GROUP BY toString(c0) WITH TOTALS ORDER BY s LIMIT 1 BY s;
 
 -- The same with the `LIMIT BY` key spelled out instead of referenced through the projection alias.
 SELECT toString(c0) AS s FROM t_limit_by_injective GROUP BY toString(c0) WITH ROLLUP ORDER BY s LIMIT 1 BY toString(c0);

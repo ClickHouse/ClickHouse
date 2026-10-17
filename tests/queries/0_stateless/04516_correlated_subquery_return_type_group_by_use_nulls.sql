@@ -29,7 +29,8 @@ GROUP BY number WITH CUBE
 ORDER BY number ASC NULLS LAST;
 
 -- Original AST-fuzzer query (return-type-sensitive function nested in concat,
--- WITH ROLLUP WITH TOTALS).
+-- WITH ROLLUP WITH TOTALS). The TOTALS-row GROUP BY keys are NULL with
+-- group_by_use_nulls (WITH TOTALS support added in #39574/#107106).
 SELECT number, number + 1, concat('192.168.0.1', (SELECT toString(number)))
 FROM numbers(5)
 GROUP BY number WITH ROLLUP WITH TOTALS

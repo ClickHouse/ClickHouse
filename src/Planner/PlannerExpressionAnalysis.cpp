@@ -39,6 +39,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_use_nulls_with_totals;
 }
 
 namespace ErrorCodes
@@ -180,8 +181,12 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
     /// Add expressions from GROUP BY
+    /// WITH TOTALS produces an extra summary row in which all GROUP BY keys are meaningless and
+    /// must be reported as NULL when group_by_use_nulls is enabled, so the keys become Nullable too.
     bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::group_by_use_nulls]
-        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
+        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube()
+            || (query_node.isGroupByWithTotals()
+                && planner_context->getQueryContext()->getSettingsRef()[Setting::group_by_use_nulls_with_totals]));
 
     bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
