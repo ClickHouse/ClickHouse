@@ -1,7 +1,3 @@
-#include <algorithm>
-
-#include <Common/SipHash.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
@@ -11,14 +7,16 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <base/unit.h>
-#include <Common/StringValueFilter.h>
 #include <Common/assert_cast.h>
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
 
 
 namespace DB
@@ -27,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -54,24 +53,6 @@ static void checkStringSize(UInt64 size, const FormatSettings & settings)
             SerializationString::MAX_STRING_SIZE);
 }
 
-UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
-{
-    SipHash hash;
-    hash.update("String");
-    hash.update(static_cast<int>(version_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
-{
-    return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
-}
-
-bool SerializationString::isStringSizesSubcolumn(const SubstreamPath & path)
-{
-    return !path.empty() && (path.back().type == Substream::StringSizes || path.back().type == Substream::InlinedStringSizes);
-}
-
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -90,7 +71,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     checkStringSize(size, settings);
 
@@ -123,7 +104,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     checkStringSize(size, settings);
 
@@ -183,7 +164,7 @@ try
         if (istr.eof())
             break;
 
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
 
         if (size > SerializationString::MAX_STRING_SIZE)
@@ -234,228 +215,17 @@ catch (...)
     throw;
 }
 
-/// Reads one string value of a known size from the buffer and appends it to `data` (updating `offset`)
-/// if it matches the filter; a non-matching value is consumed from the buffer but not appended.
-/// Returns true if the value matched.
-static ALWAYS_INLINE bool readFilteredStringValue(
-    ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter)
+
+void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
-    /// Note: `istr.available()` instead of `istr.position() + size <= istr.buffer().end()`,
-    /// because the buffer may be empty and its pointers null, and offsetting a null pointer is UB.
-    if (size <= istr.available())
+    /// Skip certain number of values if requested
+    for (size_t i = 0; i < rows_offset; ++i)
     {
-        /// The value is fully in the buffer: check it in place and copy only if it matches.
-        bool matched = filter.match(istr.position(), size);
-        if (matched)
-        {
-            if (unlikely(offset + size > data.size()))
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
-            memcpy(&data[offset], istr.position(), size);
-            offset += size;
-        }
-        istr.position() += size;
-        return matched;
-    }
-
-    /// The value crosses the buffer boundary: read it into the column and roll back if it does not match.
-    if (unlikely(offset + size > data.size()))
-        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
-    istr.readStrict(reinterpret_cast<char *>(&data[offset]), size);
-
-    bool matched = filter.match(reinterpret_cast<const char *>(&data[offset]), size);
-    if (matched)
-        offset += size;
-    return matched;
-}
-
-/// Filtered deserialization of the data stream when the value sizes are already known:
-/// `offsets[first_row .. offsets.size())` contain the original cumulative offsets of the values,
-/// and this function rewrites them to the filtered ones. Values that do not match the filter
-/// are replaced with empty strings without copying their data (see `StringValueFilter`).
-///
-/// When the filter has a substring condition, the values are checked in bulk: each contiguous
-/// buffer of concatenated values is scanned for the needle only once, and the found occurrences
-/// are mapped to values. This is much faster than a search per value, and together with the
-/// skipped copying it is faster than reading all the values.
-static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
-    ColumnString::Chars & data,
-    ColumnString::Offsets & offsets,
-    ReadBuffer & istr,
-    size_t first_row,
-    const StringValueFilter & filter)
-{
-    const size_t num_rows = offsets.size();
-    size_t offset = data.size();
-
-    size_t values_checked = 0;
-    size_t values_replaced = 0;
-    size_t bytes_skipped = 0;
-
-    /// The values decided by the bulk scan are accounted separately: they are not checked one by one,
-    /// so filtering them pays off even when they are short. Only the found candidates are checked
-    /// one by one against the other conditions of the filter, if there are any.
-    size_t bulk_values_checked = 0;
-    size_t bulk_values_replaced = 0;
-    size_t bulk_bytes_skipped = 0;
-    size_t bulk_values_checked_individually = 0;
-
-    const bool use_bulk_scan = filter.hasBulkScanCondition();
-    const bool has_other_conditions = filter.hasOtherConditions();
-
-    /// The original (unfiltered) cumulative offset of the current stream position.
-    /// The invariant `chars.size() == offsets.back()` held before the new offsets were appended.
-    size_t original_pos = offset;
-    /// Values in the current buffer that contain the bulk-scanned needle.
-    std::vector<size_t> matched_values;
-
-    size_t i = first_row;
-    try
-    {
-        while (i < num_rows)
-        {
-            /// Find the values that fit into the current buffer entirely.
-            /// (Note that `eof` refills the buffer when it is exhausted.)
-            size_t j = i;
-            const char * buffer_begin = nullptr;
-            if (use_bulk_scan && !istr.eof())
-            {
-                buffer_begin = istr.position();
-                size_t buffer_original_end = original_pos + (istr.buffer().end() - istr.position());
-                j = std::upper_bound(offsets.begin() + i, offsets.begin() + num_rows, buffer_original_end) - offsets.begin();
-            }
-
-            if (j == i)
-            {
-                /// Either there is no substring condition to scan for in bulk, or the current value
-                /// crosses the buffer boundary: check this one value directly.
-                size_t value_size = offsets[i] - original_pos;
-
-                ++values_checked;
-
-                /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter))
-                {
-                    ++values_replaced;
-                    bytes_skipped += value_size;
-                }
-
-                original_pos += value_size;
-                offsets[i] = offset;
-                ++i;
-                continue;
-            }
-
-            /// Scan the buffer once and map the found occurrences of the needle to values.
-            const size_t scan_original_start = original_pos;
-            const char * scan_end = buffer_begin + (offsets[j - 1] - scan_original_start);
-
-            matched_values.clear();
-            filter.findBulkScanMatches(buffer_begin, scan_original_start, offsets.data(), i, j, matched_values);
-
-            /// Materialize the values: copy the matched ones (checking the remaining conditions
-            /// of the filter), replace the rest with empty strings.
-            size_t next_matched = 0;
-            for (; i < j; ++i)
-            {
-                size_t value_size = offsets[i] - original_pos;
-                const char * value_data = buffer_begin + (original_pos - scan_original_start);
-                original_pos = offsets[i];
-
-                ++bulk_values_checked;
-
-                bool matches = false;
-                if (next_matched < matched_values.size() && matched_values[next_matched] == i)
-                {
-                    ++next_matched;
-                    matches = filter.matchOtherConditions(value_data, value_size);
-                    bulk_values_checked_individually += has_other_conditions;
-                }
-
-                if (matches)
-                {
-                    if (unlikely(offset + value_size > data.size()))
-                        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + value_size, data.size() * 2)));
-                    memcpy(&data[offset], value_data, value_size);
-                    offset += value_size;
-                }
-                else
-                {
-                    ++bulk_values_replaced;
-                    bulk_bytes_skipped += value_size;
-                }
-
-                offsets[i] = offset;
-            }
-
-            istr.position() += scan_end - buffer_begin;
-        }
-    }
-    catch (...)
-    {
-        /// Drop the rows whose values were not fully read to keep the column consistent.
-        offsets.resize(i);
-        data.resize_exact(offset);
-        throw;
-    }
-
-    data.resize_exact(offset);
-    filter.updateStats(values_checked, values_replaced, bytes_skipped);
-    filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
-}
-
-/// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
-/// See the comment for `StringValueFilter`: it is only correct because the rows with non-matching values
-/// are guaranteed to be filtered out later by PREWHERE.
-static NO_INLINE void deserializeBinaryFiltered(
-    ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit, const StringValueFilter & filter)
-try
-{
-    size_t offset = data.size();
-    size_t values_checked = 0;
-    size_t values_replaced = 0;
-    size_t bytes_skipped = 0;
-
-    for (size_t i = 0; i < limit; ++i)
-    {
-        if (istr.eof())
-            break;
-
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
-
-        if (size > SerializationString::MAX_STRING_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Too large string size: {}. The maximum is: {}.",
-                size,
-                SerializationString::MAX_STRING_SIZE);
-
-        ++values_checked;
-
-        /// An empty string never matches the filter.
-        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter))
-        {
-            ++values_replaced;
-            bytes_skipped += size;
-        }
-
-        offsets.push_back(offset);
+        istr.ignore(size);
     }
 
-    data.resize_exact(offset);
-    filter.updateStats(values_checked, values_replaced, bytes_skipped);
-}
-catch (...)
-{
-    /// We could have resized `data` beyond the last complete value, restore consistency (even in case of exceptions).
-    /// `offsets` can be empty if an exception was thrown before the first value was fully read.
-    data.resize_exact(offsets.empty() ? 0 : offsets.back());
-    throw;
-}
-
-
-void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
-{
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
@@ -533,7 +303,8 @@ void SerializationString::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationString::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -542,10 +313,10 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreams(
     switch (version)
     {
         case MergeTreeStringSerializationVersion::SINGLE_STREAM:
-            deserializeBinaryBulkWithoutSizeStream(column, limit, settings, state, cache);
+            deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
-            deserializeBinaryBulkWithSizeStream(column, limit, settings, cache);
+            deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
             break;
     }
 }
@@ -559,7 +330,7 @@ void SerializationString::enumerateStreamsWithoutSize(
     {
         const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
 
-        auto sizes_serialization = SerializationStringSize::create(version);
+        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
 
         /// Inlined size stream. The column is not computed eagerly; instead a
         /// lazy column creator is attached so that `createFromPath` can derive it
@@ -595,49 +366,20 @@ void SerializationString::enumerateStreamsWithoutSize(
 ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::clone() const
 {
     auto res = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+    res->column = column;
     res->need_string_data = need_string_data;
     return res;
 }
 
 void SerializationString::deserializeBinaryBulkWithoutSizeStream(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (!settings.string_value_filter || !settings.string_value_filter->isEnabled())
-    {
-        ISerialization::deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
-        return;
-    }
-
-    /// The same as the default implementation above, but values that do not match the filter
-    /// are replaced with empty strings without copying their data into the column.
-    settings.path.push_back(Substream::Regular);
-
-    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
-    {
-        /// Data was inserted from substreams cache.
-    }
-    else if (ReadBuffer * stream = settings.getter(settings.path))
-    {
-        size_t prev_size = column.size();
-        auto & column_string = assert_cast<ColumnString &>(column);
-
-        column_string.getOffsets().reserve(column_string.getOffsets().size() + limit);
-        deserializeBinaryFiltered(column_string.getChars(), column_string.getOffsets(), *stream, limit, *settings.string_value_filter);
-
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
-        /// Note: we intentionally do not update the average value size hint from a filtered column.
-    }
-
-    settings.path.pop_back();
-}
-
-void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -687,9 +429,7 @@ static inline ReturnType read(IColumn & column, Reader && reader)
         restore_column();
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        if constexpr (!throw_exception)
+        else
             return false;
     }
 }
@@ -774,9 +514,9 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         String field;
         readJSONField(field, istr, settings.json);
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -819,9 +559,9 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;
@@ -943,7 +683,7 @@ void SerializationString::enumerateStreamsWithSize(
 {
     const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
 
-    auto sizes_serialization = SerializationStringSize::create(version);
+    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
 
     /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
     settings.path.push_back(Substream::StringSizes);
@@ -990,15 +730,7 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     }
 
     const auto & column_string = typeid_cast<const ColumnString &>(column);
-    const auto & offsets = column_string.getOffsets();
-
-    /// On disk (position independent) the stream carries per-row sizes so a granule reads on its own.
-    /// Over the network it carries the cumulative offsets directly (like Array offsets) for exact
-    /// reader preallocation.
-    if (settings.position_independent_encoding)
-        serializeStringSizes(column, *size_stream, offset, limit);
-    else
-        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
+    serializeStringSizes(column, *size_stream, offset, limit);
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
@@ -1006,6 +738,7 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
     /// Serialize string data
+    const auto & offsets = column_string.getOffsets();
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
     size_t end = offsets[offset + limit - 1];
     size_t bytes = end - begin;
@@ -1013,97 +746,55 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     settings.path.pop_back();
 }
 
+struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::DeserializeBinaryBulkState
+{
+    ColumnPtr size_column;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto res = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+        res->size_column = size_column;
+        return res;
+    }
+};
+
 void SerializationString::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    /// Only SINGLE_STREAM serialization keeps a deserialize state; WITH_SIZE_STREAM is stateless.
-    if (version != MergeTreeStringSerializationVersion::SINGLE_STREAM)
-        return;
-
     settings.path.push_back(Substream::Regular);
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
         state = cached_state;
-        auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
-        string_state->need_string_data = true;
+        if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
+        {
+            auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
+            string_state->need_string_data = true;
+        }
     }
     else
     {
-        auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
-        string_state->need_string_data = true;
-        state = string_state;
+        if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
+        {
+            auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+            string_state->need_string_data = true;
+            state = string_state;
+        }
+        else
+        {
+            state = std::make_shared<DeserializeBinaryBulkStateStringWithSizeStream>();
+        }
+
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
     }
     settings.path.pop_back();
 }
 
-size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
-    ColumnString & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    SubstreamsCache * cache) const
-{
-    auto & offsets = column.getOffsets();
-    const size_t prev_last_offset = offsets.back();
-
-    /// Over the network the stream carries cumulative byte offsets (the same layout Array uses):
-    /// read them straight into the column's offsets for exact preallocation and a single bulk copy.
-    if (!settings.position_independent_encoding)
-    {
-        ReadBuffer * offsets_stream = settings.getter(settings.path);
-        if (!offsets_stream)
-            return 0;
-
-        const size_t prev_num_rows = offsets.size();
-        SerializationNumber<ColumnString::Offset>::deserializeBinaryBulk(offsets, *offsets_stream, limit);
-
-        /// The offsets come from untrusted input and address the characters of the column, so they have to
-        /// increase monotonically; their total is checked by the caller. Everything below `prev_num_rows`
-        /// was verified by the previous call, and starting one element earlier covers the pair across the
-        /// boundary.
-        auto * const scan_begin = offsets.begin() + (prev_num_rows ? prev_num_rows - 1 : 0);
-        auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
-        if (it != offsets.end())
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "String offsets are not monotonically increasing (starting at {}, value {})",
-                std::distance(offsets.begin(), it),
-                *it);
-
-        return offsets.back() - prev_last_offset;
-    }
-
-    /// On disk the stream carries per-row sizes; read them into a sizes column reused via the substreams
-    /// cache (so the `.size` subcolumn reader can reuse it), then turn them into offsets.
-    size_t num_read_rows = 0;
-    ColumnPtr size_column;
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-    {
-        std::tie(size_column, num_read_rows) = *cached_column_with_num_read_rows;
-    }
-    else if (ReadBuffer * size_stream = settings.getter(settings.path))
-    {
-        auto mutable_size_column = ColumnUInt64::create();
-        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*mutable_size_column, *size_stream, limit, 0);
-        num_read_rows = mutable_size_column->size();
-        size_column = std::move(mutable_size_column);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, size_column, num_read_rows);
-    }
-    else
-    {
-        return 0;
-    }
-
-    const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*size_column).getData();
-    const size_t prev_size = sizes_data.size() - num_read_rows;
-    appendStringSizesToColumnStringOffsets(column, sizes_data.data(), prev_size, num_read_rows);
-    return offsets.back() - prev_last_offset;
-}
-
 void SerializationString::deserializeBinaryBulkWithSizeStream(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
     /// Check if the whole String column is already deserialized and we have it in the cache.
@@ -1115,42 +806,76 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         return;
     }
 
-    auto & string_column = assert_cast<ColumnString &>(column);
-    const size_t prev_num_rows = string_column.size();
-
+    /// String column is not in the cache.
+    /// First, read sizes.
     settings.path.back() = Substream::StringSizes;
-    const size_t bytes_to_read = deserializeStringOffsetsAndGetDataSize(string_column, limit, settings, cache);
+    size_t num_read_rows = 0;
+    DeserializeBinaryBulkStateStringWithSizeStream * string_state = nullptr;
 
-    settings.path.back() = Substream::Regular;
-    auto * stream = settings.getter(settings.path);
-    /// A null getter means the data substream is absent; the size stream above then read nothing
-    /// either, so leave the column empty.
-    if (!stream)
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    {
+        string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithSizeStream>(state);
+        std::tie(string_state->size_column, num_read_rows) = *cached_column_with_num_read_rows;
+    }
+    else if (ReadBuffer * size_stream = settings.getter(settings.path))
+    {
+        string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithSizeStream>(state);
+        /// If we started to read a new column, reinitialize sizes column in the state.
+        if (!string_state->size_column || column->empty())
+            string_state->size_column = ColumnUInt64::create();
+
+        size_t prev_size = string_state->size_column->size();
+        SerializationNumber<UInt64>().deserializeBinaryBulk(
+            *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
+        num_read_rows = string_state->size_column->size() - prev_size;
+        /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state->size_column, num_read_rows);
+    }
+    else
     {
         settings.path.pop_back();
         return;
     }
 
-    if (bytes_to_read > MAX_TOTAL_STRING_SIZE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Total size of String column is too large ({}): most likely the data is corrupted", bytes_to_read);
+    /// Read string data.
+    settings.path.back() = Substream::Regular;
+    auto * stream = settings.getter(settings.path);
+    if (!stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
 
-    auto & data = string_column.getChars();
-    const size_t initial_size = data.size();
+    /// Fill offsets and calculate bytes to skip and read based on sizes column.
+    auto mutable_column = column->assumeMutable();
+    auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
+    auto & offsets = mutable_string_column.getOffsets();
+    size_t prev_last_offset = offsets.back();
+    const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
+    size_t prev_size = sizes_data.size() - num_read_rows;
 
-    if (settings.string_value_filter && settings.string_value_filter->isEnabled())
-    {
-        /// Check every value against the filter and read non-matching values as empty strings,
-        /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
-    }
-    else
-    {
-        data.resize(initial_size + bytes_to_read);
-        stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    }
+    /// The skipped prefix comes from the same untrusted sizes stream: an unchecked sum can wrap around
+    /// and skip a wrong number of bytes instead of rejecting the corrupted data.
+    unsigned __int128 bytes_to_skip_total = 0;
+    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
+        bytes_to_skip_total += sizes_data[i];
 
-    /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), string_column.size() - prev_num_rows);
+    if (unlikely(bytes_to_skip_total > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
+
+    const size_t bytes_to_skip = static_cast<size_t>(bytes_to_skip_total);
+
+    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
+    size_t bytes_to_read = offsets.back() - prev_last_offset;
+    auto & data = mutable_string_column.getChars();
+    size_t initial_size = data.size();
+    data.resize(initial_size + bytes_to_read);
+    stream->ignore(bytes_to_skip);
+    size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    data.resize(initial_size + size);
+    column = std::move(mutable_column);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();
 }
 

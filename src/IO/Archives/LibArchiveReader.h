@@ -42,8 +42,8 @@ public:
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
     std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) override;
 
-    Strings getAllFiles() override;
-    Strings getAllFiles(NameFilter filter) override;
+    std::vector<std::string> getAllFiles() override;
+    std::vector<std::string> getAllFiles(NameFilter filter) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
@@ -53,8 +53,7 @@ protected:
     LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_);
 
     LibArchiveReader(
-        std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_,
-        const ReadArchiveFunction & archive_read_function_, size_t archive_size_ = 0);
+        std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_);
 
 private:
     class ReadBufferFromLibArchive;
@@ -68,7 +67,6 @@ private:
     const bool lock_on_reading;
     const String path_to_archive;
     const ReadArchiveFunction archive_read_function;
-    const size_t archive_size;
     mutable std::mutex mutex;
 };
 
@@ -90,11 +88,6 @@ class SevenZipArchiveReader : public LibArchiveReader
 public:
     explicit SevenZipArchiveReader(std::string path_to_archive)
         : LibArchiveReader("7z", /*lock_on_reading_=*/false, std::move(path_to_archive))
-    {
-    }
-
-    explicit SevenZipArchiveReader(std::string path_to_archive, const ReadArchiveFunction & archive_read_function, size_t archive_size = 0)
-        : LibArchiveReader("7z", /*lock_on_reading_=*/false, std::move(path_to_archive), archive_read_function, archive_size)
     {
     }
 };

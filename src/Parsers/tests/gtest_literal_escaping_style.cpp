@@ -4,7 +4,6 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <optional>
 #include <string>
 
 /** Regression coverage for `LiteralEscapingStyle` applied to nested literals.
@@ -14,8 +13,9 @@
   * example the elements of a pushed-down `IN` list) must be escaped with the same rules as a
   * top-level string. Previously only the top-level `String` case was overridden and container
   * elements fell back to the regular ClickHouse escaping, so a predicate like
-  * `val IN ('it''s', 'a\tb')` was sent to PostgreSQL or SQLite with backslash escapes that those
-  * dialects interpret differently or reject.
+  * `val IN ('it''s', 'x')` was sent to PostgreSQL with a backslash escape. Under the default
+  * `standard_conforming_strings`, `\'` does not escape the quote there, so the embedded quote
+  * terminated the literal.
   */
 
 namespace
@@ -39,149 +39,78 @@ std::string format(const Field & value, LiteralEscapingStyle style)
     return buf.str();
 }
 
-/** The bugfix validation CI job compiles this test against the merge-base sources, where
-  * `LiteralEscapingStyle::SQLite` does not exist yet. Keep every reference to that enumerator
-  * dependent on a template parameter, so the test compiles there (the SQLite expectations
-  * evaporate) while the PostgreSQL expectations still reproduce the nested-literal bug.
-  */
-template <typename Style = LiteralEscapingStyle>
-std::optional<std::string> formatSQLite(const Field & value)
-{
-    if constexpr (requires { Style::SQLite; })
-        return format(value, Style::SQLite);
-    else
-        return std::nullopt;
-}
-
-#define EXPECT_SQLITE_EQ(value, expected) \
-    do \
-    { \
-        if (auto formatted = formatSQLite((value))) \
-            EXPECT_EQ(*formatted, (expected)); \
-    } while (false)
-
 }
 
 TEST(LiteralEscapingStyle, TopLevelString)
 {
-    /// A backslash and a single quote: ClickHouse escapes both with a backslash, PostgreSQL
-    /// switches to the escape string constant form `E'...'` (a plain '...' literal would read a
-    /// doubled backslash back as two characters under `standard_conforming_strings = on`, and as
-    /// one under `off`), SQLite only doubles the quote and embeds the backslash literally.
+    /// A backslash and a single quote. ClickHouse escapes both with a backslash. PostgreSQL uses the
+    /// `E'...'` form because the value contains a backslash, so the backslash is doubled and the
+    /// quote is doubled -- the result is read back identically whether or not the server has
+    /// `standard_conforming_strings` on.
     Field value = std::string("a\\b'c");
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "'a\\\\b\\'c'");
     EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\\\b''c'");
-    EXPECT_SQLITE_EQ(value, "'a\\b''c'");
 }
 
-TEST(LiteralEscapingStyle, ControlCharactersRoundTripForPostgreSQL)
+TEST(LiteralEscapingStyle, BackslashDirectlyBeforeQuote)
 {
-    /// A real tab and newline: PostgreSQL must read back exactly the original bytes. A plain
-    /// '...' literal with `\t` / `\n` inside is read back as two characters each, so the
-    /// `E'...'` form (whose escapes are interpreted on every PostgreSQL configuration) is used.
-    Field value = std::string("a\tb\nc");
+    /// The breakout vector for a server with `standard_conforming_strings = off`: emitted as a plain
+    /// literal this is `'a\''b'`, where the backslash escapes the first of the doubled quotes and
+    /// the second one terminates the literal, leaving `b` outside it. The `E'...'` form doubles the
+    /// backslash as well, so nothing escapes the quote doubling.
+    Field value = std::string("a\\'b");
 
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\tb\\nc'");
-    /// A string without quotes, backslashes and control characters keeps the regular form.
-    EXPECT_EQ(format(Field(std::string("plain")), LiteralEscapingStyle::PostgreSQL), "'plain'");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\\\''b'");
+}
+
+TEST(LiteralEscapingStyle, BackslashBeforeQuoteInsideTuple)
+{
+    /// Same vector, reached through a container -- the shape of a pushed-down `IN` list.
+    Field value = Tuple{std::string("a\\'b"), std::string("y")};
+
+    const auto formatted = format(value, LiteralEscapingStyle::PostgreSQL);
+    EXPECT_EQ(formatted, "(E'a\\\\''b', 'y')");
 }
 
 TEST(LiteralEscapingStyle, StringInsideTuple)
 {
-    Tuple tuple;
-    tuple.push_back(std::string("it's"));
-    tuple.push_back(std::string("a\tb"));
-    Field value = tuple;
+    /// This is the shape produced by an `IN` list of two or more elements.
+    Field value = Tuple{std::string("it's"), std::string("y")};
 
-    /// PostgreSQL doubles the quote, and the element with a real tab uses the `E'...'` form so
-    /// the tab round-trips; SQLite embeds the tab literally. What matters here is that neither of
-    /// them falls back to `\'` for the quote.
-    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "('it\\'s', 'a\\tb')");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "('it''s', E'a\\tb')");
-    EXPECT_SQLITE_EQ(value, "('it''s', 'a\tb')");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "('it\\'s', 'y')");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "('it''s', 'y')");
 }
 
-TEST(LiteralEscapingStyle, SingleElementTupleIsRejectedForDialects)
+TEST(LiteralEscapingStyle, StringInsideSingleElementTuple)
 {
-    Tuple tuple;
-    tuple.push_back(std::string("it's"));
-    Field value = tuple;
+    /// A single-element tuple keeps the explicit `tuple(...)` form so it is parsed back as a tuple.
+    Field value = Tuple{std::string("it's")};
 
-    /// A single-element tuple can only be written back as `tuple(...)`, which is ClickHouse
-    /// syntax: PostgreSQL / SQLite would fail to parse it. Without the fix it was emitted
-    /// verbatim (e.g. into a user-provided `(SELECT ...)` table argument), so on the merge-base
-    /// these expectations fail because formatting succeeds.
-    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "tuple('it\\'s')");
-    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
-    EXPECT_ANY_THROW(formatSQLite(value));
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "tuple('it''s')");
 }
 
-TEST(LiteralEscapingStyle, ArrayIsRejectedForDialects)
+TEST(LiteralEscapingStyle, StringInsideArray)
 {
-    Tuple inner;
-    inner.push_back(std::string("it's"));
-    inner.push_back(std::string("b"));
+    Field value = Array{std::string("it's"), std::string("y")};
 
-    Array array;
-    array.push_back(inner);
-    array.push_back(std::string("c'd"));
-    Field value = array;
-
-    /// An `Array` literal has only the ClickHouse `[...]` text form, which PostgreSQL / SQLite
-    /// cannot parse. Without the fix it was emitted verbatim, so on the merge-base these
-    /// expectations fail because formatting succeeds.
-    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "[('it\\'s', 'b'), 'c\\'d']");
-    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
-    EXPECT_ANY_THROW(formatSQLite(value));
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "['it''s', 'y']");
 }
 
-TEST(LiteralEscapingStyle, MapIsRejectedForDialects)
+TEST(LiteralEscapingStyle, StringInsideNestedContainers)
 {
-    Tuple entry;
-    entry.push_back(std::string("k"));
-    entry.push_back(std::string("v"));
+    /// The dialect has to survive an arbitrary number of container levels.
+    Field value = Tuple{Array{Tuple{std::string("it's")}}};
 
-    Map map;
-    map.push_back(entry);
-    Field value = map;
-
-    /// Same as for `Array`: a `Map` literal has no PostgreSQL / SQLite text form.
-    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
-    EXPECT_ANY_THROW(formatSQLite(value));
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "tuple([tuple('it''s')])");
 }
 
-TEST(LiteralEscapingStyle, NonStringElementsAreUnchanged)
+TEST(LiteralEscapingStyle, QuoteCannotEscapeTheLiteral)
 {
-    Tuple tuple;
-    tuple.push_back(UInt64(1));
-    tuple.push_back(std::string("it's"));
-    Field value = tuple;
+    /// The whole point: a `'` in a container element must never be emitted as `\'` for PostgreSQL,
+    /// because that does not escape the quote under `standard_conforming_strings`.
+    Field value = Tuple{std::string("x'"), std::string("y")};
 
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "(1, 'it''s')");
-    EXPECT_SQLITE_EQ(value, "(1, 'it''s')");
-}
-
-TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForSQLite)
-{
-    Tuple tuple;
-    tuple.push_back(std::string("a\0b", 3));
-    Field value = tuple;
-
-    /// A NUL byte cannot be represented in a SQLite string literal, and it must not be silently
-    /// emitted as the two characters `\` and `0` either. Without the fix `formatSQLite` returns
-    /// an empty optional instead of throwing, so this expectation also fails on the merge-base.
-    EXPECT_ANY_THROW(formatSQLite(value));
-}
-
-TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForPostgreSQL)
-{
-    Tuple tuple;
-    tuple.push_back(std::string("a\0b", 3));
-    Field value = tuple;
-
-    /// A NUL byte cannot appear in a PostgreSQL string value (E'\0' is rejected by the server),
-    /// and it must not be silently emitted as the two characters `\` and `0` either. Such
-    /// predicates are not pushed down; formatting one must fail explicitly.
-    EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
+    const auto formatted = format(value, LiteralEscapingStyle::PostgreSQL);
+    EXPECT_EQ(formatted.find("\\'"), std::string::npos) << formatted;
 }

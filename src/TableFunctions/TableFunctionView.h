@@ -25,7 +25,7 @@ private:
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 

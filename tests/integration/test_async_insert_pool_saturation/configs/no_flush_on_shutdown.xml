@@ -1,3 +1,0 @@
-<clickhouse>
-    <async_insert_queue_flush_on_shutdown>false</async_insert_queue_flush_on_shutdown>
-</clickhouse>

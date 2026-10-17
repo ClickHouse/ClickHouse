@@ -32,8 +32,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress, ContextPtr context);

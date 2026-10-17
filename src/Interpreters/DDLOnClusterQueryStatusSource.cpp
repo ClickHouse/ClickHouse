@@ -78,7 +78,7 @@ Chunk DDLOnClusterQueryStatusSource::handleTimeoutExceeded()
 
     constexpr auto msg_format = "Distributed DDL task {} is not finished on {} of {} hosts "
                                 "({} of them are currently executing the task, {} are inactive). "
-                                "They are going to execute the query in background. Was waiting for {:.3f} seconds{}";
+                                "They are going to execute the query in background. Was waiting for {} seconds{}";
 
     if (throw_on_timeout || (throw_on_timeout_only_active && !stop_waiting_offline_hosts))
     {
@@ -117,7 +117,7 @@ Chunk DDLOnClusterQueryStatusSource::stopWaitingOfflineHosts()
 }
 void DDLOnClusterQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
-    chassert(status.code != 0);
+    assert(status.code != 0);
 
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {

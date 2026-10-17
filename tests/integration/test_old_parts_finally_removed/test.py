@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import get_retry_number
 
@@ -43,7 +44,7 @@ def test_part_finally_removed(started_cluster, request):
     node1.query("OPTIMIZE TABLE drop_outdated_part FINAL")
 
     data_path = node1.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='drop_outdated_part'"
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='drop_outdated_part'"
     ).strip()
 
     node1.exec_in_container(

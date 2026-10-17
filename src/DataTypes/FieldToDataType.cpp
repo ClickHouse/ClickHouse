@@ -200,7 +200,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        chassert(tuple.size() == 2);
+        assert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));
     }
@@ -223,14 +223,6 @@ DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateD
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr FieldToDataType<on_error>::operator() (const NumberLiteral & x) const
-{
-    /// Resolve the NumberLiteral to a concrete Field value, then infer the type from that.
-    Field resolved = Field(x).resolveNumberLiteral();
-    return applyVisitor(FieldToDataType<on_error>(), resolved);
-}
-
-template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
@@ -246,6 +238,5 @@ template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
 template class FieldToDataType<LeastSupertypeOnError::Variant>;
-template class FieldToDataType<LeastSupertypeOnError::Dynamic>;
 
 }

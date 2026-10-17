@@ -97,7 +97,7 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
         /* log_to_console = */ false,
         /* substitutions= */ {},
         /* throw_on_bad_include_from= */ throw_on_bad_include_from);
-    bool has_zk_includes = {};
+    bool has_zk_includes;
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     if (has_zk_includes && process_zk_includes)
     {
@@ -142,7 +142,8 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     return {configuration->getString(key)};
 }
 
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {
@@ -179,11 +180,11 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Preprocess config file and extract value of the given key." << std::endl
+            std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;
-            std::cout << "Usage: clickhouse extract-from-config [options]" << std::endl
+            std::cerr << "Usage: clickhouse extract-from-config [options]" << std::endl
                 << std::endl;
-            std::cout << options_desc << std::endl;
+            std::cerr << options_desc << std::endl;
             return 0;
         }
 

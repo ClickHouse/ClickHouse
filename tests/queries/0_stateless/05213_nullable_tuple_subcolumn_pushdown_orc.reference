@@ -1,8 +1,0 @@
-{"label":"top_level","result":[{"count()":1}],"rows_read":2000}
-{"label":"inferred","result":[{"count()":1}],"rows_read":2000}
-{"label":"disabled","result":[{"count()":1}],"rows_read":20000}
-{"label":"explicit","result":[{"count()":1}],"rows_read":2000}
-{"label":"full_tuple","result":[{"value":"(11111,'13')"}],"rows_read":2000}
-{"label":"parent_null","result":[{"count()":6667}],"rows_read":20000}
-{"label":"element_null","result":[{"count()":9333}],"rows_read":20000}
-{"label":"unnamed","result":[{"count()":1}],"rows_read":20000}

@@ -1,0 +1,12 @@
+<test>
+  <create_query>
+    SELECT naiveBayesClassifier('lang_byte_2', 'Load the model');
+  </create_query>
+
+  <query>
+    SELECT
+    number,
+    naiveBayesClassifier('lang_byte_2', 'Hello! How are you?')
+    FROM numbers(1_000_000);
+  </query>
+</test>

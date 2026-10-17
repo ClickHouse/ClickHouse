@@ -1,8 +1,0 @@
--- the implicit sharding key is not a shard-pruning key: reads work under force_optimize_skip_unused_shards
-6
--- the strictest mode keeps rejecting the query, exactly like a Distributed table without a sharding key
-UNABLE_TO_SKIP_UNUSED_SHARDS
--- SHOW CREATE TABLE serializes the implicit sharding key
-rand()
--- the emitted definition recreates a table that accepts a multi-shard INSERT
-4

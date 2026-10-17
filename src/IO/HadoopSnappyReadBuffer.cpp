@@ -33,7 +33,7 @@ inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    chassert(*avail_in + buffer_length <= sizeof(buffer));
+    assert(*avail_in + buffer_length <= sizeof(buffer));
 
     memcpy(buffer + buffer_length, *next_in, *avail_in);
 
@@ -193,13 +193,6 @@ bool HadoopSnappyReadBuffer::nextImpl()
     /// `SnappyFramedReadBuffer` skips zero-length chunks.
     while (true)
     {
-        /// The output cursor is set up once per block, not per attempt: `readBlock` can decompress
-        /// some subblocks of a block and then ask for more input, and starting the retry at the
-        /// beginning of the buffer would write the rest of the block over the bytes already produced,
-        /// dropping the earlier subblocks from the stream.
-        out_capacity = internal_buffer.size();
-        out_data = internal_buffer.begin();
-
         do
         {
             if (!in_available)
@@ -218,6 +211,8 @@ bool HadoopSnappyReadBuffer::nextImpl()
                     getExceptionEntryWithFileName(*in));
             }
 
+            out_capacity = internal_buffer.size();
+            out_data = internal_buffer.begin();
             decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
 
             in->position() = in->buffer().end() - in_available;

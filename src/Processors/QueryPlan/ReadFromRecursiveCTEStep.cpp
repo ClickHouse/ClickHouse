@@ -1,8 +1,5 @@
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 
-#include <Interpreters/QueryExecutionCounters.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/RecursiveCTESource.h>
 
@@ -15,24 +12,9 @@ ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(SharedHeader output_header_, 
 {
 }
 
-void ReadFromRecursiveCTEStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void ReadFromRecursiveCTEStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// The name of the scope is taken here, while this pipeline is being assembled, and not inside the
-    /// source: it has to be the same name every time this pipeline is assembled again, which a name
-    /// derived from the source object could not be.
-    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(
-        getOutputHeader(), recursive_cte_union_node, QueryExecutionCounters::makeScopeForPipelineBuiltLater("recursive_cte"))));
-
-    /// A recursive CTE is produced by a single stateful source: every iteration reads the result of the
-    /// previous one, so the source cannot be parallelized internally and the pipeline starts with a single
-    /// stream. Left as is, that single stream pins every downstream operator (aggregation, sorting,
-    /// expression evaluation) to one thread, even on a many-core server, which is the dominant cost for
-    /// queries that aggregate a large recursive CTE result. Fan the single output stream out to
-    /// `max_threads` so downstream steps can process the (potentially large) output in parallel. As a side
-    /// effect this also enables the adaptive `GROUP BY` aggregation (`enable_adaptive_aggregator`), which
-    /// requires more than one input stream.
-    if (settings.max_threads > 1)
-        pipeline.resize(settings.max_threads);
+    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(getOutputHeader(), recursive_cte_union_node)));
 }
 
 }

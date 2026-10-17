@@ -5,28 +5,16 @@
 namespace DB
 {
 
-constinit UInt32 supported_archs = 0;
-
-namespace
-{
-    /// Priority 101 runs before every constructor of default priority, so `supported_archs` is already
-    /// valid for any other static initializer. `getSupportedArchs` only executes CPUID and reads no globals.
-    [[gnu::constructor(101)]] void initSupportedArchs()
-    {
-        supported_archs = getSupportedArchs();
-    }
-}
-
 UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
 
     // x86-64-v2: SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT
-    if (CPU::haveSSE3()
-        && CPU::haveSSSE3()
-        && CPU::haveSSE41()
-        && CPU::haveSSE42()
-        && CPU::havePOPCNT())
+    if (CPU::CPUFlagsCache::have_SSE3
+        && CPU::CPUFlagsCache::have_SSSE3
+        && CPU::CPUFlagsCache::have_SSE41
+        && CPU::CPUFlagsCache::have_SSE42
+        && CPU::CPUFlagsCache::have_POPCNT)
     {
         result |= static_cast<UInt32>(TargetArch::x86_64_v2);
     }
@@ -34,14 +22,14 @@ UInt32 getSupportedArchs()
     // x86-64-v3: v2 + AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE
     // x86-64 levels are cumulative, so v3 requires v2
     if ((result & static_cast<UInt32>(TargetArch::x86_64_v2)) == static_cast<UInt32>(TargetArch::x86_64_v2)
-        && CPU::haveAVX()
-        && CPU::haveAVX2()
-        && CPU::haveBMI1()
-        && CPU::haveBMI2()
-        && CPU::haveF16C()
-        && CPU::haveFMA()
-        && CPU::haveLZCNT()
-        && CPU::haveMOVBE())
+        && CPU::CPUFlagsCache::have_AVX
+        && CPU::CPUFlagsCache::have_AVX2
+        && CPU::CPUFlagsCache::have_BMI1
+        && CPU::CPUFlagsCache::have_BMI2
+        && CPU::CPUFlagsCache::have_F16C
+        && CPU::CPUFlagsCache::have_FMA
+        && CPU::CPUFlagsCache::have_LZCNT
+        && CPU::CPUFlagsCache::have_MOVBE)
     {
         result |= static_cast<UInt32>(TargetArch::x86_64_v3);
     }
@@ -49,52 +37,44 @@ UInt32 getSupportedArchs()
     // x86-64-v4: v3 + AVX512F, AVX512BW, AVX512CD, AVX512DQ, AVX512VL
     // x86-64 levels are cumulative, so v4 requires v3
     if ((result & static_cast<UInt32>(TargetArch::x86_64_v3)) == static_cast<UInt32>(TargetArch::x86_64_v3)
-        && CPU::haveAVX512F()
-        && CPU::haveAVX512BW()
-        && CPU::haveAVX512CD()
-        && CPU::haveAVX512DQ()
-        && CPU::haveAVX512VL())
+        && CPU::CPUFlagsCache::have_AVX512F
+        && CPU::CPUFlagsCache::have_AVX512BW
+        && CPU::CPUFlagsCache::have_AVX512CD
+        && CPU::CPUFlagsCache::have_AVX512DQ
+        && CPU::CPUFlagsCache::have_AVX512VL)
     {
         result |= static_cast<UInt32>(TargetArch::x86_64_v4);
     }
 
     // Ice Lake: v4 + AVX512VBMI, AVX512VBMI2, AVX512IFMA, AVX512VNNI, AVX512VPOPCNTDQ, AVX512BITALG, GFNI, VAES, VPCLMULQDQ
     if ((result & static_cast<UInt32>(TargetArch::x86_64_v4)) == static_cast<UInt32>(TargetArch::x86_64_v4)
-        && CPU::haveAVX512VBMI()
-        && CPU::haveAVX512VBMI2()
-        && CPU::haveAVX512IFMA()
-        && CPU::haveAVX512VNNI()
-        && CPU::haveAVX512VPOPCNTDQ()
-        && CPU::haveAVX512BITALG()
-        && CPU::haveGFNI()
-        && CPU::haveVAES()
-        && CPU::haveVPCLMULQDQ())
+        && CPU::CPUFlagsCache::have_AVX512VBMI
+        && CPU::CPUFlagsCache::have_AVX512VBMI2
+        && CPU::CPUFlagsCache::have_AVX512IFMA
+        && CPU::CPUFlagsCache::have_AVX512VNNI
+        && CPU::CPUFlagsCache::have_AVX512VPOPCNTDQ
+        && CPU::CPUFlagsCache::have_AVX512BITALG
+        && CPU::CPUFlagsCache::have_GFNI
+        && CPU::CPUFlagsCache::have_VAES
+        && CPU::CPUFlagsCache::have_VPCLMULQDQ)
     {
         result |= static_cast<UInt32>(TargetArch::x86_64_icelake);
     }
 
     // Sapphire Rapids: Ice Lake + AVX512BF16, AVX512FP16, AMX-BF16, AMX-INT8, AMX-TILE, AVXVNNI
     if ((result & static_cast<UInt32>(TargetArch::x86_64_icelake)) == static_cast<UInt32>(TargetArch::x86_64_icelake)
-        && CPU::haveAVX512BF16()
-        && CPU::haveAVX512FP16()
-        && CPU::haveAVXVNNI()
-        && CPU::haveAMXBF16()
-        && CPU::haveAMXTILE()
-        && CPU::haveAMXINT8())
+        && CPU::CPUFlagsCache::have_AVX512BF16
+        && CPU::CPUFlagsCache::have_AVX512FP16
+        && CPU::CPUFlagsCache::have_AVXVNNI
+        && CPU::CPUFlagsCache::have_AMXBF16
+        && CPU::CPUFlagsCache::have_AMXTILE
+        && CPU::CPUFlagsCache::have_AMXINT8)
     {
         result |= static_cast<UInt32>(TargetArch::x86_64_sapphirerapids);
     }
 
-    // VAES: v3 + VAES. Kept separate from the levels above because the CPUs that have it do not line
-    // up with any of them: Zen 3 has VAES and no AVX-512, Intel has it only from Ice Lake onwards.
-    if ((result & static_cast<UInt32>(TargetArch::x86_64_v3)) == static_cast<UInt32>(TargetArch::x86_64_v3)
-        && CPU::haveVAES())
-    {
-        result |= static_cast<UInt32>(TargetArch::x86_64_vaes);
-    }
-
     // CPU vendor detection
-    if (CPU::haveGenuineIntel())
+    if (CPU::CPUFlagsCache::have_GenuineIntel)
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
 
     return result;
@@ -111,7 +91,6 @@ String toString(TargetArch arch)
         case TargetArch::x86_64_icelake:        return "x86-64-icelake";
         case TargetArch::x86_64_sapphirerapids: return "x86-64-sapphirerapids";
         case TargetArch::GenuineIntel:          return "GenuineIntel";
-        case TargetArch::x86_64_vaes:           return "x86-64-vaes";
     }
 
     // This should never be reached. If it is, someone added a new TargetArch

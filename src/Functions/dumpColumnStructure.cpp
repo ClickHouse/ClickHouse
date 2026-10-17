@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -12,7 +11,7 @@ namespace
 {
 
 /// Dump the structure of type and column.
-class FunctionDumpColumnStructure final : public IFunction
+class FunctionDumpColumnStructure : public IFunction
 {
 public:
     static constexpr auto name = "dumpColumnStructure";
@@ -32,17 +31,15 @@ public:
     bool useDefaultImplementationForSparseColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(Any) -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

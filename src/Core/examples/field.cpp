@@ -7,10 +7,9 @@
 #include <Common/Stopwatch.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeString.h>
-#include <Examples/clickhouse_examples.h>
 
 
-int mainEntryExampleField(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     using namespace DB;
 
