@@ -1,0 +1,42 @@
+-- accurateCast rejects an out-of-range value under every mode
+-- the same values are accepted by the ordinary CAST, which follows the setting
+9999-12-31 23:59:59
+999:59:59
+-- accurateCast keeps in-range values, including the fraction of the boundary second
+2023-11-14 22:13:20.000
+9999-12-31 23:59:59
+9999-12-31 23:59:59.9
+999:59:59.9
+-999:59:59
+-- accurateCastOrNull returns NULL for an out-of-range value under every mode and never throws
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- and keeps in-range values, including the fraction of the boundary second
+2023-11-14 22:13:20.000
+9999-12-31 23:59:59.9
+0000-01-01 00:00:00.000
+999:59:59.9
+-00:01:40
+-- the scale-dependent Int64 bound of DateTime64 is respected too
+\N
+2262-04-11 23:47:16.000000000
+-- accurateCastOrDefault follows accurateCastOrNull
+1970-01-01 00:00:00
+1970-01-01 00:00:01
+00:00:00
+-- non-constant columns
+1970-01-01 00:00:00	00:00:00
+1970-02-11 15:59:59	999:59:59
+1970-02-11 16:00:00	\N
+9999-12-31 23:59:59	\N
+\N	\N
+1969-12-31 23:59:59	-00:00:01
