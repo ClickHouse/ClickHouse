@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 
@@ -54,6 +55,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         ValueType last_value = 0;
         UInt64 count = 0;
         Float64 resets = 0;
+        /// The rounding error of `resets`, so the exact mode doesn't lose small resets when a big one leaves the window.
+        Float64 resets_error = 0;
 
         void merge(const Summary & added)
         {
@@ -67,9 +70,10 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             if constexpr (check_resets)
             {
                 if (last_value > added.first_value)
-                    resets += static_cast<Float64>(last_value);     /// reset across the bucket boundary
+                    addToResets(static_cast<Float64>(last_value));     /// reset across the bucket boundary
             }
-            resets += added.resets;
+            addToResets(added.resets);
+            resets_error += added.resets_error;
             last_timestamp = added.last_timestamp;
             last_value = added.last_value;
             count += added.count;
@@ -77,18 +81,31 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void unmerge(const Summary & leaving, const Summary * new_first)
         {
-            resets -= leaving.resets;
+            addToResets(-leaving.resets);
+            resets_error -= leaving.resets_error;
             count -= leaving.count;
             if (new_first)
             {
                 if constexpr (check_resets)
                 {
                     if (leaving.last_value > new_first->first_value)
-                        resets -= static_cast<Float64>(leaving.last_value);     /// drop the cross-boundary reset
+                        addToResets(-static_cast<Float64>(leaving.last_value));     /// drop the cross-boundary reset
                 }
                 first_timestamp = new_first->first_timestamp;
                 first_value = new_first->first_value;
             }
+        }
+
+        /// `resets += value`, with the rounding error of the addition added to `resets_error` (the TwoSum algorithm).
+        void addToResets(Float64 value)
+        {
+            const Float64 sum = resets + value;
+            if (std::isfinite(sum))
+            {
+                const Float64 value_part = sum - resets;
+                resets_error += (resets - (sum - value_part)) + (value - value_part);
+            }
+            resets = sum;
         }
     };
 
@@ -254,7 +271,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
             const Float64 first_value = static_cast<Float64>(combined.first_value);
             const Float64 last_value = static_cast<Float64>(combined.last_value);
-            Float64 value_difference = last_value - first_value + combined.resets;
+            Float64 start_value = first_value;
 
             bool has_previous_sample = false;
             if (const auto & last_removed = sliding_sum.getLastRemoved())
@@ -268,17 +285,28 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 {
                     has_previous_sample = true;
                     const Float64 previous_value = static_cast<Float64>(previous.last_value);
-                    /// Use the end samples directly, so a big or infinite value in between can't cancel out the change.
-                    if (check_resets && previous_value > first_value)
-                        value_difference = last_value + combined.resets;     /// reset between the previous sample and the window
-                    else
-                        value_difference = last_value - previous_value + combined.resets;
+                    /// A reset between the previous sample and the window: the counter starts from zero.
+                    start_value = (check_resets && previous_value > first_value) ? 0 : previous_value;
                 }
             }
 
             /// Need at least two samples to calculate the rate or delta.
             if (!has_previous_sample && combined.count < 2)
                 return std::nullopt;
+
+            /// A compensated sum of the end samples and the resets, so a big value can't cancel out a small change.
+            Float64 value_difference = 0;
+            Float64 compensation = 0;
+            for (const Float64 term : {last_value, -start_value, combined.resets, combined.resets_error})
+            {
+                const Float64 sum = value_difference + term;
+                if (std::isfinite(sum) && std::abs(value_difference) >= std::abs(term))
+                    compensation += (value_difference - sum) + term;
+                else if (std::isfinite(sum))
+                    compensation += (term - sum) + value_difference;
+                value_difference = sum;
+            }
+            value_difference += compensation;
 
             if constexpr (is_rate)
                 value_difference = value_difference * static_cast<Float64>(grid_ticks_per_second) / static_cast<Float64>(window);

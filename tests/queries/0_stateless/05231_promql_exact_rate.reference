@@ -23,6 +23,10 @@
 [2]
 [0.05]
 [10]
+--- A big reset leaving the window does not wipe out the smaller resets ---
+[4]
+[0.1]
+[4,2]
 --- The sample before the window of the first grid point: used only in the exact mode ---
 [NULL]
 [0.25]
