@@ -120,7 +120,8 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
             window_step->getInputHeaders().at(0),
             window_step->getWindowDescription(),
             window_step->getWindowFunctions(),
-            /*streams_fan_out_=*/false);
+            /*streams_fan_out_=*/false,
+            window_step->getSortSettings());
         new_step->setStepDescription(fmt::format("Partitioned {}", window_step->getStepDescription()), 200);
         distributed->plan_step = std::move(new_step);
         distributed->strategy = strategySingleton<WindowStrategy>();
