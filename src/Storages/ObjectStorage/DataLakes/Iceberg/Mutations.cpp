@@ -1,3 +1,4 @@
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -212,7 +213,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
                     auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
                     ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
-                    std::unordered_map<String, Int64> field_ids;
+                    UnorderedMapWithMemoryTracking<String, Int64> field_ids;
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
                     field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));

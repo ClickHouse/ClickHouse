@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Interpreters/ExpressionActions.h>
@@ -144,7 +145,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         auto splitter = FormatFactory::instance().getSplitter(format);
         if (splitter)
         {
-            std::vector<size_t> matching_row_groups;
+            VectorWithMemoryTracking<size_t> matching_row_groups;
             bool has_cache_entry = false;
             if (query_condition_cache)
             {

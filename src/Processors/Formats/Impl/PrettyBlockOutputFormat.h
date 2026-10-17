@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -46,7 +47,7 @@ protected:
     FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
-    using WidthsPerColumn = std::vector<Widths>;
+    using WidthsPerColumn = VectorWithMemoryTracking<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
     void writeChunk(const Chunk & chunk, PortKind port_kind);

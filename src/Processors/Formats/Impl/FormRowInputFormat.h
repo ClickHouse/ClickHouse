@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
@@ -30,7 +31,7 @@ private:
 
 protected:
     const FormatSettings format_settings;
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
 };
 
 class FormSchemaReader final : public IRowWithNamesSchemaReader

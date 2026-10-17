@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -18,7 +19,7 @@ struct RowReadExtension
 {
     /// IRowInputFormat::read output. It contains non zero for columns that actually read from the source and zero otherwise.
     /// It's used to attach defaults for partially filled rows.
-    std::vector<UInt8> read_columns;
+    VectorWithMemoryTracking<UInt8> read_columns;
 };
 
 /// How often a row loop asks whether the query was cancelled. One `read` can parse a whole insert

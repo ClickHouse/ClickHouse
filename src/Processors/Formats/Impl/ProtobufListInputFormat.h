@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
@@ -45,7 +46,7 @@ private:
     size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<ProtobufReader> reader;
-    std::vector<size_t> missing_column_indices;
+    VectorWithMemoryTracking<size_t> missing_column_indices;
     ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };

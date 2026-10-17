@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/ColumnMapping.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Core/Field.h>
@@ -57,7 +58,7 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -68,7 +69,7 @@ struct IBucketSplitter
 {
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
     virtual ~IBucketSplitter() = default;
 };
@@ -135,12 +136,12 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
-    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+    virtual std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
     /// which returned rows, the best value of the sort column among these rows, in the query's order.
     /// A bucket whose best value is beyond the final threshold holds no row of the result.
-    virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
+    virtual VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
@@ -159,7 +160,7 @@ protected:
 private:
     void resetOwnedBuffers();
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+    VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

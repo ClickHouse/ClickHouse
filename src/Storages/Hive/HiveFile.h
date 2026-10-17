@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_HIVE
@@ -175,7 +176,7 @@ using HiveFiles = std::vector<HiveFilePtr>;
 struct HiveFileWithSkipSplits
 {
     HiveFilePtr file;
-    std::unordered_set<int> skip_splits;
+    UnorderedSetWithMemoryTracking<int> skip_splits;
 };
 using HiveFilesWithSkipSplits = std::vector<HiveFileWithSkipSplits>;
 

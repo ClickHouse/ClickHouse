@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
@@ -53,7 +54,7 @@ namespace ErrorCodes
 /// Extract token info from the original AST before cloning.
 /// Traverses AST in DFS order and collects LiteralTokenInfo for each literal from the token_map.
 static void extractLiteralTokensImpl(
-    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
+    const ASTPtr & ast, const LiteralTokenMap & token_map, VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
 {
     if (auto * literal = ast->as<ASTLiteral>())
     {
@@ -105,10 +106,10 @@ static void extractLiteralTokensImpl(
     }
 }
 
-static std::vector<std::optional<LiteralTokenInfo>> extractLiteralTokens(
+static VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> extractLiteralTokens(
     const ASTPtr & ast, const LiteralTokenMap & token_map, ContextPtr context)
 {
-    std::vector<std::optional<LiteralTokenInfo>> result;
+    VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> result;
     extractLiteralTokensImpl(ast, token_map, result, context);
     return result;
 }
@@ -125,7 +126,7 @@ struct SpecialParserType
     bool is_tuple = false;
     bool is_map = false;
     /// Type and nullability
-    std::vector<std::pair<Field::Types::Which, bool>> nested_types;
+    VectorWithMemoryTracking<std::pair<Field::Types::Which, bool>> nested_types;
 
     bool useDefaultParser() const
     {
@@ -227,10 +228,10 @@ class ReplaceLiteralsVisitor
 public:
     LiteralsInfo replaced_literals;
     ContextPtr context;
-    const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec;
+    const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec;
     size_t token_info_index = 0;
 
-    ReplaceLiteralsVisitor(ContextPtr context_, const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec_)
+    ReplaceLiteralsVisitor(ContextPtr context_, const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec_)
         : context(context_), token_info_vec(token_info_vec_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
@@ -248,7 +249,7 @@ public:
     }
 
 private:
-    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const std::vector<char> & force_nullable)
+    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const VectorWithMemoryTracking<char> & force_nullable)
     {
         for (size_t i = 0; i < ast->children.size(); ++i)
             if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
@@ -274,7 +275,7 @@ private:
         /// Allow nullable arguments if function never returns NULL
         ColumnNumbers can_always_be_nullable = builder->getArgumentsThatDontImplyNullableReturnType(function.arguments->children.size());
 
-        std::vector<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
+        VectorWithMemoryTracking<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
         for (auto & idx : can_always_be_nullable)
             if (idx < force_nullable_arguments.size())
                 force_nullable_arguments[idx] = true;

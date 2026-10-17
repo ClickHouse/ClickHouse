@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 
@@ -117,7 +118,7 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+    static UnorderedMapWithMemoryTracking<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
