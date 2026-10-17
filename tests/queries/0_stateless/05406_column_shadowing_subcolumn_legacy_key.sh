@@ -25,6 +25,7 @@ clickhouse_local "
     CREATE TABLE d.t_partition_by (a Array(UInt64)) ENGINE = MergeTree PARTITION BY \`a.size0\` ORDER BY tuple();
     INSERT INTO d.t_partition_by VALUES ([0]), ([1, 2]);"
 
+# shellcheck disable=SC2016
 sed -i 's/^    `a` Array(UInt64)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 7/' \
     "${WORKING_FOLDER}/metadata/d/t_order_by.sql" "${WORKING_FOLDER}/metadata/d/t_partition_by.sql"
 
