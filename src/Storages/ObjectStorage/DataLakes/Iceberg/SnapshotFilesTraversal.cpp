@@ -42,7 +42,9 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            files.manifest_paths.insert(manifest_entry.manifest_file_path);
+            /// Manifest files are immutable and shared between snapshots, so each is read once.
+            if (!files.manifest_paths.insert(manifest_entry.manifest_file_path).second)
+                continue;
 
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id);
