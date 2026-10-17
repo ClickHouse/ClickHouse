@@ -83,6 +83,18 @@ def assert_query_log_has_single_finish_with_written_rows(
     )
 
 
+def assert_query_log_has_client_info(query_id, http_method):
+    """Assert the QueryFinish row shows the Prometheus interface and the HTTP request details."""
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT interface, http_method, http_user_agent, http_referer "
+        f"FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        f"Prometheus\t{http_method}\tquery-log-test-agent\thttp://referer.test/\n",
+    )
+
+
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
@@ -286,3 +298,40 @@ def test_query_range_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def test_query_log_has_prometheus_interface_and_http_method():
+    """
+    Query API requests (GET and POST) and remote writes should be logged with
+    interface = 'Prometheus' and with the HTTP method, User-Agent and Referer of the request.
+    """
+    headers = {"User-Agent": "query-log-test-agent", "Referer": "http://referer.test/"}
+    url = f"http://{node.ip_address}:9093/api/v1/query"
+    params = {"query": "up", "time": "1753176757.89"}
+
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    response = requests.get(
+        url, params=params, headers={**headers, "X-ClickHouse-Query-Id": query_id}
+    )
+    extract_data_from_http_api_response(response)
+    assert_query_log_has_client_info(query_id, "GET")
+
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    response = requests.post(
+        url, data=params, headers={**headers, "X-ClickHouse-Query-Id": query_id}
+    )
+    extract_data_from_http_api_response(response)
+    assert_query_log_has_client_info(query_id, "POST")
+
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "up", "job": "prometheus"}, {1753176654.832: 1})]
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        headers={**headers, "X-ClickHouse-Query-Id": query_id},
+    )
+    assert_query_log_has_client_info(query_id, "POST")
