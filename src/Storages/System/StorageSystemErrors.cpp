@@ -193,6 +193,23 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         bool remote;
     };
 
+    /// Positions of `last_error_symbols` and `last_error_lines` in getColumnsDescription().
+    constexpr size_t last_error_symbols_position = 9;
+    constexpr size_t last_error_lines_position = 10;
+
+    /// Rows the condition rejects are dropped before the expensive symbolization.
+    Block block;
+    std::optional<ActionsDAG> filter_dag;
+    if (predicate && (columns_mask[last_error_symbols_position] || columns_mask[last_error_lines_position]))
+    {
+        block = getFilterSampleBlock();
+        filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+
+        /// A set that is not built yet, or one that can change before the filter above runs, cannot drop rows here.
+        if (filter_dag && (hasLambdaOrSetMutableDuringQuery(*filter_dag) || !VirtualColumnUtils::buildSetsForDAG(*filter_dag, context)))
+            filter_dag.reset();
+    }
+
     const bool show_zero_values = context->getSettingsRef()[Setting::system_events_show_zero_values];
     std::vector<ErrorRow> rows;
     for (const auto code : ErrorCodes::getCodes())
@@ -203,6 +220,15 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         if (name.empty())
             continue;
 
+        /// Without the pre-filter, add the rows right away, so only one error pair is held at a time.
+        if (!filter_dag)
+        {
+            const auto & error = ErrorCodes::values[code].get();
+            add_row(name, code, error.local, /* remote= */ false);
+            add_row(name, code, error.remote, /* remote= */ true);
+            continue;
+        }
+
         auto error = ErrorCodes::values[code].get();
         if (error.local.count || show_zero_values)
             rows.push_back({name, code, std::move(error.local), /* remote= */ false});
@@ -210,14 +236,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
     }
 
-    /// Positions of `last_error_symbols` and `last_error_lines` in getColumnsDescription().
-    constexpr size_t last_error_symbols_position = 9;
-    constexpr size_t last_error_lines_position = 10;
-
-    /// Rows the condition rejects are dropped before the expensive symbolization.
-    if (predicate && (columns_mask[last_error_symbols_position] || columns_mask[last_error_lines_position]))
+    if (filter_dag)
     {
-        Block block = getFilterSampleBlock();
         MutableColumns columns;
         for (const auto & column : block)
             columns.push_back(column.type->createColumn());
@@ -241,11 +261,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             block.getByPosition(i).column = std::move(columns[i]);
         block.insert({std::move(idx_column), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-        /// A set that is not built yet, or one that can change before the filter above runs, cannot drop rows here.
-        auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-        if (filter_dag && !hasLambdaOrSetMutableDuringQuery(*filter_dag) && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
-            VirtualColumnUtils::filterBlockWithExpression(
-                VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
+        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
 
         const auto & kept = assert_cast<const ColumnUInt64 &>(*block.getByName("_idx").column).getData();
         std::vector<ErrorRow> kept_rows;
