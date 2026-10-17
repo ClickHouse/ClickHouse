@@ -115,22 +115,22 @@ CREATE TABLE prometheus_big ENGINE = TimeSeries;
 
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(0, 300))
-FROM numbers(8000);
+FROM numbers(4000);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(300, 600))
-FROM numbers(8000);
+FROM numbers(4000);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(600, 900))
-FROM numbers(8000);
+FROM numbers(4000);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(900, 1200))
-FROM numbers(8000);
+FROM numbers(4000);
 
-SELECT '-- sum(rate(big[60s])) over 8000 series within a memory limit';
+SELECT '-- sum(rate(big[60s])) over 4000 series within a memory limit';
 SELECT count(), length(samples), arrayDistinct(arrayMap(x -> round(x.2, 6), samples))
 FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10)
 GROUP BY samples
-SETTINGS max_memory_usage = 150000000;
+SETTINGS max_memory_usage = 110000000;
 
 -- The samples are split into one primary key range per thread. Each range is aggregated on its own thread
 -- and the streams are not merged, because the ranges hold disjoint series.

@@ -247,6 +247,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
     }
 
+    /// A query evaluated at one point holds one window per series in any grouping, so it keeps the grouping by the set of tags.
+    evaluation_settings.group_range_vectors_by_id = (evaluation_settings.start_time != evaluation_settings.end_time)
+        && StorageTimeSeriesSelector::areTagSetsStoredUnderOneID(*time_series_storage, *query_tree, getContext());
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();
 
@@ -260,7 +263,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    /// The functions over range vectors aggregate the samples `GROUP BY id` in the order of the samples table,
+    /// The functions over range vectors can aggregate the samples `GROUP BY id` in the order of the samples table,
     /// so they keep the state of one series at a time instead of all series (see getRangeVectorGroupKey()).
     /// The states of the time series aggregate functions hold the samples of the whole window, so they are big and few
     /// of them fit in a block: a smaller block limit makes the aggregation flush them more often.

@@ -64,6 +64,12 @@ public:
     /// over tables read in the order of `id`.
     static void applySettingsForSelectIDsQuery(Context & context);
 
+    /// Checks that every set of tags the selectors of `promql_tree` can match is stored under one id in the tags table,
+    /// so the samples can be grouped by `id` instead of by the set of tags. A set of tags gets a second id after
+    /// `ALTER TABLE ... MODIFY SETTING id_generator` on a table with data. The check reads the tags of the metrics
+    /// the selectors name, so it returns false when a selector has no metric name, and when the check fails.
+    static bool areTagSetsStoredUnderOneID(const StorageTimeSeries & time_series_storage, const PrometheusQueryTree & promql_tree, const ContextPtr & context);
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

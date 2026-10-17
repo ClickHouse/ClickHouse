@@ -16,9 +16,10 @@ RangeVectorGroupKey getRangeVectorGroupKey(const SQLQueryPiece & range_vector, c
     {
         case StoreMethod::RAW_DATA:
         {
-            /// SELECT timeSeriesIdToGroup(id), ... GROUP BY id
+            /// SELECT timeSeriesIdToGroup(id), ... GROUP BY id                       -- in the order of the samples table
+            /// SELECT timeSeriesIdToGroup(id), ... GROUP BY timeSeriesIdToGroup(id)  -- when a set of tags is stored under several ids
             res.group_expression = makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID));
-            res.group_by_key = make_intrusive<ASTIdentifier>(ColumnNames::ID);
+            res.group_by_key = context.group_range_vectors_by_id ? make_intrusive<ASTIdentifier>(ColumnNames::ID) : res.group_expression->clone();
             break;
         }
 

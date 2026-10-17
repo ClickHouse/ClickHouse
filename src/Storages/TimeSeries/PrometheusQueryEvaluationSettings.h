@@ -69,6 +69,10 @@ struct PrometheusQueryEvaluationSettings
 
     /// Copy label matchers across binary operators, see the setting `promql_push_down_label_matchers`.
     bool push_down_label_matchers = true;
+
+    /// Aggregate the samples of range vectors `GROUP BY id` in the order of the samples table instead of
+    /// `GROUP BY timeSeriesIdToGroup(id)`. Correct only if every set of tags is stored under one id (see getRangeVectorGroupKey()).
+    bool group_range_vectors_by_id = false;
 };
 
 }

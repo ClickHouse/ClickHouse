@@ -21,9 +21,11 @@ struct RangeVectorGroupKey
 /// Returns what to put into the SELECT list and the GROUP BY list of a query aggregating the series of a range vector
 /// (one result row per series).
 ///
-/// Raw data (see StoreMethod::RAW_DATA) is grouped by `id`: the samples table is sorted by `(id, timestamp)`, so with
-/// `optimize_aggregation_in_order` the aggregation keeps the state of one series at a time instead of all series.
-/// The group is then calculated from the key: `timeSeriesIdToGroup(id)`.
+/// Raw data (see StoreMethod::RAW_DATA) is grouped by `id` when `ConverterContext::group_range_vectors_by_id` is set:
+/// the samples table is sorted by `(id, timestamp)`, so with `optimize_aggregation_in_order` the aggregation keeps
+/// the state of one series at a time instead of all series. The group is then calculated from the key:
+/// `timeSeriesIdToGroup(id)`. Otherwise raw data is grouped by `timeSeriesIdToGroup(id)`, which merges the samples
+/// of a set of tags stored under several ids.
 ///
 /// A vector grid already has one row per series, so it is grouped by the column `group` itself.
 ///

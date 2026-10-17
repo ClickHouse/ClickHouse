@@ -56,10 +56,11 @@ namespace
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
+            /// Prometheus sums with Kahan compensation.
             {"sum",
              {
                  [](ASTPtr && v) -> ASTPtr
-                 { return makeASTFunction("sumForEach", std::move(v)); },
+                 { return makeASTFunction("sumKahanForEach", std::move(v)); },
              }},
 
             {"min",
@@ -77,7 +78,22 @@ namespace
             {"avg",
              {
                 [](ASTPtr && v) -> ASTPtr
-                { return makeASTFunction("avgForEach", std::move(v)); },
+                {
+                    /// arrayMap((s, c) -> if(c = 0, NULL, s / c), sumKahanForEach(values), countForEach(values))
+                    auto count = makeASTFunction("countForEach", v->clone());
+                    return makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("c")),
+                            makeASTFunction(
+                                "if",
+                                makeASTFunction("equals", make_intrusive<ASTIdentifier>("c"), make_intrusive<ASTLiteral>(0u)),
+                                make_intrusive<ASTLiteral>(Field{} /* NULL */),
+                                makeASTFunction("divide", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("c")))),
+                        makeASTFunction("sumKahanForEach", std::move(v)),
+                        std::move(count));
+                },
             }},
 
             {"count",
