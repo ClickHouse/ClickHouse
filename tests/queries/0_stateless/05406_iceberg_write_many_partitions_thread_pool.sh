@@ -39,3 +39,16 @@ ${CLICKHOUSE_LOCAL} --query "
     ALTER TABLE t UPDATE c1 = c1 + 1 WHERE 1;
     SELECT count(), sum(c1) FROM t;
 " -- --max_thread_pool_size=300 --thread_pool_queue_size=300
+
+# ALTER TABLE ... DELETE writes two-column position delete files, so it needs more partitions to fill the pool.
+${CLICKHOUSE_LOCAL} --query "
+    ${SETTINGS}, iceberg_insert_max_partitions = 200;
+    CREATE TABLE t (p Int32, x Int64) ENGINE = IcebergLocal('${TABLE_DIR}/delete/') PARTITION BY p;
+    INSERT INTO t SELECT number % 200, number FROM numbers(2000);
+"
+${CLICKHOUSE_LOCAL} --query "
+    ${SETTINGS};
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_DIR}/delete/');
+    ALTER TABLE t DELETE WHERE x >= 1000;
+    SELECT count(), sum(x) FROM t;
+" -- --max_thread_pool_size=300 --thread_pool_queue_size=300
