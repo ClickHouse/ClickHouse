@@ -42,6 +42,7 @@ SELECT trimLeft(explain) FROM
 (
     EXPLAIN actions = 1
     SELECT variantElement(v, 'UInt32') FROM (SELECT v FROM t_push_subcolumns_variant)
+    SETTINGS enable_parallel_replicas = 0
 )
 WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Output%';
 SELECT variantElement(v, 'UInt32'), variantElement(v, 'Array(UInt32)') FROM (SELECT id, v FROM t_push_subcolumns_variant) ORDER BY id;
