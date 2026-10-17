@@ -1,10 +1,11 @@
 """
 Tests for `select_replica_failures` (ci/jobs/stress_job.py).
 
-The stress job pairs each replica's server log with its stderr log and must not
-let a failure on one replica hide a (possibly higher-signal) failure on another:
-every pair is scanned, all distinct specific classifications are reported, and a
-generic `<Fatal>` / "Unknown error" is used only when nothing specific was found.
+The stress job hands each replica's server and stderr log families to the parser
+and must not let a failure on one replica hide a (possibly higher-signal) failure
+on another: every replica is scanned, all distinct specific classifications are
+reported, and a generic `<Fatal>` / "Unknown error" is used only when nothing
+specific was found.
 """
 
 import os
@@ -39,15 +40,18 @@ _UNKNOWN_LOG = (
 
 
 def _pair(tmp_path, replica, server_text=None, stderr_text=None):
-    # Build one (replica_name, server_log, stderr_log) pair. Missing logs are
-    # non-existent Paths, matching what the job passes when a file is absent.
+    # Build one (replica_name, server_log_files, stderr_log_files) triple. A missing
+    # log is left out of its list, matching what the job passes when a file is absent.
     server_log = tmp_path / f"clickhouse-server-{replica}.err.log"
     stderr_log = tmp_path / f"stderr-{replica}.log"
+    server_logs, stderr_logs = [], []
     if server_text is not None:
         server_log.write_text(server_text, encoding="utf-8")
+        server_logs.append(server_log)
     if stderr_text is not None:
         stderr_log.write_text(stderr_text, encoding="utf-8")
-    return (replica, server_log, stderr_log)
+        stderr_logs.append(stderr_log)
+    return (replica, server_logs, stderr_logs)
 
 
 def test_specific_failure_on_second_replica_not_hidden_by_first(tmp_path):
@@ -59,7 +63,7 @@ def test_specific_failure_on_second_replica_not_hidden_by_first(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
     names = [name for name, _, _ in results]
 
     assert any(n.startswith("AST Fuzzer oracle mismatch") for n in names), names
@@ -75,7 +79,7 @@ def test_generic_fatal_does_not_suppress_sanitizer_on_second_replica(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
     names = [name for name, _, _ in results]
 
     assert len(results) == 1
@@ -91,7 +95,7 @@ def test_same_specific_failure_across_replicas_reported_once(tmp_path):
         _pair(tmp_path, "sc1", server_text=_ORACLE_MISMATCH_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0].startswith("AST Fuzzer oracle mismatch")
@@ -105,7 +109,7 @@ def test_generic_fatal_used_when_no_specific_failure(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0] == "SomeComponent: transient generic fatal"
@@ -118,7 +122,207 @@ def test_unknown_error_when_nothing_classified(tmp_path):
         _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
     ]
 
-    results = select_replica_failures(pairs)
+    results = select_replica_failures(pairs).results
 
     assert len(results) == 1
     assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR
+
+
+_MEMORY_LIMIT_LOG = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Error> executeQuery: Code: 241. "
+    "DB::Exception: (total) memory limit exceeded: would use 10.00 GiB. (MEMORY_LIMIT_EXCEEDED)\n"
+    "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
+)
+
+
+def test_memory_limit_alone_is_the_memory_limit_tier(tmp_path):
+    failures = select_replica_failures(
+        [_pair(tmp_path, "main", server_text=_MEMORY_LIMIT_LOG)]
+    )
+
+    assert failures.memory_limit and not failures.crash_named
+    assert failures.results[0][0] == FuzzerLogParser.MEMORY_LIMIT_ERROR
+
+
+def test_memory_limit_does_not_explain_a_later_fatal(tmp_path):
+    # A recovered query over its cap, then an unrelated `<Fatal>` on the same replica: the
+    # fatal is crash evidence, so the run must not be passed as an out-of-memory one.
+    failures = select_replica_failures(
+        [_pair(tmp_path, "main", server_text=_MEMORY_LIMIT_LOG + _GENERIC_FATAL_LOG)]
+    )
+
+    assert failures.crash_named and not failures.memory_limit
+    assert "transient generic fatal" in failures.results[0][1]
+    assert not failures.reports_oom(server_died=True)
+
+
+_DEADLYSIGNAL_STDERR = (
+    "AddressSanitizer:DEADLYSIGNAL\n"
+    "=================================================================\n"
+)
+_OOM_STDERR = (
+    "==2==ERROR: AddressSanitizer: out-of-memory (malloc(4294967296))\n"
+    "SUMMARY: AddressSanitizer: out-of-memory\n"
+)
+
+
+def test_unnamed_sanitizer_report_vetoes_another_replicas_oom(tmp_path):
+    # No pattern names `AddressSanitizer:DEADLYSIGNAL`, so the main replica parses as
+    # "Unknown error" - it must still outrank the other replica's OOM report.
+    failures = select_replica_failures(
+        [
+            _pair(
+                tmp_path,
+                "main",
+                server_text=_UNKNOWN_LOG,
+                stderr_text=_DEADLYSIGNAL_STDERR,
+            ),
+            _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_OOM_STDERR),
+        ]
+    )
+
+    assert failures.crash_named and not failures.reports_oom(server_died=True)
+    assert "Unclassified failure report in: stderr-main.log" in failures.results[0][1]
+
+
+def test_oom_report_alone_still_reports_oom(tmp_path):
+    failures = select_replica_failures(
+        [
+            _pair(tmp_path, "main", server_text=_UNKNOWN_LOG, stderr_text=""),
+            _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_OOM_STDERR),
+        ]
+    )
+
+    assert not failures.crash_named and failures.reports_oom(server_died=True)
+
+
+_EXPECTED_KILL_LINE = (
+    "2026.09.04 00:44:59.000000 [ 1 ] {} <Fatal> Application: Child process was "
+    "terminated by signal 9 (KILL). If it is not done by 'forcestop' command or "
+    "manually, the possible cause is OOM Killer\n"
+)
+# A healthy query whose text names a failure, on the record's first line and on the line
+# `toOneLineQuery` starts after the SQL comment.
+_HEALTHY_QUERY_RECORD = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: (from [::1]:5000) "
+    "(comment: 00001_test.sql) -- Logical error: harmless\n"
+    "SELECT 'Logical error: harmless', 'Assertion x failed' (stage: Complete)\n"
+)
+_LOGICAL_ERROR_FATAL = (
+    "2026.09.04 00:44:58.000000 [ 1068 ] {q} <Fatal> : Logical error: 'max_rows > 0'.\n"
+)
+
+
+def _plain_server_log(tmp_path, text):
+    # The plain log is the one that holds `<Debug>` records, unlike the `.err.log`.
+    log = tmp_path / "clickhouse-server.log"
+    log.write_text(text, encoding="utf-8")
+    return log
+
+
+def test_healthy_query_record_with_the_expected_kill_is_not_a_crash(tmp_path):
+    log = _plain_server_log(tmp_path, _HEALTHY_QUERY_RECORD + _EXPECTED_KILL_LINE)
+
+    failures = select_replica_failures([("main", [log], [])])
+
+    assert not failures.crash_named and failures.expected_only, failures.results
+    assert FuzzerLogParser(server_logs=[log]).genuine_non_oom_logs() == []
+
+
+def test_logical_error_after_a_healthy_query_record_is_still_a_crash(tmp_path):
+    log = _plain_server_log(
+        tmp_path, _HEALTHY_QUERY_RECORD + _LOGICAL_ERROR_FATAL + _EXPECTED_KILL_LINE
+    )
+
+    failures = select_replica_failures([("main", [log], [])])
+
+    assert failures.crash_named
+    assert "'max_rows > 0'" in failures.results[0][1]
+    assert "harmless" not in failures.results[0][0]
+
+
+def test_raw_sanitizer_report_alone_triggers_the_stderr_scan(tmp_path):
+    from ci.jobs.stress_job import stderr_reports_sanitizer_error
+
+    raw = tmp_path / "stderr.log"
+    raw.write_text(_DEADLYSIGNAL_STDERR, encoding="utf-8")
+    oom = tmp_path / "stderr.log.1"
+    oom.write_text(_OOM_STDERR, encoding="utf-8")
+
+    assert stderr_reports_sanitizer_error([raw])
+    # Control: an OOM report alone is benign and must not reach the parser.
+    assert not stderr_reports_sanitizer_error([oom])
+
+
+def _kill_logs(tmp_path, kills):
+    logs = tmp_path / "server_log"
+    logs.mkdir()
+    (logs / "clickhouse-server.err.log").write_text(
+        "2026.09.04 00:44:58.000000 [ 1 ] {} <Fatal> Application: Child process was "
+        "terminated by signal 9 (KILL). If it is not done by 'forcestop' command or "
+        "manually, the possible cause is OOM Killer\n" * kills,
+        encoding="utf-8",
+    )
+    return logs
+
+
+def test_every_force_stop_path_is_a_harness_kill():
+    from ci.jobs.stress_job import count_harness_kills
+    from ci.praktika.result import Result
+
+    rows = [
+        Result(name="Warning: server did not stop yet", status=Result.Status.OK),
+        Result(
+            name="Warning: server did not stop, server force stopped",
+            status=Result.Status.OK,
+        ),
+        Result(
+            name="Stateful data preparation statement exceeded 900s (see gdb.log)",
+            status=Result.Status.FAIL,
+        ),
+        Result(
+            name="Warning: tables count query hung, server force stopped (see gdb.log)",
+            status=Result.Status.OK,
+        ),
+        Result(name="Check failed", status=Result.Status.FAIL),
+    ]
+
+    assert count_harness_kills(rows) == 3
+
+
+def test_preparation_timeout_kill_is_not_an_oom(tmp_path):
+    from ci.jobs.stress_job import oom_explains_failure, server_log_reports_oom
+    from ci.praktika.result import Result
+
+    timeout = Result(
+        name="Stateful data preparation statement exceeded 900s (see gdb.log)",
+        status=Result.Status.FAIL,
+    )
+    check_failed = Result(name="Check failed", status=Result.Status.FAIL)
+    logs = _kill_logs(tmp_path, kills=1)
+
+    # The one kill line is the harness's own force stop.
+    assert not server_log_reports_oom(logs, [timeout, check_failed])
+    # And even beside a real OOM, the hung statement is a finding of its own.
+    assert not oom_explains_failure(True, False, [timeout, check_failed])
+    # Control: an unannounced kill still reads as an OOM that explains a failed check.
+    assert server_log_reports_oom(logs, [check_failed])
+    assert oom_explains_failure(True, False, [check_failed])
+
+
+def test_graceful_exit_after_the_stop_warning_is_not_a_harness_kill(tmp_path):
+    from ci.jobs.stress_job import server_log_reports_oom
+    from ci.praktika.result import Result
+
+    # `stop_server` warns, then the server exits within the grace period: no kill is sent,
+    # so the one kill line later in the run is the kernel's.
+    warning = Result(name="Warning: server did not stop yet", status=Result.Status.OK)
+    logs = _kill_logs(tmp_path, kills=1)
+
+    assert server_log_reports_oom(logs, [warning])
+    # Control: the force stop that follows a warning that timed out does account for it.
+    forced = Result(
+        name="Warning: server did not stop, server force stopped",
+        status=Result.Status.OK,
+    )
+    assert not server_log_reports_oom(logs, [warning, forced])
