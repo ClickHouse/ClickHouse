@@ -141,26 +141,22 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::takeQueuedFile(size_t r
 
 ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica)
 {
-    {
-        std::lock_guard lock(mutex);
-        if (iterator_exhausted)
-            return {};
-    }
+    /// Keep task extraction, assignment, and queuing in one critical section.
+    /// Otherwise another requester can observe iterator EOF while a task is
+    /// between `iterator->next` and insertion into `unprocessed_files`, return
+    /// EOF to a worker, and permanently reduce the set of workers able to drain it.
+    std::lock_guard lock(mutex);
+    if (iterator_exhausted)
+        return {};
 
     while (true)
     {
-        ObjectInfoPtr object_info;
-
+        auto object_info = iterator->next(0);
+        if (!object_info)
         {
-            std::lock_guard lock(mutex);
-            object_info = iterator->next(0);
-
-            if (!object_info)
-            {
-                LOG_TEST(log, "Iterator is exhausted");
-                iterator_exhausted = true;
-                break;
-            }
+            LOG_TEST(log, "Iterator is exhausted");
+            iterator_exhausted = true;
+            break;
         }
 
         String file_identifier;
@@ -194,13 +190,10 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             number_of_current_replica
         );
 
-        // Queue file for its assigned replica
-        {
-            std::lock_guard lock(mutex);
-            if (unprocessed_files.emplace(file_identifier, object_info).second)
-                remaining_bytes[file_replica_idx] += getTaskWeight(object_info);
-            connection_to_files[file_replica_idx].push_back(object_info);
-        }
+        // Queue file for its assigned replica.
+        if (unprocessed_files.emplace(file_identifier, object_info).second)
+            remaining_bytes[file_replica_idx] += getTaskWeight(object_info);
+        connection_to_files[file_replica_idx].push_back(object_info);
     }
 
     return {};

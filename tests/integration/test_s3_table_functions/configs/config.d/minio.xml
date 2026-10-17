@@ -8,5 +8,24 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </nc_s3>
+        <nc_s3_no_sign>
+            <url>http://minio1:9001/root/data/</url>
+            <no_sign_request>1</no_sign_request>
+        </nc_s3_no_sign>
+        <nc_s3_env>
+            <url>http://minio1:9001/root/data/</url>
+            <use_environment_credentials>1</use_environment_credentials>
+        </nc_s3_env>
     </named_collections>
+    <storage_configuration>
+        <disks>
+            <lance_s3_disk>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </lance_s3_disk>
+        </disks>
+    </storage_configuration>
+    <allowed_disks_for_table_engines>lance_s3_disk</allowed_disks_for_table_engines>
 </clickhouse>

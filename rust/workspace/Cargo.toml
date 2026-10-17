@@ -5,6 +5,10 @@ members = [
     "prql",
     "polyglot",
     "pco",
+    "lance",
     "wasmtime",
 ]
 resolver = "2"
+
+[profile.release]
+panic = "unwind"
