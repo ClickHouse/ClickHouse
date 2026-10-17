@@ -15,7 +15,6 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -167,7 +166,7 @@ struct AggregateFunctionFlameGraphTree
             if (enough_bytes)
             {
                 frames.push_back(current->ptr);
-                allocated_self.back() -= current->allocated;
+                allocated_self.back() = common::subIgnoreOverflow(allocated_self.back(), current->allocated);
 
                 if (enough_depth)
                 {
@@ -333,12 +332,14 @@ struct AggregateFunctionFlameGraphData
         free_list = entry;
     }
 
+    /// The counters are sums modulo 2^64: `untrack` exactly reverts `track`, and the `self` size in the dump
+    /// is the difference of such sums.
     static void track(Entry * allocation)
     {
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated += allocation->size;
+            node->allocated = common::addIgnoreOverflow(node->allocated, allocation->size);
             node = node->parent;
         }
     }
@@ -348,7 +349,7 @@ struct AggregateFunctionFlameGraphData
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated -= allocation->size;
+            node->allocated = common::subIgnoreOverflow(node->allocated, allocation->size);
             node = node->parent;
         }
     }
@@ -379,7 +380,6 @@ struct AggregateFunctionFlameGraphData
         return nullptr;
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
     {
         /// In case if argument is nullptr, only track allocations.
@@ -476,7 +476,6 @@ struct AggregateFunctionFlameGraphData
         }
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const AggregateFunctionFlameGraphData & other, Arena * arena)
     {
         is_string_mode = is_string_mode || other.is_string_mode;
@@ -505,7 +504,7 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
+                add(entry.value.first, static_cast<Int64>(common::negateIgnoreOverflow(deallocation->size)), nullptr, 0, arena);
             }
         }
 

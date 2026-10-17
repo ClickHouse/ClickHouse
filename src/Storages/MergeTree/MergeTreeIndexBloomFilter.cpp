@@ -932,7 +932,7 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 
     String name = value_field.safeGet<String>();
     if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-        name.resize(name.find_last_not_of('\0') + 1);
+        trimRight(name, '\0');
 
     return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
 }

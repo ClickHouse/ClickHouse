@@ -43,7 +43,6 @@
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Server/DistributedCache/DistributedCacheServerInstance.h>
-#include <base/sanitizer_defs.h>
 #endif
 
 namespace ProfileEvents
@@ -536,16 +535,22 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 }
 
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
-        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+        parent->deltaAllocAndCheck(-static_cast<ssize_t>(stat.compressed_size), -static_cast<ssize_t>(stat.uncompressed_size));
     stat.compressed_size = 0;
     stat.uncompressed_size = 0;
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
+/// The caller checks that a negative `delta` does not take `size` below zero.
+static size_t applySizeDelta(size_t size, ssize_t delta)
+{
+    if (delta < 0)
+        return size - common::negateIgnoreOverflow(static_cast<size_t>(delta));
+    return size + static_cast<size_t>(delta);
+}
+
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
@@ -558,13 +563,13 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }
 
-    size_t new_consumption = stat.compressed_size + compressed_delta;
+    size_t new_consumption = applySizeDelta(stat.compressed_size, compressed_delta);
     if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
 
-    stat.compressed_size += compressed_delta;
-    stat.uncompressed_size += uncompressed_delta;
+    stat.compressed_size = new_consumption;
+    stat.uncompressed_size = applySizeDelta(stat.uncompressed_size, uncompressed_delta);
     if (compressed_delta > 0)
         spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
 }
