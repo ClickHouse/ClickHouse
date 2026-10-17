@@ -311,14 +311,19 @@ bool equalsMatchesSeveralValues(
     return false;
 }
 
-/// Whether `node` is a literal set with exactly one element, like the right side of `x IN ('a')`.
+/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
+/// so that `probe IN set` fixes `probe` to a single value.
 /// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
-bool isSingleElementLiteralSet(const ActionsDAG::Node & node)
+/// A `FutureSetFromTuple` may also be a shipped subquery set that kept the subquery's type,
+/// e.g. `d IN (SELECT 1.0)` for `d Decimal`. `Set::execute` converts the probe to the set key type,
+/// and this conversion may be non-injective, so require the key type to be the probe type
+/// (up to `LowCardinality` and `Nullable`), so that the conversion is an identity.
+bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
 {
-    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+    if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
         return false;
 
-    const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
     if (!column_set)
         return false;
 
@@ -327,7 +332,16 @@ bool isSingleElementLiteralSet(const ActionsDAG::Node & node)
         return false;
 
     auto set = set_from_tuple->get();
-    return set && set->isCreated() && set->getTotalRowCount() == 1;
+    if (!set || !set->isCreated() || set->getTotalRowCount() != 1)
+        return false;
+
+    const auto & set_types = set->getDataTypes();
+    if (set_types.size() != 1)
+        return false;
+
+    auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
+    auto set_type = removeLowCardinalityAndNullable(set_types.front());
+    return probe_type->equals(*set_type);
 }
 
 void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
@@ -389,7 +403,8 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
-                if (node->children.size() == 2 && !node->children[0]->column && isSingleElementLiteralSet(*node->children[1]))
+                if (node->children.size() == 2 && !node->children[0]->column
+                    && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
                     addFixedColumn(node->children[0], fixed_columns);
             }
         }

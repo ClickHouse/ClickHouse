@@ -32,3 +32,20 @@ SELECT project, ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project 
 -- { echoOff }
 
 DROP TABLE t_read_in_order_single_in;
+
+-- A shipped subquery set keeps the subquery's type: `d IN (SELECT 1.0)` converts `d` to `Float64`,
+-- which matches several `Decimal` values, so `d` is not fixed and the sort is required.
+DROP TABLE IF EXISTS t_read_in_order_single_in_decimal;
+CREATE TABLE t_read_in_order_single_in_decimal (d Decimal(38, 18), ts UInt32) ENGINE = MergeTree ORDER BY (d, ts);
+INSERT INTO t_read_in_order_single_in_decimal VALUES ('1', 20), ('1', 30), ('1.000000000000000001', 10), ('1.000000000000000001', 20);
+
+SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0,
+    distributed_plan_read_in_order = 1, distributed_plan_default_reader_bucket_count = 1, distributed_plan_default_shuffle_join_bucket_count = 1,
+    distributed_plan_max_rows_to_broadcast = 0, rewrite_in_to_join = 0;
+
+-- { echoOn }
+SELECT ts FROM t_read_in_order_single_in_decimal WHERE d IN (SELECT 1.0) ORDER BY ts LIMIT 1;
+SELECT ts FROM t_read_in_order_single_in_decimal WHERE d IN (SELECT 1.0) ORDER BY ts;
+-- { echoOff }
+
+DROP TABLE t_read_in_order_single_in_decimal;

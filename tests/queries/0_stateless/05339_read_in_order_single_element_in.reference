@@ -27,3 +27,11 @@ SELECT project, ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project 
 2	2026-01-01 00:00:29
 1	2026-01-01 00:00:28
 2	2026-01-01 00:00:26
+-- { echoOn }
+SELECT ts FROM t_read_in_order_single_in_decimal WHERE d IN (SELECT 1.0) ORDER BY ts LIMIT 1;
+10
+SELECT ts FROM t_read_in_order_single_in_decimal WHERE d IN (SELECT 1.0) ORDER BY ts;
+10
+20
+20
+30
