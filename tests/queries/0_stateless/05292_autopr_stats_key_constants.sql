@@ -1,5 +1,5 @@
 -- The runtime-dataflow-statistics key of automatic parallel replicas hashes the actions DAGs of the plan
--- without the values of their variable-size constants, but with the fixed-size ones. Checks it on the
+-- without the values of their large constants, but with the short ones. Checks it on the
 -- carriers it touches: a filter moved to PREWHERE (hashed by the read step) and a join.
 --
 -- The check, as in 04655: a query whose statistics are already cached does not collect them again
