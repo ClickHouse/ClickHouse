@@ -747,10 +747,7 @@ endif ()
 # their own groups instead of next to their translation units all over `.text`. Startup then reads a few
 # hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
 # binary is not in the page cache. Supported by lld and mold; same exclusions as above.
-# Not in sanitizer builds: the groups are placed after the whole `.text`, so a static initializer must reach
-# `.rodata` across all of the code, which does not fit into the 2 GiB range of `R_X86_64_PC32` in the
-# instrumented `unit_tests_dbms`. Startup time from a cold page cache does not matter there.
-if (NOT OS_DARWIN AND NOT OS_WASM AND NOT SANITIZE)
+if (NOT OS_DARWIN AND NOT OS_WASM)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,keep-text-section-prefix")
 endif ()
 
