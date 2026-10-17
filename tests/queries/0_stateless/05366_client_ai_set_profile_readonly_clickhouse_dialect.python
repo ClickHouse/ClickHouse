@@ -1,0 +1,227 @@
+# A `SET profile` makes the session read-only and leaves its dialect `clickhouse`. The server applies
+# a profile without reporting the settings it changed, so the client stops trusting its local value
+# of `dialect` after it. It used to conclude from that alone that the internal queries need the pin
+# to the ClickHouse dialect - which `readonly = 1` does not allow - and refused the AI chat, telling
+# the user to run `SET dialect = 'clickhouse'` in a session that already parses ClickHouse SQL. The
+# effective dialect must be asked of the server instead.
+
+import json
+import os
+import pty
+import select
+import shlex
+import signal
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# How long a client may take to end after its terminal was closed, before it is killed.
+TEARDOWN_SECONDS = 30
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone.
+client_gone = False
+
+ANSWER = "MOCK-ANSWER"
+
+# What the model is told about a `readonly = 1` session.
+PROMPT_NOTE = "The session is read-only: the `readonly` setting is 1"
+
+# What the client says when it refuses the AI chat over the dialect.
+DIALECT_REFUSAL = "The AI chat requires the ClickHouse SQL dialect"
+
+PROFILE = os.environ["CLICKHOUSE_AI_TEST_PROFILE"]
+
+requests = []
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider that counts the requests and finishes every turn at once."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        requests.append(json.loads(self.rfile.read(length)))
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": ANSWER}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def client_argv(config):
+    """The interactive client, configured to use the mock provider."""
+    argv = shlex.split(os.environ["CLICKHOUSE_CLIENT_BINARY"])
+    for option in shlex.split(os.environ["CLICKHOUSE_CLIENT_EXPECT_OPT"]):
+        if option.startswith("--config-file"):
+            continue
+        argv.append(option)
+    return argv + [f"--config-file={config}", "--history_file=/dev/null"]
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone, so a client that died shows up in the diff of the
+    failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+def wait_for_client(child_pid):
+    """Wait for the client to end after its terminal was closed, and make sure it is gone."""
+    deadline = time.time() + TEARDOWN_SECONDS
+    while time.time() < deadline:
+        try:
+            reaped, _ = os.waitpid(child_pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if reaped == child_pid:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(child_pid, signal.SIGKILL)
+        os.waitpid(child_pid, 0)
+    except (ChildProcessError, ProcessLookupError):
+        pass
+
+
+def main():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    argv = client_argv(make_config(server.server_port))
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(argv[0], argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        os.write(master, f"SET profile = '{PROFILE}'\n".encode())
+        # Both the answer and the prompt that follows it: the question must not be typed before the
+        # client is reading a line again.
+        applied = read_until(
+            master,
+            debug_log_fd,
+            lambda o: "Ok." in o and ":)" in o.split("Ok.", 1)[1],
+            TIMEOUT_SECONDS,
+        )
+        print("profile:", "applied" if "Ok." in applied else "NOT APPLIED")
+
+        os.write(master, b"? hello\n")
+        output = read_until(
+            master, debug_log_fd, lambda o: ANSWER in o or DIALECT_REFUSAL in o, TIMEOUT_SECONDS
+        )
+        report_client_if_gone(child_pid)
+        print(f"answer: {'OK' if ANSWER in output else 'FAIL'}")
+        print(f"dialect_refusal: {'FAIL' if DIALECT_REFUSAL in output else 'OK'}")
+        # The positive control: the session really is read-only, and the agent knows it.
+        print(f"prompt_note: {'OK' if requests and PROMPT_NOTE in json.dumps(requests[0]) else 'FAIL'}")
+    finally:
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        wait_for_client(child_pid)
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
