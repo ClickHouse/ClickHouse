@@ -40,6 +40,8 @@
     <query>SELECT count() FROM perf_has_const_long WHERE hasAll(a, range(32))</query>
     <query>SELECT count() FROM perf_has_const_nullable WHERE hasAny(a, arrayMap(x -> toInt32(x * 97), range(600)))</query>
     <query>SELECT count() FROM perf_has_const_nullable WHERE hasAll(arrayPushBack(arrayMap(x -> toInt32(x), range(1000)), NULL), a)</query>
+    <!-- A NULL in both arrays settles the row before its numbers. -->
+    <query>SELECT count() FROM perf_has_const_nullable WHERE hasAny(arrayPushBack(arrayMap(x -> toInt32(x * 97), range(600)), NULL), a)</query>
     <query>SELECT count() FROM perf_has_const_decimal WHERE hasAny(a, arrayMap(x -> toDecimal64(x * 97, 2), range(100)))</query>
     <query>SELECT count() FROM perf_has_const_u16 WHERE hasAny(a, arrayMap(x -> toUInt16(x * 97), range(100)))</query>
     <!-- Short constant arrays keep the search with vectors. -->

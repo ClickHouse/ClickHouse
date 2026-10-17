@@ -298,11 +298,18 @@ void lookupElements(
     static constexpr bool all = search_type == ArraySearchType::All;
     const bool const_has_null = hasNull(array.null_map, array.size);
 
+    /// As in `sliceHasImplAnyAll`, a NULL of the row settles the result before its values if the constant has a NULL for `hasAny`, or
+    /// has none for `hasAll`. Otherwise NULLs do not change the result.
+    const bool null_settles = const_has_null != all;
+    auto settled_by_null = [&](size_t begin, size_t end) ALWAYS_INLINE
+    {
+        return has_null_map && null_settles && hasNull(elements.null_map + begin, end - begin);
+    };
+
     /// Whether the element settles the result of the row: it is in the constant for `hasAny`, it is not for `hasAll`.
     auto settles = [&](size_t i, auto && is_in_const) ALWAYS_INLINE
     {
-        const bool in_const = (has_null_map && elements.null_map[i]) ? const_has_null : is_in_const(elements.data[i]);
-        return in_const != all;
+        return !(has_null_map && elements.null_map[i]) && is_in_const(elements.data[i]) != all;
     };
 
     auto search_row = [&](size_t row, size_t begin, size_t end, size_t & work, size_t search_work) ALWAYS_INLINE
@@ -313,7 +320,7 @@ void lookupElements(
             result[row] = all;
             return true;
         }
-        bool settled = false;
+        bool settled = settled_by_null(begin, end);
         if (const_is_first)
         {
             for (size_t i = begin; i < end && !settled; ++i)
@@ -328,7 +335,6 @@ void lookupElements(
             /// `hasAny(column, constant)` searches each element of the constant in the row.
             const size_t row_size = end - begin;
             const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
-            settled = const_has_null && has_null_map && hasNull(null_map, row_size);
             for (size_t j = 0; j < array.size && !settled; ++j)
             {
                 if (array.null_map && array.null_map[j])
@@ -348,7 +354,7 @@ void lookupElements(
         const ValueSet<T> set(array);
         for (size_t row = from_row; row < size; ++row)
         {
-            bool settled = false;
+            bool settled = settled_by_null(offsets[row - 1], offsets[row]);
             for (size_t i = offsets[row - 1]; i < offsets[row] && !settled; ++i)
                 settled = settles(i, [&](T value) ALWAYS_INLINE { return set.has(value); });
             result[row] = settled != all;
