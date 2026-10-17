@@ -5,15 +5,20 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <queue>
 #include <ranges>
@@ -31,6 +36,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+}
 
 namespace ErrorCodes
 {
@@ -359,7 +370,8 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     if (mutation_commands.empty())
         return {};
 
-    auto chain = buildMutationChainForRead(read_columns, metadata_snapshot, context);
+    const StorageID table_id = part_info.getDataPart()->storage.getStorageID();
+    auto chain = buildMutationChainForRead(read_columns, metadata_snapshot, table_id, context);
     auto settings = ExpressionActionsSettings(context);
 
     /// Columns the surviving on-fly chain will overwrite. Attached to every
@@ -549,6 +561,7 @@ static void addColumnsRequiredForMaterialized(
 AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRead(
     const NamesAndTypesList & read_columns,
     const StorageMetadataPtr & metadata_snapshot,
+    const StorageID & table_id,
     const ContextPtr & context) const
 {
     MutationChainForRead chain;
@@ -572,7 +585,7 @@ AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRe
     {
         old_read_columns_size = chain.read_columns.size();
         addColumnsRequiredForMaterialized(chain.read_columns, read_columns_set, dependencies, all_updated_columns);
-        chain.commands = filterMutationCommands(chain.read_columns, read_columns_set, metadata_snapshot);
+        chain.commands = filterMutationCommands(chain.read_columns, read_columns_set, metadata_snapshot, table_id, context);
     } while (old_read_columns_size != chain.read_columns.size());
 
     return chain;
@@ -617,26 +630,190 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     return interpreter.getMutationActions();
 }
 
+namespace
+{
+
+/// Collects the storage columns, physical or virtual, that the identifiers of an expression over the table may read.
+/// An ALIAS column reads what its definition reads, a flattened Nested group its columns. A lambda parameter reads nothing
+/// inside its lambda, and a name that resolves to none of these, such as an alias defined in the expression, reads nothing.
+class ColumnsReadByExpressionCollector
+{
+public:
+    ColumnsReadByExpressionCollector(const StorageInMemoryMetadata & metadata_, const StorageID & table_id_, const ContextPtr & context_)
+        : metadata(metadata_)
+        , table_id(table_id_)
+        , context(context_)
+        , prefer_name_after_table_qualifier(context_->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
+        , allow_compound_nested_members(
+              context_->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested])
+    {
+    }
+
+    void collect(const IAST & ast, NameOrderedSet & columns)
+    {
+        if (const auto * function = ast.as<ASTFunction>();
+            function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & arguments = function->arguments->children;
+            const size_t enclosing_parameters = lambda_parameters.size();
+            if (const auto * parameters = arguments[0]->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        lambda_parameters.push_back(parameter_identifier->name());
+            }
+            else if (const auto * parameter_identifier = arguments[0]->as<ASTIdentifier>())
+            {
+                lambda_parameters.push_back(parameter_identifier->name());
+            }
+
+            collect(*arguments[1], columns);
+            lambda_parameters.resize(enclosing_parameters);
+            return;
+        }
+
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+        {
+            /// Inside a lambda body a name bound by it is the parameter, or a subcolumn of it, even if a column of that name exists.
+            const auto & name_parts = identifier->name_parts;
+            if (name_parts.empty() || std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end())
+                return;
+
+            /// A name reads the columns of the one interpretation the analyzer binds, in its order: the whole name (first the name after
+            /// `table.` with `analyzer_compatibility_prefer_alias_over_subcolumn`), then after `table.`, then after `database.table.`.
+            const bool qualified_by_table = name_parts.size() > 1 && name_parts[0] == table_id.table_name;
+            if (qualified_by_table && prefer_name_after_table_qualifier && addNameAfterQualifier(name_parts, 1, columns))
+                return;
+            if (addNameAfterQualifier(name_parts, 0, columns))
+                return;
+            if (qualified_by_table && addNameAfterQualifier(name_parts, 1, columns))
+                return;
+            if (name_parts.size() > 2 && name_parts[0] == table_id.database_name && name_parts[1] == table_id.table_name)
+                addNameAfterQualifier(name_parts, 2, columns);
+            return;
+        }
+
+        for (const auto & child : ast.children)
+            collect(*child, columns);
+    }
+
+private:
+    bool addNameAfterQualifier(const std::vector<String> & name_parts, size_t qualifier_parts, NameOrderedSet & columns)
+    {
+        String name;
+        for (size_t i = qualifier_parts; i < name_parts.size(); ++i)
+        {
+            if (i > qualifier_parts)
+                name += '.';
+            name += name_parts[i];
+        }
+        if (addCandidate(name, columns))
+            return true;
+
+        /// The shortest ALIAS prefix whose type has the rest as a subcolumn, as the analyzer binds it.
+        const auto & columns_desc = metadata.getColumns();
+        String prefix_name;
+        for (size_t i = qualifier_parts; i + 1 < name_parts.size(); ++i)
+        {
+            if (i > qualifier_parts)
+                prefix_name += '.';
+            prefix_name += name_parts[i];
+
+            const auto * prefix = columns_desc.tryGet(prefix_name);
+            if (prefix && prefix->default_desc.kind == ColumnDefaultKind::Alias
+                && prefix->type->tryGetSubcolumnType(std::string_view(name).substr(prefix_name.size() + 1)))
+            {
+                addColumnOrSubcolumn(prefix_name, columns);
+                return true;
+            }
+        }
+
+        if (name_parts.size() - qualifier_parts != 1)
+            return false;
+
+        /// A flattened Nested group is the Array columns `name.<suffix>` of the table.
+        const String member_prefix = name + '.';
+        bool found_member = false;
+        for (const auto & column : columns_desc)
+        {
+            if (!column.name.starts_with(member_prefix) || !typeid_cast<const DataTypeArray *>(column.type.get()))
+                continue;
+            if (!allow_compound_nested_members && column.name.find('.', member_prefix.size()) != String::npos)
+                continue;
+            addColumnOrSubcolumn(column.name, columns);
+            found_member = true;
+        }
+        return found_member;
+    }
+
+    bool addCandidate(const String & name, NameOrderedSet & columns)
+    {
+        if (addColumnOrSubcolumn(name, columns))
+            return true;
+
+        if (metadata.virtuals.has(name))
+        {
+            columns.insert(name);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool addColumnOrSubcolumn(const String & name, NameOrderedSet & columns)
+    {
+        const auto & columns_desc = metadata.getColumns();
+        auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!column)
+            return false;
+
+        auto name_in_storage = column->getNameInStorage();
+        const auto * description = columns_desc.tryGet(name_in_storage);
+        if (!description || description->default_desc.kind != ColumnDefaultKind::Alias)
+        {
+            columns.insert(name_in_storage);
+            return true;
+        }
+
+        if (!description->default_desc.expression || !followed_aliases.emplace(name_in_storage).second)
+            return true;
+
+        const auto nondeterministic = findFirstNonDeterministicFunction(description->default_desc.expression, context);
+        if (nondeterministic.nondeterministic_function_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ALTER UPDATE/ALTER DELETE statement reads ALIAS column {} defined with non-deterministic function '{}' "
+                "and cannot be applied on fly",
+                name_in_storage, *nondeterministic.nondeterministic_function_name);
+
+        /// A definition is authored at table scope, so the enclosing lambdas do not bind its names.
+        std::vector<String> enclosing_lambda_parameters;
+        lambda_parameters.swap(enclosing_lambda_parameters);
+        collect(*description->default_desc.expression, columns);
+        lambda_parameters.swap(enclosing_lambda_parameters);
+        return true;
+    }
+
+    const StorageInMemoryMetadata & metadata;
+    const StorageID & table_id;
+    ContextPtr context;
+    bool prefer_name_after_table_qualifier;
+    bool allow_compound_nested_members;
+    /// Each definition is walked once, which bounds diamond-shaped chains of aliases.
+    NameSet followed_aliases;
+    std::vector<String> lambda_parameters;
+};
+
+}
+
 MutationCommands AlterConversions::filterMutationCommands(
     Names & read_columns,
     NameSet & read_columns_set,
-    const StorageMetadataPtr & metadata_snapshot) const
+    const StorageMetadataPtr & metadata_snapshot,
+    const StorageID & table_id,
+    const ContextPtr & context) const
 {
-    const auto & columns_desc = metadata_snapshot->getColumns();
-
-    /// The read set is keyed on storage column names, but identifiers collected from command
-    /// expressions are as written, so `t.a` has to become `t`. Names the table does not know
-    /// (virtual columns, `_row_exists`) pass through.
-    auto add_to_read_set = [&](const String & column_name)
-    {
-        auto name_in_storage = column_name;
-        if (auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            name_in_storage = column->getNameInStorage();
-
-        if (read_columns_set.emplace(name_in_storage).second)
-            read_columns.push_back(name_in_storage);
-    };
-
+    /// The read set is keyed on storage columns, so a command contributes the storage columns its identifiers read.
+    ColumnsReadByExpressionCollector collector(*metadata_snapshot, table_id, context);
     MutationCommands filtered_commands;
 
     /// We need to read all columns that are used in mutation.
@@ -644,10 +821,10 @@ MutationCommands AlterConversions::filterMutationCommands(
     /// Because of that we iterate over commands backwards.
     for (const auto & command : mutation_commands | std::views::reverse)
     {
-        IdentifierNameSet source_columns;
+        NameOrderedSet source_columns;
         if (command.type == MutationCommand::Type::DELETE)
         {
-            command.ast()->predicate->collectIdentifierNames(source_columns);
+            collector.collect(*command.ast()->predicate, source_columns);
             filtered_commands.push_back(command);
         }
         else if (command.type == MutationCommand::Type::UPDATE)
@@ -668,7 +845,7 @@ MutationCommands AlterConversions::filterMutationCommands(
                     }
                     else if (read_columns_set.contains(assignment.column_name))
                     {
-                        expr->collectIdentifierNames(source_columns);
+                        collector.collect(*expr, source_columns);
                         new_updated_columns.emplace(assignment.column_name, expr->clone());
                     }
                 }
@@ -677,14 +854,14 @@ MutationCommands AlterConversions::filterMutationCommands(
             if (has_lightweight_delete)
             {
                 auto new_command = createLightweightDeleteCommand(command);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                collector.collect(*new_command.ast()->predicate, source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
             {
                 auto new_command = createCommandWithUpdatedColumns(command, new_updated_columns);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                collector.collect(*new_command.ast()->predicate, source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
         }
@@ -696,7 +873,8 @@ MutationCommands AlterConversions::filterMutationCommands(
         }
 
         for (const auto & column : source_columns)
-            add_to_read_set(column);
+            if (read_columns_set.emplace(column).second)
+                read_columns.push_back(column);
     }
 
     std::reverse(filtered_commands.begin(), filtered_commands.end());
