@@ -38,7 +38,7 @@ public:
         if (!function_node || !function_node->isOrdinaryFunction() || !isString(removeNullable(function_node->getResultType())))
             return;
 
-        /// If a regular expression without alternatives starts with ^ or ends with an unescaped $, rewrite
+        /// If a regular expression without alternatives starts with a ^ that has to match or ends with an unescaped $, rewrite
         /// replaceRegexpAll with replaceRegexpOne.
         if (function_node->getFunctionName() == "replaceRegexpAll" || Poco::toLower(function_node->getFunctionName()) == "regexp_replace")
             handleReplaceRegexpAll(*function_node);
@@ -95,6 +95,7 @@ private:
         bool zero_width = false; /// An assertion such as `\b`: always matches the empty string and never consumes.
         bool nullable = false; /// Can match the empty string, e.g. `o*`, or is not understood well enough to tell.
         bool is_dollar = false; /// The element is a bare `$` anchor, not quantified and not quoted by `\Q...\E`.
+        bool is_caret = false; /// The element is a `^` anchor, possibly quantified - see `nullable`.
     };
 
     /// The result of tokenizing a pattern that is not understood: a single element that can match
@@ -234,6 +235,7 @@ private:
             {
                 atom.zero_width = true;
                 atom.is_dollar = c == '$';
+                atom.is_caret = c == '^';
                 ++i;
             }
             else if (c == '[')
@@ -360,6 +362,14 @@ private:
 
         return !atoms.back().nullable;
     }
+
+    /// Whether the pattern starts with a `^` that has to match, so that it can only match at offset 0.
+    static bool startsWithCaretAnchor(const std::string & regexp)
+    {
+        const auto atoms = tokenizeRegexp(regexp);
+        return !atoms.empty() && atoms.front().is_caret && !atoms.front().nullable;
+    }
+
     /// Whether a `\Q` quoted section reaches the end of the pattern. re2 treats everything after
     /// `\Q` as literal text, up to a closing `\E` or the end of the pattern, so trailing `.*$` or
     /// `$` bytes inside such a section are ordinary characters and not regexp syntax: they neither
@@ -443,14 +453,13 @@ private:
         if (regexp.empty())
             return false;
 
-        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so it is
-        /// always an anchor, and the pattern can only match at offset 0. A pattern anchored only by
+        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so unless a quantifier
+        /// lets it repeat zero times, it is an anchor and the pattern can only match at offset 0. A pattern anchored only by
         /// a trailing `$` matches once at the end - if the `$` is an anchor rather than quoted or
         /// quantified text, and unless the pattern can also match the empty string there, in which
         /// case a global replace replaces twice: `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`,
         /// while `replaceRegexpOne` gives `fZ`.
-        const bool starts_with_caret = regexp.front() == '^';
-        if (!starts_with_caret && !endsWithRequiredDollarAnchor(regexp))
+        if (!startsWithCaretAnchor(regexp) && !endsWithRequiredDollarAnchor(regexp))
             return false;
 
         /// An inline `m` flag makes `^` and `$` match at every line boundary rather than only at the
