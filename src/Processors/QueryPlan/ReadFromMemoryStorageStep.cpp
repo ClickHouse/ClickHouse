@@ -241,8 +241,10 @@ static Columns readColumnsFromBlock(const Block & src, const NamesAndTypesList &
 {
     std::unordered_set<String> parents_of_subcolumns;
     for (const auto & column : columns_to_read)
+    {
         if (column.isSubcolumn())
             parents_of_subcolumns.insert(column.getNameInStorage());
+    }
 
     std::optional<Block> decompressed;
     for (const auto & column : columns_to_read)

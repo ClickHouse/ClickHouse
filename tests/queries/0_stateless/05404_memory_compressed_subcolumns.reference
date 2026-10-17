@@ -24,3 +24,11 @@ nested
 4	['','','','']	4
 30004	['','','','']	4
 1
+null subcolumn of the nested type
+1	5	Dynamic
+2	\N	Dynamic
+3	\N	Dynamic
+1	{"a":1,"null":5}	5
+2	\N	\N
+3	{"a":2}	\N
+1

@@ -72,3 +72,20 @@ SELECT (SELECT sum(cityHash64(id, nst.b, nst.b.size0, length(nst.b))) FROM t_nes
 
 DROP TABLE t_nested_compressed;
 DROP TABLE t_nested_uncompressed;
+
+SELECT 'null subcolumn of the nested type';
+DROP TABLE IF EXISTS t_json_compressed;
+DROP TABLE IF EXISTS t_json_uncompressed;
+
+CREATE TABLE t_json_uncompressed (id UInt64, j Nullable(JSON)) ENGINE = Memory SETTINGS compress = 0;
+CREATE TABLE t_json_compressed AS t_json_uncompressed ENGINE = Memory SETTINGS compress = 1;
+INSERT INTO t_json_uncompressed VALUES (1, '{"null": 5, "a": 1}'), (2, NULL), (3, '{"a": 2}');
+INSERT INTO t_json_compressed SELECT * FROM t_json_uncompressed;
+
+SELECT id, j.null, toTypeName(j.null) FROM t_json_compressed ORDER BY id;
+SELECT id, j, j.null FROM t_json_compressed ORDER BY id;
+SELECT (SELECT arraySort(groupArray((id, toString(j.null), isNull(j)))) FROM t_json_compressed)
+    = (SELECT arraySort(groupArray((id, toString(j.null), isNull(j)))) FROM t_json_uncompressed);
+
+DROP TABLE t_json_compressed;
+DROP TABLE t_json_uncompressed;

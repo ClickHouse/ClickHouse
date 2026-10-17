@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationArray.h>
@@ -52,8 +53,9 @@ ColumnPtr tryDecompressSubcolumn(const IDataType & type, const IColumn & column,
         }
         case TypeIndex::Nullable:
         {
+            /// A `null` subcolumn of the nested type hides the null map, see `SerializationNullable::enumerateStreams`.
             const auto * parts = getCompressedParts(column, 2);
-            if (parts && subcolumn_name == "null")
+            if (parts && subcolumn_name == "null" && !assert_cast<const DataTypeNullable &>(type).getNestedType()->hasSubcolumn("null"))
                 return (*parts)[1]->decompress();
             return nullptr;
         }
@@ -67,8 +69,10 @@ ColumnPtr tryDecompressSubcolumn(const IDataType & type, const IColumn & column,
             if (!parts)
                 return nullptr;
             for (size_t i = 0; i < names.size(); ++i)
+            {
                 if (names[i] == subcolumn_name)
                     return (*parts)[i]->decompress();
+            }
             return nullptr;
         }
         case TypeIndex::Map:
