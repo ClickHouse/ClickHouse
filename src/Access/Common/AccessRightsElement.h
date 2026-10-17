@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <IO/WriteBuffer.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <tuple>
 
 
@@ -99,7 +100,7 @@ struct AccessRightsElement
     bool isEmptyDatabase() const { return database.empty() and !anyDatabase(); }
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     /// Checks if the current access type is deprecated and replaces it with the correct one.
     void replaceDeprecated();
@@ -154,7 +155,7 @@ public:
     void replaceDeprecated();
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;

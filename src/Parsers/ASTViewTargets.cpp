@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -88,13 +89,15 @@ bool ASTViewTargets::hasTableID(ViewTarget::Kind kind) const
     return false;
 }
 
-void ASTViewTargets::setCurrentDatabase(const String & current_database)
+void ASTViewTargets::setCurrentDatabase(const CurrentDatabaseInfo & current_database)
 {
     for (auto & target : targets)
     {
         auto & table_id = target.table_id;
         if (!table_id.table_name.empty() && table_id.database_name.empty())
-            table_id.database_name = current_database;
+        {
+            std::tie(table_id.database_name, table_id.table_name) = current_database.rebase(table_id.table_name);
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Common/RowPolicyDefs.h>
@@ -21,7 +22,7 @@ public:
     ASTPtr clone() const override { return make_intrusive<ASTRowPolicyName>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
 
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -45,7 +46,7 @@ public:
     ASTPtr clone() const override { return make_intrusive<ASTRowPolicyNames>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

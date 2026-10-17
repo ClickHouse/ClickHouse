@@ -9,6 +9,7 @@
 namespace DB
 {
 
+struct CurrentDatabaseInfo;
 
 /** Query specifying table name and, possibly, the database and the FORMAT section.
   */
@@ -38,6 +39,7 @@ public:
 
     // Once database or table are set they cannot be assigned with empty value
     void setDatabase(const String & name);
+    void setDatabase(const CurrentDatabaseInfo & current_database);
     void setTable(const String & name);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;

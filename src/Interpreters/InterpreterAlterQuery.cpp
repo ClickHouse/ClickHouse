@@ -1,4 +1,5 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
@@ -554,7 +555,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// of the altered table when the query is interpreted on each host.
         if (table_id)
         {
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+            AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.getDatabaseName()));
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
@@ -568,10 +569,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const CurrentDatabaseInfo & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
-            const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
+            const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : CurrentDatabaseInfo::fromOnlyDatabaseName(captured_alter.getDatabase());
             for (const auto & child : captured_alter.command_list->children)
             {
                 const auto & command = child->as<const ASTAlterCommand &>();
@@ -590,13 +591,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     bool is_mutation = false;
+    auto default_database = CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.database_name);
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
         {
             is_mutation = true;
-            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+            checkNoRowPolicyForSetOperands(child, default_database, getContext());
         }
     }
 
@@ -667,7 +669,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.getDatabaseName()));
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
@@ -1176,7 +1178,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
         auto main_table = alter.getTable();
 
         if (main_database.empty())
-            main_database = query_context->getCurrentDatabase();
+            main_database = query_context->getCurrentDatabase().getFullName();
 
         String prefix = backQuoteIfNeed(main_database) + "." + backQuoteIfNeed(main_table) + ".";
 
@@ -1198,14 +1200,14 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
 
             if (!command->from_table.empty())
             {
-                String database = command->from_database.empty() ? getContext()->getCurrentDatabase() : command->from_database;
+                String database = command->from_database.empty() ? getContext()->getCurrentDatabase().getFullName() : command->from_database;
                 elem.query_databases.insert(database);
                 elem.query_tables.insert(database + "." + command->from_table);
             }
 
             if (!command->to_table.empty())
             {
-                String database = command->to_database.empty() ? getContext()->getCurrentDatabase() : command->to_database;
+                String database = command->to_database.empty() ? getContext()->getCurrentDatabase().getFullName() : command->to_database;
                 elem.query_databases.insert(database);
                 elem.query_tables.insert(database + "." + command->to_table);
             }

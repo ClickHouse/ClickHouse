@@ -604,7 +604,7 @@ QueryLogElement logQueryStart(
     elem.query_start_time = timeInSeconds(query_start_time);
     elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().getFullName();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
         elem.formatted_query = query_ast->formatForLogging();
@@ -1064,7 +1064,7 @@ void logExceptionBeforeStart(
     elem.query_start_time_microseconds = client_info.initial_query_start_time_microseconds;
     elem.query_duration_ms = elapsed_milliseconds;
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().getFullName();
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalized_query_hash;
 
@@ -2835,7 +2835,7 @@ static BlockIO executeQueryImpl(
             /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
             /// URL *path*, which is already applied before we reach here.
             if (const String & database_setting = settings[Setting::database];
-                !database_setting.empty() && database_setting != context->getCurrentDatabase())
+                !database_setting.empty() && database_setting != context->getCurrentDatabase().getFullName())
             {
                 context->setCurrentDatabase(database_setting);
             }

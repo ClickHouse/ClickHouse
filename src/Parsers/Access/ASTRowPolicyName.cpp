@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -24,10 +25,10 @@ void ASTRowPolicyName::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 }
 
 
-void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
+void ASTRowPolicyName::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (full_name.database.empty())
-        full_name.database = current_database;
+        std::tie(full_name.database, full_name.table_name) = current_database.rebase(full_name.table_name);
 }
 
 String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
@@ -131,11 +132,13 @@ Strings ASTRowPolicyNames::toStrings() const
 }
 
 
-void ASTRowPolicyNames::replaceEmptyDatabase(const String & current_database)
+void ASTRowPolicyNames::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     for (auto & full_name : full_names)
         if (full_name.database.empty())
-            full_name.database = current_database;
+        {
+            std::tie(full_name.database, full_name.table_name) = current_database.rebase(full_name.table_name);
+        }
 }
 
 }

@@ -1,7 +1,7 @@
 #include <Parsers/Access/ASTCheckGrantQuery.h>
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -26,10 +26,5 @@ void ASTCheckGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, 
     access_rights_elements.formatElementsWithoutOptions(ostr);
 }
 
-
-void ASTCheckGrantQuery::replaceEmptyDatabase(const String & current_database)
-{
-    access_rights_elements.replaceEmptyDatabase(current_database);
-}
 
 }

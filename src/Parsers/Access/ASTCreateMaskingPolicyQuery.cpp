@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
@@ -114,9 +115,9 @@ void ASTCreateMaskingPolicyQuery::replaceCurrentUserTag(const String & current_u
         roles->replaceCurrentUserTag(current_user_name);
 }
 
-void ASTCreateMaskingPolicyQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTCreateMaskingPolicyQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (database.empty())
-        const_cast<ASTCreateMaskingPolicyQuery *>(this)->database = current_database;
+        std::tie(database, table_name) = current_database.rebase(table_name);
 }
 }

@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <IO/Operators.h>
@@ -108,7 +109,7 @@ void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
 }
 
 
-void ASTGrantQuery::replaceEmptyDatabase(const String & current_database)
+void ASTGrantQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     access_rights_elements.replaceEmptyDatabase(current_database);
 }

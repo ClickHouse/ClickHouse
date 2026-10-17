@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Common/re2.h>
 #include <unordered_set>
@@ -314,10 +315,12 @@ void AccessRightsElement::eraseNotGrantable()
     access_flags = getGrantableFlags();
 }
 
-void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
+void AccessRightsElement::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (isEmptyDatabase())
-        database = current_database;
+    {
+        std::tie(database, table) = current_database.rebase(table);
+    }
 }
 
 void AccessRightsElement::replaceDeprecated()
@@ -453,7 +456,7 @@ void AccessRightsElements::replaceDeprecated()
         element.replaceDeprecated();
 }
 
-void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
+void AccessRightsElements::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     for (auto & element : *this)
         element.replaceEmptyDatabase(current_database);

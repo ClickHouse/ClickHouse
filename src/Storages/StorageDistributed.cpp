@@ -812,7 +812,7 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
 
     /// An empty remote database means the shard's default database, which for this server is the
     /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
-    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
+    const String remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase().getFullName() : remote_database;
     StorageID remote_table_id{remote_database_name, remote_table};
     auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
     if (!remote_table_storage)

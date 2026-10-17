@@ -1,5 +1,5 @@
 #include <Parsers/ParserUseQuery.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
@@ -13,6 +13,8 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_use(Keyword::USE);
     ParserKeyword s_database(Keyword::DATABASE);
     ParserIdentifier name_p{/*allow_query_parameter*/ true};
+    /// `USE db.ns` keeps the parts separate so the interpreter sees the structure
+    ParserCompoundIdentifier path_p({.allow_query_parameter = true, .allow_json_subcolumns = false});
 
     if (!s_use.ignore(pos, expected))
         return false;
@@ -33,13 +35,13 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         // Parse DATABASE <identifier>
         s_database.ignore(pos, expected);
-        if (!name_p.parse(pos, database, expected))
+        if (!path_p.parse(pos, database, expected))
             return false;
     }
     else
     {
         // Parse identifier directly (handles "USE database" where database is a name)
-        if (!name_p.parse(pos, database, expected))
+        if (!path_p.parse(pos, database, expected))
             return false;
     }
 

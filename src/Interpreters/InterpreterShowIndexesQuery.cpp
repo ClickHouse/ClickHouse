@@ -25,8 +25,14 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table = escapeString(query.table);
-    String resolved_database = getContext()->resolveDatabase(query.database);
+    StorageID storage_id{query.database, query.table};
+    if (storage_id.database_name.empty())
+        storage_id = getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
+    else if (auto resolved = getContext()->tryResolveStorageID(storage_id, Context::ResolveOrdinary))
+        storage_id = resolved;
+
+    String table = escapeString(storage_id.table_name);
+    String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
@@ -124,10 +130,15 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    String database = query.database;
+    if (database.empty())
+        database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
@@ -141,7 +152,7 @@ void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }
