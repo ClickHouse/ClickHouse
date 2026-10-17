@@ -67,12 +67,13 @@ def clone_submodules():
         "contrib/heks",
         "contrib/sql-console",
         # Parquet: the native reader and writer need the Thrift-generated structures from Arrow's
-        # source tree and the Thrift runtime; the Arrow formats need FlatBuffers. Snappy is the
-        # default compression of Parquet files written by other tools.
+        # source tree and the Thrift runtime; the Arrow formats need FlatBuffers. Snappy (with crc32c,
+        # which it requires) is the default compression of Parquet files written by other tools.
         "contrib/arrow",
         "contrib/thrift",
         "contrib/flatbuffers",
         "contrib/snappy",
+        "contrib/crc32c",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)

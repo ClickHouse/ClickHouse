@@ -943,9 +943,9 @@ private:
             /// At most 7 + 32 bits are buffered at a time.
             UInt64 bits = 0;
             size_t num_bits = 0;
-            for (size_t i = 0; i < 8; ++i)
+            for (UInt64 value : buffered_values)
             {
-                bits |= buffered_values[i] << num_bits;
+                bits |= value << num_bits;
                 num_bits += bit_width;
                 for (; num_bits >= 8; num_bits -= 8)
                 {
