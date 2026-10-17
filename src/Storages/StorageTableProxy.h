@@ -201,6 +201,14 @@ public:
         return std::nullopt;
     }
 
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getMinMaxCountStatistics(columns, query_context);
+        return std::nullopt;
+    }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};
