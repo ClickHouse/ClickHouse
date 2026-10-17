@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -74,7 +75,9 @@ static bool hasLambdaOrSetMutableDuringQuery(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
-        if (WhichDataType(node.result_type).isFunction())
+        /// A lambda without captures can be folded into a constant, so check for `FunctionCapture` as well.
+        if (WhichDataType(node.result_type).isFunction()
+            || (node.type == ActionsDAG::ActionType::FUNCTION && typeid_cast<const FunctionCapture *>(node.function_base.get())))
             return true;
 
         if (node.type != ActionsDAG::ActionType::COLUMN)
