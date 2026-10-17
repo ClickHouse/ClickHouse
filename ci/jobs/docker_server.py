@@ -506,6 +506,12 @@ def build_and_push_image(
     else:
         init_args.append("--output=type=docker")
 
+    # Some Dockerfiles copy files from clickhouse/cctools. Pass the tag calculated
+    # by praktika, the same way it does for the CI images that depend on it.
+    cctools_tag = Info().docker_tag("clickhouse/cctools")
+    assert cctools_tag, "The tag of clickhouse/cctools is unknown"
+    init_args.append(f"--build-arg=CCTOOLS_TAG={cctools_tag}")
+
     # `docker buildx build --load` does not support multiple images currently
     # images must be built separately and merged together with `docker manifest`
     digests = []
