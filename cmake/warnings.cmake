@@ -67,6 +67,12 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # False positives: it does not understand a field that is deliberately cleared before the
     # captured local dies (e.g. via SCOPE_EXIT), see `after_fuzz_reconnect` in `FuzzLoop.cpp`.
     no_warning(lifetime-safety-dangling-field)
+    # Without AVX, passing a 32-byte vector by value changes the ABI. From clang 23 on, it is
+    # reported at every such definition, including `ALWAYS_INLINE` helpers whose calls never
+    # use that ABI, e.g. in `sliceHasImplAnyAll.h`.
+    if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+        no_warning(psabi)
+    endif ()
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
