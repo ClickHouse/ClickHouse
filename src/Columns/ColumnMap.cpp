@@ -119,11 +119,6 @@ UInt64 ColumnMap::getNumberOfDefaultRows() const
     return nested->getNumberOfDefaultRows();
 }
 
-bool ColumnMap::hasOnlyTypeDefaults() const
-{
-    return nested->hasOnlyTypeDefaults();
-}
-
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -176,6 +171,11 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn:
 void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     nested->deserializeAndInsertFromArena(in, settings);
+}
+
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
+{
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -516,10 +516,4 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
 }
 
 
-ColumnPlanes ColumnMap::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Map);
-    planes.children = {&getNestedColumn()};
-    return planes;
-}
 }

@@ -10,7 +10,6 @@
 #include <vector>
 
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 #include <Common/RegexpJIT/RegexpProgram.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -27,11 +26,6 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
-
-namespace ProfileEvents
-{
-    extern const Event CompileRegexpFunction;
-}
 
 namespace DB
 {
@@ -685,18 +679,15 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     /// The raw pointer stays valid even after `jit` is moved from, because `regexp_jit_instance` keeps the
     /// `CHJIT` alive.
     CHJIT * jit_ptr = jit.get();
-    std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        holder = std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+        return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
     }
     catch (...)
     {
         jit_ptr->deleteCompiledModule(compiled_module);
         throw;
     }
-
-    return holder;
 }
 
 }
@@ -708,12 +699,6 @@ RegexpJITMatcher getRegexpJITMatcher(
     /// Return before doing any work, so a disabled JIT neither parses patterns nor grows the seen-count
     /// map - some callers (`extractAll`, `replaceRegexp*`) invoke this unconditionally.
     if (min_count_to_compile == std::numeric_limits<size_t>::max())
-        return {};
-
-    /// Without a compiled-expression cache nothing outlives the call that compiled the matcher, so a hot
-    /// pattern pays a full LLVM compile on every call, serialised on one process-wide lock. Stay on RE2.
-    auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache();
-    if (!compiled_expression_cache)
         return {};
 
     ParseFlags flags;
@@ -736,18 +721,21 @@ RegexpJITMatcher getRegexpJITMatcher(
             return {};
     }
 
-    /// Set inside the loader, so it stays false on a cache hit, where nothing is compiled.
-    bool compiled_here = false;
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        auto [entry, _] = compiled_expression_cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
+        if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
         {
-            auto compiled = compileMatcher(*program);
-            compiled_here = true;
-            return compiled;
-        });
-        holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
+            auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
+            {
+                return compileMatcher(*program);
+            });
+            holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
+        }
+        else
+        {
+            holder = compileMatcher(*program);
+        }
     }
     catch (...)
     {
@@ -755,10 +743,6 @@ RegexpJITMatcher getRegexpJITMatcher(
         tryLogCurrentException(getLogger("CompileRegexp"), "Failed to JIT-compile a regular expression, falling back to RE2");
         return {};
     }
-
-    /// Must stay below the catch above: every throw it swallows leaves the caller on the interpreted loop.
-    if (compiled_here)
-        ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
     RegexpJITMatcher result;
     result.func = holder->func;

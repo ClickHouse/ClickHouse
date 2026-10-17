@@ -1,17 +1,13 @@
 #pragma once
 
 #include <Core/ColumnNumbers.h>
-#include <Common/SipHash.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <Functions/ComparisonOrderDomain.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <optional>
 
 #include "config.h"
 
@@ -57,17 +53,9 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
-    /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
-    /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
-
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
-
-    /// Returns indexes of arguments that must be `ColumnConst`.
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
 protected:
     friend struct ::FunctionsStressTestThread;
@@ -122,36 +110,28 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
-      * behind a NULL untouched, so a function that declines this contract is not executed on them
-      * either - they are filtered out first, and their result is masked out as NULL anyway. This
-      * means the nested value under a NULL is not observable for such a function, e.g.:
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
-      * still holds for `plus` (which accepts the contract), while a declining function such as
-      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
-
-    /** The default implementations above may execute the function over a representation that stores
-      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
-      * result back onto the logical rows, which is sound only if the result is determined by the
-      * argument values. A function answering `false` is executed over materialized rows instead.
-      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
-      */
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
@@ -166,9 +146,6 @@ private:
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
-    /// The function and every lambda passed to it are deterministic in the scope of the query.
-    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -200,19 +177,6 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    /** Contributes whatever decides the values this function produces beyond its name, its
-      * parameters and the types it was resolved for: a conversion, for instance, captures the
-      * settings that tell it how to parse. Anything that keys an expression by a hash - the query
-      * condition cache, the reuse of collected statistics - relies on this, so a function that
-      * captures a setting must override this and hash it, as the conversions, the comparisons,
-      * the `JSON*` functions, `JSONAllPaths*`, `JSONAllValues`, `has` / `indexOf` / `countEqual` and
-      * `empty` / `notEmpty` on `JSON`, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
-      * function that does not is keyed by its name and types alone, and two sessions that differ in
-      * the setting it captured share one key (the query condition cache still tells them apart by
-      * `queryConditionCacheSettingsSalt`, the statistics cache does not).
-      */
-    virtual void updateHash(SipHash &) const {}
-
     const Array & getParameters() const final;
 
     /// Do preparations and return executable.
@@ -237,31 +201,6 @@ public:
 #endif
 
     virtual bool isStateful() const { return false; }
-
-    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
-      * noticeable amount of time, performs an external request, or accounts profile events that a user can
-      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
-      * Such a function still returns the same value for the same arguments, so it is neither
-      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
-      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
-      */
-    virtual bool hasObservableSideEffects() const { return false; }
-
-    /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
-      * to a small fixed-size result, so that computing it early and carrying the result instead of the
-      * argument strictly reduces the volume of data flowing through the query plan.
-      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
-      * Used by the `pushDownVolumeReducingFunction` query plan optimization.
-      */
-    virtual bool isVolumeReducing() const { return false; }
-
-    /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
-      * Specifically: if the bounding boxes of the geometry arguments are disjoint,
-      * the function is guaranteed to return 0/false for all such rows.
-      * Default: false. Spatial intersection/containment functions override this to return true.
-      * UDFs with spatial semantics can also override this to enable Parquet row group / page pruning.
-      */
-    virtual bool isSpatialPredicate() const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -305,14 +244,6 @@ public:
       *       function injective or not is overkill).
       */
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-
-    /** Return the shared ordering used by this resolved comparison.
-      * An invalid domain means that composing this comparison transitively is not proven safe.
-      */
-    virtual ComparisonOrderDomain getComparisonOrderDomain() const
-    {
-        return {};
-    }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -371,13 +302,6 @@ public:
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
         bool force_enable_lazy_execution{};
-        /// Does the result of the function not depend on the order in which its arguments are executed,
-        /// and can the function receive any of its arguments lazily? Example: and, or.
-        /// Then `arguments_with_disabled_lazy_execution` is only a preference: if the argument listed there
-        /// is heavy while another one is cheap, the cheap one is executed on all rows instead,
-        /// and the function is free to execute its lazy arguments in any order,
-        /// see `ExpressionActions` and `ShortCircuitArgumentStatistics`.
-        bool arguments_are_commutative{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -398,10 +322,6 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    /// True if the function might throw an exception while it is executed, for these argument types.
-    /// See `IFunction::canThrow`. The default is conservative.
-    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
-
     /// True if the result depends only on argument values, not column names. formatRowNoNewline
     /// and toTypeName are counter examples. Default is conservative
     virtual bool isNameInsensitive() const { return false; }
@@ -413,13 +333,6 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
-        /// Is true if the function is monotonic over the whole subset of the input range on which it
-        /// is defined, while the rest of the range either throws an exception or wraps around (so it
-        /// is weaker than is_always_monotonic, which requires the whole range to be mapped).
-        /// It is enough to push a comparison constant through a sorting or partition key expression:
-        /// a constant outside of that subset is rejected by the guards in `applyFunctionChainToColumn`.
-        /// It is not enough to map a key range through the function, which needs `is_monotonic`.
-        bool is_always_monotonic_where_defined = false;
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -471,11 +384,9 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
-
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
-    virtual bool isVolumeReducing() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     /// Returns true for higher-order functions that accept a lambda expression as an argument
     /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
@@ -488,9 +399,6 @@ public:
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
-
-    /// See IFunctionBase::isSpatialPredicate.
-    virtual bool isSpatialPredicate() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -519,35 +427,6 @@ public:
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
-    /** The error code reported when the number of arguments does not fit the function's signature.
-      *
-      * Several functions historically reported a code more specific than
-      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
-      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
-      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
-      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
-      */
-    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
-
-    /** Declarative signature of this function, see DataTypes/FunctionSignature.h.
-      *
-      * When non-empty, the default getReturnTypeImpl uses this signature to validate argument
-      * types/constness and compute the return type, throwing ILLEGAL_TYPE_OF_ARGUMENT on mismatch.
-      *
-      * Example: "f(T : Number) -> T".
-      */
-    virtual String getSignatureString() const { return {}; }
-
-    /** Whether the declarative signature should propagate argument nullability into the result
-      * type instead of matching it literally. When true, the default getReturnTypeImpl applies the
-      * signature to the arguments with the outer Nullable removed and re-wraps the result in
-      * Nullable if any argument was Nullable (and returns Nullable(Nothing) for an only-NULL
-      * argument). This is for functions that do NOT use useDefaultImplementationForNulls (so the
-      * framework does not do it for them) but still want the declarative signature to own the
-      * non-Nullable result type — e.g. the conversion functions.
-      */
-    virtual bool signaturePropagatesNullability() const { return false; }
-
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
@@ -560,7 +439,14 @@ protected:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// This function will be called in default implementation. You can overload it or the previous one.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return getReturnTypeImpl(data_types);
+    }
 
     /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
@@ -617,14 +503,6 @@ protected:
       */
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
-    /** Controls the default `Variant` adaptor for a `Variant` argument that carries a custom type name
-      * (e.g. `Geometry`, which is a custom-named `Variant`). Defaults to
-      * `useDefaultImplementationForVariant`. A function returns false for the custom-named `Variant`
-      * types it handles itself, to keep the custom name, while every other `Variant` argument still
-      * goes through the default adaptor.
-      */
-    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
-
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -642,10 +520,6 @@ public:
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
-
-    /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
-    /// into one forwards to this.
-    virtual void updateHash(SipHash &) const {}
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
@@ -668,11 +542,6 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
-      * override this when the function handles NULLs itself but still propagates them.
-      */
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
@@ -719,7 +588,6 @@ public:
     }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
-    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -727,55 +595,14 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-    virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
-    {
-        return {};
-    }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
-    /// See `IFunctionBase::hasObservableSideEffects`.
-    virtual bool hasObservableSideEffects() const { return false; }
-    /// See `IFunctionBase::isVolumeReducing`.
-    virtual bool isVolumeReducing() const { return false; }
-    virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
-
-    /** True if the function might throw an exception while it is executed, for these argument types.
-      * Examples: `intDiv` throws on division by zero, `repeat` throws when the result is too large,
-      * `equals` throws when a string that is compared to a date cannot be parsed as a date.
-      * Errors that depend only on the argument types are irrelevant here: they are reported for
-      * every input, so they are not affected by the decisions this property is used for.
-      * Logical errors are irrelevant as well, they are bugs and not a part of the contract.
-      *
-      * It is used to decide whether the rows that are not referenced have to be removed from
-      * `ColumnReplicated` arguments before the function is executed: telling that a function
-      * cannot throw while it can, surfaces as an exception thrown for rows that the query does
-      * not use at all.
-      *
-      * It is also used to decide whether the arguments of `and`/`or` can be executed in another order
-      * (see `IFunctionBase::canThrow`), which does not accept an approximation, so a function
-      * describes this property in `canThrowIfKnown`, and `nullopt` means that it does not.
-      *
-      * For `ColumnReplicated`, the functions that do not describe it fall back to
-      * `isSuitableForShortCircuitArgumentsExecution`, which answers a different question ("is it
-      * worth to evaluate this function lazily"), and is only a rough approximation of this one:
-      * a function that is expensive but cannot throw is reported as throwing (which is safe, it
-      * just loses an optimization), while a function that is cheap and can throw is reported as
-      * not throwing (which is not safe). Override `canThrowIfKnown` whenever possible.
-      */
-    virtual std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const { return {}; }
-
-    bool canThrow(const DataTypesWithConstInfo & arguments) const
-    {
-        if (auto res = canThrowIfKnown(arguments))
-            return *res;
-        return isSuitableForShortCircuitArgumentsExecution(arguments);
-    }
 
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }
@@ -799,23 +626,14 @@ public:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
 
-    /** The error code reported when the number of arguments does not fit the function's signature.
-      *
-      * Several functions historically reported a code more specific than
-      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
-      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
-      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
-      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
-      */
-    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
-
-    /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
-    virtual String getSignatureString() const { return {}; }
-
-    /// See IFunction::signaturePropagatesNullability.
-    virtual bool signaturePropagatesNullability() const { return false; }
+        return getReturnTypeImpl(data_types);
+    }
 
     virtual bool isVariadic() const { return false; }
 

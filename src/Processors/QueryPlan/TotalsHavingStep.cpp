@@ -165,7 +165,7 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
@@ -185,12 +185,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeAggregateDescriptions(aggregates, ctx.out);
 
     if (actions_dag)
     {
-        ctx.writeColumnName(filter_column_name);
-        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
+        writeStringBinary(filter_column_name, ctx.out);
+        actions_dag->serialize(ctx.out, ctx.registry);
     }
 }
 

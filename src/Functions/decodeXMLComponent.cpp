@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <base/find_symbols.h>
 
 
@@ -246,9 +246,9 @@ Decodes XML entities in a string to their corresponding characters.
         "Usage example",
         "SELECT decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')",
         R"(
-┌─decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')─┐
-│ <tag>Hello & World</tag>                                       │
-└────────────────────────────────────────────────────────────────┘
+┌─decodeXMLCom⋯;/tag&gt;')─┐
+│ <tag>Hello & World</tag> │
+└──────────────────────────┘
         )"
     }
     };

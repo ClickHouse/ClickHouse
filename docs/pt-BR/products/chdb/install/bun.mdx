@@ -1,0 +1,137 @@
+---
+title: 'chDB for Bun'
+sidebarTitle: 'Bun'
+slug: /chdb/install/bun
+description: 'Como instalar e usar o chDB com o ambiente de execução Bun'
+keywords: ['chdb', 'bun', 'javascript', 'typescript', 'embutido', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+O chDB-bun fornece bindings experimentais de FFI (Foreign Function Interface) para o chDB, permitindo executar consultas do ClickHouse diretamente em aplicações Bun, sem dependências externas.
+
+<div id="installation">
+  ## Instalação
+</div>
+
+<div id="install-system-dependencies">
+  ### Passo 1: Instale as dependências do sistema
+</div>
+
+Primeiro, instale as dependências do sistema necessárias:
+
+<div id="install-libchdb">
+  #### Instale a libchdb
+</div>
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="install-build-tools">
+  #### Instale as ferramentas de compilação
+</div>
+
+Você precisará ter `gcc` ou `clang` instalado no sistema:
+
+<div id="install-chdb-bun">
+  ### Passo 2: Instalar o chDB-bun
+</div>
+
+```bash
+# Instalar do repositório do GitHub
+bun add github:chdb-io/chdb-bun
+
+# Ou clonar e compilar localmente
+git clone https://github.com/chdb-io/chdb-bun.git
+cd chdb-bun
+bun install
+bun run build
+```
+
+<div id="usage">
+  ## Uso
+</div>
+
+O chDB-bun oferece suporte a dois modos de consulta: consultas efêmeras para operações pontuais e sessões persistentes para preservar o estado do banco de dados.
+
+<div id="ephemeral-queries">
+  ### Consultas efêmeras
+</div>
+
+Para consultas simples e pontuais que não exigem estado persistente:
+
+```typescript
+import { query } from 'chdb-bun';
+
+// Consulta básica
+const result = query("SELECT version()", "CSV");
+console.log(result); // "23.10.1.1"
+
+// Consulta com diferentes formatos de saída
+const jsonResult = query("SELECT 1 as id, 'Hello' as message", "JSON");
+console.log(jsonResult);
+
+// Consulta com cálculos
+const mathResult = query("SELECT 2 + 2 as sum, pi() as pi_value", "Pretty");
+console.log(mathResult);
+
+// Consulta de informações do sistema
+const systemInfo = query("SELECT * FROM system.functions LIMIT 5", "CSV");
+console.log(systemInfo);
+```
+
+<div id="persistent-sessions">
+  ### Sessões persistentes
+</div>
+
+Para operações complexas que exigem manter o estado entre as consultas:
+
+```typescript
+import { Session } from 'chdb-bun';
+
+// Cria uma sessão com armazenamento persistente
+const sess = new Session('./chdb-bun-tmp');
+
+try {
+    // Cria um banco de dados e uma tabela
+    sess.query(`
+        CREATE DATABASE IF NOT EXISTS mydb;
+        CREATE TABLE IF NOT EXISTS mydb.users (
+            id UInt32,
+            name String,
+            email String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "CSV");
+
+    // Insere dados
+    sess.query(`
+        INSERT INTO mydb.users VALUES 
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    `, "CSV");
+
+    // Consulta os dados
+    const users = sess.query("SELECT * FROM mydb.users ORDER BY id", "JSON");
+    console.log("Users:", users);
+
+    // Cria e utiliza funções personalizadas
+    sess.query("CREATE FUNCTION IF NOT EXISTS hello AS () -> 'Hello chDB'", "CSV");
+    const greeting = sess.query("SELECT hello() as message", "Pretty");
+    console.log(greeting);
+
+    // Consultas de agregação
+    const stats = sess.query(`
+        SELECT 
+            COUNT(*) as total_users,
+            MAX(id) as max_id,
+            MIN(id) as min_id
+        FROM mydb.users
+    `, "JSON");
+    console.log("Statistics:", stats);
+
+} finally {
+    // Sempre limpe a sessão para liberar recursos
+    sess.cleanup(); // Isso exclui os arquivos do banco de dados
+}
+```

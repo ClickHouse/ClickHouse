@@ -1,7 +1,5 @@
 #include <DataTypes/validateGroupByKeyType.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -28,20 +26,8 @@ void validateGroupByKeyType(const DataTypePtr & key_type, bool allow_suspicious_
                 "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
     };
 
-    forEachInTypeTree(*key_type, check);
-}
-
-void validateWindowKeyType(const DataTypePtr & key_type, std::string_view clause)
-{
-    /// A window is formed by sorting, and aggregate function states are not comparable:
-    /// ColumnAggregateFunction::compareAt reports every pair equal.
-    if (hasAggregateFunctionType(key_type))
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Data type {} is not allowed in window {} keys, because it contains an aggregate function state "
-            "whose values are not comparable",
-            key_type->getName(),
-            clause);
+    check(*key_type);
+    key_type->forEachChild(check);
 }
 
 }

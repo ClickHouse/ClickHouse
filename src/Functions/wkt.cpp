@@ -34,9 +34,9 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any) -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -86,10 +86,10 @@ Converts a ClickHouse geometry object to its [Well-Known Text (WKT)](https://en.
     )";
     FunctionDocumentation::Syntax syntax = "wkt(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}}
+        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the WKT string representation of the geometry.", {"String"}};
-    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT(0 1)"}};
+    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT (0 1)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

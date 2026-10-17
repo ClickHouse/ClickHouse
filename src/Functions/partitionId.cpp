@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   * The function is slow and should not be called for large amount of rows.
@@ -32,9 +37,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any, ...) -> String";
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -58,11 +66,11 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     FunctionDocumentation::Description description = R"(
-Computes the [partition ID](/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
-<Note>
+:::note
 This function is slow and should not be called for large numbers of rows.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
     FunctionDocumentation::Arguments arguments = {

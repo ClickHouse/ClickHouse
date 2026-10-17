@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -126,7 +126,7 @@ Power BI Desktop のスタート画面で、「Get Data」をクリックしま�
 
 コネクタを選択し、ClickHouse インスタンスの認証情報を入力します。
 
-* Host (必須) - インスタンスのドメインまたはアドレスです。プレフィックスや接尾辞を付けずに入力してください。
+* Host (必須) - インスタンスのドメインまたはアドレスです。プレフィックスや接尾辞は付けずに入力してください。
 * Port (必須) - インスタンスのポートです。
 * Database - データベース名です。
 * Options - [ClickHouse ODBC GitHub Page](https://github.com/ClickHouse/clickhouse-odbc#configuration)
@@ -306,14 +306,14 @@ Power BI は、ネストしたサブクエリ、複雑な JOIN、実行時の変
   ### UInt64
 </div>
 
-UInt64 以上の符号なし整数型は、データセットに自動的には読み込まれません。Power BI でサポートされる整数型の最大が Int64 であるためです。
+UInt64 以上の符号なし整数型は、データセットに自動では読み込まれません。Power BI がサポートする整数型の最大値は Int64 であるためです。
 
 <Note>
   データを正しくインポートするには、Navigator で &quot;Load&quot; ボタンをクリックする前に、まず &quot;Transform Data&quot; をクリックしてください。
 </Note>
 
-この例では、`pageviews` テーブルに UInt64 のカラムがあり、デフォルトでは &quot;Binary&quot; として認識されます。
-&quot;Transform Data&quot; をクリックすると Power Query Editor が開き、そこでカラムの型を再割り当てできます。たとえば、
+この例では、`pageviews` テーブルには UInt64 のカラムがあり、デフォルトでは &quot;Binary&quot; と認識されます。
+&quot;Transform Data&quot; をクリックすると Power Query Editor が開き、そこでカラムの型を再設定できます。たとえば、
 Text
 に設定できます。
 

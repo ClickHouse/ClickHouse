@@ -28,7 +28,7 @@ The selected data is then [dynamically](#load-balancing-across-processing-lanes)
 <Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 parallel processing lanes"/>
 
 <br/><br/>
-The number of `n` parallel processing lanes is controlled by the [`max_threads`](/reference/settings/session-settings/max-threads#max_threads) setting, which by default matches the number of cores (threads) of a single CPU available to ClickHouse on the server. In the example above, we assume `4` cores.
+The number of `n` parallel processing lanes is controlled by the [`max_threads`](/reference/settings/session-settings#max_threads) setting, which by default matches the number of cores (threads) of a single CPU available to ClickHouse on the server. In the example above, we assume `4` cores. 
 
 On a machine with `8` cores, query processing throughput would roughly double (but memory usage would also increase accordingly), as more lanes process data in parallel:
 
@@ -192,15 +192,15 @@ Regardless of the configured `max_threads` value, ClickHouse only allocates addi
 What "enough data" means is primarily determined by two settings, which define the minimum number of rows (163,840 by default) and the minimum number of bytes (2,097,152 by default) that each processing lane should handle:
 
 For shared-nothing clusters:
-* [merge_tree_min_rows_for_concurrent_read](/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
-* [merge_tree_min_bytes_for_concurrent_read](/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
+* [merge_tree_min_rows_for_concurrent_read](/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge_tree_min_bytes_for_concurrent_read](/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
 
 For clusters with shared storage (e.g. ClickHouse Cloud):
-* [merge_tree_min_rows_for_concurrent_read_for_remote_filesystem](/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem](/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge_tree_min_rows_for_concurrent_read_for_remote_filesystem](/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem](/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
 Additionally, there's a hard lower limit for read task size, controlled by:
-* [merge_tree_min_read_task_size](/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge_tree_min_bytes_per_task_for_remote_reading](/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
+* [Merge_tree_min_read_task_size](/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge_tree_min_bytes_per_task_for_remote_reading](/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
 **Don't modify these settings**

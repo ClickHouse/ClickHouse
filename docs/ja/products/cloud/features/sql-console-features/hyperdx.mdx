@@ -1,0 +1,32 @@
+---
+sidebarTitle: 'HyperDX'
+slug: /cloud/manage/hyperdx
+title: 'HyperDX'
+description: 'ClickHouse と OpenTelemetry（OTel）を基盤に構築された、本番運用対応のオブザーバビリティ プラットフォーム ClickStack の UI である HyperDX を提供します。ログ、トレース、メトリクス、セッション を単一の高性能かつスケーラブルなソリューションに統合します。'
+doc_type: 'guide'
+keywords: ['hyperdx', 'オブザーバビリティ', 'インテグレーション', 'クラウド機能', '監視']
+---
+
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+HyperDX は [**ClickStack**](/ja/clickstack/overview) のユーザーインターフェイスです。ClickStack は、ClickHouse と OpenTelemetry (OTel) を基盤とする本番環境向けのオブザーバビリティプラットフォームであり、ログ、トレース、メトリクス、セッションデータを単一の高性能ソリューションに統合します。複雑なシステムの監視とデバッグを目的に設計されており、開発者や SRE はツールを切り替えたり、タイムスタンプや相関 ID を使って手作業でデータをつなぎ合わせたりすることなく、問題をエンドツーエンドで追跡できます。
+
+HyperDX は、オブザーバビリティデータの探索と可視化に特化して設計されたフロントエンドで、Lucene スタイルのクエリと SQL クエリの両方、インタラクティブなダッシュボード、アラート、トレースの探索などをサポートしており、そのすべてがバックエンドとしての ClickHouse 向けに最適化されています。
+
+ClickHouse Cloud の HyperDX では、より手軽に使い始められる ClickStack を利用できます。管理すべきインフラストラクチャはなく、認証を別途設定する必要もありません。
+HyperDX はワンクリックで起動してデータに接続でき、ClickHouse Cloud の認証システムに完全に統合されているため、オブザーバビリティのインサイトにシームレスかつ安全にアクセスできます。
+
+<div id="main-concepts">
+  ## デプロイメント
+</div>
+
+ClickHouse Cloud の HyperDX は現在プライベートプレビュー段階にあり、組織レベルで有効化する必要があります。有効化すると、任意のサービスを選択した際に、左側のメインナビゲーションメニューに HyperDX が表示されます。
+
+<Image img="/images/use-cases/observability/hyperdx_cloud.webp" alt="ClickHouse Cloud の HyperDX" size="lg" />
+
+ClickHouse Cloud で HyperDX を使い始めるには、専用の[スタートガイド](/ja/clickstack/deployment/managed)を参照することをおすすめします。
+
+ClickStack の詳細については、[ドキュメント全体](/ja/clickstack/overview)を参照してください。

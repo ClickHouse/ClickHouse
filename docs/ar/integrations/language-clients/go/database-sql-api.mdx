@@ -16,7 +16,9 @@ doc_type: 'مرجع'
 
 إضافةً إلى ذلك، يدعم هذا العميل استخدام HTTP كطبقة نقل، مع بقاء البيانات مرمّزة بالتنسيق الأصلي لتحقيق أفضل أداء.
 
-## الاتصال {#connecting}
+<div id="connecting">
+  ## الاتصال
+</div>
 
 يمكن إنشاء الاتصال إما عبر سلسلة DSN بالتنسيق `clickhouse://<host>:<port>?<query_option>=<value>` باستخدام الطريقة `Open`، أو عبر الطريقة `clickhouse.OpenDB`. ولا تُعدّ الطريقة الأخيرة جزءًا من مواصفة `database/sql`، لكنها تُرجع مثيلًا من `sql.DB`. وتوفّر هذه الطريقة وظائف مثل التنميط، والتي لا توجد طريقة واضحة لإتاحتها عبر مواصفة `database/sql`.
 
@@ -54,7 +56,9 @@ func ConnectDSN() error {
 
 **في جميع الأمثلة التالية، ما لم يُذكر خلاف ذلك صراحةً، نفترض أن متغير ClickHouse ‏`conn` قد أُنشئ وهو متاح.**
 
-### إعدادات الاتصال {#connection-settings}
+<div id="connection-settings">
+  ### إعدادات الاتصال
+</div>
 
 تتشارك معظم خيارات التهيئة مع واجهة برمجة تطبيقات ClickHouse. راجع [التهيئة](/ar/integrations/language-clients/go/configuration) للاطلاع على الإعدادات المشتركة. تتوفر معلمات DSN التالية الخاصة بـ SQL:
 
@@ -92,7 +96,9 @@ func ConnectSettings() error {
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
 
-### الاتصال عبر HTTP {#connecting-over-http}
+<div id="connecting-over-http">
+  ### الاتصال عبر HTTP
+</div>
 
 بشكل افتراضي، يتم إنشاء الاتصالات عبر البروتوكول الأصلي. وللمستخدمين الذين يحتاجون إلى HTTP، يمكن تمكين ذلك إما بتعديل `DSN` ليشمل بروتوكول HTTP أو بتحديد `Protocol` في خيارات الاتصال.
 
@@ -129,7 +135,9 @@ func ConnectDSNHTTP() error {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
 
-### الجلسات {#sessions}
+<div id="sessions">
+  ### الجلسات
+</div>
 
 <Info>
   **HTTP فقط**
@@ -203,7 +211,9 @@ if err := rows.Err(); err != nil {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
 
-## التنفيذ {#execution}
+<div id="execution">
+  ## التنفيذ
+</div>
 
 بمجرد الحصول على اتصال، يمكنك تنفيذ عبارات `sql` عبر الطريقة Exec.
 
@@ -225,7 +235,9 @@ _, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
 
 لا تدعم هذه الطريقة تمرير كائن سياق إليها، وتُنفَّذ افتراضيًا باستخدام سياق الخلفية. يمكنك استخدام `ExecContext` إذا احتجت إلى ذلك — راجع [استخدام سياق](#using-context).
 
-## الإدراج على دفعات {#batch-insert}
+<div id="batch-insert">
+  ## الإدراج على دفعات
+</div>
 
 يمكن تحقيق آلية الدفعات بإنشاء `sql.Tx` عبر الطريقة `Being`. ومن خلاله، يمكن الحصول على دفعة باستخدام الطريقة `Prepare` مع تعليمة `INSERT`. ويُرجع ذلك كائن `sql.Stmt` يمكن إلحاق الصفوف به باستخدام الطريقة `Exec`. وستتراكم الدفعة في الذاكرة إلى أن تُنفَّذ `Commit` على `sql.Tx` الأصلي.
 
@@ -259,7 +271,9 @@ return scope.Commit()
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
 
-## الاستعلام عن الصفوف {#querying-rows}
+<div id="querying-rows">
+  ## الاستعلام عن الصفوف
+</div>
 
 يمكن إجراء استعلام عن صف واحد باستخدام الدالة `QueryRow`. ويُرجع ذلك قيمة من النوع *sql.Row، يمكن بعدها استدعاء `Scan` عليها مع مؤشرات إلى متغيرات تُنسخ إليها قيم الأعمدة. ويتيح المتغير `QueryRowContext` تمرير كائن سياق غير `background` - راجع [استخدام سياق](#using-context).
 
@@ -311,7 +325,9 @@ if err := rows.Err(); err != nil {
 
 [مثال متكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
 
-## الإدراج غير المتزامن {#async-insert}
+<div id="async-insert">
+  ## الإدراج غير المتزامن
+</div>
 
 يمكن تنفيذ عمليات الإدراج غير المتزامنة من خلال تنفيذ عملية إدراج باستخدام الأسلوب `ExecContext`. ويجب تمرير سياق إليه مع تمكين الوضع غير المتزامن، كما هو موضح أدناه. يتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو الاستجابة بمجرد استلام البيانات. ويتحكم هذا فعليًا في المعلمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert).
 
@@ -342,29 +358,9 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
-## معلمات الاستعلام من جانب الخادم {#server-side-query-parameters}
-
-تدعم واجهة برمجة التطبيقات القياسية معلمات الاستعلام من جانب خادم ClickHouse، وذلك باستخدام عناصر نائبة محددة النوع بالصيغة `{name:Type}` وقيم `clickhouse.Named`:
-
-```go
-row := conn.QueryRowContext(ctx,
-    "SELECT {user_id:UInt64}, {message:String}",
-    clickhouse.Named("user_id", uint64(12345)),
-    clickhouse.Named("message", `line 1\nline 2`),
-)
-```
-
-تُعامَل قيمة `string`/`*string` أو `[]byte`/`*[]byte` المُمرَّرة عبر `clickhouse.Named` على أنها قيمة حرفية، ويتولى المشغّل إفلاتها، لذا تبقى مطابقةً للأصل بايتًا ببايت بعد كتابتها وقراءتها. استخدم محرف سطر جديد أو محرف جدولة فعليًا في قيمة Go إذا كان هذا ما تريد إرساله في تنسيق النقل:
-
-```go
-clickhouse.Named("message", "line 1\nline 2") // literal newline — round-trips
-```
-
-إذا كان نص المعلمات مُسلسَلًا مسبقًا بصيغة `Escaped` الخاصة بـ ClickHouse، فاستخدم `WithParameters` بدلًا من ذلك؛ وراجع [معلمات الاستعلام من جهة الخادم](/ar/integrations/language-clients/go/clickhouse-api#server-side-query-parameters) للاطلاع على شرح مفصّل للأنواع والإفلات، والفرق بين `{name:Type}` والربط من جهة العميل.
-
-[مثال كامل لواجهة برمجة التطبيقات القياسية](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_parameters.go)
-
-## ربط المعلمات {#parameter-binding}
+<div id="parameter-binding">
+  ## ربط المعلمات
+</div>
 
 تدعم واجهة برمجة تطبيقات القياسية إمكانات ربط المعلمات نفسها المتوفرة في [واجهة برمجة تطبيقات ClickHouse](/ar/integrations/language-clients/go/clickhouse-api#parameter-binding)، ما يتيح تمرير المعلمات إلى الطرق `Exec` و`Query` و`QueryRow` (وصيغها المكافئة التي تستخدم [سياق](#using-context)). كما تدعم المعلمات الموضعية والمسمّاة والمرقّمة.
 
@@ -394,7 +390,9 @@ fmt.Printf("Named bind count: %d\n", count)
 
 يرجى ملاحظة أن [الحالات الخاصة](/ar/integrations/language-clients/go/clickhouse-api#special-cases) لا تزال سارية.
 
-## استخدام السياق {#using-context}
+<div id="using-context">
+  ## استخدام السياق
+</div>
 
 تدعم واجهة برمجة تطبيقات القياسية الإمكانية نفسها لتمرير المهل الزمنية وإشارات الإلغاء وغيرها من القيم المرتبطة بنطاق الطلب عبر السياق، كما هو الحال في [واجهة برمجة تطبيقات ClickHouse](/ar/integrations/language-clients/go/clickhouse-api#using-context). وعلى عكس واجهة برمجة تطبيقات ClickHouse، يتحقق ذلك باستخدام صيغ `Context` من الطرق؛ أي إن الطرق مثل `Exec`، التي تستخدم سياق الخلفية افتراضيًا، لها صيغة مقابلة هي `ExecContext` يمكن تمرير سياق إليها بوصفه المعامل الأول. ويتيح ذلك تمرير السياق في أي مرحلة من مراحل تدفق التطبيق. فعلى سبيل المثال، يمكنك تمرير سياق عند إنشاء اتصال عبر `ConnContext` أو عند طلب صف استعلام عبر `QueryRowContext`. وتظهر أدناه أمثلة على جميع الطرق المتاحة.
 
@@ -477,7 +475,9 @@ if err := rows.Err(); err != nil {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
 
-## المسح الديناميكي {#dynamic-scanning}
+<div id="dynamic-scanning">
+  ## المسح الديناميكي
+</div>
 
 على غرار [واجهة برمجة تطبيقات ClickHouse](/ar/integrations/language-clients/go/clickhouse-api#dynamic-scanning)، تتوفر معلومات عن نوع العمود، مما يتيح لك إنشاء مثيلات وقت التشغيل لمتغيرات ذات أنواع صحيحة وتمريرها إلى `Scan`. يتيح ذلك قراءة الأعمدة عندما لا يكون نوعها معروفًا.
 
@@ -522,7 +522,9 @@ if err := rows.Err(); err != nil {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
 
-## الجداول الخارجية {#external-tables}
+<div id="external-tables">
+  ## الجداول الخارجية
+</div>
 
 تتيح [الجداول الخارجية](/ar/reference/engines/table-engines/special/external-data) للعميل إرسال البيانات إلى ClickHouse مع استعلام `SELECT`. وتوضع هذه البيانات في جدول مؤقت، ويمكن استخدامها داخل الاستعلام نفسه أثناء التنفيذ.
 
@@ -593,7 +595,9 @@ fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
 
-## OpenTelemetry {#open-telemetry}
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
 
 يدعم ClickHouse [تمرير سياق التتبّع](/ar/guides/oss/deployment-and-scaling/monitoring/opentelemetry) عبر بروتوكولي النقل TCP وHTTP. استخدم `clickhouse.WithSpan` لإرفاق span باستعلام عبر السياق.
 
@@ -623,7 +627,9 @@ fmt.Printf("count: %d\n", count)
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
 
-## الضغط {#compression}
+<div id="compression">
+  ## الضغط
+</div>
 
 تدعم واجهة برمجة تطبيقات القياسية خوارزميات الضغط نفسها التي تدعمها [واجهة برمجة تطبيقات ClickHouse](/ar/integrations/language-clients/go/configuration#compression)، أي الضغط باستخدام `lz4` و`zstd` على مستوى الكتلة. بالإضافة إلى ذلك، يُدعَم الضغط باستخدام gzip وdeflate وbr لاتصالات HTTP. إذا كان أيٌّ من هذه الخيارات مفعّلًا، فسيُطبَّق الضغط على الكتل أثناء الإدراج وعلى استجابات الاستعلامات. أما الطلبات الأخرى، مثل رسائل ping أو طلبات الاستعلام، فستظل غير مضغوطة. وهذا متسق مع خياري `lz4` و`zstd`.
 

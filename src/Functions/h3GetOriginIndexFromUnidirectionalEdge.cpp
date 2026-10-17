@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -38,15 +39,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64) -> UInt64";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -104,16 +108,16 @@ Returns the origin hexagon index from the unidirectional edge [H3](#h3-index).
         {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the origin hexagon index from the unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `0`.",
+        "Returns the origin hexagon index from the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {
         {
             "Get origin index from a unidirectional edge",
-            "SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin",
+            "SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin",
             R"(
 ┌─────────────origin─┐
-│ 599686042433355775 │
+│ 599686042433355773 │
 └────────────────────┘
             )"
         }

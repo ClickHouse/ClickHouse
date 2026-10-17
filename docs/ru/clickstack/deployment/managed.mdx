@@ -26,7 +26,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
 * Автоматическое масштабирование вычислительных ресурсов независимо от хранилища
 * Недорогое и практически неограниченное хранение на базе объектного хранилища
-* Возможность [независимо изолировать рабочие нагрузки чтения и записи](/ru/clickstack/managing/isolating-read-write) с помощью хранилищ.
+* Возможность независимо изолировать рабочие нагрузки чтения и записи с помощью хранилищ.
 * Интегрированную аутентификацию
 * Автоматизированные резервные копии
 * Функции безопасности и соответствия требованиям
@@ -55,23 +55,31 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step title="Создайте новый сервис" id="create-a-service">
+      <Step>
+        ### Создайте новый сервис
+
         На главной странице ClickHouse Cloud выберите `New service`, чтобы создать новый сервис.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Сервис" border />
       </Step>
 
-      <Step title="Укажите провайдера, регион и ресурс" id="specify-your-region-and-resources">
+      <Step>
+        ### Укажите провайдера, регион и ресурс
+
         <ProviderSelection />
       </Step>
 
-      <Step title="Настройте ингестию" id="setup-ingestion-create-new">
+      <Step>
+        ### Настройте ингестию
+
         После подготовки сервиса убедитесь, что он выбран, и выберите &quot;ClickStack&quot; в левом меню.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
         <NavigateClickStackUI />
 
         <br />
@@ -83,7 +91,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step title="Выберите сервис" id="select-service">
+      <Step>
+        ### Выберите сервис
+
         На главной странице ClickHouse Cloud выберите сервис, для которого нужно включить Управляемый ClickStack.
 
         <Warning>
@@ -97,7 +107,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="Выберите сервис" size="lg" />
       </Step>
 
-      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-the-clickstack-ui-existing">
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
         Выберите &#39;ClickStack&#39; в левом навигационном меню. Вы будете перенаправлены в интерфейс ClickStack и автоматически авторизованы в соответствии с вашими правами доступа ClickHouse Cloud.
 
         Если в вашем сервисе уже есть таблицы OpenTelemetry, они будут обнаружены автоматически, и для них будут созданы соответствующие источники данных.
@@ -115,7 +127,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         Если этот шаг выполнен успешно, то на этом всё — всё готово 🎉, в противном случае переходите к настройке ингестии.
       </Step>
 
-      <Step title="Настройте ингестию" id="setup-ingestion-existing-service">
+      <Step>
+        ### Настройка ингестии
+
         Если автоматическое обнаружение завершится неудачей или у вас нет существующих таблиц, система предложит вам настроить ингестию.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Настройка ингестии в интерфейсе ClickStack" size="lg" />
@@ -137,9 +151,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             Если у вас ещё нет запущенного коллектора, запустите его, выполнив шаги ниже. Если у вас уже есть коллекторы, ниже также приведён пример конфигурации.
 
-### Запуск коллектора
+            ### Запуск коллектора
 
-            Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и оптимизирован специально для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов&quot;](#configure-existing-collectors-existing)
+            Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и оптимизирован специально для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов&quot;](#configure-existing-collectors)
 
             Чтобы быстро начать, скопируйте и выполните показанную Docker-команду.
 
@@ -155,7 +169,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             Выполнение этой единственной команды запускает коллектор ClickStack с конечными точками OTLP, доступными на портах 4317 (gRPC) и 4318 (HTTP). Если у вас уже настроены инструментация OpenTelemetry и агенты, вы можете сразу начать отправлять данные телеметрии на эти конечные точки.
 
-### Настройка существующих коллекторов
+            ### Настройка существующих коллекторов
 
             Вы также можете настроить собственные OpenTelemetry Collectors или использовать свой дистрибутив коллектора.
 
@@ -173,7 +187,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             Подробнее о настройке OpenTelemetry Collectors см. в разделе [&quot;Ингестия с OpenTelemetry&quot;](/ru/clickstack/ingesting-data/opentelemetry)
 
-### Начало ингестии (необязательно)
+            ### Начало ингестии (необязательно)
 
             Если у вас уже есть приложения или инфраструктура, которые нужно инструментировать с помощью OpenTelemetry, перейдите к соответствующим руководствам по ссылкам из раздела &quot;Подключить приложение&quot;.
 
@@ -197,7 +211,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             Ниже предполагается, что у вас уже запущен экземпляр Vector, предварительно настроенный с конвейерами ингестии и доставляющий данные.
 
-### Создайте базу данных и таблицу
+            ### Создайте базу данных и таблицу
 
             Для работы Vector перед ингестией данных необходимо заранее определить таблицу и схему.
 
@@ -246,7 +260,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-existing-service">
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
         После завершения настройки ингестии и начала отправки данных выберите &quot;Next&quot;.
 
         <Tabs>
@@ -289,7 +305,9 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
   ## Дополнительные задачи
 </div>
 
-### Предоставление доступа к Управляемому ClickStack {#configure-access}
+<div id="configure-access">
+  ### Предоставление доступа к Управляемому ClickStack
+</div>
 
 1. Перейдите к своему сервису в консоли ClickHouse Cloud
 2. Откройте **Settings** → **SQL Console Access**
@@ -303,7 +321,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 <Warning>
   **Для оповещений требуется доступ администратора**
 
-  Чтобы включить оповещения, как минимум один пользователь с разрешениями **Service Admin** (сопоставленными с **Full Access** в раскрывающемся списке SQL Console Access) должен хотя бы один раз войти в HyperDX. Это создаст в базе данных выделенного пользователя, который будет выполнять запросы оповещений.
+  Чтобы включить оповещения, как минимум один пользователь с разрешениями **Service Admin** (сопоставленными с **Full Access** в раскрывающемся списке **SQL Console Access**) должен хотя бы один раз войти в HyperDX. Это создаст в базе данных выделенного пользователя, который будет выполнять запросы оповещений.
 </Warning>
 
 <div id="clickstack-read-only-compute">
@@ -337,10 +355,6 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
 После запуска интерфейс ClickStack автоматически привяжется к этому сервису только для чтения.
 
-Обратите внимание, что панели мониторинга, сохранённые поиски, оповещения и источники привязаны к тому сервису, из которого был запущен ClickStack, поэтому всё, что сохранено на другом сервисе в хранилище, здесь недоступно и его придётся создать заново. Источники, использующие стандартную схему OpenTelemetry, определяются автоматически, поэтому поиск по таким данным работает сразу; пользовательские или настроенные вручную источники автоматически не определяются, их нужно настроить повторно.
-
-Полную топологию — включая то, куда направлять ингестию, на каком сервисе выполнять DDL и как ведут себя оповещения — см. в разделе [«Изоляция рабочих нагрузок чтения и записи»](/ru/clickstack/managing/isolating-read-write).
-
 <div id="adding-data-sources">
   ### Добавление дополнительных источников данных
 </div>
@@ -349,7 +363,9 @@ ClickStack изначально поддерживает OpenTelemetry, но н�
 
 Ниже описано, как добавлять дополнительные источники данных помимо тех, которые настраиваются автоматически.
 
-#### Использование схем OpenTelemetry {#using-otel-schemas}
+<div id="using-otel-schemas">
+  #### Использование схем OpenTelemetry
+</div>
 
 Если вы используете OTel collector для создания базы данных и таблиц в ClickHouse, оставьте все значения по умолчанию в форме создания источника и укажите в поле `Table` значение `otel_logs`, чтобы создать источник логов. Все остальные настройки должны определиться автоматически, после чего вы сможете нажать `Save New Source`.
 

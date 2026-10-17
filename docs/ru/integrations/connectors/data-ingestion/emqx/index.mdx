@@ -81,12 +81,12 @@ PRIMARY KEY (client_id, timestamp)
 Создать выделенный MQTT-брокер в EMQX Cloud можно всего в несколько кликов.
 
 <div id="get-an-account">
-  ### Создайте аккаунт
+  ### Создайте учетную запись
 </div>
 
-EMQX Cloud предоставляет 14-дневный бесплатный пробный период как для стандартного, так и для профессионального развертывания для каждого аккаунта.
+EMQX Cloud предоставляет 14-дневный бесплатный пробный период как для стандартного, так и для профессионального развертывания для каждой учетной записи.
 
-Если вы впервые пользуетесь EMQX Cloud, перейдите на страницу [регистрации в EMQX Cloud](https://accounts.emqx.com/signup?continue=https%3A%2F%2Fwww.emqx.com%2Fen%2Fcloud) и нажмите Start Free, чтобы создать аккаунт.
+Перейдите на страницу [регистрации в EMQX Cloud](https://accounts.emqx.com/signup?continue=https%3A%2F%2Fwww.emqx.com%2Fen%2Fcloud) и нажмите Start Free, чтобы зарегистрировать учетную запись, если вы впервые пользуетесь EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_sign_up.webp" size="lg" border alt="Страница регистрации EMQX Cloud с формой регистрации" />
 
@@ -126,9 +126,9 @@ EMQX Cloud по умолчанию не разрешает анонимные п
 
 Прежде чем приступать к настройке интеграции ClickHouse, сначала нужно включить NAT-шлюз. По умолчанию MQTT-брокер развёрнут в частной VPC и не может отправлять данные в сторонние системы через общедоступную сеть.
 
-Вернитесь на страницу Overview и прокрутите её вниз до самого конца — там вы увидите виджет NAT-шлюза. Нажмите кнопку Subscribe и следуйте инструкциям. Обратите внимание: NAT-шлюз — это платная дополнительная услуга, но для неё также доступен 14-дневный бесплатный пробный период.
+Вернитесь на страницу Overview и прокрутите её вниз до самого конца — там вы увидите виджет NAT-шлюза. Нажмите кнопку Subscribe и следуйте инструкциям. Обратите внимание: NAT Gateway — это платная дополнительная услуга, но для неё также доступен 14-дневный бесплатный пробный период.
 
-<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="Панель настройки NAT-шлюза в EMQX Cloud" />
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="Панель настройки NAT Gateway в EMQX Cloud" />
 
 После создания шлюза его публичный IP-адрес появится в виджете. Обратите внимание: если при настройке ClickHouse Cloud вы выберете &quot;Connect from a specific location&quot;, этот IP-адрес нужно будет добавить в белый список.
 
@@ -136,7 +136,7 @@ EMQX Cloud по умолчанию не разрешает анонимные п
   ## Интеграция EMQX Cloud с ClickHouse Cloud
 </div>
 
-[Data Integrations в EMQX Cloud](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) используются для настройки правил обработки потоков сообщений EMQX, событий устройств и реакций на них. Data Integrations не только предоставляют понятную и гибкую «настраиваемую» архитектуру, но и упрощают процесс разработки, повышают удобство работы и снижают степень связанности между бизнес-системой и EMQX Cloud. Кроме того, они обеспечивают отличную инфраструктуру для настройки собственных возможностей EMQX Cloud.
+[Data Integrations EMQX Cloud](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) используются для настройки правил обработки потоков сообщений EMQX, событий устройств и реакций на них. Data Integrations не только предоставляют понятную и гибкую «настраиваемую» архитектуру, но и упрощают процесс разработки, повышают удобство работы и снижают степень связанности между бизнес-системой и EMQX Cloud. Кроме того, они обеспечивают отличную инфраструктуру для настройки собственных возможностей EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="Параметры интеграции данных EMQX Cloud с отображением доступных коннекторов" />
 
@@ -145,7 +145,7 @@ EMQX Cloud предлагает более 30 встроенных интегр�
 <Image img="/images/integrations/data-ingestion/emqx/data_integration_clickhouse.webp" size="lg" border alt="Сведения о коннекторе интеграции данных ClickHouse в EMQX Cloud" />
 
 <div id="create-clickhouse-resource">
-  ### Создание ресурса ClickHouse
+  ### Создайте ресурс ClickHouse
 </div>
 
 Нажмите &quot;Data Integrations&quot; в левом меню, затем — &quot;View All Resources&quot;. ClickHouse находится в разделе Data Persistence, либо его можно найти через поиск.
@@ -166,7 +166,7 @@ EMQX Cloud предлагает более 30 встроенных интегр�
 
 При создании ресурса появится всплывающее окно, и если нажать &#39;New&#39;, вы перейдете на страницу создания правила.
 
-EMQX предоставляет мощный [движок правил](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html), который позволяет преобразовывать и обогащать необработанные MQTT-сообщения перед их отправкой во внешние системы.
+EMQX предоставляет мощный [движок правил](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html), который позволяет преобразовывать и обогащать необработанные MQTT-сообщения перед их отправкой во внешние системы.
 
 Вот правило, используемое в этом руководстве:
 

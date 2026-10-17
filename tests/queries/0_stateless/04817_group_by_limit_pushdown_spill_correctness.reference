@@ -1,9 +1,0 @@
-ground truth groups	500000	4	4
-no ORDER BY under spill: every returned group is complete
-10000	10000
-no ORDER BY under spill: groups agree with the unspilled aggregation
-10000	10000
-ORDER BY under spill: identical to optimization off
-0
-spill and heap both engaged
-1	1	1	1

@@ -2,23 +2,21 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -52,50 +50,18 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitIdentifier(ast);
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
-    else if (const auto * settings = [&] -> const ASTSetQuery *
-             {
-                 if (const auto * select_query = ast->as<ASTSelectQuery>(); select_query && select_query->settings())
-                     return select_query->settings()->as<ASTSetQuery>();
-
-                 if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                     query_with_output && query_with_output->settings_ast)
-                     return query_with_output->settings_ast->as<ASTSetQuery>();
-
-                 /// A trailing `SETTINGS` clause of a UNION is query-level - it applies to the whole
-                 /// union - but the grammar leaves it on the LAST arm (`ASTQueryWithOutput::settings_ast`
-                 /// is filled only for the top-level query). Scope its `param_*` bindings over every arm,
-                 /// the same way `InterpreterSetQuery::applySettingsFromQuery` applies that clause to the
-                 /// whole query and `QueryTreeBuilder` applies it to the whole union; otherwise a
-                 /// placeholder in a non-last arm would be reported as an unknown query parameter.
-                 if (const auto * select_with_union = ast->as<ASTSelectWithUnionQuery>();
-                     select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
-                 {
-                     if (const auto * last_select = select_with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
-                         last_select && last_select->settings())
-                         return last_select->settings()->as<ASTSetQuery>();
-                 }
-
-                 return nullptr;
-             }();
-             settings && !settings->query_parameters.empty())
-    {
-        NameToNameMap scoped_parameters = query_parameters;
-        for (const auto & [name, value] : settings->query_parameters)
-            scoped_parameters.insert_or_assign(name, value);
-
-        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
-        scoped_visitor.visitChildren(ast);
-        num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
-    }
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
-        else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
+        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
         {
-            /// The handler's query (the AS clause) is the parameterizable interface of the handler;
-            /// its placeholders are substituted at handler-invocation time and must be preserved at
-            /// create/alter time. There is nothing else in the statement that needs substitution.
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
@@ -124,7 +90,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
                 visit(to_table_ast);
 
                 create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-                create_query->targets->setTableASTWithQueryParams(ViewTarget::To, nullptr);
+                create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
 
                 visitChildren(ast);
             }
@@ -170,7 +136,15 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
+    bool result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= isVariant(t) || isDynamic(t) || isObject(t);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.

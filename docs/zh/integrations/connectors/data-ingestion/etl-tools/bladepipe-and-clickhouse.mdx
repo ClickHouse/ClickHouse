@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -35,7 +35,9 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
 后续还将支持更多数据源。
 
 <Steps>
-  <Step title="下载并运行 BladePipe" id="1-run-bladepipe">
+  <Step>
+    ## 下载并运行 BladePipe
+
     1. 登录 <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>。
 
     2. 按照 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">安装 Worker (Docker) </a> 或 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">安装 Worker (二进制) </a> 中的说明，下载并安装 BladePipe Worker。
@@ -45,7 +47,9 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
     </Note>
   </Step>
 
-  <Step title="将 ClickHouse 添加为目标" id="2-add-clickhouse-as-a-target">
+  <Step>
+    ## 将 ClickHouse 添加为目标
+
     <Note>
       1. BladePipe 支持 ClickHouse `20.12.3.3` 及以上版本。
       2. 若要将 ClickHouse 用作目标，请确保该用户具有 SELECT、INSERT 和常见 DDL 权限。
@@ -60,7 +64,9 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
     3. 点击底部的 &quot;Add DataSource&quot;，即可添加一个 ClickHouse 实例。
   </Step>
 
-  <Step title="将 MySQL 添加为源" id="3-add-mysql-as-a-source">
+  <Step>
+    ## 将 MySQL 添加为源
+
     在本教程中，我们将使用 MySQL 实例作为源，并介绍将 MySQL 数据加载到 ClickHouse 的过程。
 
     <Note>
@@ -76,7 +82,9 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
     3. 点击底部的 &quot;Add DataSource&quot;，即可添加 MySQL 实例。
   </Step>
 
-  <Step title="创建管道" id="4-create-a-pipeline">
+  <Step>
+    ## 创建管道
+
     1. 在 BladePipe 中，点击 &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;。
 
     2. 选择已添加的 MySQL 和 ClickHouse 实例，点击 &quot;Test Connection&quot;，确认 BladePipe 已连接到这些实例。然后，选择要迁移的数据库。
@@ -95,7 +103,9 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob 正在运行" />
   </Step>
 
-  <Step title="验证数据" id="5-verify-the-data">
+  <Step>
+    ## 验证数据
+
     1. 停止向 MySQL 实例写入数据，并等待 ClickHouse 完成数据合并。
 
     <Note>

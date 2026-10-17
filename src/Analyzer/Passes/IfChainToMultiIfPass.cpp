@@ -13,7 +13,6 @@ namespace Setting
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool optimize_if_chain_to_multiif;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -74,12 +73,8 @@ public:
 
         /// Ignore if returned type changed.
         /// Example : SELECT now64(if(Null, NULL, if(Null, nan, toFloat64(number))), Null) FROM numbers(2)
-        if (!multi_if_function->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
-            return;
-
-        /// A `group_by_use_nulls` copy of a GROUP BY key is the key made Nullable: rewrite it like the key and keep it Nullable.
         if (!multi_if_function->getResultType()->equals(*function_node->getResultType()))
-            multi_if_function->convertToNullable();
+            return;
 
         node = std::move(multi_if_function);
     }
@@ -94,9 +89,7 @@ void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr co
 {
     const auto & settings = context->getSettingsRef();
     auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
-        settings[Setting::allow_execute_multiif_columnar],
-        settings[Setting::use_variant_as_common_type],
-        settings[Setting::allow_lossy_numeric_supertype]);
+        settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

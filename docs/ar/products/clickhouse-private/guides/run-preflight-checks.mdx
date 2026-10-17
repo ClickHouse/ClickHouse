@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "تشغيل فحوصات التحقق المسبق"
+sidebarTitle: "تشغيل فحوصات التحقق المسبق"
+description: "لضمان جاهزية بيئتك أو إجراء تحقق قبل الترقية، نوفر فحوصات التحقق المسبق."
+---
+
+لضمان جاهزية بيئتك أو إجراء تحقق قبل الترقية، نوفر فحوصات التحقق المسبق. وتعتمد فحوصات التحقق المسبق على [Troubleshoot](https://troubleshoot.sh/)، وهو مكوّن إضافي لـ Kubernetes لتشخيص العنقود. لن يتم تصدير أي بيانات أثناء هذه العملية.
+
+يوضح الدليل الإرشادي التالي كيفية تشغيل فحوصات التحقق المسبق.
+
+<div id="install-the-plugin">
+  ## تثبيت المكوّن الإضافي
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+أو راجع [وثائق Troubleshoot](https://troubleshoot.sh/docs/) للاطلاع على خيارات تثبيت أخرى.
+
+<div id="copy-the-preflight-helm-chart">
+  ## انسخ مخطط Helm الخاص بالتحقق المسبق
+</div>
+
+أضف مخطط التحقق المسبق إلى خطوة النسخ إلى ECR:
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## إجراء عمليات التحقق
+</div>
+
+استخدم `helm template` لتصيير مواصفة التحقق المسبق، ثم مرّرها إلى `kubectl preflight`:
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+يتحقق هذا من تسميات العُقد، وتكوين StorageClass، والمتطلبات الأخرى. كما يفحص أيضًا جاهزية ترقية عنقود ClickHouse حالي، ويبلّغ عن feature flags المتقادمة أو المتطلبات الجديدة.
+
+يوضح الناتج كل عملية check وحالتها. وإذا فشلت إحدى عمليات check، فإنه يتضمن توصيات حول كيفية إصلاح المشكلة.
+
+للتحقق باستخدام StorageClass مخصص:
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### الأذونات المطلوبة
+</div>
+
+يحتاج المستخدم أو حساب الخدمة الذي ينفّذ `kubectl preflight` إلى إذن قراءة لما يلي:
+
+| النطاق                                           | الموارد                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| على مستوى العُنقود بالكامل                       | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| مساحة اسم المشغّل (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| مساحة اسم العُنقود (`ns-<cluster-name>`)         | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+يكفي أن تكون لدى الجهة الأساسية `view` ClusterRole المضمَّنة، بالإضافة إلى صلاحية `view` على مساحات الأسماء ذات الصلة.

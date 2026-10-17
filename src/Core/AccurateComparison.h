@@ -23,58 +23,56 @@ bool lessOp(A a, B b)
 {
     if constexpr (std::is_same_v<A, B>)
         return a < b;
-    else
+
+    /// float vs float
+    if constexpr (is_floating_point<A> && is_floating_point<B>)
     {
-        /// float vs float
-        if constexpr (is_floating_point<A> && is_floating_point<B>)
-        {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdouble-promotion"
-            return a < b;
+        return a < b;
 #pragma clang diagnostic pop
-        }
-
-        /// anything vs NaN
-        if (isNaN(a) || isNaN(b))
-            return false;
-
-        /// int vs int
-        if constexpr (is_integer<A> && is_integer<B>)
-        {
-            /// same signedness
-            if constexpr (is_signed_v<A> == is_signed_v<B>)
-                return a < b;
-
-            /// different signedness
-
-            if constexpr (is_signed_v<A> && !is_signed_v<B>)
-                return a < 0 || static_cast<make_unsigned_t<A>>(a) < b;
-
-            if constexpr (!is_signed_v<A> && is_signed_v<B>)
-                return b >= 0 && a < static_cast<make_unsigned_t<B>>(b);
-        }
-
-        /// int vs float
-        if constexpr (is_integer<A> && is_floating_point<B>)
-        {
-            if constexpr (sizeof(A) <= 4)
-                return static_cast<double>(a) < static_cast<double>(b);
-
-            return DecomposedFloat<B>(b).greater(a);
-        }
-
-        if constexpr (is_floating_point<A> && is_integer<B>)
-        {
-            if constexpr (sizeof(B) <= 4)
-                return static_cast<double>(a) < static_cast<double>(b);
-
-            return DecomposedFloat<A>(a).less(b);
-        }
-
-        static_assert(is_integer<A> || is_floating_point<A>);
-        static_assert(is_integer<B> || is_floating_point<B>);
-        UNREACHABLE();
     }
+
+    /// anything vs NaN
+    if (isNaN(a) || isNaN(b))
+        return false;
+
+    /// int vs int
+    if constexpr (is_integer<A> && is_integer<B>)
+    {
+        /// same signedness
+        if constexpr (is_signed_v<A> == is_signed_v<B>)
+            return a < b;
+
+        /// different signedness
+
+        if constexpr (is_signed_v<A> && !is_signed_v<B>)
+            return a < 0 || static_cast<make_unsigned_t<A>>(a) < b;
+
+        if constexpr (!is_signed_v<A> && is_signed_v<B>)
+            return b >= 0 && a < static_cast<make_unsigned_t<B>>(b);
+    }
+
+    /// int vs float
+    if constexpr (is_integer<A> && is_floating_point<B>)
+    {
+        if constexpr (sizeof(A) <= 4)
+            return static_cast<double>(a) < static_cast<double>(b);
+
+        return DecomposedFloat<B>(b).greater(a);
+    }
+
+    if constexpr (is_floating_point<A> && is_integer<B>)
+    {
+        if constexpr (sizeof(B) <= 4)
+            return static_cast<double>(a) < static_cast<double>(b);
+
+        return DecomposedFloat<A>(a).less(b);
+    }
+
+    static_assert(is_integer<A> || is_floating_point<A>);
+    static_assert(is_integer<B> || is_floating_point<B>);
+    UNREACHABLE();
 }
 
 template <typename A, typename B>

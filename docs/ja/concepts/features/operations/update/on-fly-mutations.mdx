@@ -1,0 +1,103 @@
+---
+slug: /guides/developer/on-the-fly-mutations
+sidebarTitle: 'オンザフライミューテーション'
+title: 'オンザフライミューテーション'
+keywords: ['オンザフライミューテーション']
+description: 'オンザフライミューテーションの説明'
+doc_type: 'guide'
+---
+
+<div id="on-the-fly-mutations">
+  ## オンザフライミューテーション
+</div>
+
+オンザフライミューテーションが有効な場合、更新された行は即座に更新済みとしてマークされ、以降の `SELECT` クエリでは変更後の値が自動的に返されます。オンザフライミューテーションが有効でない場合、変更後の値を確認できるようになるまで、バックグラウンドプロセスによってミューテーションが適用されるのを待つ必要があることがあります。
+
+オンザフライミューテーションは、クエリレベルの設定 `apply_mutations_on_fly` を有効にすることで、`MergeTree` ファミリーのテーブルで使用できます。
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<div id="example">
+  ## 例
+</div>
+
+テーブルを作成し、いくつかのミューテーションを実行してみましょう：
+
+```sql
+CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+ENGINE = MergeTree ORDER BY id;
+
+-- ミューテーションのバックグラウンドマテリアライゼーションを無効化して、
+-- オンザフライミューテーションが有効でない場合のデフォルト動作を示す
+SYSTEM STOP MERGES test_on_fly_mutations;
+SET mutations_sync = 0;
+
+-- 新しいテーブルに行を挿入する
+INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- 行の値を更新する
+ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+```
+
+`SELECT`クエリで更新後の結果を確認してみましょう：
+
+```sql
+-- オンザフライミューテーションを明示的に無効化する
+SET apply_mutations_on_fly = 0;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+新しいテーブルにクエリを実行した時点では、各行の値はまだ更新されていないことに注意してください。
+
+```response
+┌─id─┬─v─┐
+│  1 │ a │
+│  2 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+それでは、オンザフライミューテーションを有効にすると何が起こるのかを見てみましょう。
+
+```sql
+-- オンザフライミューテーションを有効にする
+SET apply_mutations_on_fly = 1;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+`SELECT` クエリでは、ミューテーションの適用を待たなくても、すぐに正しい結果が返るようになりました：
+
+```response
+┌─id─┬─v─┐
+│  3 │ c │
+└────┴───┘
+```
+
+<div id="performance-impact">
+  ## パフォーマンスへの影響
+</div>
+
+オンザフライミューテーションが有効な場合、ミューテーションは即座には実体化されず、`SELECT` クエリの実行時にのみ適用されます。ただし、ミューテーションの実体化自体は引き続きバックグラウンドで非同期に行われており、これは負荷の高い処理である点に注意してください。
+
+一定の時間間隔において、投入されるミューテーション数がバックグラウンドで処理されるミューテーション数を継続的に上回ると、適用待ちの未実体化ミューテーションのキューは増え続けます。その結果、最終的に `SELECT` クエリのパフォーマンスが低下します。
+
+未実体化ミューテーションが無制限に増え続けるのを抑えるため、設定 `apply_mutations_on_fly` は、`number_of_mutations_to_throw` や `number_of_mutations_to_delay` などの `MergeTree` レベルのほかの設定と併せて有効にすることを推奨します。
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ## サブクエリと非決定論的関数のサポート
+</div>
+
+オンザフライミューテーションでは、サブクエリと非決定論的関数のサポートが限定的です。サポートされるのは、結果サイズが妥当な範囲に収まるスカラーサブクエリのみです (`mutations_max_literal_size_to_replace` 設定で制御されます) 。また、サポートされるのは定数の非決定論的関数のみです (例: 関数 `now()`) 。
+
+これらの動作は、以下の設定によって制御されます。
+
+* `mutations_execute_nondeterministic_on_initiator` - true の場合、非決定論的関数はイニシエーターレプリカ上で実行され、`UPDATE` および `DELETE` クエリ内でリテラルに置き換えられます。デフォルト値: `false`。
+* `mutations_execute_subqueries_on_initiator` - true の場合、スカラーサブクエリはイニシエーターレプリカ上で実行され、`UPDATE` および `DELETE` クエリ内でリテラルに置き換えられます。デフォルト値: `false`。
+* `mutations_max_literal_size_to_replace` - `UPDATE` および `DELETE` クエリ内で置き換えるシリアライズ済みリテラルの最大サイズ (バイト単位) 。デフォルト値: `16384` (16 KiB) 。

@@ -16,7 +16,9 @@ doc_type: 'reference'
 
 此外，该客户端还支持使用 HTTP 作为传输层——数据仍会以原生格式编码，以获得最佳性能。
 
-## 连接 {#connecting}
+<div id="connecting">
+  ## 连接
+</div>
 
 可以通过格式为 `clickhouse://<host>:<port>?<query_option>=<value>` 的 DSN 字符串结合 `Open` 方法建立连接，也可以使用 `clickhouse.OpenDB` 方法。后者虽然不属于 `database/sql` 规范的一部分，但会返回一个 `sql.DB` 实例。该方法还提供了 profiling 等功能，而这些功能显然无法通过 `database/sql` 规范对外暴露。
 
@@ -54,7 +56,9 @@ func ConnectDSN() error {
 
 **在后续所有示例中，除非另有明确说明，否则均假定已创建并可使用 ClickHouse `conn` 变量。**
 
-### 连接设置 {#connection-settings}
+<div id="connection-settings">
+  ### 连接设置
+</div>
 
 大多数配置选项与 ClickHouse API 通用。有关这些通用设置，请参见[配置](/zh/integrations/language-clients/go/configuration)。以下是 SQL 专用的 DSN 参数：
 
@@ -92,7 +96,9 @@ func ConnectSettings() error {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
 
-### 通过 HTTP 连接 {#connecting-over-http}
+<div id="connecting-over-http">
+  ### 通过 HTTP 连接
+</div>
 
 默认情况下，连接是通过原生协议建立的。对于需要使用 HTTP 的用户，可以通过修改 DSN 以包含 HTTP 协议，或在连接选项中指定 Protocol 来启用 HTTP。
 
@@ -129,7 +135,9 @@ func ConnectDSNHTTP() error {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
 
-### 会话 {#sessions}
+<div id="sessions">
+  ### 会话
+</div>
 
 <Info>
   **仅限 HTTP**
@@ -203,7 +211,9 @@ if err := rows.Err(); err != nil {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
 
-## 执行 {#execution}
+<div id="execution">
+  ## 执行
+</div>
 
 获取连接后，你可以通过 Exec 方法执行 `sql` 语句。
 
@@ -225,7 +235,9 @@ _, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
 
 该方法不支持传入上下文，默认会在 background 上下文下执行。如有需要，可使用 `ExecContext`——请参见[使用上下文](#using-context)。
 
-## 批次插入 {#batch-insert}
+<div id="batch-insert">
+  ## 批次插入
+</div>
 
 可以通过 `Being` 方法创建一个 `sql.Tx`，以实现批次语义。基于此，可使用带有 `INSERT` 语句的 `Prepare` 方法获取一个批次。这会返回一个 `sql.Stmt`，可通过 `Exec` 方法向其中追加行。在原始 `sql.Tx` 上执行 `Commit` 之前，该批次会一直累积在内存中。
 
@@ -259,7 +271,9 @@ return scope.Commit()
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
 
-## 查询行 {#querying-rows}
+<div id="querying-rows">
+  ## 查询行
+</div>
 
 可以使用 `QueryRow` 方法查询单行数据。它会返回一个 *sql.Row，可在其上调用 Scan，并传入变量指针，以便将各列的数据写入这些变量中。`QueryRowContext` 变体允许传入除 background 之外的上下文 - 请参见 [使用 Context](#using-context)。
 
@@ -311,7 +325,9 @@ if err := rows.Err(); err != nil {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
 
-## 异步插入 {#async-insert}
+<div id="async-insert">
+  ## 异步插入
+</div>
 
 可通过 `ExecContext` 方法执行插入来实现异步插入。如下面所示，需要向其传入启用了异步模式的上下文。这样，用户便可指定客户端是等待服务器完成插入，还是在接收到数据后就立即返回响应。这实际上控制的是参数 [wait&#95;for&#95;async&#95;insert](/zh/reference/settings/session-settings#wait_for_async_insert)。
 
@@ -342,29 +358,9 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
-## 服务器端查询参数 {#server-side-query-parameters}
-
-标准 API 支持 ClickHouse 服务器端查询参数，可使用带类型的 `{name:Type}` 占位符和 `clickhouse.Named` 值：
-
-```go
-row := conn.QueryRowContext(ctx,
-    "SELECT {user_id:UInt64}, {message:String}",
-    clickhouse.Named("user_id", uint64(12345)),
-    clickhouse.Named("message", `line 1\nline 2`),
-)
-```
-
-通过 `clickhouse.Named` 传入的 `string`/`*string` 或 `[]byte`/`*[]byte` 会被视为字面量值，并由驱动程序进行转义，因此往返传输后可逐字节保持一致。如果希望线上传输的内容中包含换行符或制表符，请直接在 Go 值中使用真实的换行符或制表符：
-
-```go
-clickhouse.Named("message", "line 1\nline 2") // literal newline — round-trips
-```
-
-如果参数文本已按 ClickHouse 的 `Escaped` 格式序列化，请改用 `WithParameters`；有关类型、转义以及 `{name:Type}` 与客户端绑定有何区别的完整说明，请参阅[服务器端查询参数](/zh/integrations/language-clients/go/clickhouse-api#server-side-query-parameters)。
-
-[完整的标准 API 示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_parameters.go)
-
-## 参数绑定 {#parameter-binding}
+<div id="parameter-binding">
+  ## 参数绑定
+</div>
 
 标准 API 同样支持与 [ClickHouse API](/zh/integrations/language-clients/go/clickhouse-api#parameter-binding) 相同的参数绑定能力，可将参数传递给 `Exec`、`Query` 和 `QueryRow` 方法 (以及它们对应的 [上下文](#using-context) 变体) 。支持位置参数、命名参数和编号参数。
 
@@ -394,7 +390,9 @@ fmt.Printf("Named bind count: %d\n", count)
 
 请注意，[特殊情况](/zh/integrations/language-clients/go/clickhouse-api#special-cases) 仍适用。
 
-## 使用上下文 {#using-context}
+<div id="using-context">
+  ## 使用上下文
+</div>
 
 标准 API 与 [ClickHouse API](/zh/integrations/language-clients/go/clickhouse-api#using-context) 一样，支持通过上下文传递截止时间、取消信号以及其他请求作用域的值。与 ClickHouse API 不同，这一能力是通过使用方法的 `Context` 变体来实现的。也就是说，像 `Exec` 这类默认使用 background 上下文的方法，都有一个对应的变体 `ExecContext`，可将上下文作为第一个参数传入。这样一来，你就可以在应用流程的任何阶段传递上下文。例如，可以在通过 `ConnContext` 建立连接时传递上下文，或者在通过 `QueryRowContext` 请求查询行时传递上下文。下面给出了所有可用方法的示例。
 
@@ -477,7 +475,9 @@ if err := rows.Err(); err != nil {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
 
-## 动态扫描 {#dynamic-scanning}
+<div id="dynamic-scanning">
+  ## 动态扫描
+</div>
 
 与 [ClickHouse API](/zh/integrations/language-clients/go/clickhouse-api#dynamic-scanning) 类似，这里也提供列类型信息，因此你可以在运行时创建类型正确的变量实例，并将其传递给 Scan。这样，即使事先不知道类型，也能读取列。
 
@@ -522,7 +522,9 @@ if err := rows.Err(); err != nil {
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
 
-## 外部表 {#external-tables}
+<div id="external-tables">
+  ## 外部表
+</div>
 
 [外部表](/zh/reference/engines/table-engines/special/external-data)允许客户端在发送 `SELECT` 查询时一并向 ClickHouse 传送数据。这些数据会被放入临时表中，并可在查询中用于求值。
 
@@ -593,7 +595,9 @@ fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
 
-## OpenTelemetry {#open-telemetry}
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
 
 ClickHouse 在 TCP 和 HTTP 传输中都支持 [trace 上下文传播](/zh/guides/oss/deployment-and-scaling/monitoring/opentelemetry)。使用 `clickhouse.WithSpan` 可通过上下文将 span 附加到查询上。
 
@@ -623,7 +627,9 @@ fmt.Printf("count: %d\n", count)
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
 
-## 压缩 {#compression}
+<div id="compression">
+  ## 压缩
+</div>
 
 标准 API 支持与原生 [ClickHouse API](/zh/integrations/language-clients/go/configuration#compression) 相同的压缩算法，即在块级别支持 `lz4` 和 `zstd` 压缩。此外，HTTP 连接还支持 `gzip`、`deflate` 和 `br` 压缩。如果启用了其中任意一种，插入时以及查询响应中的块都会被压缩。其他请求 (例如 ping 或查询请求) 则保持未压缩状态。这与 `lz4` 和 `zstd` 选项的行为一致。
 

@@ -7,9 +7,11 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-すべての ClickPipes タイプは、[ClickHouse Cloud OpenAPI](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を使用してプログラムから作成、更新、削除できます。このページでは、認証と利用可能な ClickPipes エンドポイントについて説明し、各 ClickPipe タイプごとに `curl` リクエストの例を示します。
+すべての ClickPipes タイプは、[ClickHouse Cloud OpenAPI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を使用してプログラムから作成、更新、削除できます。このページでは、認証と利用可能な ClickPipes エンドポイントについて説明し、各 ClickPipe タイプごとに `curl` リクエストの例を示します。
 
-## 認証 {#authentication}
+<div id="authentication">
+  ## 認証
+</div>
 
 ClickHouse Cloud API は HTTP Basic 認証を使用します。対象のサービスに対する権限を持つ API キー (key ID + key secret) が必要です。作成手順については、[API キーの管理](/ja/products/cloud/features/admin-features/api/openapi)を参照してください。
 
@@ -22,47 +24,57 @@ export ORG_ID=<your_organization_id>
 export SERVICE_ID=<your_service_id>
 ```
 
-## ベースURL {#base-url}
+<div id="base-url">
+  ## ベースURL
+</div>
 
 ```bash
 https://api.clickhouse.cloud/v1
 ```
 
-## エンドポイント {#endpoints}
+<div id="endpoints">
+  ## エンドポイント
+</div>
 
 すべての ClickPipes エンドポイントは、ClickHouse Cloud サービスのスコープに属します。
 
-| Method   | Path                                                                                     | Description              |
-| -------- | ---------------------------------------------------------------------------------------- | ------------------------ |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示    |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得            |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新            |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得         |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新         |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新     |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止) |
+| Method   | Path                                                                                     | Description               |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示     |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成             |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得             |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新             |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除             |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得          |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新          |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新      |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止)  |
 
 CDC (変更データキャプチャ)  ClickPipes (Postgres、MySQL、MongoDB) では、共有 CDC (変更データキャプチャ)  インフラストラクチャのスケーリング用に、組織レベルの追加エンドポイントが用意されています。
 
-| Method  | Path                                                    | Description                             |
-| ------- | ------------------------------------------------------- | --------------------------------------- |
+| Method  | Path                                                    | Description               |
+| ------- | ------------------------------------------------------- | ------------------------- |
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC (変更データキャプチャ)  ClickPipes のスケーリングを取得 |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC (変更データキャプチャ)  ClickPipes のスケーリングを更新 |
 
-各エンドポイントの完全なリクエスト/レスポンス スキーマについては、[API リファレンス](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を参照してください。
+各エンドポイントの完全なリクエスト/レスポンス スキーマについては、[Swagger UI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を参照してください。
 
-## 例 {#examples}
+<div id="examples">
+  ## 例
+</div>
 
-### ClickPipes を一覧表示する {#list-clickpipes}
+<div id="list-clickpipes">
+  ### ClickPipes を一覧表示する
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### ClickPipeを取得する {#get-clickpipe}
+<div id="get-clickpipe">
+  ### ClickPipeを取得する
+</div>
 
 ```bash
 CLICKPIPE_ID=<your_clickpipe_id>
@@ -71,7 +83,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-### ClickPipe の停止または開始 {#stop-start-clickpipe}
+<div id="stop-start-clickpipe">
+  ### ClickPipe の停止または開始
+</div>
 
 ```bash
 # 停止
@@ -89,7 +103,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
 ```
 
-### ClickPipe を削除する {#delete-clickpipe}
+<div id="delete-clickpipe">
+  ### ClickPipe を削除する
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -97,11 +113,15 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-## ClickPipes の作成 {#creating-clickpipes}
+<div id="creating-clickpipes">
+  ## ClickPipes の作成
+</div>
 
-`POST /clickpipes` のリクエストボディは、ソースタイプによって異なります。以下の例では、サポートされている各 ClickPipe タイプの構造を示します。正式な JSON スキーマについては、[API リファレンス](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を参照してください。
+`POST /clickpipes` のリクエストボディは、ソースタイプによって異なります。以下の例では、サポートされている各 ClickPipe タイプの構造を示します。正式な JSON スキーマについては、[Swagger UI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を参照してください。
 
-### Kafka {#create-kafka}
+<div id="create-kafka">
+  ### Kafka
+</div>
 
 サポートされている Kafka 互換のソース: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
@@ -141,7 +161,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Amazon Kinesis {#create-kinesis}
+<div id="create-kinesis">
+  ### Amazon Kinesis
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -151,16 +173,11 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     "name": "My Kinesis ClickPipe",
     "source": {
       "kinesis": {
-        "format": "AvroConfluent",
+        "format": "JSONEachRow",
         "streamName": "my-stream",
         "region": "us-east-1",
         "iteratorType": "TRIM_HORIZON",
         "authentication": "IAM_USER",
-        "schemaRegistry": {
-          "type": "glue",
-          "glueRegion": "us-east-1",
-          "glueRegistryName": "my-registry"
-        },
         "accessKey": {
           "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
           "secretKey": "<secret_key>"
@@ -182,9 +199,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-この例では、Avro を AWS Glue Schema Registry と組み合わせて設定しています。Glue を使用して Protobuf をデコードするには、`format` を `Protobuf` に設定し、`schemaRegistry` はそのまま残します。Glue を使わずに Protobuf スキーマをアップロードする場合は、`format` を `Protobuf` に設定し、base64 エンコードした `.proto` ファイルまたはシリアル化した `FileDescriptorSet` を `protobufSchema` に指定します。その場合、リクエストに `schemaRegistry` を含めないでください。
-
-### Amazon S3 {#create-s3}
+<div id="create-s3">
+  ### Amazon S3
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -219,7 +236,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Google Cloud Storage {#create-gcs}
+<div id="create-gcs">
+  ### Google Cloud Storage
+</div>
 
 `serviceAccountKey` には、GCP のサービス アカウント JSON キーファイルの内容を base64 エンコードした値を指定する必要があります。
 
@@ -253,7 +272,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Azure Blob Storage {#create-abs}
+<div id="create-abs">
+  ### Azure Blob Storage
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -286,7 +307,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Postgres CDC (変更データキャプチャ) {#create-postgres}
+<div id="create-postgres">
+  ### Postgres CDC (変更データキャプチャ)
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -322,7 +345,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MySQL CDC (変更データキャプチャ) {#create-mysql}
+<div id="create-mysql">
+  ### MySQL CDC (変更データキャプチャ)
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -357,7 +382,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MongoDB CDC (変更データキャプチャ) {#create-mongodb} 
+<div id="create-mongodb">
+  ### MongoDB CDC (変更データキャプチャ)
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -392,7 +419,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### BigQuery {#create-bigquery}
+<div id="create-bigquery">
+  ### BigQuery
+</div>
 
 `serviceAccountFile` には、GCP のサービスアカウント JSON キーファイルの内容を base64 エンコードしたものを指定する必要があります。
 

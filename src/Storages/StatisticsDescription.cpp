@@ -3,11 +3,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/IdentifierSemantic.h>
 
 
 namespace DB
@@ -94,50 +92,6 @@ String SingleStatisticsDescription::getTypeName() const
 SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
     : type(type_), ast(ast_), is_implicit(is_implicit_)
 {}
-
-namespace
-{
-
-size_t stringAllocatedBytes(const String & str)
-{
-    return str.capacity();
-}
-
-/// The exact size of an AST node is not known through `IAST`, so it is bounded from above.
-/// The bound covers the node, the semantic object of an identifier, and the control blocks of the pointers.
-constexpr size_t AST_NODE_SIZE_BOUND = 512;
-static_assert(sizeof(ASTIdentifier) + sizeof(IdentifierSemanticImpl) + 2 * 4 * sizeof(void *) <= AST_NODE_SIZE_BOUND);
-static_assert(sizeof(ASTFunction) <= AST_NODE_SIZE_BOUND);
-static_assert(sizeof(ASTExpressionList) <= AST_NODE_SIZE_BOUND);
-static_assert(sizeof(ASTLiteral) <= AST_NODE_SIZE_BOUND);
-
-size_t astAllocatedBytes(const IAST & ast)
-{
-    size_t res = AST_NODE_SIZE_BOUND + ast.children.capacity() * sizeof(ASTPtr);
-    if (const auto * identifier = ast.as<ASTIdentifier>())
-    {
-        res += stringAllocatedBytes(identifier->full_name);
-        res += identifier->name_parts.capacity() * sizeof(String);
-        for (const auto & part : identifier->name_parts)
-            res += stringAllocatedBytes(part);
-    }
-    else if (const auto * literal = ast.as<ASTLiteral>())
-    {
-        if (literal->value.getType() == Field::Types::String)
-            res += stringAllocatedBytes(literal->value.safeGet<String>());
-    }
-
-    for (const auto & child : ast.children)
-        res += astAllocatedBytes(*child);
-    return res;
-}
-
-}
-
-size_t SingleStatisticsDescription::allocatedBytes() const
-{
-    return ast ? astAllocatedBytes(*ast) : 0;
-}
 
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {

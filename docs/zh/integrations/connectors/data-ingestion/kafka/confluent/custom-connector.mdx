@@ -1,9 +1,9 @@
 ---
-sidebarTitle: '以 自定义连接器 形式运行 Kafka Connector Sink'
+sidebarTitle: 'Confluent Platform 上的 Kafka Connector Sink'
 slug: /integrations/kafka/cloud/confluent/custom-connector
-description: '在 Confluent Cloud 上以 自定义连接器 的形式上传并运行 ClickHouse Connector Sink'
-title: '在 Confluent Cloud 上以 自定义连接器 形式运行 ClickHouse Connector Sink'
-keywords: ['Confluent 与 ClickHouse 集成', 'ClickHouse Kafka 连接器', 'Kafka Connect ClickHouse sink', 'Confluent Platform ClickHouse', 'Confluent 自定义连接器']
+description: '配合 Kafka Connect 和 ClickHouse 使用 ClickHouse Connector Sink'
+title: '将 Confluent Platform 与 ClickHouse 集成'
+keywords: ['Confluent 与 ClickHouse 集成', 'ClickHouse Kafka connector', 'Kafka Connect ClickHouse sink', 'Confluent Platform ClickHouse', 'Confluent custom connector']
 doc_type: 'guide'
 ---
 
@@ -30,28 +30,24 @@ picture-in-picture"
 我们假设你已经熟悉以下内容：
 
 * [ClickHouse Connector Sink](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
-* Confluent Cloud 和 [自定义连接器](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html)。
-
-<Note>
-  本页介绍如何自行将连接器上传到 Confluent Cloud。如果你不需要特定版本的连接器或自定义设置，使用[全托管连接器](/zh/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)配置起来会更简单。
-</Note>
+* Confluent Platform 和 [自定义连接器](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html)。
 
 <div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
-  ## ClickHouse 官方 Kafka 连接器 (作为 自定义连接器)
+  ## ClickHouse 官方 Kafka 连接器 (适用于 Confluent Platform)
 </div>
 
 <div id="installing-on-confluent-platform">
-  ### 作为 自定义连接器 安装
+  ### 在 Confluent Platform 上安装
 </div>
 
-本文旨在作为一份快速入门指南，帮助你开始在 Confluent Cloud 上以 自定义连接器 的形式使用 ClickHouse Sink Connector。
+本文旨在作为一份快速入门指南，帮助你开始使用运行于 Confluent Platform 上的 ClickHouse Sink Connector。
 更多详情请参阅 [Confluent 官方文档](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector)。
 
 <div id="create-a-topic">
   #### 创建 topic
 </div>
 
-在 Confluent Cloud 上创建 topic 非常简单，详细说明请参见[此处](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)。
+在 Confluent Platform 上创建 topic 非常简单，详细说明请参见[此处](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)。
 
 <div id="important-notes">
   #### 重要说明
@@ -60,7 +56,9 @@ picture-in-picture"
 * Kafka topic 名称必须与 ClickHouse 表名保持一致。要实现这一点，可以使用转换器 (例如 [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)) 。
 * 分区更多并不一定意味着性能更高——更多详情和性能优化建议，请参阅我们即将发布的指南。
 
-#### 安装连接器 {#install-connector}
+<div id="install-connector">
+  #### 安装连接器
+</div>
 
 您可以从我们的[仓库](https://github.com/ClickHouse/clickhouse-kafka-connect/releases)下载该连接器——也欢迎您在那里提交反馈和问题！
 
@@ -69,7 +67,7 @@ picture-in-picture"
 ```text
 'Connector Class' - 'com.clickhouse.kafka.connect.ClickHouseSinkConnector'
 'Connector type' - Sink
-'Sensitive properties' - 'password'. This will ensure entries of the ClickHouse password are masked during configuration.
+'Sensitive properties' - 'password'. 这将确保 ClickHouse 密码在配置时以掩码形式显示。
 ```
 
 示例：

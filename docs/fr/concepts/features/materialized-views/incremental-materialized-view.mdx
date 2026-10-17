@@ -9,9 +9,11 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-## Contexte {#background}
+<div id="background">
+  ## Contexte
+</div>
 
-Les vues matérialisées incrémentales (vue matérialisée) permettent de transférer le coût du calcul du temps de requête vers le temps d&#39;insertion, ce qui accélère les requêtes `SELECT`.
+Les vues matérialisées incrémentielles (vue matérialisée) permettent de transférer le coût du calcul du temps de requête vers le temps d&#39;insertion, ce qui accélère les requêtes `SELECT`.
 
 Contrairement aux bases de données transactionnelles comme Postgres, dans ClickHouse, une vue matérialisée n&#39;est qu&#39;un déclencheur qui exécute une requête sur des blocs de données au moment de leur insertion dans une table. Le résultat de cette requête est inséré dans une deuxième table « cible ». Si d&#39;autres lignes sont insérées, les résultats sont de nouveau envoyés vers la table cible, où les résultats intermédiaires sont mis à jour et fusionnés. Le résultat fusionné équivaut à l&#39;exécution de la requête sur l&#39;ensemble des données d&#39;origine.
 
@@ -620,24 +622,24 @@ WHERE DisplayName = 'brand_new_user'
 Notez toutefois que ce résultat est incorrect.
 
 <div id="join-best-practices">
-  ### Bonnes pratiques pour les jointures dans les vues matérialisées
+  ### Bonnes pratiques pour les JOIN dans les vues matérialisées
 </div>
 
 * **Utilisez la table la plus à gauche comme déclencheur.** Seule la table située à gauche de l’instruction `SELECT` déclenche la vue matérialisée. Les modifications apportées aux tables de droite ne déclencheront pas de mise à jour.
 
-* **Insérez au préalable les données jointes.** Assurez-vous que les données des tables jointes existent avant d’insérer des lignes dans la table source. La jointure est évaluée au moment de l’insertion ; des données manquantes entraîneront donc des lignes sans correspondance ou des valeurs nulles.
+* **Insérez au préalable les données jointes.** Assurez-vous que les données des tables jointes existent avant d’insérer des lignes dans la table source. Le JOIN est évalué au moment de l’insert ; des données manquantes entraîneront donc des lignes sans correspondance ou des valeurs nulles.
 
-* **Limitez les colonnes récupérées via les jointures.** Sélectionnez uniquement les colonnes nécessaires dans les tables jointes afin de limiter l’utilisation de la mémoire et de réduire la latence au moment de l’insertion (voir ci-dessous).
+* **Limitez les colonnes récupérées via les jointures.** Sélectionnez uniquement les colonnes nécessaires dans les tables jointes afin de limiter l’utilisation de la mémoire et de réduire la latence au moment de l’insert (voir ci-dessous).
 
-* **Évaluez les performances au moment de l’insertion.** Les jointures augmentent le coût des insertions, en particulier avec de grandes tables du côté droit. Mesurez les taux d’insertion à l’aide de données de production représentatives.
+* **Évaluez les performances au moment de l’insert.** Les JOIN augmentent le coût des inserts, en particulier avec de grandes tables du côté droit. Mesurez les taux d’insert à l’aide de données de production représentatives.
 
-* **Préférez les dictionnaires pour les recherches simples**. Utilisez les [dictionnaires](/fr/concepts/features/dictionaries/index) pour les recherches clé-valeur (par exemple, associer un ID utilisateur à un nom) afin d’éviter des opérations de jointure coûteuses. Utilisez une disposition de dictionnaire entièrement chargée pour garantir des recherches fiables au moment de l’insertion ; les [dispositions basées sur un cache](/fr/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) peuvent rendre l’ingestion dépendante d’un cache local préchauffé.
+* **Préférez les dictionnaires pour les recherches simples**. Utilisez les [Dictionaries](/fr/concepts/features/dictionaries/index) pour les recherches clé-valeur (par exemple, associer un ID utilisateur à un nom) afin d’éviter des opérations JOIN coûteuses.
 
 * **Alignez `GROUP BY` et `ORDER BY` pour optimiser les fusions.** Lorsque vous utilisez `SummingMergeTree` ou `AggregatingMergeTree`, assurez-vous que `GROUP BY` correspond à la clause `ORDER BY` dans la table cible afin de permettre une fusion efficace des lignes.
 
 * **Utilisez des alias de colonnes explicites.** Lorsque plusieurs tables ont des noms de colonnes identiques, utilisez des alias pour éviter toute ambiguïté et garantir des résultats corrects dans la table cible.
 
-* **Tenez compte du volume et de la fréquence des insertions.** Les jointures fonctionnent bien avec des charges d’insertion modérées. Pour une ingestion à haut débit, envisagez d’utiliser des tables de staging, des pré-jointures ou d’autres approches telles que les dictionnaires et les [Refreshable Materialized Views](/fr/concepts/features/materialized-views/refreshable-materialized-view).
+* **Tenez compte du volume et de la fréquence des inserts.** Les JOIN fonctionnent bien avec des charges d’insertion modérées. Pour une ingestion à haut débit, envisagez d’utiliser des tables de staging, des pré-jointures ou d’autres approches telles que Dictionaries et les [Refreshable Materialized Views](/fr/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
   ### Utilisation de la table source dans les filtres et les jointures
@@ -1045,9 +1047,11 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-## Traitement parallèle ou séquentiel {#materialized-views-parallel-vs-sequential}
+<div id="materialized-views-parallel-vs-sequential">
+  ## Traitement parallèle ou séquentiel
+</div>
 
-Comme indiqué dans l’exemple précédent, une table peut servir de source à plusieurs vues matérialisées. L’ordre dans lequel elles sont exécutées dépend du paramètre [`parallel_view_processing`](/fr/reference/settings/session-settings/parallel#parallel_view_processing).
+Comme indiqué dans l’exemple précédent, une table peut servir de source à plusieurs vues matérialisées. L’ordre dans lequel elles sont exécutées dépend du paramètre [`parallel_view_processing`](/fr/reference/settings/session-settings#parallel_view_processing).
 
 Par défaut, ce paramètre vaut `0` (`false`), ce qui signifie que les vues matérialisées sont exécutées séquentiellement dans l’ordre des `uuid`.
 
@@ -1315,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-Dans ce cas, la CTE `users` est réévaluée à chaque insertion dans `posts`, et la vue matérialisée ne se mettra pas à jour lorsque de nouvelles lignes sont insérées dans `users` — uniquement lorsqu’elles le sont dans `posts`.
+Dans ce cas, la CTE users est réévaluée à chaque insert dans posts, et la vue matérialisée ne se mettra pas à jour lorsque de nouveaux users sont insérés — seulement lorsque des posts le sont.
 
-De manière générale, utilisez les CTE pour une logique qui s’applique à la même table source à laquelle la vue matérialisée est attachée, ou assurez-vous que les tables référencées sont petites et peu susceptibles d’entraîner des goulots d’étranglement en matière de performances. Vous pouvez également envisager [les mêmes optimisations que pour les JOIN avec des vues matérialisées](/fr/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+En règle générale, utilisez les CTE pour une logique qui s’applique à la même table source que celle à laquelle la vue matérialisée est rattachée, ou assurez-vous que les tables référencées sont de petite taille et peu susceptibles de créer des goulots d’étranglement en termes de performances. Vous pouvez aussi envisager [les mêmes optimisations que pour les JOIN avec des vues matérialisées](/fr/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
