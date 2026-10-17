@@ -1,31 +1,20 @@
-ORDER BY
+--- prefix: 
 1
 1
 1
 1
 1
-1
-1
-1
-1
-1
-1
-1
-1
-arraySort
+1	1	1	1	1	1	1	1	1
 1	1
 1	1
-1	1
-1	1
-1	1
-1	1
-1	1	1	1
-arrayTopK
-1	1
+1
+--- prefix: common_prefix_
 1
 1
-mapSort
-1	1
 1
-groupArraySorted
+1
+1
+1	1	1	1	1	1	1	1	1
+1	1
+1	1
 1
