@@ -3082,6 +3082,8 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
+            else if (insert_query->returning)
+                reason = "the query has RETURNING";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())

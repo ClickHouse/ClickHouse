@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -30,7 +35,7 @@ StorageValues::StorageValues(
     const ColumnsDescription & columns_,
     Pipe prepared_pipe_,
     VirtualColumnsDescription virtuals_)
-    : IStorage(table_id_), prepared_pipe(std::move(prepared_pipe_))
+    : IStorage(table_id_), prepared_pipe(std::move(prepared_pipe_)), has_prepared_pipe(!prepared_pipe.empty())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -49,8 +54,12 @@ Pipe StorageValues::read(
 {
     storage_snapshot->check(column_names);
 
-    if (!prepared_pipe.empty())
+    if (has_prepared_pipe)
     {
+        if (prepared_pipe_was_read)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The data of table {} can be read only once in a query", getStorageID().getNameForLogs());
+        prepared_pipe_was_read = true;
+
         ActionsDAG dag(prepared_pipe.getHeader().getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs outputs;
         outputs.reserve(column_names.size());
@@ -75,6 +84,15 @@ Pipe StorageValues::read(
 
     Chunk chunk(block.getColumns(), block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
+}
+
+std::optional<Pipe> StorageValues::extractPreparedPipe()
+{
+    if (!has_prepared_pipe || prepared_pipe_was_read)
+        return {};
+
+    prepared_pipe_was_read = true;
+    return std::move(prepared_pipe);
 }
 
 }

@@ -104,9 +104,13 @@ public:
         return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
-    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams() const;
+    /// If `returning_output` is not null, a copy of the data written into the destination table
+    /// (after the conversion to the table structure with the defaults filled, before the sink) is sent
+    /// from every stream into a processor, which is returned in `returning_output`.
+    /// Its single output port is not connected. It is used for `INSERT ... RETURNING`.
+    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams(ProcessorPtr * returning_output = nullptr) const;
 
-    Chain createChainWithDependencies() const;
+    Chain createChainWithDependencies(InputPort * returning_input = nullptr) const;
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;
     bool isViewsInvolved() const;
 
