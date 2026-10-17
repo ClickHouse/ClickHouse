@@ -24,6 +24,12 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
     && apt-get install --yes \
         make \
     && cd cctools-port/cctools \
+    # configure copies the system LLVM's llvm-c/lto.h (and ExternC.h) over the bundled headers,
+    # but since LLVM 23 lto.h also includes llvm-c/Visibility.h, which configure does not copy;
+    # Visibility.h in turn includes llvm/Config/llvm-config.h (self-contained defines)
+    && cp "$(llvm-config-${LLVM_VERSION} --includedir)/llvm-c/Visibility.h" include/llvm-c/ \
+    && mkdir -p include/llvm/Config \
+    && cp "$(llvm-config-${LLVM_VERSION} --includedir)/llvm/Config/llvm-config.h" include/llvm/Config/ \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install -j$(nproc) \
