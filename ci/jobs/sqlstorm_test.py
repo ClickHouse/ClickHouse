@@ -12,9 +12,6 @@ from praktika.utils import Shell, Utils
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
-# Not `praktika`: under `PYTHONPATH=.:./ci` that is another module, whose class `log_export` does not raise.
-from ci.praktika import SecretFetchFailed
-
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 # Thresholds based on baseline run with ClickHouse 26.3 and ClickHouse-dialect queries.
@@ -111,26 +108,12 @@ class ClickHouseBinary:
         return True
 
     def create_log_export_config(self):
-        # Write the remote cluster definition into the server's own `config.d`
-        # so the `Distributed` engine used by the log senders can resolve the
-        # central CI logs cluster. Must run before the server is started. This
-        # job does not install the standard test configs, so the
-        # `ci_logs_sender` user is copied in as well.
-        # Without the credentials `setup_log_cluster.sh` creates no `_sender` table, a supported state.
-        try:
-            self.log_export_host, self.log_export_password = (
-                log_export.get_credentials()
-            )
-        except SecretFetchFailed as e:
-            print(f"WARNING: Failed to configure log export: {e}")
-            Info().add_workflow_warning(f"Failed to configure log export: {e}")
-            return True
-        return log_export.create_config(
-            self.config_path,
-            self.log_export_host,
-            self.log_export_password,
-            users_dir=f"{self.config_path}/users.d",
+        # Raises on a failed write; an unfetched secret leaves the credentials `None`, so nothing is exported.
+        credentials = log_export.configure(
+            self.config_path, users_dir=f"{self.config_path}/users.d"
         )
+        if credentials:
+            self.log_export_host, self.log_export_password = credentials
 
     def start_log_exports(self, check_start_time):
         # Create the remote `system.*_log` tables and the materialized views
@@ -305,10 +288,7 @@ def main():
         # Configure export of system log tables to the central CI logs cluster
         # (skipped for local runs, where the credentials are not available).
         if not info.is_local_run:
-            # A failed copy of the `ci_logs_sender` user config is reported by return value.
-            if not ch.create_log_export_config():
-                print("WARNING: Failed to configure log export")
-                info.add_workflow_warning("Failed to configure log export")
+            ch.create_log_export_config()
         if not ch.start():
             return False
         if not info.is_local_run:

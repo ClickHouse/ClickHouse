@@ -18,7 +18,6 @@ from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
-from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -349,25 +348,10 @@ class ClickHouseProc:
             )
 
     def create_log_export_config(self, config_dir=None):
-        # Write into the config dir the server actually reads. Callers that run
-        # the server from a non-default location (e.g. `ClickHouseService` under
-        # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
-        # `system_logs_export` cluster lands in the default `ch_config_dir` and
-        # the server starts without it, failing replication setup with `Code:
-        # 701. Requested cluster 'system_logs_export' not found`.
-        config_dir = config_dir or self.ch_config_dir
-        # Without the credentials `setup_log_cluster.sh` creates no `_sender` table, a supported state.
-        try:
-            self.log_export_host, self.log_export_password = (
-                log_export.get_credentials()
-            )
-        except SecretFetchFailed as e:
-            print(f"WARNING: Failed to configure log export: {e}")
-            Info().add_workflow_warning(f"Failed to configure log export: {e}")
-            return True
-        return log_export.create_config(
-            config_dir, self.log_export_host, self.log_export_password
-        )
+        # Raises on a failed write; an unfetched secret leaves the credentials `None`, so nothing is exported.
+        credentials = log_export.configure(config_dir or self.ch_config_dir)
+        if credentials:
+            self.log_export_host, self.log_export_password = credentials
 
     def start_log_exports(self, check_start_time):
         return log_export.start(
@@ -1565,9 +1549,8 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
-                res = ch.create_log_export_config()
-            else:
-                res = True
+                ch.create_log_export_config()
+            res = True
         elif command == "logs_export_start":
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs
