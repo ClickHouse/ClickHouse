@@ -77,7 +77,7 @@ $CLIENT --query "
 # The cloud build routes `OPTIMIZE` elsewhere and may refuse it, see 04815_iceberg_optimize_position_delete_row_count_113745.
 optimize_err=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE opt" 2>&1)
 if [[ "${IS_CLOUD}" = "1" ]]; then
-    echo "old data files left 0"
+    printf 'old data files left\t0\n'
 elif [[ -n "${optimize_err}" ]]; then
     echo "OPTIMIZE failed: ${optimize_err}"
 else
