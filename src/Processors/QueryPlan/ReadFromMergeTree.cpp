@@ -22,6 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
@@ -37,7 +38,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Planner/Utils.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
@@ -348,6 +348,8 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -3092,12 +3094,9 @@ void ReadFromMergeTree::buildIndexes(
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
-            const auto & key = metadata_snapshot->getPrimaryKey();
-            KeyCondition key_condition{
-                wrapped, query_context, key, /* single_point_ = */ false, skip_primary_key_analysis,
-                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(key, query_context)};
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(key.data_types);
-            return key_condition;
+            return KeyCondition{
+                wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, skip_primary_key_analysis,
+                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), query_context)};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
@@ -3901,12 +3900,36 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
             /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
-            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
+            if (outputs.size() == 1 && !skip_top_k)
             {
-                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
-                if (top_k_filter_info)
-                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
-                condition_hash = hash;
+                std::optional<size_t> hash;
+                if (isDeterministicAllowingTopKFilter(outputs.front()))
+                {
+                    hash = outputs.front()->getHash();
+                }
+                else if (settings[Setting::use_query_condition_cache_for_time_conditions] && !top_k_filter_info)
+                {
+                    /// A condition involving the current time can be cached under the deterministic
+                    /// condition derived by rounding its time constants onto a grid (issue #115504).
+                    /// This is a write side, so the derived condition must *strengthen* the original
+                    /// one: index analysis proved that no rows of the excluded granules match the
+                    /// condition, hence none match the (stricter) derived condition either.
+                    /// Not for TopK reads, see `deriveDeterministicTimeCondition`.
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            outputs.front(),
+                            TimeConditionRounding::Strengthen,
+                            static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                            time(nullptr)))
+                        hash = derived->hash;
+                }
+
+                if (hash)
+                {
+                    *hash = queryConditionCacheHash(*hash, reader_settings.query_condition_cache_settings_salt);
+                    if (top_k_filter_info)
+                        boost::hash_combine(*hash, top_k_filter_info->condition_hash);
+                    condition_hash = hash;
+                }
             }
         }
 
@@ -4531,11 +4554,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.supportsSampling())
         return true;
 
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    return select.sampleSize() != nullptr;
+    return query_info.getSampleSizeRatio().has_value();
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
@@ -5566,8 +5585,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         const auto & column_type = top_k_filter_info->data_type;
-        /// Also nested inside `Tuple`, `Array`, ...: the threshold is compared as a raw `Field`, which places
-        /// a nested NULL or NaN regardless of NULLS FIRST/LAST.
+        /// Also nested inside `Tuple`, `Array`, ...: there too the primary key places a NULL or NaN by its own
+        /// order, not by the query's NULLS FIRST/LAST.
         bool has_nulls_direction_dependent_part = anyInTypeTree(
             *column_type, [](const IDataType & type) { return type.isNullable() || isFloat(type); });
         auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
@@ -7289,9 +7308,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
-        UInt64 flag = 0;
-        readVarUInt(flag, ctx.in);
-        has_input_order_info = flag != 0;
+        readVarUInt(has_input_order_info, ctx.in);
         if (has_input_order_info)
         {
             readVarUInt(input_order_prefix_size, ctx.in);
