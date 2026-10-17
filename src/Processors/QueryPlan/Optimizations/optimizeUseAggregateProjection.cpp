@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+
 #include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Functions/FunctionFactory.h>
@@ -29,10 +30,12 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -60,6 +63,7 @@ namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
+
 }
 
 namespace DB::QueryPlanOptimizations
@@ -292,6 +296,7 @@ struct AggregateProjectionInfo
     std::optional<ActionsDAG> before_aggregation;
     Names keys;
     AggregateDescriptions aggregates;
+    NameSet context_independent_null_checks;
 
     /// A context copy from interpreter which was used for analysis.
     /// Just in case it is used by some function.
@@ -332,6 +337,35 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     info.before_aggregation = analysis_result.before_aggregation->dag.clone();
     info.keys = query_analyzer->aggregationKeys().getNames();
     info.aggregates = query_analyzer->aggregates();
+
+    /// Prove nullability from the stored expression and physical schema, not re-analyzed argument types:
+    /// settings such as `cast_keep_nullable` can change the nullability of intermediate expressions.
+    const auto * select = projection.query_ast->as<ASTSelectQuery>();
+    if (select && !select->with() && !containsAliases(projection.query_ast))
+    {
+        ASTs pending = select->select()->children;
+        while (!pending.empty())
+        {
+            auto ast = std::move(pending.back());
+            pending.pop_back();
+            const auto * function = ast->as<ASTFunction>();
+            if (!function || function->name == "lambda" || function->isWindowFunction())
+                continue;
+            if ((function->name == "isNull" || function->name == "isNotNull")
+                && function->arguments && function->arguments->children.size() == 1)
+            {
+                const auto * identifier = function->arguments->children.front()->as<ASTIdentifier>();
+                if (identifier)
+                {
+                    const auto column = metadata_snapshot->getColumns().tryGetPhysical(identifier->name());
+                    if (column && !canContainNull(*column->type))
+                        info.context_independent_null_checks.insert(function->getColumnName());
+                }
+            }
+            if (function->arguments)
+                pending.insert(pending.end(), function->arguments->children.begin(), function->arguments->children.end());
+        }
+    }
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.
@@ -433,8 +467,30 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 const auto * proj_node = kt->second;
 
                 auto mt = matches.find(query_node);
-                if (mt == matches.end())
+                if (mt == matches.end() || mt->second.node == nullptr)
+                {
+                    /// Folding `isNull` on a non-nullable column can produce differently named constants.
+                    /// Only match null checks directly over physical columns with non-nullable schema types.
+                    /// Their results are independent of materialization settings. Require `UInt8` to preserve types.
+                    /// See https://github.com/ClickHouse/ClickHouse/issues/68949
+                    if (query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
+                        && isColumnConst(*query_node->column) && query_node->isDeterministic()
+                        && proj_node->type == ActionsDAG::ActionType::COLUMN && proj_node->column
+                        && isColumnConst(*proj_node->column) && proj_node->isDeterministic()
+                        && proj_node->function_base
+                        && (proj_node->function_base->getName() == "isNull" || proj_node->function_base->getName() == "isNotNull")
+                        && info.context_independent_null_checks.contains(proj_name)
+                        && WhichDataType(proj_node->result_type).isUInt8()
+                        && proj_node->result_type->equals(*query_node->result_type)
+                        && assert_cast<const ColumnConst &>(*proj_node->column).getField()
+                            == assert_cast<const ColumnConst &>(*query_node->column).getField())
+                    {
+                        argument_types.push_back(query_node->result_type);
+                        ++next_arg;
+                        continue;
+                    }
                     break;
+                }
 
                 const auto & node_match = mt->second;
                 if (node_match.node != proj_node || node_match.monotonicity)
