@@ -1,0 +1,42 @@
+-- A qualified matcher stays an argument of count and its REPLACE reaches HAVING
+1
+1
+1
+1
+-- The same for a qualified asterisk of a single column table expression
+1
+1
+1
+1
+-- An unqualified matcher is still dropped by count, so its REPLACE stays unregistered
+1
+1
+1
+1
+-- A matcher in the PARTITION BY of a window definition written in place
+1
+1
+1
+1
+-- A matcher in the ORDER BY of a window definition written in place
+1
+2
+1
+2
+-- A matcher in a window definition written in place, with the ROLLUP total
+1
+2
+2
+1
+2
+2
+-- A matcher in the definition of a named window from the WINDOW clause
+1
+1
+1
+1
+-- The same for a window derived from a named one
+1
+1
+1
+1
