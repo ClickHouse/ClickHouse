@@ -20,3 +20,41 @@ a nullable key without NULLs
 the exact count of a non-nullable key
 1
 16
+a set holding only NULL
+1
+3
+3
+its negation
+4
+4
+over the lightweight primary index
+1
+3
+4
+a NULL element of a has() array
+3
+3
+3
+a reversed key
+3
+3
+3
+a wrapped key must still raise
+and so must one under has()
+a bare key under a negated set
+1
+1
+3
+3
+the global spelling of a set holding only NULL
+1
+3
+3
+and of its negation over a bare key
+1
+3
+3
+a bare key under a negated has()
+1
+3
+3
