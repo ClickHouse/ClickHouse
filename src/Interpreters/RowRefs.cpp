@@ -14,6 +14,8 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
+#include <base/Decimal.h>
+#include <base/sort.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -21,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <limits>
 #include <mutex>
 
@@ -65,6 +68,9 @@ void callWithType(TypeIndex type, F && f)
     UNREACHABLE();
 }
 
+/// Entries are sorted by the ASOF key in ascending order with a stable sort, so equal keys keep the insertion order.
+/// Among equal keys the lookup returns the row adjacent to the searched value:
+/// the last inserted one for `>` and `>=`, the first inserted one for `<` and `<=`.
 template <typename TKey, ASOFJoinInequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
@@ -89,21 +95,18 @@ class SortedLookupVector : public SortedLookupVectorBase
         }
     };
 
-    struct GreaterEntryOperator
-    {
-        ALWAYS_INLINE bool operator()(const Entry & lhs, const Entry & rhs) const
-        {
-            return lhs.value > rhs.value;
-        }
-    };
-
+    /// Decimal and DateTime64 wrap an integer, radix sort works on it.
+    using KeyNative = NativeType<TKey>;
+    static constexpr bool can_radix_sort = std::is_arithmetic_v<KeyNative> && !is_floating_point<KeyNative>;
 
 public:
     using Entries = PODArrayWithStackMemory<Entry, sizeof(Entry)>;
     using RowRefs = PODArrayWithStackMemory<RowRef, sizeof(RowRef)>;
 
-    static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
-    static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
+    /// Greater and GreaterOrEquals take the last entry before the boundary found by `boundSearch`, the other two take the boundary itself.
+    static constexpr bool take_last = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
+    /// Less and GreaterOrEquals need the first entry greater than the value, the other two the first entry not less than it.
+    static constexpr bool use_upper_bound = (inequality == ASOFJoinInequality::Less || inequality == ASOFJoinInequality::GreaterOrEquals);
 
     void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override
     {
@@ -126,9 +129,8 @@ public:
         size_t size = entries.size();
         size_t low = 0;
 
-        /// This is a single binary search iteration as a macro to unroll. Takes into account the inequality:
-        /// is_strict -> Equal values are not requested
-        /// is_descending -> The vector is sorted in reverse (for greater or greaterOrEquals)
+        /// This is a single binary search iteration as a macro to unroll.
+        /// upper_bound skips the entries not greater than the value, lower_bound skips the entries less than it.
 #define BOUND_ITERATION \
     { \
         size_t half = size / 2; \
@@ -137,20 +139,10 @@ public:
         size_t other_low = low + other_half; \
         TKey & v = entries[probe].value; \
         size = half; \
-        if constexpr (is_descending) \
-        { \
-            if constexpr (is_strict) \
-                low = value <= v ? other_low : low; \
-            else \
-                low = value < v ? other_low : low; \
-        } \
+        if constexpr (use_upper_bound) \
+            low = value >= v ? other_low : low; \
         else \
-        { \
-            if constexpr (is_strict) \
-                low = value >= v ? other_low : low; \
-            else \
-                low = value > v ? other_low : low; \
-        } \
+            low = value > v ? other_low : low; \
     }
 
         while (size >= 8)
@@ -178,13 +170,21 @@ public:
         TKey k = column.getElement(row_num);
 
         size_t pos = boundSearch(k);
-        if (pos != entries.size())
+        if constexpr (take_last)
         {
-            size_t row_ref_index = entries[pos].row_ref_index;
-            return &row_refs[row_ref_index];
+            /// The last entry before the boundary
+            if (pos == 0)
+                return nullptr;
+            --pos;
+        }
+        else
+        {
+            if (pos == entries.size())
+                return nullptr;
         }
 
-        return nullptr;
+        size_t row_ref_index = entries[pos].row_ref_index;
+        return &row_refs[row_ref_index];
     }
 
 private:
@@ -208,31 +208,43 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
+        sortEntries();
+        sorted.store(true, std::memory_order_release);
+    }
+
+    /// Stable sort in ascending order: the order of equal values decides which of the tied rows is returned.
+    void sortEntries()
+    {
+        /// The right side is often already sorted by the ASOF key (e.g. it is in the table ORDER BY)
+        if (std::is_sorted(entries.begin(), entries.end(), LessEntryOperator()))
+            return;
+
+        if constexpr (can_radix_sort)
         {
+            /// LSD radix sort is stable. For small arrays comparison sort is faster.
             if (likely(entries.size() > 256))
             {
-                struct RadixSortTraits : RadixSortNumTraits<TKey>
+                struct RadixSortTraits : RadixSortNumTraits<KeyNative>
                 {
                     using Element = Entry;
                     using Result = Element;
 
-                    static TKey & extractKey(Element & elem) { return elem.value; }
+                    static KeyNative & extractKey(Element & elem)
+                    {
+                        if constexpr (is_decimal<TKey>)
+                            return elem.value.value;
+                        else
+                            return elem.value;
+                    }
                     static Result extractResult(Element & elem) { return elem; }
                 };
 
-                RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), is_descending /*reverse*/);
-                sorted.store(true, std::memory_order_release);
+                RadixSort<RadixSortTraits>::executeLSD(entries.data(), entries.size());
                 return;
             }
         }
 
-        if constexpr (is_descending)
-            ::sort(entries.begin(), entries.end(), GreaterEntryOperator());
-        else
-            ::sort(entries.begin(), entries.end(), LessEntryOperator());
-
-        sorted.store(true, std::memory_order_release);
+        ::stableSort(entries.begin(), entries.end(), LessEntryOperator());
     }
 };
 
