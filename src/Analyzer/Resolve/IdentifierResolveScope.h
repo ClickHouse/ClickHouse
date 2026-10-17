@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <unordered_set>
 
@@ -145,6 +146,9 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
+    /// Arguments resolved on first use as arguments of an aggregate function, where GROUP BY keys keep their type with `group_by_use_nulls`.
+    std::unordered_map<std::string, std::function<QueryTreeNodePtr()>> expression_argument_name_to_node_inside_aggregate_function;
+
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this
       * lambda scope, so that a lambda argument does not capture an identifier of an expression
@@ -260,6 +264,9 @@ struct IdentifierResolveScope
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
     void popExpressionNode();
+
+    /// `ExpressionsStack` is per-scope, so an aggregate enclosing a lambda sits on a parent scope's stack.
+    bool isInAggregateOrGroupingFunctionScope() const;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
