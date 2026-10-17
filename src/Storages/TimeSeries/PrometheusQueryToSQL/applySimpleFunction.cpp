@@ -124,6 +124,7 @@ SQLQueryPiece applySimpleFunction(
 
                 res.store_method = StoreMethod::VECTOR_GRID;
                 res.metric_name_dropped = argument.metric_name_dropped;
+                res.metric_name_is_constant = argument.metric_name_is_constant;
 
                 break;
             }

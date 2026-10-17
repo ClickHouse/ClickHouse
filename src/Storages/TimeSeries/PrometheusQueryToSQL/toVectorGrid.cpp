@@ -44,6 +44,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.select_query = builder.getSelectQuery();
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             /// An empty piece has no time grid of its own, so it takes the evaluation range of its node.
             const auto & node_range = context.node_range_getter.get(query_piece.node);
@@ -92,6 +93,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.scalar_value = {};
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }
@@ -113,6 +115,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.select_query = builder.getSelectQuery();
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }
