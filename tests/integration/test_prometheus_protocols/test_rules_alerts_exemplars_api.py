@@ -97,8 +97,7 @@ def test_rules_ignores_filter_parameters():
 
 
 @pytest.mark.parametrize(
-    "query",
-    ["rate(up[5m])", "sum by (job) (rate(up[5m]))", "up[5m]", "1 + 1", "sort(up)"],
+    "query", ["rate(up[5m])", "sum by (job) (rate(up[5m]))", "up[5m]", "1 + 1"]
 )
 def test_query_exemplars_valid_query(query):
     response = requests.get(
@@ -131,6 +130,8 @@ def test_query_exemplars_post():
         ("query_exemplars", {"query": "up{"}),
         ("query_exemplars", {"query": "rate(up)"}),
         ("query_exemplars", {"query": "abs()"}),
+        ("query_exemplars", {"query": "sort()"}),
+        ("query_exemplars", {"query": "sort(up) + rate(up)"}),
         ("query_exemplars", {"query": "up", "start": "abc"}),
         ("query_exemplars", {"query": "up", "start": "1700000600", "end": "1700000000"}),
     ],

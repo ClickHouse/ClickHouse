@@ -697,17 +697,7 @@ private:
             evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
             evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
             evaluation_settings.use_current_time = true;
-            auto promql_tree = std::make_shared<PrometheusQueryTree>(params->get("query", ""));
-            try
-            {
-                PrometheusQueryToSQL::Converter{promql_tree, evaluation_settings}.getSQL();
-            }
-            catch (const Exception & e)
-            {
-                /// A function that ClickHouse can't evaluate yet is still valid PromQL.
-                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                    throw;
-            }
+            PrometheusQueryToSQL::Converter{std::make_shared<PrometheusQueryTree>(params->get("query", "")), evaluation_settings}.getSQL();
         }
         else if (uri_path.ends_with("/rules"))
         {
