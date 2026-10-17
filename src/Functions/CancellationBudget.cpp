@@ -4,6 +4,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -29,6 +30,8 @@ std::function<void()> makeCancellationCheck(const char * function_name)
     /// function is a wrong value rather than a smaller one, so it throws either way.
     return [process_list_element, function_name]
     {
+        if (ThreadStatus::QueryCancellationBlocker::isActive())
+            return;
         if (!process_list_element->checkTimeLimit())
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", function_name);
