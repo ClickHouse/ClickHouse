@@ -1,6 +1,8 @@
 import pytest
+from kazoo.security import OPEN_ACL_UNSAFE, make_digest_acl
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -64,6 +66,131 @@ def expect_part_info(
     assert res[2] == creation_csn
     assert res[3] == removal_tid
     assert res[4] == removal_csn
+
+
+def test_failed_start_releases_ephemeral_holders(start_cluster):
+    # With transactions enabled, a transaction log that cannot be loaded must keep the server from
+    # starting, and the failed TransactionManager::start() must give up its ephemeral node holders
+    # cleanly: the attempt's instance is discarded and ~TransactionManager -> shutdown() removes them
+    # under shutdown()'s own Keeper component guard. Without a component, tryRemove throws
+    # LOGICAL_ERROR "Current component is empty", which aborts a debug build and force-closes the
+    # shared Keeper session otherwise. That check needs enforce_keeper_component_tracking, which is
+    # off by default but is written into every integration instance
+    # (helpers/0_common_enforce_zookeeper_component_name.xml).
+    zk = cluster.get_kazoo_client("zoo1")
+    log_path = "/clickhouse/txn/log"
+    bad_entry = f"{log_path}/csn-0009999999"
+    try:
+        # One transaction that must succeed, so the failure below is attributable to the entry
+        # injected afterwards. It creates no data part.
+        tx(100, "BEGIN TRANSACTION")
+        tx(100, "ROLLBACK")
+
+        # The log root must already exist, created by TransactionLog::initLogRoot: it is the only
+        # thing that fast-forwards the sequential counter past the reserved CSNs, and it only does so
+        # when it finds the log absent -- so the injected node below must never be what brings the
+        # log into existence. That is also why there is no makepath below.
+        zk.sync(log_path)
+        assert zk.exists(log_path), f"{log_path} should have been created by initLogRoot"
+
+        # A CSN log entry claiming a format version this server does not know. Deserializing it
+        # throws from reloadCSNLogs, i.e. after initOwnReplicaState has taken `_active` and the
+        # cleanup lease.
+        zk.create(bad_entry, b"version: 2\n")
+
+        # configs/transactions.xml enables transactions, so the next process initializes the log at
+        # startup and must refuse to start.
+        node.stop_clickhouse()
+        node.start_clickhouse(expected_to_fail=True)
+
+        # helpers/0_common_instance_config.xml sets <rotateOnOpen>, so count_in_log reads the log of
+        # the process that has just refused to start.
+        #
+        # Precondition: the failed attempt had taken the cleanup lease, so its release path ran.
+        assert int(node.count_in_log("Acquired cleanup lease")) >= 1
+        # The startup error is the load failure itself, logged once the unwinding is complete ...
+        assert int(node.count_in_log("Unknown CSN entry format version")) >= 1
+        # ... and not an abort while releasing the holders: a debug build logs this needle from
+        # abortOnFailedAssertion, a release build from ~EphemeralNodeHolder's own handler.
+        assert int(node.count_in_log("Current component is empty")) == 0
+
+        zk.delete(bad_entry)
+        node.start_clickhouse()
+        tx(101, "BEGIN TRANSACTION")
+        tx(101, "ROLLBACK")
+    finally:
+        if zk.exists(bad_entry):
+            zk.delete(bad_entry)
+        zk.stop()
+        zk.close()
+        if node.get_process_pid("clickhouse") is None:
+            node.start_clickhouse()
+
+
+def test_start_is_retried_after_keeper_was_unavailable(start_cluster):
+    # An unavailable Keeper does not keep a server with transactions enabled from starting, and the
+    # failed initialization must not be published: the first transaction afterwards has to run
+    # TransactionManager::start() on a fresh instance. It has to run before any test that creates a
+    # transactional part: loading one while Keeper is unreachable would need the log.
+    node.stop_clickhouse()
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(node, action="REJECT --reject-with tcp-reset")
+        node.start_clickhouse(start_wait_sec=120)
+        assert int(node.count_in_log("Cannot initialize the transaction log at startup")) >= 1
+        assert int(node.count_in_log("Acquired cleanup lease")) == 0
+
+    node.query_with_retry("SELECT count() FROM system.zookeeper WHERE path = '/'")
+    tx(200, "BEGIN TRANSACTION")
+    tx(200, "ROLLBACK")
+    # The graceful stop above released the lease, so a started instance takes it again. An instance
+    # published by the failed attempt would serve this transaction without ever taking it.
+    assert int(node.count_in_log("Acquired cleanup lease")) >= 1
+
+
+def test_startup_fails_on_other_keeper_errors(start_cluster):
+    # Only an unavailable Keeper is tolerated at startup; any other Keeper error still keeps a server
+    # with transactions enabled from starting. A persistent node with a child where this replica's
+    # ephemeral `_active` node belongs makes TransactionSession::createActiveNode fail with
+    # ZNODEEXISTS.
+    zk = cluster.get_kazoo_client("zoo1")
+    replicas = "/clickhouse/txn/replicas"
+    zk.sync(replicas)
+    sessions = [c for c in zk.get_children(replicas) if c.endswith("_session")]
+    assert len(sessions) == 1, sessions
+    active = f"{replicas}/{sessions[0][: -len('_session')]}_active"
+    try:
+        node.stop_clickhouse()
+        zk.create(f"{active}/blocker", makepath=True)
+        node.start_clickhouse(expected_to_fail=True)
+        assert int(node.count_in_log(f"Node exists, path {active}")) >= 1
+        assert int(node.count_in_log("Cannot initialize the transaction log at startup")) == 0
+    finally:
+        if zk.exists(active):
+            zk.delete(active, recursive=True)
+        zk.stop()
+        zk.close()
+        if node.get_process_pid("clickhouse") is None:
+            node.start_clickhouse()
+
+
+def test_startup_fails_when_keeper_denies_access(start_cluster):
+    # Keeper denying access to the log (ZNOAUTH) is not an unavailable Keeper: credentials that do
+    # not match the log's ACL fail the same way on every retry, so the server must not start.
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.add_auth("digest", "txn_owner:secret")
+    log_path = "/clickhouse/txn/log"
+    try:
+        node.stop_clickhouse()
+        zk.set_acls(log_path, [make_digest_acl("txn_owner", "secret", all=True)])
+        node.start_clickhouse(expected_to_fail=True)
+        assert int(node.count_in_log(f"Not authenticated, path {log_path}")) >= 1
+        assert int(node.count_in_log("Cannot initialize the transaction log at startup")) == 0
+    finally:
+        zk.set_acls(log_path, OPEN_ACL_UNSAFE)
+        zk.stop()
+        zk.close()
+        if node.get_process_pid("clickhouse") is None:
+            node.start_clickhouse()
 
 
 def test_rollback_unfinished_on_restart1(start_cluster):
