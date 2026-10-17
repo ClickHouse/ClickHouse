@@ -1058,9 +1058,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     if (output_infos.empty())
         return;
 
-    auto tokens_format = params.dictionary_block_frontcoding_compression
-        ? TextIndexSerialization::TokensFormat::FrontCodedStrings
-        : TextIndexSerialization::TokensFormat::RawStrings;
+    auto tokens_format = TextIndexSerialization::getTokensFormat(params.dictionary_block_encoding);
 
     size_t num_tokens = output_infos.size();
     auto & output_str = assert_cast<ColumnString &>(*output_tokens);

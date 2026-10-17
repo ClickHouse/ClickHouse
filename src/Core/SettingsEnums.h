@@ -573,6 +573,16 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+/// Token layout of text index dictionary blocks. The values are the on-disk `tokens_format` and must remain stable.
+enum class TextIndexDictionaryBlockEncoding : uint8_t
+{
+    None = 0,
+    FrontCodingV1 = 1,
+    FrontCodingV2 = 2,
+};
+
+DECLARE_SETTING_ENUM(TextIndexDictionaryBlockEncoding)
+
 /// On-disk serialization format version of text indexes.
 /// These are the on-disk version numbers and must remain stable.
 enum class MergeTreeTextIndexSerializationVersion : uint8_t

@@ -92,6 +92,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     DataTypeEnum8::Values values;
     values.emplace_back("raw", static_cast<Int8>(0));
     values.emplace_back("front_coded", static_cast<Int8>(1));
+    values.emplace_back("front_coded_v2", static_cast<Int8>(2));
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
