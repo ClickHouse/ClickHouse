@@ -325,7 +325,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
-        result_null_map_column = nullable->getNullMapColumnPtr();
+        result_null_map_column = nullable->tryGetNullMapColumnPtr();
     }
 
     for (const auto & elem : args)
@@ -345,7 +345,11 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
-            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
+            /// The arguments without a null map have no NULLs.
+            ColumnPtr null_map_column = nullable->tryGetNullMapColumnPtr();
+            if (!null_map_column)
+                continue;
+
             if (!result_null_map_column)
             {
                 result_null_map_column = null_map_column;
@@ -380,10 +384,15 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
-        const auto & src_null_map = nullable->getNullMapColumn().getData();
+        const auto * src_null_map_ptr = nullable->tryGetNullMapData();
 
-        if (null_map)
+        if (!src_null_map_ptr)
         {
+            /// The source has no NULLs, only the given null map defines the NULLs.
+        }
+        else if (null_map)
+        {
+            const auto & src_null_map = *src_null_map_ptr;
             /// Reuse null_map as result_null_map if possible, thus avoiding unnecessary memory allocation.
             auto result_null_map_column = IColumn::mutate(std::move(null_map));
             auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
@@ -444,9 +453,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
         return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
     }
 
-    if (null_map)
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
+    return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)

@@ -30,6 +30,11 @@ struct ColumnData
   */
 ColumnData getColumnData(const IColumn * column, size_t skip_rows = 0);
 
+/** Returns ColumnData for the column the compiled code writes to.
+  * Unlike `getColumnData`, it creates the null map of a `Nullable` column if it is absent.
+  */
+ColumnData getMutableColumnData(IColumn * column, size_t skip_rows = 0);
+
 using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
 

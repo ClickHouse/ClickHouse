@@ -184,8 +184,16 @@ MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data,
         return new_column;
 
     auto null_column = ColumnUInt8::create(rows_count);
+    UInt8 has_null = 0;
     for (size_t i = 0; i < rows_count; ++i)
+    {
         null_column->getData()[i] = (ternary_data[i] == Ternary::Null);
+        has_null |= null_column->getData()[i];
+    }
+
+    /// Do not keep the null map if there are no NULLs.
+    if (!has_null)
+        return ColumnNullable::create(std::move(new_column));
 
     return ColumnNullable::create(std::move(new_column), std::move(null_column));
 }
@@ -305,7 +313,12 @@ struct TernaryValueBuilderImpl<Type, Types...>
         {
             memset(ternary_column_data, Ternary::Null, size);
         }
-        else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
+        else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x); nullable_column && !nullable_column->hasNullMap())
+        {
+            /// No NULLs, process the nested column. The types before `Type` do not match the nested column already.
+            TernaryValueBuilderImpl<Type, Types...>::build(nullable_column->getNestedColumnPtr().get(), ternary_column_data);
+        }
+        else if (nullable_column)
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
@@ -840,6 +853,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
 
     if (!nulls)
         return res;
+
+    /// Do not keep the null map if there are no NULLs.
+    if (memoryIsZero(nulls->data(), 0, nulls->size()))
+        return ColumnNullable::create(std::move(res));
 
     auto bytemap = ColumnUInt8::create();
     bytemap->getData() = std::move(*nulls);

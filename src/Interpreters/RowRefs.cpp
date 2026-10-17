@@ -255,6 +255,23 @@ void StoredBlock::rebuildReplicatedColumns()
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
+
+    materializeNullMaps();
+}
+
+void StoredBlock::materializeNullMaps() const
+{
+    auto materialize = [](const IColumn & column)
+    {
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+            nullable->materializeNullMap();
+    };
+
+    for (const auto & column : columns)
+    {
+        materialize(*column);
+        column->forEachSubcolumnRecursively(materialize);
+    }
 }
 
 bool StoredBlock::hasRowStore() const { return row_store != nullptr; }
