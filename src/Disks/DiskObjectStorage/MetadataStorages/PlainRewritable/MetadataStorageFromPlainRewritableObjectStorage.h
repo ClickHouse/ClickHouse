@@ -83,6 +83,7 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
+    bool isPathOnLocalFilesystem() const override;
     bool supportsHardLinks() const override { return hard_links_enabled; }
 
     MetadataTransactionPtr createTransaction() override;

@@ -48,6 +48,9 @@ public:
 
     FileCachePtr get(const std::string & cache_name);
 
+    /// Like `get`, but returns `nullptr` instead of throwing when there is no cache with this name.
+    FileCachePtr tryGet(const std::string & cache_name);
+
     FileCachePtr create(
         const std::string & cache_name,
         const FileCacheSettings & file_cache_settings,

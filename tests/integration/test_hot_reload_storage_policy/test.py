@@ -182,3 +182,114 @@ def test_hot_reload_policy_distributed_table(started_cluster):
 
     node.query("DROP TABLE t")
     node.query("DROP TABLE t_d")
+
+
+shared_disk_config_template = """
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk0>
+                <path>/var/lib/clickhouse/disk0/</path>
+            </disk0>
+            <disk_shared>
+                <path>/var/lib/clickhouse/disk_shared/</path>
+            </disk_shared>
+            {extra_disks}
+        </disks>
+        <policies>
+            <!-- Not `default_policy`: `storage_configuration.xml` is merged on top of this file, and
+                 its volume of `default_policy` would add `disk0` once more. -->
+            <shared_test_policy>
+                <volumes>
+                    <volume0>
+                        <disk>disk0</disk>
+                        {extra_volume_disks}
+                    </volume0>
+                </volumes>
+            </shared_test_policy>
+            <other_policy>
+                <volumes>
+                    <volume0>
+                        <disk>disk_shared</disk>
+                    </volume0>
+                </volumes>
+            </other_policy>
+        </policies>
+    </storage_configuration>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>
+"""
+
+
+def test_hot_reload_distributed_existing_disk_entering_volume(started_cluster):
+    # A reload that appends to the volume of a `Distributed` table both a globally new disk and a disk
+    # that another policy already uses: only the former is reported as newly added to the server, but
+    # the latter is new to this table's volume as well and may hold its queued blocks. They must be
+    # picked up (sent, and their numbers not reused by new inserts) like those of the new disk.
+    set_config(
+        node, shared_disk_config_template.format(extra_disks="", extra_volume_disks="")
+    )
+    node.restart_clickhouse()
+
+    node.query("DROP TABLE IF EXISTS t_shared SYNC")
+    node.query("DROP TABLE IF EXISTS t_shared_d SYNC")
+    node.query(
+        "CREATE TABLE t_shared (d Int32, s String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query(
+        "CREATE TABLE t_shared_d (d Int32, s String) ENGINE = Distributed('default', 'default', 't_shared', d, 'shared_test_policy')"
+    )
+
+    node.query("SYSTEM STOP DISTRIBUTED SENDS t_shared_d")
+    node.query(
+        "INSERT INTO TABLE t_shared_d SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 0 VALUES (1, 'queued')"
+    )
+    queue_path = node.query(
+        "SELECT data_path FROM system.distribution_queue WHERE table = 't_shared_d'"
+    ).strip()
+    assert "/disk0/" in queue_path, queue_path
+
+    # Move the queued block to `disk_shared`, which is not part of the table's volume yet, so that after
+    # a restart nothing knows about it and the file numbering of the table starts from scratch.
+    shared_queue_path = queue_path.replace("/disk0/", "/disk_shared/")
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{shared_queue_path}' && mv '{queue_path}'/*.bin '{shared_queue_path}'",
+        ]
+    )
+    node.start_clickhouse()
+
+    set_config(
+        node,
+        shared_disk_config_template.format(
+            extra_disks="<disk_new><path>/var/lib/clickhouse/disk_new/</path></disk_new>",
+            extra_volume_disks="<disk>disk_shared</disk><disk>disk_new</disk>",
+        ),
+    )
+
+    node.query("SYSTEM FLUSH DISTRIBUTED t_shared_d")
+    assert node.query("SELECT d, s FROM t_shared ORDER BY d") == "1\tqueued\n"
+
+    # New queued inserts land on every disk of the volume in turn and must not collide with the
+    # numbers that were already taken on `disk_shared`.
+    for i in range(2, 8):
+        node.query(
+            f"INSERT INTO TABLE t_shared_d SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 0 VALUES ({i}, 'next')"
+        )
+    node.query("SYSTEM FLUSH DISTRIBUTED t_shared_d")
+    assert node.query("SELECT count() FROM t_shared") == "7\n"
+
+    node.query("DROP TABLE t_shared_d SYNC")
+    node.query("DROP TABLE t_shared SYNC")

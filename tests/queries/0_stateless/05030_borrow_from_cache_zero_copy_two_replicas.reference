@@ -1,0 +1,10 @@
+fetched rows	5
+1	hello
+2	world
+3	test
+4	another
+5	row
+rows after merge	5
+active parts on the second replica	1
+zero-copy disk selection attempted	1
+disks offering zero-copy	0

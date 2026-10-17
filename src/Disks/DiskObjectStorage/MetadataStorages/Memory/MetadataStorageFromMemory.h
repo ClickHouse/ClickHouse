@@ -42,6 +42,13 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Memory; }
 
+    /// Everything lives in RAM, so nothing survives a restart.
+    bool keepsMetadataAcrossRestarts() const override { return false; }
+
+    /// `getPath()` returns an empty placeholder, not a real host filesystem path, so consumers
+    /// that would use it as one (e.g. `DatabaseAtomic::tryCreateSymlink`) must fail closed.
+    bool isPathOnLocalFilesystem() const override { return false; }
+
     bool existsFile(const std::string & path) const override;
 
     bool existsDirectory(const std::string & path) const override;
