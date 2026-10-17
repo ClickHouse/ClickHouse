@@ -1,0 +1,14 @@
+=== implicit basic(auto) on Tuple still activates Vertical ===
+t	basic(auto)
+2
+1
+merge_algorithm
+Vertical
+stats_files
+statistics.packed
+
+=== compatible explicit STATISTICS on Tuple still activates Vertical ===
+2
+1
+merge_algorithm
+Vertical

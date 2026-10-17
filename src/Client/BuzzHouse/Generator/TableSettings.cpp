@@ -68,6 +68,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_summing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_suspicious_indices", trueOrFalseSetting},
     {"allow_tuple_element_aggregation", trueOrFalseSetting},
+    {"allow_experimental_vertical_merge_tuple_subcolumns", trueOrFalseSetting},
     {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
     {"alter_column_secondary_index_mode",
      CHSetting(

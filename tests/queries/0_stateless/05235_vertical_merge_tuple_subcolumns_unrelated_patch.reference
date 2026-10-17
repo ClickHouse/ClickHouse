@@ -1,0 +1,6 @@
+has_patch	1
+merge_algorithm	Vertical
+1	('a','b')	110
+2	('c','d')	20
+3	('e','f')	130
+4	('g','h')	40

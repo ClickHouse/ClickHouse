@@ -1,0 +1,10 @@
+rows
+2
+serialization_rows
+2 2 2
+merge_algorithm
+Vertical
+all_non_sparse_serialization_rows
+2 2 2
+all_non_sparse_merge_algorithm
+Vertical

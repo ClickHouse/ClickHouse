@@ -67,6 +67,8 @@ public:
         return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
     }
 
+    const SerializationInfoByName & getNewSerializationInfos() const { return new_serialization_infos; }
+
 protected:
     /// Remove all columns in @empty_columns, except that one column is always kept, because a
     /// part with no columns cannot be loaded. Also, clears checksums

@@ -1,0 +1,48 @@
+=== all-Fat Vertical vs Horizontal ===
+rows
+4
+select_match
+1
+check
+1
+vertical_substreams
+t%2Einner%2Ec
+t%2Einner%2Ec.size
+t%2Einner%2Ed
+t%2Einner%2Ed.size
+t%2Ex
+t%2Ex.size
+horizontal_substreams
+t%2Einner%2Ec
+t%2Einner%2Ec.size
+t%2Einner%2Ed
+t%2Einner%2Ed.size
+t%2Ex
+t%2Ex.size
+substreams_equal
+1
+serialization_keys
+k t
+t_exact False
+inner_exact False
+merge_algorithm
+Vertical
+
+=== JSON leaf does not flatten ===
+1	a	1
+2	b	2
+1
+
+=== Compact source does not flatten ===
+Compact
+Compact
+Wide
+1	('a','b')
+2	('c','d')
+1
+
+=== ADD tuple element: old Wide part lacks the leaf ===
+1	('a','b','')
+2	('c','d','')
+3	('e','f','g')
+1
