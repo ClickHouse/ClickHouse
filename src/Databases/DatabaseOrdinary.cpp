@@ -122,18 +122,19 @@ static std::optional<StorageReplicatedMergeTree::RestoredReplicaParts> readConve
     const String content = readMetadataFile(disk, path);
     ReadBufferFromString in(content);
     bool parsed = checkString("metadata version: ", in) && tryReadIntText(parts.max_metadata_version, in) && checkChar('\n', in);
+    std::unordered_set<String> part_names;
     while (parsed && !in.eof())
     {
         String part_name;
         readString(part_name, in);
-        parsed = !part_name.empty() && checkChar('\n', in);
+        parsed = !part_name.empty() && part_names.insert(part_name).second && checkChar('\n', in);
         parts.part_names.push_back(std::move(part_name));
     }
 
     if (!parsed)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Cannot parse {}, which lists the parts to attach when the conversion of the table to replicated is resumed. "
-            "Repair it: the first line is `metadata version: <N>`, followed by one part name per line",
+            "Repair it: the first line is `metadata version: <N>`, followed by each part name once, one per line",
             fullPath(disk, path));
     return parts;
 }
