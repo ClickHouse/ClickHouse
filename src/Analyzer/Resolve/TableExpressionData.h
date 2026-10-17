@@ -161,7 +161,7 @@ private:
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
     ColumnNodeMapPopulator populate_column_node_map;
     AliasColumnResolver resolve_alias_column;
-    /// Names of ALIAS columns, which expressions are not resolved yet.
+    /// Names of ALIAS columns, which were not requested from this object yet.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> unresolved_alias_columns;
 };
 
