@@ -3,8 +3,23 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
-node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
+# The tests measure the CPU time of an idle `node1` over the last minute, and
+# the export of the system logs to the CI Logs cluster (see
+# helpers/ci_logs_export.py) materialises every log table from a dozen threads
+# at startup, which is inside that window: keep it off for both nodes.
+node1 = cluster.add_instance(
+    "node1",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    with_ci_logs_export=False,
+)
+node2 = cluster.add_instance(
+    "node2",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=6,
+    with_ci_logs_export=False,
+)
 
 
 @pytest.fixture(scope="module")
