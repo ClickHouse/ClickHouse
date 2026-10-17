@@ -213,8 +213,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         struct Entry
         {
             TableKey key;
-            AggregateDataPtr * slot;    /// the cell's mapped slot; consumed cells are zeroed
-            UInt32 value_index;         /// into the list's values (entries are permuted by the heap)
+            AggregateDataPtr * slot = nullptr;  /// the cell's mapped slot; consumed cells are zeroed
+            UInt32 value_index = 0;             /// into the list's values (entries are permuted by the heap)
         };
 
         struct List
