@@ -47,6 +47,15 @@ k	k_1
 0	2
 1	1
 3	3
+self-join of one table, Nested prefix
+n	n_1
+[]	[(2)]
+[(1)]	[(1)]
+[(3)]	[(3)]
+n	n_1
+[]	[(2)]
+[(1)]	[(1)]
+[(3)]	[(3)]
 the same column twice keeps its name
 col2	col2
 2	2

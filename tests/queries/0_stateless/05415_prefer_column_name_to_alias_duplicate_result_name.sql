@@ -49,6 +49,15 @@ SELECT b.k AS k, k FROM t8_05415 AS a LEFT JOIN t8_05415 AS b ON a.k = b.k AND b
 SELECT * FROM (SELECT b.k AS k, k FROM t8_05415 AS a LEFT JOIN t8_05415 AS b ON a.k = b.k AND b.v = 1) ORDER BY ALL FORMAT TSVWithNames;
 DROP TABLE t8_05415;
 
+SELECT 'self-join of one table, Nested prefix';
+SET flatten_nested = 1;
+DROP TABLE IF EXISTS t9_05415;
+CREATE TABLE t9_05415 (k UInt8, v UInt8, n Nested(a UInt8)) ENGINE = Memory;
+INSERT INTO t9_05415 VALUES (1, 1, [1]), (2, 0, [2]), (3, 1, [3]);
+SELECT b.n AS n, n FROM t9_05415 AS a LEFT JOIN t9_05415 AS b ON a.k = b.k AND b.v = 1 ORDER BY ALL FORMAT TSVWithNames;
+SELECT * FROM (SELECT b.n AS n, n FROM t9_05415 AS a LEFT JOIN t9_05415 AS b ON a.k = b.k AND b.v = 1) ORDER BY ALL FORMAT TSVWithNames;
+DROP TABLE t9_05415;
+
 SELECT 'the same column twice keeps its name';
 SELECT col2 AS col2, col2 FROM (SELECT 1 AS col1, 2 AS col2) FORMAT TSVWithNames;
 

@@ -4206,10 +4206,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 result_projection_names.push_back(unresolved_identifier.getFullName());
 
             if (column_shadows_alias)
-            {
-                auto * query_scope = scope.getNearestQueryScope();
-                (query_scope ? query_scope : &scope)->projection_names_shadowing_aliases.insert(result_projection_names.front());
-            }
+                scope.projection_names_shadowing_aliases.insert(result_projection_names.front());
 
             break;
         }
@@ -7927,19 +7924,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();
         if (projection_nodes.size() == projection_columns.size())
         {
-            /// `isEqual` compares column sources structurally, so `a.k` and `b.k` of a self-join would be equal.
-            auto is_same_expression = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, bool compare_column_source_identity)
-            {
-                const auto * lhs_column = lhs->as<ColumnNode>();
-                const auto * rhs_column = rhs->as<ColumnNode>();
-                if (compare_column_source_identity && lhs_column && rhs_column)
-                    return lhs_column->getColumnName() == rhs_column->getColumnName()
-                        && lhs_column->getColumnType()->equals(*rhs_column->getColumnType())
-                        && lhs_column->getColumnSourceOrNull() == rhs_column->getColumnSourceOrNull();
-
-                return lhs->isEqual(*rhs, IQueryTreeNode::CompareOptions{.compare_aliases = false});
-            };
-
             std::unordered_map<std::string, size_t> name_to_first_position;
             std::unordered_set<std::string> projection_column_names;
             for (const auto & projection_column : projection_columns)
@@ -7975,7 +7959,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     /// columns are constant), and columns with identical names must have identical structure
                     /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
                     /// tables) keep the historical behavior and are not renamed, unless a column shadows an alias.
-                    need_rename = !is_same_expression(projection_nodes[it->second], projection_nodes[i], column_shadows_alias);
+                    need_rename = !projection_nodes[it->second]->isEqual(*projection_nodes[i],
+                        IQueryTreeNode::CompareOptions{.compare_aliases = false, .compare_column_sources_by_identity = column_shadows_alias});
                 }
 
                 if (!need_rename)
