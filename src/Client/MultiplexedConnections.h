@@ -115,6 +115,8 @@ private:
     size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
+    /// It does not cover sending the query, scalars, external tables and the query plan:
+    /// the caller serializes those against sendCancel.
     mutable std::mutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;
