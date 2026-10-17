@@ -97,6 +97,14 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
+    /// The approximate amount of memory retained by this object, including the object itself.
+    /// It is the weight of the object in the statistics cache, so it must not be underestimated.
+    /// It does not include the description of the statistics, see `descriptionAllocatedBytes`.
+    virtual size_t allocatedBytes() const = 0;
+
+    /// The memory retained by the description of the statistics (its AST), not including the object itself.
+    size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
+
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
     /// shifts the aggregate-function state layout) should return false so that
@@ -104,6 +112,9 @@ public:
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
 protected:
+    /// The memory allocated by a `Field` outside of the `Field` itself.
+    static size_t fieldAllocatedBytes(const Field & field);
+
     SingleStatisticsDescription stat;
 };
 
@@ -166,6 +177,8 @@ public:
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
+    /// The approximate amount of memory retained by this object and its statistics objects.
+    size_t allocatedBytes() const;
     DataTypePtr getDataType() const { return stats_desc.data_type; }
 
     const StatsMap & getStats() const { return stats; }
