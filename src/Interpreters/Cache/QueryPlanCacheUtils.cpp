@@ -41,6 +41,7 @@
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
@@ -117,6 +118,40 @@ bool isFunctionResolvedOutsideFunctionFactory(const String & name, const Context
         || UserDefinedWebAssemblyFunctionFactory::instance().has(name); /// NOLINT(readability-static-accessed-through-instance)
 }
 
+/// True for a function that checks access rights of the current user when it is created (introspection
+/// functions, AI functions using a named collection, ...). A deterministic call with constant arguments
+/// is folded into a constant during analysis, and the cached plan stores only the value: a hit never
+/// creates the function again, so it would keep serving the value after the privilege was revoked. The
+/// non-deterministic functions of this kind are rejected anyway; they are listed here so that the
+/// guard does not depend on their determinism flag.
+bool isFunctionCheckingAccessOnCreate(const String & name)
+{
+    static const std::unordered_set<std::string_view> functions = {
+        "demangle",
+        "addressToLine",
+        "addressToLineWithInlines",
+        "addressToSymbol",
+        "getServerSetting",
+        "getMergeTreeSetting",
+        "getMacro",
+        "hasColumnInTable",
+        "joinGet",
+        "joinGetOrNull",
+        "file",
+        "naiveBayesClassifier",
+        "naiveBayesClassifierWithProb",
+        "naiveBayesClassifierWithAllProbs",
+        "predictXGBoost",
+    };
+
+    const String & effective_name = getFunctionCanonicalNameIfAny(name);
+    return functions.contains(effective_name)
+        /// The AI functions check access to the named collection with the credentials.
+        || effective_name.starts_with("ai")
+        /// The dictionary functions check `dictGet` on the dictionary.
+        || effective_name.starts_with("dict");
+}
+
 /// What a row-policy filter AST, or the body of any SQL UDF it calls, contains that the plan cache
 /// cannot support. SQL UDFs are inlined into a row-policy filter at read time (see
 /// `checkRowPolicyFilterExpression` in RowPolicy.cpp for the same descent pattern), so whatever is
@@ -134,6 +169,9 @@ struct RowPolicyFilterContents
     /// would keep enforcing the analysis-time cutoff instead of the current one. This mirrors the
     /// check that `isFunctionUnsafeForPlanCache` applies to the visible query.
     bool has_non_deterministic_function = false;
+    /// A call to a function that checks access rights when it is created (see
+    /// `isFunctionCheckingAccessOnCreate`): a hit does not create it again, so the check is lost.
+    bool has_function_checking_access = false;
 };
 
 /// Walks `ast` and, recursively, the bodies of the SQL UDFs it calls, with `visited_udfs` guarding
@@ -149,6 +187,9 @@ void collectRowPolicyFilterContents(
 
     if (const auto * function = ast.as<ASTFunction>())
     {
+        if (isFunctionCheckingAccessOnCreate(function->name))
+            contents.has_function_checking_access = true;
+
         if (isFunctionResolvedOutsideFunctionFactory(function->name, context))
             contents.has_function_resolved_outside_function_factory = true;
         /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is pure.
@@ -241,6 +282,17 @@ bool storageRechecksColumnAccessOnRead(const StoragePtr & storage)
 {
     return typeid_cast<const StorageMaterializedView *>(storage.get()) != nullptr
         || typeid_cast<const StorageBuffer *>(storage.get()) != nullptr;
+}
+
+/// True if the storage checks access to *another* object while executing its own `read`: besides
+/// the engines of `storageRechecksColumnAccessOnRead`, a `Dictionary` table checks `SELECT` or
+/// `dictGet` on the underlying dictionary, which can have a different name and is not a dependency
+/// of its own. Such a check repeats from the plan leaf on every execution, but not for a table read
+/// inside a scalar subquery, which is folded into a constant during analysis.
+bool storageChecksAccessToAnotherObjectOnRead(const StoragePtr & storage)
+{
+    return storageRechecksColumnAccessOnRead(storage)
+        || typeid_cast<const StorageDictionary *>(storage.get()) != nullptr;
 }
 
 /// Returns false if the storage's engine or view security makes the plan uncacheable. This is
@@ -362,6 +414,30 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
             "Not caching plan: row policy on {}.{} calls a non-deterministic function", dep.database, dep.table);
         return false;
     }
+    if (row_policy_info.contents.has_function_checking_access)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: row policy on {}.{} calls a function that checks access rights", dep.database, dep.table);
+        return false;
+    }
+
+    /// `ALIAS` column expressions are substituted into the query during analysis. For a table read
+    /// directly by the query they appear in the analyzed query tree checked by
+    /// `queryTreeIsEligibleForPlanCache`, but not for a table read inside an expanded view body, which
+    /// is analyzed separately. A constant `ALIAS` expression is folded into the plan, so a
+    /// non-deterministic function would be frozen and a function checking access rights would not
+    /// repeat its check on a hit.
+    for (const auto & column : metadata->getColumns())
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression
+            && astContainsFunctionsUnsafeForQueryPlanCache(column.default_desc.expression, context))
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: ALIAS column {} of {}.{} uses a function unsafe for the plan cache", column.name, dep.database, dep.table);
+            return false;
+        }
+    }
+
     dep.row_policy_hash = row_policy_info.hash;
     /// Only an expanded view has no plan leaf of its own and is therefore reported as a view in the
     /// query-log access info; a materialized view is read like an ordinary table.
@@ -376,6 +452,9 @@ bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr
 {
     if (getFunctionCanonicalNameIfAny(function.name) == "arrayJoin")
         return false;
+
+    if (isFunctionCheckingAccessOnCreate(function.name))
+        return true;
 
     /// Checked before `FunctionFactory`, mirroring the resolution order of the analyzer.
     if (isFunctionResolvedOutsideFunctionFactory(function.name, context))
@@ -417,12 +496,35 @@ public:
 
     bool collect(const IAST & ast, const String & default_database)
     {
+        /// The `SETTINGS` clause of the top-level `SELECT` (of the last `SELECT` of a top-level
+        /// `UNION`) is applied to the query context by `InterpreterSetQuery::applySettingsFromQuery`
+        /// before the query is interpreted, so it is part of the cache key and the plan is
+        /// materialized with it.
+        if (const auto * select = ast.as<ASTSelectQuery>())
+            select_with_query_context_settings = select;
+        else if (const auto * select_with_union = ast.as<ASTSelectWithUnionQuery>();
+                 select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
+            select_with_query_context_settings = select_with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+
         return collectImpl(ast, default_database, /*in_set_or_table_position=*/ false, /*inside_scalar_subquery=*/ false);
     }
 
 private:
     bool collectSelectQuery(const ASTSelectQuery & select, const String & default_database, bool inside_scalar_subquery)
     {
+        /// Any other `SETTINGS` clause (of a subquery, of another `SELECT` of a `UNION`, of an expanded
+        /// view body) is applied only to the context in which that part of the query is analyzed. The
+        /// logical plan does not carry that context: `resolveStorages` builds every storage read, and
+        /// the deserialization of a cached plan builds every function, with the context of the whole
+        /// query, so the scoped settings would be lost (for example
+        /// `do_not_merge_across_partitions_select_final` of a view body over a `FINAL` read).
+        if (select.settings() && &select != select_with_query_context_settings)
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: a subquery or view body has its own SETTINGS clause, which the logical plan does not preserve");
+            return false;
+        }
+
         cte_scopes.emplace_back();
         SCOPE_EXIT({ cte_scopes.pop_back(); });
 
@@ -607,15 +709,16 @@ private:
             return true;
 
         /// `MaterializedView` and `Buffer` check `SELECT` on another table (the defining source,
-        /// the destination) inside their own `read`. For an ordinary read that check replays from
+        /// the destination) inside their own `read`, and `Dictionary` checks access to the underlying
+        /// dictionary. For an ordinary read that check replays from
         /// the plan leaf on every execution, but a scalar subquery is folded into a constant during
         /// analysis, so a hit would never repeat it and would keep serving the value after the grant
         /// on that other table was revoked. Such secondary requirements are not part of the
         /// dependency record, so do not cache them inside folded scalar subqueries.
-        if (inside_scalar_subquery && storageRechecksColumnAccessOnRead(storage))
+        if (inside_scalar_subquery && storageChecksAccessToAnotherObjectOnRead(storage))
         {
             LOG_DEBUG(getLogger("QueryPlanCache"),
-                "Not caching plan: scalar subquery reads {}, whose engine checks access to another table while reading",
+                "Not caching plan: scalar subquery reads {}, whose engine checks access to another object while reading",
                 resolved_id.getNameForLogs());
             return false;
         }
@@ -669,6 +772,8 @@ private:
     const ContextPtr & context;
     std::vector<QueryPlanCacheDependency> & dependencies;
     bool allow_scalar_subqueries = false;
+    /// The `SELECT` whose `SETTINGS` clause is applied to the query context - see `collect`.
+    const ASTSelectQuery * select_with_query_context_settings = nullptr;
     std::vector<std::map<String, const ASTWithElement *>> cte_scopes;
     std::set<std::pair<const ASTWithElement *, bool>> visited_ctes;
     /// (full table name, was reached inside a scalar subquery) - see `visitTableIdentifier`.
@@ -857,6 +962,11 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
                 if (isFunctionResolvedOutsideFunctionFactory(function_node->getFunctionName(), context))
                     return false;
 
+                /// A folded call of a function that checks access rights when it is created would
+                /// lose that check on a hit (see `isFunctionCheckingAccessOnCreate`).
+                if (isFunctionCheckingAccessOnCreate(function_node->getFunctionName()))
+                    return false;
+
                 const auto & function = function_node->getFunction();
                 /// An unresolved ordinary function after analysis is unexpected; refuse to cache.
                 if (!function || !function->isDeterministic())
@@ -999,6 +1109,7 @@ bool validateQueryPlanCacheEntry(
         if (row_policy_info.contents.has_subquery
             || row_policy_info.contents.has_function_resolved_outside_function_factory
             || row_policy_info.contents.has_non_deterministic_function
+            || row_policy_info.contents.has_function_checking_access
             || row_policy_info.hash != dep.row_policy_hash)
             return false;
 

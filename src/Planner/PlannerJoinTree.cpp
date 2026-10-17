@@ -2316,6 +2316,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     else if (can_push_down_filter && !select_query_options.cacheable_logical_plan)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
+                    /// A cacheable logical plan turns an explicit `PREWHERE` into a filter step that is already
+                    /// in `where_filters` (see above), so the policy must go before it: the user's conditions
+                    /// must never see the rows the policy excludes (`PREWHERE throwIf(...)` would otherwise
+                    /// reveal them through an exception).
+                    else if (select_query_options.cacheable_logical_plan)
+                    {
+                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_not_pushed = true;
+                    }
                     else
                     {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));

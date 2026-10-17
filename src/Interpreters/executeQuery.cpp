@@ -188,6 +188,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsMap additional_table_filters;
     extern const SettingsString additional_result_filter;
+    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool allow_experimental_query_plan_cache;
     extern const SettingsBool enable_query_plan_cache;
     extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
@@ -1328,6 +1329,24 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// becoming a dependency - a hit would neither revalidate it nor re-check `SELECT` on it. Keep
     /// such queries off the plan cache.
     if (!settings[Setting::additional_table_filters].value.empty() || !settings[Setting::additional_result_filter].value.empty())
+        return nullptr;
+
+    /// A temporary (external) table shadows a permanent table of the same name during analysis,
+    /// while the cache key does not include the session's temporary table namespace and a cached
+    /// plan stores fully qualified table names. A hit could therefore keep reading the permanent
+    /// table that a fresh analysis would no longer bind the name to; entries are shared by all
+    /// sessions of a user, so the temporary table may also predate this session's first execution.
+    /// Keep queries of sessions that have temporary tables off the plan cache.
+    if (!context->getExternalTables().empty())
+        return nullptr;
+
+    /// A cacheable logical plan does not prepare the key-value lookups of a direct join (they bind a
+    /// live storage into the plan, see `PlannerJoinTree`), so when `direct` is the only enabled join
+    /// algorithm, a join that the ordinary planner executes would throw `NOT_IMPLEMENTED` instead.
+    /// When another algorithm is enabled too, the join silently uses that one, which is fine.
+    const std::vector<JoinAlgorithm> join_algorithms = settings[Setting::join_algorithm];
+    if (!join_algorithms.empty()
+        && std::ranges::all_of(join_algorithms, [](JoinAlgorithm algorithm) { return algorithm == JoinAlgorithm::DIRECT; }))
         return nullptr;
 
     /// Non-deterministic function results may be captured into the plan as constants during

@@ -32,8 +32,7 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
         || setting_name == "query_plan_cache_size_in_bytes_quota"
         || setting_name.starts_with("query_cache_")
         || setting_name.ends_with("_query_cache")
-        /// Output formatting: applied after the plan and never baked into a plan step.
-        || setting_name.starts_with("output_format_")
+        /// HTTP protocol details: applied after the plan and never baked into a plan step.
         || setting_name == "send_progress_in_http_headers"
         || setting_name == "http_response_headers"
         /// Generic resource limits: enforced by execution-time guards, not stored on any plan step.
@@ -62,6 +61,9 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
     /// The set limits (`max_rows_in_set`, `max_bytes_in_set`) are NOT ignored either: the analyzer
     /// builds and checks a set while folding an all-constant `IN` expression, and a hit, which
     /// skips analysis and only carries the folded constant, cannot re-enforce a tightened limit.
+    /// The `output_format_*` settings are NOT ignored either: SQL functions such as `toJSONString` and
+    /// `formatRow` read them, and a deterministic call with constant arguments is folded into the plan
+    /// as a constant computed with the settings of the warm-up execution.
     /// `query_plan_cache_allow_scalar_subqueries` is also intentionally NOT ignored: it
     /// affects whether a query is eligible at all and whether scalar subqueries are folded
     /// into the plan as constants. If it were ignored, an entry stored while it was enabled
@@ -388,6 +390,14 @@ Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata)
 {
     SipHash hash;
 
+    /// Hash the AST itself rather than its text: `formatForLogging` applies `query_masking_rules`,
+    /// so two different expressions could produce the same text, and changing one into the other
+    /// would leave the hash, and therefore a stale cached plan, unchanged.
+    auto hash_ast = [&hash](const ASTPtr & ast)
+    {
+        ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+    };
+
     /// Hash all columns: name + type + default kind + default expression.
     /// The default kind (Default/Materialized/Alias/Ephemeral) and its expression
     /// must be part of the hash so that `ALTER TABLE MODIFY COLUMN` invalidates
@@ -399,17 +409,17 @@ Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata)
         hash.update(column.type->getName());
         hash.update(static_cast<UInt8>(column.default_desc.kind));
         if (column.default_desc.expression)
-            hash.update(column.default_desc.expression->formatForLogging());
+            hash_ast(column.default_desc.expression);
     }
 
     if (metadata.sorting_key.expression_list_ast)
-        hash.update(metadata.sorting_key.expression_list_ast->formatForLogging());
+        hash_ast(metadata.sorting_key.expression_list_ast);
 
     if (metadata.partition_key.expression_list_ast)
-        hash.update(metadata.partition_key.expression_list_ast->formatForLogging());
+        hash_ast(metadata.partition_key.expression_list_ast);
 
     if (metadata.primary_key.expression_list_ast)
-        hash.update(metadata.primary_key.expression_list_ast->formatForLogging());
+        hash_ast(metadata.primary_key.expression_list_ast);
 
     /// `ASSUME` constraints rewrite predicates during analysis (`optimize_using_constraints`),
     /// so a cached plan can bake in a simplification that a dropped or changed constraint would
@@ -422,9 +432,9 @@ Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata)
     /// different hash even when the output columns stay the same. Normal views store the
     /// body in `select.inner_query`; materialized views in `select.select_query`.
     if (metadata.select.inner_query)
-        hash.update(metadata.select.inner_query->formatForLogging());
+        hash_ast(metadata.select.inner_query);
     if (metadata.select.select_query)
-        hash.update(metadata.select.select_query->formatForLogging());
+        hash_ast(metadata.select.select_query);
 
     /// The SQL security type and definer determine the context a view body executes under.
     /// An invoker-view plan must not survive an `ALTER ... MODIFY SQL SECURITY DEFINER/NONE`
