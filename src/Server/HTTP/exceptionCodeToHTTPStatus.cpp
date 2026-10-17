@@ -66,6 +66,7 @@ namespace ErrorCodes
 
     extern const int TIMEOUT_EXCEEDED;
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int PROMETHEUS_REMOTE_WRITE_TIMEOUT;
 
     extern const int UNSUPPORTED_MEDIA_TYPE;
 }
@@ -131,7 +132,7 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
     }
-    if (exception_code == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT)
+    if (exception_code == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT || exception_code == ErrorCodes::PROMETHEUS_REMOTE_WRITE_TIMEOUT)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
