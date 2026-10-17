@@ -316,6 +316,8 @@ def _update_workflow_with_native_jobs(workflow):
             )
         aux_job = copy.deepcopy(_workflow_config_job)
         aux_job.runs_on = _native_job_runs_on(workflow)
+        if workflow.config_job_timeout:
+            aux_job.timeout = workflow.config_job_timeout
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
             job.run_after.append(aux_job.name)
