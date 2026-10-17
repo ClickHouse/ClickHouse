@@ -1,0 +1,70 @@
+bare GLOBAL IN prunes	1
+bare local IN literal prunes (supported control)	1
+arrayDistinct expression index remains supported	1
+typed Dynamic identity GLOBAL IN prunes	1
+emptyArrayToSingle excludes generated default and prunes	1
+full generated predicate prunes	1
+explicit inner ARRAY JOIN reaches Bloom pruning	1
+full wrapper PLAN retains globalIn element filter	1
+full nullable wrapper PLAN retains globalNullIn element filter	1
+explicit inner ARRAY JOIN PLAN composes source and globalIn filter	1
+default-hit wrapper declines Bloom pruning	1
+default-hit explicit clause declines Bloom pruning	1
+LEFT ARRAY JOIN declines Bloom pruning	1
+nullable generated NULL hit declines with transform_null_in=1	1
+nullable generated NULL is absent from effective set with transform_null_in=0	1
+nullIn NULL-free RHS prunes at transform_null_in=0	1
+nullIn NULL-free RHS prunes at transform_null_in=1	1
+nullIn NULL RHS prunes after transform_null_in=0 filters NULL	1
+nullIn effective NULL RHS declines at transform_null_in=1	1
+globalNullIn NULL-free RHS prunes at transform_null_in=0	1
+globalNullIn NULL-free RHS prunes at transform_null_in=1	1
+globalNullIn NULL RHS prunes after transform_null_in=0 filters NULL	1
+globalNullIn effective NULL RHS declines at transform_null_in=1	1
+plain GLOBAL IN with NULL RHS declines Bloom pruning without emptyArrayToSingle	1
+plain GLOBAL IN NULL-free RHS prunes without emptyArrayToSingle	1
+plain GLOBAL IN with NULL RHS preserves tuple multiset	1
+plain GLOBAL IN NULL-free RHS preserves tuple multiset	1
+type-changing Dynamic path declines Bloom pruning	1
+tuple generated-default hit declines Bloom pruning	1
+nested tuple NULL member declines Bloom pruning	1
+NULL-free nested Nullable tuple prunes idx_tags	1
+NULL-bearing nested tuple preserves full tuple multiset	1
+NULL-free nested Nullable tuple preserves full tuple multiset	1
+bare GLOBAL IN preserves tuple multiset	1
+typed Dynamic identity preserves tuple multiset	1
+full Dynamic-emptyArrayToSingle-Nullable wrapper preserves tuple multiset	1
+full wrapper preserves generated empty-string default hit	1
+emptyArrayToSingle no-default-hit preserves tuple multiset	1
+explicit inner ARRAY JOIN preserves tuple multiset	1
+explicit inner ARRAY JOIN default hit preserves tuple multiset	1
+arrayDistinct expression index preserves duplicate semantics	1
+emptyArrayToSingle default hit preserves tuple multiset	1
+LEFT ARRAY JOIN preserves padded-default tuple multiset	1
+nullable default matches NULL only with transform_null_in=1	1
+nullable default is not a match with transform_null_in=0	1
+('NULL-free RHS, transform_null_in=0',1)
+('NULL-free RHS, transform_null_in=1',1)
+('RHS with NULL, transform_null_in=0',1)
+('effective NULL RHS, transform_null_in=1',1)
+('NULL-free RHS, transform_null_in=0',1)
+('NULL-free RHS, transform_null_in=1',1)
+('RHS with NULL, transform_null_in=0',1)
+('effective NULL RHS, transform_null_in=1',1)
+type-changing Dynamic preserves converted values	1
+tuple default hit preserves tuple multiset	1
+invalid Dynamic conversion EXPLAIN declines Bloom pruning	1
+direct physical/FUNCTION collision preserves tuple multiset	1
+direct physical/FUNCTION collision declines Bloom index	1
+wrapped physical/FUNCTION collision preserves tuple multiset	1
+wrapped physical/FUNCTION collision declines Bloom index	1
+deeper INPUT/FUNCTION child collision preserves tuple multiset	1
+deeper INPUT/FUNCTION child collision declines Bloom index	1
+arrayConcat expression index preserves tuple multiset	1
+arrayConcat expression index still prunes	1
+physical DateTime IN still prunes	1
+physical DateTime64 IN still prunes	1
+physical Enum IN still prunes	1
+physical DateTime IN preserves results	1
+physical DateTime64 IN preserves results	1
+physical Enum IN preserves results	1

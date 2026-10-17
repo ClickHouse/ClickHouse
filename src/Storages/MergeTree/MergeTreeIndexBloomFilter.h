@@ -77,6 +77,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & header_,
+        const ActionsDAG & indexed_expression_dag_,
         size_t hash_functions_,
         NameSet columns_shadowing_map_subcolumns_,
         JSONIndexArgumentTypes json_argument_types_);
@@ -104,9 +105,13 @@ private:
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out, const ActionsDAG & indexed_expression_dag);
 
-    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
+    bool traverseFunction(
+        const RPNBuilderTreeNode & node,
+        RPNElement & out,
+        const RPNBuilderTreeNode * parent,
+        const ActionsDAG & indexed_expression_dag);
 
     bool traverseTreeIn(
         const String & function_name,
@@ -114,7 +119,9 @@ private:
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
-        RPNElement & out);
+        RPNElement & out,
+        const ActionsDAG & indexed_expression_dag,
+        size_t & work_remaining);
 
     bool traverseTreeEquals(
         const String & function_name,
