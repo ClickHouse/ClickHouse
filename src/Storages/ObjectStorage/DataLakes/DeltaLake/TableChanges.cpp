@@ -79,7 +79,9 @@ DB::NamesAndTypesList TableChanges::getSchemaUnlocked() const
 
     using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
     KernelSharedSchema kernel_schema(ffi::table_changes_schema(getTableChanges().get()));
-    schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
+    auto result = convertToClickHouseSchema(kernel_schema.get(), engine.get());
+    schema = std::move(result.schema);
+    binary_columns = std::move(result.binary_columns);
 
     LOG_TRACE(log, "Table schema: {}, source header: {}", schema->toString(), header.dumpNames());
     return schema.value();
@@ -118,7 +120,8 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     std::exception_ptr engine_predicate_exception;
     if (filter.has_value())
     {
-        auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
+        getSchemaUnlocked();
+        auto predicate = getEnginePredicate(filter.value(), binary_columns, engine_predicate_exception, getContext());
         table_changes_scan = KernelUtils::unwrapResult(
             ffi::table_changes_scan(
                 getTableChanges().release(),

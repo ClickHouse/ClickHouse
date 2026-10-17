@@ -104,6 +104,7 @@ public:
         /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
         /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
         std::unordered_set<String> timestamp_writer_paths;
+        DB::NameSet binary_columns;
     };
     SchemaResult getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
@@ -120,6 +121,8 @@ private:
         const std::string & parent_writer_path,
         ParentKind parent_kind,
         SchemaResult & result);
+
+    void collectBinaryColumns(size_t list_idx, const std::string & parent_name, DB::NameSet & binary_columns);
 
     struct Field
     {
@@ -154,6 +157,7 @@ private:
         bool is_bool = false;
 
         bool is_timestamp_ntz = false;
+        bool is_binary = false;
     };
     using Fields = std::vector<Field>;
 
@@ -291,7 +295,7 @@ private:
             .visit_float = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float32>>,
             .visit_double = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float64>>,
             .visit_boolean = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8, true>>,
-            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
+            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String, false, false, true>>,
             .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
             .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
             .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64, false, true>>,
@@ -326,7 +330,7 @@ private:
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
-    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false>
+    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false, bool is_binary = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
@@ -355,6 +359,7 @@ private:
         SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
         field.is_bool = is_bool;
         field.is_timestamp_ntz = is_timestamp_ntz;
+        field.is_binary = is_binary;
         it->second->push_back(std::move(field));
     }
 
@@ -481,7 +486,20 @@ SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
     chassert(result.names_and_types.size() == type_lists[0]->size());
     for (const auto & path : result.timestamp_writer_paths)
         result.timestamp_ntz_paths.erase(path);
+    collectBinaryColumns(0, "", result.binary_columns);
     return result;
+}
+
+void SchemaVisitorData::collectBinaryColumns(size_t list_idx, const std::string & parent_name, DB::NameSet & binary_columns)
+{
+    for (const auto & field : *type_lists[list_idx])
+    {
+        const std::string name = parent_name.empty() ? field.name : parent_name + "." + field.name;
+        if (field.is_binary)
+            binary_columns.insert(name);
+        else if (field.type == DB::TypeIndex::Tuple)
+            collectBinaryColumns(field.child_list_id, name, binary_columns);
+    }
 }
 
 DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
@@ -621,7 +639,11 @@ TableSchemaResult getTableSchemaFromSnapshot(
     SchemaVisitor::visitTableSchema(snapshot, data);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
+    return {
+        std::move(result.names_and_types),
+        std::move(result.physical_names_map),
+        std::move(result.timestamp_ntz_paths),
+        std::move(result.binary_columns)};
 }
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
@@ -647,11 +669,16 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
+TableSchemaResult convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
-    return data.getSchemaResult().names_and_types;
+    auto result = data.getSchemaResult();
+    return {
+        std::move(result.names_and_types),
+        std::move(result.physical_names_map),
+        std::move(result.timestamp_ntz_paths),
+        std::move(result.binary_columns)};
 }
 
 namespace
