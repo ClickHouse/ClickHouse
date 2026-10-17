@@ -770,7 +770,7 @@ teardown_done = False
 
 
 def teardown():
-    """Print `teardown-complete` and return True only if the servers are known clean."""
+    """Print `teardown-complete` and return True only if every drop query succeeded or found its object absent."""
     global teardown_done
     if teardown_done:
         return

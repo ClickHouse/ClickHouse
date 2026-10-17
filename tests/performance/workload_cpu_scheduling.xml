@@ -17,6 +17,13 @@
     <fill_query>OPTIMIZE TABLE perf_cpu_scheduling_set FINAL</fill_query>
     <!-- The shell item keeps perf.py from stopping merges itself, so stop them for the whole test -->
     <fill_query>SYSTEM STOP MERGES</fill_query>
+    <!-- Each SQL item once: it must take its slots from its workload and park, otherwise the test times another path -->
+    <fill_query>SELECT number % 1000000 AS k, count(), sum(number) FROM numbers_mt(200000000) GROUP BY k SETTINGS workload = '{workload}', log_comment = 'perf_cpu_scheduling_probe' FORMAT Null</fill_query>
+    <fill_query>SELECT max(rn) FROM (SELECT row_number() OVER (ORDER BY h) AS rn FROM (SELECT cityHash64(number) AS h FROM numbers_mt(10000000))) SETTINGS workload = 'perf_cpu_scheduling_wide', log_comment = 'perf_cpu_scheduling_probe'</fill_query>
+    <fill_query>SELECT number % 100000 AS k, count() FROM remote('127.0.0.{{2,3}}', numbers_mt(80000000)) GROUP BY k SETTINGS async_socket_for_remote = 1, max_threads = 1, workload = 'perf_cpu_scheduling_wide', log_comment = 'perf_cpu_scheduling_probe' FORMAT Null</fill_query>
+    <fill_query>SELECT count() FROM perf_cpu_scheduling_set WHERE NOT ignore(s) SETTINGS workload = 'perf_cpu_scheduling_mixed_io', max_threads = 1, max_local_read_bandwidth = 1000000, max_read_buffer_size_local_fs = 4096, local_filesystem_read_method = 'read', log_comment = 'perf_cpu_scheduling_probe'</fill_query>
+    <fill_query>SYSTEM FLUSH LOGS</fill_query>
+    <fill_query>SELECT throwIf(uniqExact(query) &lt; 5 OR countIf(ProfileEvents['ConcurrencyControlParks'] = 0) > 0, 'workload_cpu_scheduling: an SQL item does not take its CPU slots from its workload or does not park') FROM system.query_log WHERE event_time > now() - INTERVAL 10 MINUTE AND type = 'QueryFinish' AND is_initial_query AND log_comment = 'perf_cpu_scheduling_probe'</fill_query>
 
     <substitutions>
         <substitution>
