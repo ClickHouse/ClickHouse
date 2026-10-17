@@ -108,6 +108,7 @@ struct Dictionary
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
+    /// Value `i` passes `filter` if `filter[filter_offset + i]` is nonzero (not necessarily 1).
     virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
 
     /// Fused decode-and-gather for dictionary-encoded data pages: append the *dictionary values*
