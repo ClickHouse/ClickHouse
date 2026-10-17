@@ -1,0 +1,43 @@
+format version 2
+current [1,4]
+expire
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_manifest_lists_count	3
+1
+[1,4]
+2	1	4
+2	1	4
+time travel to the expired snapshot
+No snapshot found
+No snapshot found
+stale table: current data or an error
+deletes lost after the commit are collected as orphans
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_manifest_lists_count	3
+same files as right after expire
+[1,4]
+format version 3
+current [1,2,3,4]
+expire
+deleted_manifest_lists_count	1
+1
+[1,2,3,4]
+4	1	4
+4	1	4
+time travel to the expired snapshot
+No snapshot found
+No snapshot found
+stale table: current data or an error
+deletes lost after the commit are collected as orphans
+deleted_manifest_lists_count	1
+same files as right after expire
+[1,2,3,4]
+scale
+deleted_manifest_lists_count	29
+deleted_data_files_count	10
+expire_snapshots	1
+remove_orphan_files	1
+1
+30	465
