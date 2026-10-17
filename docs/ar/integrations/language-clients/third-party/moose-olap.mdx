@@ -1,0 +1,164 @@
+---
+description: 'ابدأ مع Moose Stack - نهج يركّز على الشيفرة للبناء على ClickHouse باستخدام مخططات آمنة نوعيًا وتطوير محلي'
+sidebarTitle: 'Moose OLAP (TypeScript / بايثون)'
+slug: /interfaces/third-party/moose-olap
+title: 'التطوير على ClickHouse باستخدام Moose OLAP'
+keywords: ['Moose']
+doc_type: 'guide'
+---
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Moose OLAP](https://docs.fiveonefour.com/moosestack/olap) هي وحدة أساسية من [Moose Stack](https://docs.fiveonefour.com/moosestack)، وهي مجموعة أدوات مفتوحة المصدر للمطورين لبناء أنظمة خلفية تحليلية في الوقت الفعلي باستخدام TypeScript وبايثون.
+
+توفّر Moose OLAP طبقات تجريد ملائمة للمطورين ووظائف شبيهة بـ ORM، وهي مبنية خصيصًا لـ ClickHouse.
+
+<div id="key-features">
+  ## الميزات الرئيسية لـ Moose OLAP
+</div>
+
+* **المخططات كشيفرة**: عرّف جداول ClickHouse الخاصة بك في TypeScript أو بايثون مع أمان الأنواع وإكمال تلقائي في بيئة التطوير المتكاملة
+* **استعلامات آمنة نوعيًا**: اكتب استعلامات SQL مع التحقق من الأنواع ودعم الإكمال التلقائي
+* **التطوير المحلي**: طوّر واختبر على مثيلات ClickHouse المحلية من دون التأثير على بيئة الإنتاج
+* **إدارة الترحيلات**: تتبّع تغييرات المخطط عبر التحكم في الإصدارات وأدِر الترحيلات من خلال الشيفرة
+* **البث في الوقت الفعلي**: دعم مدمج لربط ClickHouse مع Kafka أو Redpanda من أجل الاستيعاب المتدفق
+* **واجهات برمجة تطبيقات REST**: أنشئ بسهولة واجهات برمجة تطبيقات REST موثقة بالكامل فوق جداول ClickHouse والعروض الخاصة بك
+
+<div id="getting-started">
+  ## البدء خلال أقل من 5 دقائق
+</div>
+
+للاطلاع على أحدث وأفضل أدلة التثبيت والبدء، راجع [وثائق Moose Stack](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse).
+
+أو اتبع هذا الدليل لبدء استخدام Moose OLAP على نشر حالي لـ ClickHouse أو ClickHouse Cloud خلال أقل من 5 دقائق.
+
+<div id="prerequisites">
+  ### المتطلبات المسبقة
+</div>
+
+* **Node.js 20+** أو **بايثون 3.12+** - مطلوب لتطوير TypeScript أو بايثون
+* **Docker Desktop** - لبيئة التطوير المحلية
+* **macOS/Linux** - يعمل Windows عبر WSL2
+
+<Steps>
+  <Step>
+    ### تثبيت Moose
+
+    ثبّت Moose CLI على مستوى النظام:
+
+    ```bash
+    bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+    ```
+  </Step>
+
+  <Step>
+    ### إعداد مشروعك
+
+    #### الخيار A: استخدم عملية نشر ClickHouse الحالية لديك
+
+    **مهم**: سيظل ClickHouse الإنتاجي لديك دون أي تغيير. سيؤدي هذا فقط إلى تهيئة مشروع Moose OLAP جديد مع نماذج بيانات مشتقة من جداول ClickHouse لديك.
+
+    ```bash
+    # TypeScript
+    moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+
+    # Python
+    moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+    ```
+
+    يجب أن تكون سلسلة اتصال ClickHouse بهذا التنسيق:
+
+    ```bash
+    https://username:password@host:port/?database=database_name
+    ```
+
+    #### الخيار B: استخدم ClickHouse Playground
+
+    أليس لديك ClickHouse قيد التشغيل بعد؟ استخدم ClickHouse Playground لتجربة Moose OLAP!
+
+    ```bash
+    # TypeScript
+    moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language typescript
+
+    # Python
+    moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language python
+    ```
+  </Step>
+
+  <Step>
+    ### تثبيت التبعيات
+
+    ```bash
+    # TypeScript
+    cd my-project
+    npm install
+
+    # Python
+    cd my-project
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+    يجب أن ترى: `Successfully generated X models from ClickHouse tables`
+  </Step>
+
+  <Step>
+    ### استعرض النماذج التي تم إنشاؤها
+
+    يُنشئ Moose CLI تلقائيًا واجهات TypeScript أو نماذج Python Pydantic من جداول ClickHouse الحالية لديك.
+
+    ألقِ نظرة على نماذج البيانات الجديدة في الملف `app/index.ts`.
+  </Step>
+
+  <Step>
+    ### ابدأ التطوير
+
+    شغّل خادم التطوير لتشغيل مثيل ClickHouse محلي، مع إعادة إنشاء جميع جداول الإنتاج تلقائيًا من تعريفات الشيفرة لديك:
+
+    ```bash
+    moose dev
+    ```
+
+    **مهم**: سيظل ClickHouse الإنتاجي لديك دون أي تغيير. يؤدي هذا إلى إنشاء بيئة تطوير محلية.
+  </Step>
+
+  <Step>
+    ### املأ قاعدة بياناتك المحلية ببيانات أولية
+
+    حمّل بياناتك إلى مثيل ClickHouse المحلي لديك:
+
+    #### من ClickHouse الخاص بك
+
+    ```bash
+    moose seed --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100
+    ```
+
+    #### من ClickHouse Playground
+
+    ```bash
+    moose seed --connection-string https://explorer:@play.clickhouse.com:443/?database=default --limit 100
+    ```
+  </Step>
+
+  <Step>
+    ### البناء باستخدام Moose OLAP
+
+    الآن بعد أن أصبحت جداولك معرّفة في الشيفرة، ستحصل على المزايا نفسها التي توفرها نماذج بيانات ORM في تطبيقات الويب — أمان الأنواع والإكمال التلقائي عند بناء واجهات برمجة التطبيقات والعروض المادية فوق بياناتك التحليلية. وكخطوة تالية، يمكنك تجربة:
+
+    * بناء واجهة برمجة تطبيقات REST باستخدام [Moose API](https://docs.fiveonefour.com/moosestack/apis)
+    * استيعاب البيانات أو تحويلها باستخدام [Moose Workflows](https://docs.fiveonefour.com/moosestack/workflows) أو [Moose Streaming](https://docs.fiveonefour.com/moosestack/workflows)
+    * استكشاف الانتقال إلى بيئة الإنتاج باستخدام [Moose Build](https://docs.fiveonefour.com/moosestack/deploying) و[Moose Migrate](https://docs.fiveonefour.com/moosestack/migrate)
+  </Step>
+</Steps>
+
+<div id="get-help-stay-connected">
+  ## احصل على المساعدة وابقَ على تواصل
+</div>
+
+* **التطبيق المرجعي**: اطّلع على التطبيق المرجعي مفتوح المصدر [Area Code](https://github.com/514-labs/area-code): وهو مستودع انطلاق يضم جميع اللبنات الأساسية اللازمة لبناء تطبيق غني بالميزات وجاهز لبيئات المؤسسات ويتطلب بنية تحتية متخصصة. يوجد تطبيقان نموذجيان: تحليلات موجهة للمستخدمين ومستودع بيانات تشغيلي.
+* **مجتمع Slack**: تواصل مع المشرفين على Moose Stack [على Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) للحصول على الدعم وتقديم الملاحظات
+* **شاهد الشروحات**: شروحات فيديو وعروض توضيحية ومحتوى متعمق حول ميزات Moose Stack [على Youtube](https://www.youtube.com/channel/UCmIj6NoAAP7kOSNYk77u4Zw)
+* **ساهم**: اطّلع على الشيفرة، وساهم في Moose Stack، وأبلغ عن المشكلات [على GitHub](https://github.com/514-labs/moose)

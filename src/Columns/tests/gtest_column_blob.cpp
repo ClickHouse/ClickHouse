@@ -12,9 +12,7 @@ namespace
 /// The real task deserializes the BLOB; handing back `inner` exercises the same unwrapping plumbing.
 ColumnPtr makeBLOB(const ColumnPtr & inner)
 {
-    auto blob = ColumnBLOB::create(inner->cloneEmpty());
-    blob->setFromBLOBTask([inner](const ColumnBLOB::BLOB &) { return inner; });
-    return blob;
+    return ColumnBLOB::create([inner](const ColumnBLOB::BLOB &) { return inner; }, inner->cloneEmpty(), inner->size());
 }
 
 }

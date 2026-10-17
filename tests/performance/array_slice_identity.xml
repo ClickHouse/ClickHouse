@@ -1,9 +1,0 @@
-<test>
-    <settings>
-        <max_threads>1</max_threads>
-    </settings>
-
-    <query>SELECT arraySlice(arrayMap(x -&gt; number + x, range(1024)), 1) FROM numbers(100000) FORMAT Null</query>
-    <query>SELECT arraySlice(arrayMap(x -&gt; concat(toString(number + x), 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), range(64)), 1) FROM numbers(100000) FORMAT Null</query>
-    <query>SELECT arraySlice(arrayMap(x -&gt; number + x, range(1024)), 2) FROM numbers(100000) FORMAT Null</query>
-</test>

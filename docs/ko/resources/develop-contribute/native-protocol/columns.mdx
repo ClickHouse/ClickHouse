@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/columns
+title: '네이티브 프로토콜 컬럼 타입'
+description: '네이티브 프로토콜용 컬럼 타입'
+keywords: ['네이티브 프로토콜 컬럼', '컬럼 타입', '데이터 타입', '프로토콜 데이터 타입', '바이너리 인코딩']
+doc_type: 'reference'
+---
+
+일반적인 참고 내용은 [데이터 타입](/ko/reference/data-types/index)을 참조하십시오.
+
+<Tip>
+  숫자 타입 인코딩은 AMD64 또는 ARM64와 같은 리틀 엔디언 CPU의 메모리 레이아웃과 일치하므로 매우 효율적으로 인코딩 및 디코딩할 수 있습니다.
+</Tip>
+
+| 유형                                                         | 인코딩                                                                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **정수형** ([Int/UInt](/ko/reference/data-types/int-uint))       | 리틀 엔디언 형식의 8, 16, 32, 64, 128 또는 256비트                                                                                         |
+| **부동소수점** ([Float32/Float64](/ko/reference/data-types/float)) | IEEE 754 바이너리 표현                                                                                                               |
+| [String](/ko/reference/data-types/string)                     | (len, value) 형식의 문자열 배열                                                                                                        |
+| [FixedString(N)](/ko/reference/data-types/fixedstring)        | N바이트 시퀀스의 배열                                                                                                                   |
+| [IPv4](/ko/reference/data-types/ipv4)                         | `UInt32`의 별칭이며 UInt32로 표현됩니다                                                                                                   |
+| [IPv6](/ko/reference/data-types/ipv6)                         | `FixedString(16)`의 별칭이며 바이너리로 표현됩니다                                                                                            |
+| [Tuple](/ko/reference/data-types/tuple)                       | 컬럼 배열이 연속해서 인코딩됩니다. 예시: `Tuple(String, UInt8)` = 연속된 2개의 컬럼                                                                    |
+| [Map](/ko/reference/data-types/map)                           | `Map(K, V)` = 3개의 컬럼: `Offsets ColUInt64, Keys K, Values V`. Keys/Values의 행 수 = 마지막 Offsets 값                                  |
+| [Array](/ko/reference/data-types/array)                       | `Array(T)` = 2개의 컬럼: `Offsets ColUInt64, Data T`. Data의 행 수 = 마지막 Offsets 값                                                    |
+| [Nullable](/ko/reference/data-types/nullable)                 | `Nullable(T)` = 2개의 컬럼: `Nulls ColUInt8, Values T`이며 행 수는 동일합니다. Nulls는 마스크입니다: 1=null, 0=value                                |
+| [UUID](/ko/reference/data-types/uuid)                         | `FixedString(16)`의 별칭이며 바이너리로 표현됩니다                                                                                            |
+| [Enum](/ko/reference/data-types/enum)                         | `Int8` 또는 `Int16`의 별칭이며 각 정수는 String 값에 매핑됩니다                                                                                  |
+| [LowCardinality](/ko/reference/data-types/lowcardinality)     | `LowCardinality(T)` = 2개의 컬럼: `Index T, Keys K` 여기서 K는 UInt8/16/32/64입니다. Index에는 고유 값이 들어 있고, Keys에는 Index를 가리키는 인덱스가 들어 있습니다 |
+| [Bool](/ko/reference/data-types/boolean)                      | `UInt8`의 별칭: 0=false, 1=true                                                                                                   |
+
+**예시: Nullable 인코딩**
+
+```text
+To encode [null, "", "hello", null, "world"]:
+  Values: ["", "", "hello", "", "world"] (len: 5)
+  Nulls:  [ 1,  0,       0,  1,       0] (len: 5)
+```
+
+**예시: LowCardinality 인코딩**
+
+```text
+To encode ["Eko", "Eko", "Amadela", "Amadela", "Amadela", "Amadela"]:
+  Index: ["Eko", "Amadela"] (String)
+  Keys:  [0, 0, 1, 1, 1, 1] (UInt8)
+```

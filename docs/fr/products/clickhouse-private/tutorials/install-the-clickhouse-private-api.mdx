@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "Installer ClickHouse Private API"
+sidebarTitle: "Installer l’API de gestion"
+description: "Ce tutoriel explique comment installer ClickHouse Private API, un composant autonome facultatif qui prend en charge les opérations de gestion courantes"
+---
+
+Ce tutoriel explique comment installer ClickHouse Private API, un composant autonome facultatif qui prend en charge les opérations de gestion courantes, telles que les sauvegardes et la mise à l’échelle verticale.
+
+***
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Avant de commencer, assurez-vous de disposer des éléments suivants :
+
+* ClickHouse Operator installé (voir [tutorials/deploy-aws.md](/fr/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), Phase 8)
+* Au moins un cluster ClickHouse déployé (voir [tutorials/deploy-aws.md](/fr/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), Phase 9)
+* Un accès au dépôt ECR privé de ClickHouse
+* Les dépôts ECR cibles créés dans votre compte AWS :
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## Étape 1 : Copier les images de conteneur
+
+    Utilisez skopeo pour copier l&#39;image de la Private API et le chart Helm vers votre ECR.
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # connectez-vous à notre ECR
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # connectez-vous au dépôt AWS cible
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # copiez chaque image vers l'ECR cible, en veillant à inclure le flag --all
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    Remplacez `1.165.1` et `1.165.1` par les tags de version fournis par ClickHouse.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Étape 2 : Installer via Helm
+
+    La Private API est installée dans un espace de noms dédié.
+
+    ```text
+    # mettez à jour ECR_HOST si nécessaire
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # doit utiliser la version du chart Helm de l'API
+    API_HELM_VERSION=1.165.1
+
+    # définissez le tag de l'image de l'API
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Étape 3 : Configurer l&#39;authentification
+
+    Par défaut, l&#39;authentification HTTP Basic est désactivée. Pour les environnements de production, activez-la en définissant les valeurs Helm suivantes :
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- le nom d&#39;utilisateur de votre choix
+    * `api.basicAuth.password` -- un mot de passe sécurisé
+
+    Le nom d&#39;utilisateur et le mot de passe doivent être stockés de manière sécurisée et renouvelés régulièrement, conformément aux politiques de sécurité de votre organisation.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Étape 4 : Vérifier l&#39;installation
+
+    ### Vérifier le pod
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    Sortie attendue :
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### Redirection de port et test
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    Testez le point de terminaison de vérification d&#39;état :
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    Si l&#39;authentification est activée :
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## Options de configuration
+</div>
+
+Les principales options de configuration suivantes sont disponibles via les valeurs Helm :
+
+| Helm Value                   | Description                                             | Default    |
+| ---------------------------- | ------------------------------------------------------- | ---------- |
+| `image.repository`           | Dépôt ECR de l&#39;image de la Private API            | --         |
+| `image.tag`                  | Tag de l&#39;image à déployer                           | --         |
+| `api.port`                   | Port sur lequel l&#39;API écoute                        | `8080`     |
+| `api.basicAuth.enabled`      | Activer l&#39;authentification HTTP Basic               | `false`    |
+| `api.basicAuth.username`     | Nom d&#39;utilisateur pour l&#39;authentification Basic | `admin`    |
+| `api.basicAuth.password`     | Mot de passe pour l&#39;authentification Basic          | `changeme` |
+| `serviceAccount.enabled`     | Créer un compte de service pour l&#39;API               | `true`     |
+| `serviceAccount.annotations` | Annotations du compte de service (par ex. pour IRSA)    | `{}`       |
+
+Pour obtenir la liste complète des options de configuration, consultez le fichier de valeurs du chart Helm.
+
+***
+
+<div id="next-steps">
+  ## Prochaines étapes
+</div>
+
+* **[Gérer les sauvegardes via l’API](/fr/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — Créer, lister, planifier et restaurer des sauvegardes
+* **[Mettre à l’échelle un cluster](/fr/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — Augmenter verticalement le CPU et la mémoire
+* **[Réinitialiser les mots de passe](/fr/products/clickhouse-private/guides/reset-user-passwords)** — Réinitialiser le mot de passe de l’utilisateur par défaut de ClickHouse

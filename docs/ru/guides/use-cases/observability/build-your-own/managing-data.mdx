@@ -64,7 +64,7 @@ ORDER BY c DESC
 └────────────┴─────────┘
 
 5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
-Peak memory usage: 4.41 MiB.
+Пиковое потребление памяти: 4.41 MiB.
 ```
 
 Текущие партиции можно посмотреть с помощью простого запроса к системной таблице:
@@ -91,10 +91,10 @@ WHERE `table` = 'otel_logs'
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---move data to archive table
+--переместить данные в архивную таблицу
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---confirm data has been moved
+--убедиться, что данные перемещены
 SELECT
         Timestamp::Date AS day,
         count() AS c
@@ -112,7 +112,7 @@ ORDER BY c DESC
 └────────────┴─────────┘
 
 4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
-Peak memory usage: 4.40 MiB.
+потребление памяти: 4.40 MiB.
 ```
 
 ```sql
@@ -128,8 +128,8 @@ ORDER BY c DESC
 │ 2019-01-26 │ 1986456 │
 └────────────┴─────────┘
 
-1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
-Peak memory usage: 4.99 MiB.
+1 строка в наборе. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+потребление памяти: 4.99 MiB.
 ```
 
 В отличие от других методов, для которых потребовались бы `INSERT INTO SELECT` и перезапись данных в новую целевую таблицу.
@@ -163,7 +163,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-  Эта возможность задействуется механизмом TTL при использовании настройки [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). Подробнее см. в разделе [Управление данными с помощью TTL](#data-management-with-ttl-time-to-live).
+  Эта возможность задействуется механизмом TTL при использовании настройки [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings#ttl_only_drop_parts). Подробнее см. в разделе [Управление данными с помощью TTL](#data-management-with-ttl-time-to-live).
 </Note>
 
 <div id="applications">
@@ -221,7 +221,7 @@ SETTINGS ttl_only_drop_parts = 1
   TTL применяется не сразу, а по расписанию, как указано выше. Настройка таблицы MergeTree `merge_with_ttl_timeout` задает минимальную задержку в секундах перед повторным выполнением слияния с delete TTL. Значение по умолчанию — 14400 секунд (4 часа). Но это лишь минимальная задержка: до запуска TTL-слияния может пройти больше времени. Если значение слишком мало, будет выполняться много внеплановых слияний, которые могут потреблять значительные ресурсы. Принудительно применить TTL можно командой `ALTER TABLE my_table MATERIALIZE TTL`.
 </Info>
 
-**Важно: мы рекомендуем использовать настройку [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (она применяется в схеме по умолчанию). Когда эта настройка включена, ClickHouse удаляет часть целиком, если в ней истекли все строки. Удаление частей целиком вместо частичной очистки строк с истекшим TTL (которая выполняется с помощью ресурсоемких мутаций при `ttl_only_drop_parts=0`) позволяет использовать меньшие значения `merge_with_ttl_timeout` и снижает влияние на производительность системы. Если данные партиционированы по той же единице, по которой выполняется истечение TTL, например по дням, части естественным образом будут содержать данные только из заданного интервала. Это гарантирует, что `ttl_only_drop_parts=1` можно будет применять эффективно.
+**Важно: мы рекомендуем использовать настройку [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (она применяется в схеме по умолчанию). Когда эта настройка включена, ClickHouse удаляет часть целиком, если в ней истекли все строки. Удаление частей целиком вместо частичной очистки строк с истекшим TTL (которая выполняется с помощью ресурсоемких мутаций при `ttl_only_drop_parts=0`) позволяет использовать меньшие значения `merge_with_ttl_timeout` и снижает влияние на производительность системы. Если данные партиционированы по той же единице, по которой выполняется истечение TTL, например по дням, части естественным образом будут содержать данные только из заданного интервала. Это гарантирует, что `ttl_only_drop_parts=1` можно будет применять эффективно.
 
 <div id="column-level-ttl">
   ### TTL на уровне столбца

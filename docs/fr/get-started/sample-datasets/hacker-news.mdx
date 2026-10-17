@@ -15,7 +15,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
 </div>
 
 <Steps>
-  <Step title="Télécharger le fichier CSV" id="download">
+  <Step>
+    ### Télécharger le fichier CSV
+
     Une version CSV du jeu de données peut être téléchargée depuis notre [bucket S3 public](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) ou en exécutant cette commande :
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Avec ses 4,6 Go et ses 28 M de lignes, le téléchargement de ce fichier compressé devrait prendre de 5 à 10 minutes.
   </Step>
 
-  <Step title="Échantillonner les données" id="sampling">
+  <Step>
+    ### Échantillonner les données
+
     [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local) vous permet de traiter rapidement des fichiers locaux sans
     avoir à déployer et à configurer le serveur ClickHouse.
 
@@ -91,7 +95,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Le format `Vertical` est utilisé pour visualiser plus facilement les données de chaque colonne.
   </Step>
 
-  <Step title="Charger les données avec l’inférence de schéma" id="loading-the-data">
+  <Step>
+    ### Charger les données avec l’inférence de schéma
+
     L’outil le plus simple et le plus puissant pour charger des données est `clickhouse-client` : un client natif en ligne de commande doté de nombreuses fonctionnalités.
     Pour charger les données, vous pouvez de nouveau recourir à l’inférence de schéma et laisser ClickHouse déterminer les types des colonnes.
 
@@ -142,7 +148,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Vous avez inséré 28 millions de lignes dans ClickHouse avec une seule commande !
   </Step>
 
-  <Step title="Explorer les données" id="explore">
+  <Step>
+    ### Explorer les données
+
     Obtenez un échantillon des articles Hacker News et de certaines colonnes en exécutant la requête suivante :
 
     ```sql title="Query"
@@ -195,7 +203,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     Bien que l’inférence de schéma soit un excellent outil pour l’exploration initiale des données, elle relève d’une approche « best effort » et ne remplace pas, à long terme, la définition d’un schéma optimal pour vos données.
   </Step>
 
-  <Step title="Définir un schéma" id="define-a-schema">
+  <Step>
+    ### Définir un schéma
+
     Une optimisation simple et immédiate consiste à définir un type pour chaque champ.
     En plus de déclarer le champ temporel au format `DateTime`, nous définissons un type approprié pour chacun des champs ci-dessous après avoir supprimé notre jeu de données existant.
     Dans ClickHouse, la clé primaire des données est définie par la clause `ORDER BY`.
@@ -238,7 +248,9 @@ keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple',
     ```
   </Step>
 
-  <Step title="Exécuter des exemples de requêtes" id="run-sample-queries">
+  <Step>
+    ### Exécuter des exemples de requêtes
+
     Quelques exemples de requêtes sont présentés ci-dessous pour vous aider à
     rédiger vos propres requêtes.
 
@@ -451,8 +463,10 @@ Parquet ne prend en charge qu’un nombre limité de types, que ClickHouse doit 
 L’inférence de type sur un fichier Parquet conduira invariablement à un schéma légèrement différent de celui du fichier CSV.
 
 <Steps>
-  <Step title="Insérer les données" id="insert-the-data">
-    Exécutez la query suivante pour lire à nouveau les mêmes données au format Parquet à l’aide de la fonction `url` afin de lire les données distantes :
+  <Step>
+    ### Insérer les données
+
+    Exécutez la requête suivante pour lire ces mêmes données au format Parquet, en utilisant à nouveau la fonction url pour accéder aux données distantes :
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -462,31 +476,26 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
     ```
 
     <Info>
-      **Clés nulles avec Parquet**
+      **Clés `NULL` avec Parquet**
 
-      Le schéma inféré rend les colonnes `Nullable` ; `allow_nullable_key` est donc obligatoire, même si ce jeu de données ne contient
-      aucun ID nul.
+      En raison du format Parquet, nous devons accepter que les clés puissent être `NULL`,
+      même si ce n’est pas le cas dans les données.
     </Info>
 
     Exécutez la commande suivante pour afficher le schéma inféré :
-
-    ```sql title="Query"
-    DESCRIBE TABLE hackernews;
-    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
-    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -501,12 +510,10 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     └─────────────┴────────────────────────┴
     ```
 
-    Les étapes suivantes utilisent des noms de colonnes plus explicites, tels que `author` et `comment`. Continuez donc avec un schéma spécifié manuellement.
-    Supprimez d’abord la table inférée, puis créez-la et insérez les données directement depuis le bucket S3 public :
+    Comme précédemment avec le fichier CSV, vous pouvez spécifier manuellement le schéma afin de mieux contrôler les types choisis et insérer les
+    données directement depuis S3 :
 
     ```sql
-    DROP TABLE IF EXISTS hackernews;
-
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -531,7 +538,6 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
-            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -551,121 +557,105 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     ```
   </Step>
 
-  <Step title="Ajoutez un index textuel pour accélérer les recherches" id="add-skipping-index">
+  <Step>
+    ### Ajouter un index de saut pour accélérer les requêtes
+
     Pour savoir combien de commentaires mentionnent &quot;ClickHouse&quot;, exécutez la requête suivante :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    WHERE hasToken(lower(comment), 'ClickHouse');
     ```
 
     ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
     ┌─count()─┐
-    │    1145 │
+    │     516 │
     └─────────┘
-
-    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    Ensuite, créez un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) sur la colonne `comment`
-    afin d’accélérer cette requête. Un index de texte utilise un index inversé qui associe les jetons aux lignes qui les contiennent.
-    Le tokeniseur `splitByNonAlpha` découpe le texte selon les caractères non alphanumériques. L’index et les requêtes utilisent `lower(comment)`
-    avec des termes de recherche en minuscules afin que la correspondance soit insensible à la casse. L’expression de la requête doit correspondre à l’expression indexée.
+    Ensuite, vous allez créer un [index](/fr/reference/engines/table-engines/mergetree-family/textindexes) inversé sur la colonne &quot;comment&quot;
+    afin d&#39;accélérer cette requête.
+    Notez que les commentaires seront indexés en minuscules afin de retrouver des termes indépendamment de la casse.
 
-    Exécutez les commandes suivantes pour créer l’index :
+    Exécutez les commandes suivantes pour créer l&#39;index :
 
     ```sql
-    ALTER TABLE hackernews
-        ADD INDEX comment_idx lower(comment)
-        TYPE text(tokenizer = splitByNonAlpha);
-
-    ALTER TABLE hackernews
-        MATERIALIZE INDEX comment_idx
-        SETTINGS mutations_sync = 2;
+    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
+    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
     ```
 
-    La matérialisation construit l’index pour les données existantes. Le paramètre `mutations_sync` attend la fin de la matérialisation.
-    Vous pouvez consulter la définition de l’index dans la table `system.data_skipping_indices`.
+    La matérialisation de l’index prend un certain temps (pour vérifier si l’index a bien été créé, utilisez la table système `system.data_skipping_indices`).
 
-    Exécutez à nouveau la même requête une fois l’index matérialisé :
+    Exécutez de nouveau la requête une fois l’index créé :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    WHERE hasToken(lower(comment), 'clickhouse');
     ```
 
+    Observez que la requête n’a désormais pris que 0,248 seconde avec l’index, contre 0,843 seconde auparavant sans celui-ci :
+
     ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
-
-    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
     ```
 
-    Le résultat reste le même, car l’index modifie la façon dont ClickHouse trouve les lignes correspondantes, et non les lignes qui correspondent. La
-    requête indexée traite nettement moins de données et s’exécute beaucoup plus rapidement.
-    Utilisez [`EXPLAIN`](/fr/reference/statements/explain) pour confirmer que ClickHouse prévoit d’utiliser l’index :
+    La clause [`EXPLAIN`](/fr/reference/statements/explain) peut être utilisée pour comprendre pourquoi l&#39;ajout de cet index
+    a rendu la requête environ 3,4 fois plus rapide.
 
-    ```sql title="Query"
+    ```response text="Query"
     EXPLAIN indexes = 1
     SELECT count(*)
     FROM hackernews
-    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    WHERE hasToken(lower(comment), 'clickhouse')
     ```
 
     ```response title="Response"
-    Output: count()
-
-    Aggregating
-    │  Keys:
-    │  Aggregates: count()
-    │  Skip merging: 0
-    └──Filter
-       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
-       └──ReadFromMergeTree (default.hackernews)
-             Read type: Default
-             Parts: 4 | Granules: 547
-             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
-             Indexes:
-               PrimaryKey
-                 Condition: true
-                 Parts: 4/4
-                 Granules: 3527/3527
-               Skip
-                 Name: comment_idx
-                 Description: text GRANULARITY 100000000
-                 Condition: (mode: Any; tokens: ["clickhouse"])
-                 Parts: 4/4
-                 Granules: 547/3527
-               Ranges: 437
+    ┌─explain─────────────────────────────────────────┐
+    │ Expression ((Projection + Before ORDER BY))     │
+    │   Aggregating                                   │
+    │     Expression (Before GROUP BY)                │
+    │       Filter (WHERE)                            │
+    │         ReadFromMergeTree (default.hackernews)  │
+    │         Indexes:                                │
+    │           PrimaryKey                            │
+    │             Condition: true                     │
+    │             Parts: 4/4                          │
+    │             Granules: 3528/3528                 │
+    │           Skip                                  │
+    │             Name: comment_idx                   │
+    │             Description: inverted GRANULARITY 1 │
+    │             Parts: 4/4                          │
+    │             Granules: 554/3528                  │
+    └─────────────────────────────────────────────────┘
     ```
 
-    L’entrée `comment_idx` indique que ClickHouse prévoit d’utiliser l’index de texte. Dans cet exemple, le plan sélectionne 547 granules sur 3 527,
-    réduisant considérablement la quantité de données examinées.
+    Remarquez comment l’index a permis d’ignorer un grand nombre de granules
+    pour accélérer la requête.
 
-    Vous pouvez également rechercher n’importe lequel ou l’ensemble de plusieurs tokens. Ces fonctions correspondent à des tokens complets produits par le tokenizer de l’index.
-    Utilisez `hasAnyTokens` lorsqu’au moins un token doit correspondre :
+    Il est désormais également possible de rechercher efficacement un ou plusieurs termes :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasAnyTokens(lower(comment), 'oltp olap');
+    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2020 │
+    │    2177 │
     └─────────┘
     ```
-
-    Utilisez `hasAllTokens` lorsque tous les tokens doivent correspondre, quel que soit leur ordre :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasAllTokens(lower(comment), 'avx sve');
+    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
     ```
 
     ```response title="Response"

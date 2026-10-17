@@ -49,14 +49,11 @@ def test_dotnet_client(started_cluster, dotnet_container):
         reference = fp.read()
 
     code, (stdout, stderr) = dotnet_container.exec_run(
-        "dotnet /client/out/clickhouse.test.dll --host {host} --port {port} --user default --password 123 --database default".format(
+        "dotnet run --host {host} --port {port} --user default --password 123 --database default".format(
             host=started_cluster.get_instance_ip("node"), port=8123
         ),
         demux=True,
     )
 
-    # These two streams exist nowhere else: the client runs in its own container and nothing in the
-    # job collects its output. Reporting them here is what makes a client that died on a signal
-    # diagnosable at all, instead of leaving a bare exit code behind.
-    assert code == 0, f"stdout:\n{stdout!r}\nstderr:\n{stderr!r}"
-    assert stdout == reference, f"stderr:\n{stderr!r}"
+    assert code == 0
+    assert stdout == reference

@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-old-analyzer
+-- no-old-analyzer: lazy materialization is only available with the analyzer.
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';

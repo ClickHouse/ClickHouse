@@ -9,7 +9,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-## Общие сведения {#background}
+<div id="background">
+  ## Общие сведения
+</div>
 
 Incremental Materialized Views (Materialized Views) позволяют перенести вычислительную нагрузку с query time на insert time, ускоряя запросы `SELECT`.
 
@@ -631,13 +633,13 @@ WHERE DisplayName = 'brand_new_user'
 
 * **Оценивайте производительность вставки.** JOIN увеличивает стоимость вставок, особенно при больших таблицах справа. Выполняйте бенчмарк скорости вставки на репрезентативных производственных данных.
 
-* **Для простых поисков предпочитайте словари**. Используйте [словари](/ru/concepts/features/dictionaries/index) для поиска по модели ключ-значение (например, сопоставления ID пользователя с именем), чтобы избежать дорогостоящих операций JOIN. Чтобы поиск во время вставки работал надёжно, используйте структуру словаря с полной загрузкой: при [структурах на основе кэша](/ru/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) ингестия может зависеть от того, прогрет ли локальный кэш.
+* **Для простых поисков предпочитайте словари**. Используйте [Dictionaries](/ru/concepts/features/dictionaries/index) для поиска по модели ключ-значение (например, сопоставления ID пользователя с именем), чтобы избежать дорогостоящих операций JOIN.
 
 * **Согласовывайте `GROUP BY` и `ORDER BY` для эффективного слияния.** При использовании `SummingMergeTree` или `AggregatingMergeTree` убедитесь, что `GROUP BY` соответствует `ORDER BY` в целевой таблице, чтобы обеспечить эффективное слияние строк.
 
 * **Используйте явные псевдонимы столбцов.** Если в таблицах есть совпадающие имена столбцов, используйте псевдонимы, чтобы избежать неоднозначности и обеспечить корректные результаты в целевой таблице.
 
-* **Учитывайте объём и частоту вставок.** JOIN хорошо работает при умеренной нагрузке на вставку. Для высокопроизводительной ингестии рассмотрите использование staging-таблиц, предварительных JOIN или других подходов, таких как словари и [Refreshable Materialized Views](/ru/concepts/features/materialized-views/refreshable-materialized-view).
+* **Учитывайте объём и частоту вставок.** JOIN хорошо работает при умеренной нагрузке на вставку. Для высокопроизводительной ингестии рассмотрите использование staging-таблиц, предварительных JOIN или других подходов, таких как Dictionaries и [Refreshable Materialized Views](/ru/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
   ### Использование исходной таблицы в фильтрах и JOIN
@@ -1045,9 +1047,11 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-## Параллельная и последовательная обработка {#materialized-views-parallel-vs-sequential}
+<div id="materialized-views-parallel-vs-sequential">
+  ## Параллельная и последовательная обработка
+</div>
 
-Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings/parallel#parallel_view_processing).
+Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings#parallel_view_processing).
 
 По умолчанию эта настройка имеет значение `0` (`false`), то есть materialized view выполняются последовательно в порядке `uuid`.
 
@@ -1315,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-В этом случае CTE `users` заново вычисляется при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
+В этом случае CTE `users` пересчитывается при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
 
-Как правило, используйте CTE для логики, работающей с той же исходной таблицей, к которой привязано materialized view, либо убедитесь, что таблицы, на которые есть ссылки, небольшие и вряд ли станут узким местом по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+Как правило, CTE стоит использовать для логики, которая работает с той же исходной таблицей, к которой привязана materialized view, либо нужно убедиться, что используемые таблицы небольшие и вряд ли создадут узкие места по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в Materialized Views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

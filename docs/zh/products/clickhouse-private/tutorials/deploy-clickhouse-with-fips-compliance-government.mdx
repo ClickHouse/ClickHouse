@@ -1,0 +1,325 @@
+---
+noindex: true
+title: "部署符合 FIPS 规范的 ClickHouse（Government）"
+sidebarTitle: "面向 Government 的部署（FIPS）"
+description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 ClickHouse Private。"
+---
+
+本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 ClickHouse Private。它是在标准 AWS 部署基础上的叠加配置——你必须先完成 AWS 资源设置，再按照这些 FIPS 专用步骤配置 Kubernetes 资源。
+
+***
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+在开始本教程之前，您必须先完成 [tutorials/deploy-aws.md](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) 中的以下阶段：
+
+* **阶段 1：** 配置用于访问 ECR 的 IAM 角色
+* **阶段 2：** 将容器镜像复制到您的 ECR (使用 FIPS 版本标签——见下文)
+* **阶段 3：** 创建 VPC
+* **阶段 4：** 创建 EKS 集群
+* **阶段 5：** 创建节点组
+* **阶段 6：** 创建 S3 存储桶和 IAM 角色
+
+<div id="fips-version-tags">
+  ### FIPS 版本标签
+</div>
+
+复制制品时，请使用以下 FIPS 专用镜像标签：
+
+| 制品                             | 标签                  |
+| ------------------------------ | ------------------- |
+| clickhouse-server              | `25.12.1.1497-fips` |
+| clickhouse-keeper              | `26.2.1.258-fips`   |
+| clickhouse-operator            | `main-1.18587.1`    |
+| helm/clickhouse-operator-helm  | `1.18587.1`         |
+| helm/onprem-clickhouse-cluster | `1.1.311`           |
+
+<div id="s3-bucket-naming-restriction">
+  ### S3 存储桶命名限制
+</div>
+
+使用 FIPS 时，**S3 存储桶名称不能包含句点 (`.`)&#x20;**。S3 FIPS 端点要求使用虚拟主机式寻址，而存储桶名称中包含句点时，这种寻址方式无法正常工作。
+
+***
+
+<Steps>
+  <Step>
+    ## 阶段 1：创建 FIPS 证书
+
+    FIPS 合规要求在启用 FIPS 的环境中，使用经 FIPS 认可的算法生成 TLS 证书。你需要三组证书：
+
+    | 证书     | 私钥           | 公钥           | 需要的 SAN                                                                                                                                         |
+    | ------ | ------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+    | 服务器    | `server.key` | `server.crt` | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.cluster.local`, `c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.cluster.local` |
+    | 客户端    | `client.key` | `client.crt` | (无)                                                                                                                                             |
+    | Keeper | `keeper.key` | `keeper.crt` | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.cluster.local`                                                                      |
+
+    你还需要一份 CA 证书 (`ca.crt` 和 `ca.key`) ，可以是自签名证书，也可以来自你所在组织的证书颁发机构。
+
+    **要求：** - RSA 密钥长度至少为 3072 位 - 使用 SHA-256 或更高的签名算法 - 在启用 FIPS 的环境中生成 - 必须为每个 ClickHouse 集群创建一组唯一的证书 (CA 除外)
+
+    有关使用带有 FIPS 加密策略的 Red Hat UBI8 容器生成证书的完整流程，请参阅 [how-to/configure-fips-certificates.md](/zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse)。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 第 2 阶段：安装 Kubernetes 前置条件
+
+    ### 安装 VolumeSnapshot CRD 资源定义
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+    ```
+
+    ### 安装 StorageClass (可选)
+
+    仅当您没有自定义的或现有的 StorageClass 时：
+
+    ```ini
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+    CHART_VERSION=1.1.311
+
+    helm install clickhouse-prerequisites \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n default \
+        --set-json="storageClass.create=true" \
+        --set-json="createCluster=false" \
+        --set-json="serviceAccount.create=false"
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 第 3 阶段：安装 Operator
+
+    请注意，FIPS ECR 端点的格式为：`0000000000.dkr-ecr-fips.us-west-2.on.aws` (而不是标准的 `.amazonaws.com` 端点) 。
+
+    ```text
+    # update ECR_HOST as needed
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+
+    # should use the version of the operator's helm chart, not of the operator itself (eg 1.18587.1, not main-1.18587.1)
+    OPERATOR_VERSION=1.18587.1
+
+    # set AZs as determined by VPC subnets
+    AZ_LIST='["us-west-2a","us-west-2b","us-west-2c"]'
+
+    helm install clickhouse-operator \
+       oci://$ECR_HOST/helm/clickhouse-operator-helm \
+       --version=$OPERATOR_VERSION \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+       --set-json='cilium.enabled=false' \
+       --set-json='idleScalerEnabled=false' \
+       --set-json='webhooks.enabled=false' \
+       --set-json='operator.debug=true' \
+       --set-json='operator.metricsScraper.enabled=false' \
+       --set-json="operator.availabilityZones=$AZ_LIST" \
+       --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+       --set-json='operator.featureFlags.serverCMEKEnabled=true'
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 4：创建证书 Secret
+
+    这些 Secret 必须创建在运行 ClickHouse 集群的同一 Kubernetes 命名空间中。如果你的集群名称是 `default-xx-01`，则命名空间应为 `ns-default-xx-01`。
+
+    请先确保该命名空间存在，然后再创建这些 Secret。**请勿更改 Secret 名称或键名。**
+
+    ```ini
+    CERT_DIR=.
+    CLUSTER_NAME=default-xx-01
+
+    # server
+    kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-server-cert-secret \
+      --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+      --from-file=server.crt="$CERT_DIR/server/server.crt" \
+      --from-file=server.key="$CERT_DIR/server/server.key" \
+      --from-file=client.crt="$CERT_DIR/client/client.crt" \
+      --from-file=client.key="$CERT_DIR/client/client.key"
+
+    # keeper
+    kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-secret \
+      --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+      --from-file=keeper.crt="$CERT_DIR/keeper/keeper.crt" \
+      --from-file=keeper.key="$CERT_DIR/keeper/keeper.key"
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 5：部署 ClickHouse 集群
+
+    请为 ECR 和 S3 使用正确的 FIPS 版本端点。FIPS 端点信息可在 [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/) 中查阅。
+
+    ```text expandable
+    # this will be the `default` user's password
+    PASSWORD='My super secret p@$$w0rd'
+    HASHED_PASSWORD=`echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64`
+
+    # update values below as needed,
+    # the ecr host should be the one in your account
+    # the s3 bucket should be the one created earlier
+    CLUSTER_NAME=default-xx-01
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+    SA_IAM_ROLE_ARN=arn:aws:iam::0000000000:role/CH-S3-${CLUSTER_NAME}-uw2-00-Role
+
+    S3_BUCKET_REGION=us-gov-west-1
+    S3_BUCKET_URL=https://my-clickhouse-data.us-gov-west-1.amazonaws.com
+    S3_BUCKET_NAME=my-clickhouse-data
+
+    # s3 key prefix can use any UUID value, but must be unique for all clusters storing data in the bucket specified above
+    S3_KEY_PREFIX=ch-s3-$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+    # these should match the clickhouseGroup label value added to the node group
+    SERVER_NG_GROUP=server-arm64
+    KEEPER_NG_GROUP=keeper-arm64
+
+    # these values should change depending on selected instance sizes
+    # be sure to take daemon set requirements into account when setting CPU and MEMORY values
+    SERVER_CPU=64
+    SERVER_MEMORY=256Gi
+    KEEPER_CPU=4
+    KEEPER_MEMORY=16Gi
+
+    # Update the `verificationMode` field to control how TLS certificates are verified.
+    # Defaults to `none`. See Context.h in the ClickHouse source code for more details.
+    SERVER_VERIFICATION_MODE=none
+    KEEPER_VERIFICATION_MODE=none
+
+    # Currently, usage of `strict` is not recommended and you might encounter issues with the Operator.
+    # If you require mTLS cert auth, use `relaxed` (Teleport integration requires it)
+    # SERVER_VERIFICATION_MODE=relaxed
+    # KEEPER_VERIFICATION_MODE=relaxed
+
+    CHART_VERSION=1.1.311
+
+    # As a general rule, set cache size to 80-90% of the available SSD cache disk size.
+    # For example for type m6id.2xlarge with 1x474 NVMe it should be set to 379Gi (~80%)
+    CACHE_DISK_SIZE_GI=379Gi
+
+    helm install $CLUSTER_NAME \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n ns-$CLUSTER_NAME \
+        --create-namespace \
+        --set-json="account.hashedPassword=\"$HASHED_PASSWORD\"" \
+        --set-json="server.image.repository=\"$ECR_HOST/clickhouse-server\"" \
+        --set-json="server.storage.s3.endpoint=\"$S3_BUCKET_URL\"" \
+        --set-json="server.storage.s3.region=\"$S3_BUCKET_REGION\"" \
+        --set-json="server.storage.s3.bucketName=\"$S3_BUCKET_NAME\"" \
+        --set-json="server.storage.s3.keyPrefix=\"$S3_KEY_PREFIX\"" \
+        --set-json='server.arm64=true' \
+        --set-json="server.image.tag=\"25.12.1.1497-fips\"" \
+        --set-json="server.podPolicy.nodeSelector.clickhouseGroup=\"$SERVER_NG_GROUP\"" \
+        --set-json="server.openSSL.enabled=true" \
+        --set-json="server.openSSL.required=true" \
+        --set-json="server.openSSL.verificationMode=$SERVER_VERIFICATION_MODE" \
+        --set-json="keeper.image.repository=\"$ECR_HOST/clickhouse-keeper\"" \
+        --set-json='keeper.arm64=true' \
+        --set-json="keeper.image.tag=\"26.2.1.258-fips\"" \
+        --set-json="keeper.podPolicy.nodeSelector.clickhouseGroup=\"$KEEPER_NG_GROUP\"" \
+        --set-json="keeper.openSSL.enabled=true" \
+        --set-json="keeper.openSSL.required=true" \
+        --set-json="keeper.openSSL.verificationMode=$KEEPER_VERIFICATION_MODE" \
+        --set-json="serviceAccount.annotations={\"eks.amazonaws.com/role-arn\":\"$SA_IAM_ROLE_ARN\"}" \
+        --set-json='server.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json='keeper.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json="server.ssdCacheConfiguration.cacheDiskSize=\"$CACHE_DISK_SIZE_GI\"" \
+        --set-json="server.podPolicy.resources.limits.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.limits.memory=\"$SERVER_MEMORY\"" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.limits.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.limits.memory=\"$KEEPER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.requests.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.requests.memory=\"$KEEPER_MEMORY\""
+    ```
+
+    **与标准 AWS 部署的关键区别：**
+
+    | 配置项                       | 标准                                           | FIPS                                       |
+    | ------------------------- | -------------------------------------------- | ------------------------------------------ |
+    | ECR 端点                    | `0000000000.dkr.ecr.us-west-2.amazonaws.com` | `0000000000.dkr-ecr-fips.us-west-2.on.aws` |
+    | 服务器镜像标签                   | `25.12.1.1497`                               | `25.12.1.1497-fips`                        |
+    | S3 端点                     | (默认)                                         | 显式指定的 FIPS 端点 URL                          |
+    | `server.openSSL.enabled`  | 未设置                                          | `true`                                     |
+    | `server.openSSL.required` | 未设置                                          | `true`                                     |
+    | `keeper.openSSL.enabled`  | 未设置                                          | `true`                                     |
+    | `keeper.openSSL.required` | 未设置                                          | `true`                                     |
+    | 缓存配置                      | `bytesPerGiRAM`                              | `cacheDiskSize` (明确指定大小)                   |
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 6：验证安装
+
+    ### 在 TLS 端口上执行端口转发
+
+    启用 FIPS 模式时，ClickHouse 使用 **9440** 端口进行 TLS 连接，而不是标准的 9000 端口。
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-01-server-any 9440:9440 -n ns-default-xx-01
+    ```
+
+    ### 创建客户端配置
+
+    创建一个 `client-config.xml` 文件，告知 ClickHouse 客户端在哪里查找 CA 证书。请将路径更新为你的 `ca.crt` 文件路径：
+
+    ```xml
+    <config>
+        <openSSL>
+            <client>
+                <caConfig>/path/to/certs/ca.crt</caConfig>
+            </client>
+        </openSSL>
+    </config>
+    ```
+
+    ### 连接并运行查询
+
+    ```bash
+    clickhouse client --host localhost --port 9440 --password $PASSWORD --secure --config=client-config.xml
+    ```
+
+    执行测试查询：
+
+    ```bash
+    clickhouse-cloud :) select 1;
+    ```
+
+    预期输出：
+
+    ```sql
+    SELECT 1
+    Query id: 825591bf-a8e5-4995-ac9f-afb864854ba2
+       ┌─1─┐
+    1. │ 1  │
+       └───┘
+    1 row in set. Elapsed: 0.001 sec.
+    ```
+
+    **重要：** 当 `openSSL.required=true` 时，端口 9000 (明文原生协议) 和端口 8123 (明文 HTTP) 会拒绝连接请求。请改用端口 9440 (原生 TLS) 或端口 8443 (HTTPS) 。
+
+    ***
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* **Teleport 集成** (可选) ：如需通过 Teleport Enterprise 安全访问数据库，请参阅 [将 Teleport 与 ClickHouse Private 集成](/zh/products/clickhouse-private/guides/integrate-teleport-with-clickhouse-private)。这要求将 `SERVER_VERIFICATION_MODE=relaxed` 和 `KEEPER_VERIFICATION_MODE=relaxed`。

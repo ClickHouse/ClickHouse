@@ -1,8 +1,5 @@
 #pragma once
 
-#include <algorithm>
-#include <condition_variable>
-#include <optional>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -13,7 +10,6 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
-#include <base/scope_guard.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -26,24 +22,6 @@ namespace DB
 
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
-
-/// Reserve-ahead state of one reader/writer: the first reservation is exact, then the reserve-ahead
-/// doubles up to `max_reserve_granularity` (the cache's `reserve_granularity`). Reset on a failed reservation.
-struct FileCacheReserveAhead
-{
-    /// Returns the size to reserve, at least `size_to_reserve`, and grows the reserve-ahead.
-    /// `segment_reserve_limit` is the room left in the segment, capped by the end of the read if known.
-    size_t getReserveSize(size_t size_to_reserve, size_t segment_reserve_limit, size_t max_reserve_granularity)
-    {
-        const size_t result = std::max(size_to_reserve, std::min({granularity, max_reserve_granularity, segment_reserve_limit}));
-        granularity = std::min(max_reserve_granularity, std::max(granularity, size_to_reserve) * 2);
-        return result;
-    }
-
-    void reset() { granularity = 0; }
-
-    size_t granularity = 0;
-};
 
 
 struct CreateFileSegmentSettings
@@ -150,7 +128,7 @@ public:
 
     DownloaderId getDownloader() const;
 
-    State wait(size_t offset, size_t timeout_ms);
+    State wait(size_t offset, size_t timeout_ms = 60000);
 
     bool isDownloaded() const;
 
@@ -163,16 +141,6 @@ public:
     size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
-
-    /// Returns the size as it is accounted for in the priority queue and cache state.
-    /// When `use_real_disk_size` is enabled for the cache, this is aligned to the filesystem
-    /// block size; otherwise it equals the reserved size.
-    size_t getDiskAccountedSize() const;
-
-    /// Computes how many bytes the priority queue accounting changes when `raw_delta` extra
-    /// bytes are reserved on top of the current reserved size. Equals `raw_delta` for caches
-    /// without `use_real_disk_size`; otherwise it is the difference between aligned sizes.
-    size_t computeDiskAccountedDelta(size_t raw_delta) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
@@ -232,25 +200,24 @@ public:
 
     void completePartAndResetDownloader();
 
-    /// Wake the `wait`ers after the downloader moves the write offset forward. Keep the downloader role
-    /// and the state unchanged. Example waiter: a reader that streams a partially-downloaded prefix.
-    void notifyDownloadProgress();
-
     void resetDownloader();
 
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve `size` bytes on top of getDownloadedSize(). Reserves ahead if `reserve_ahead` is
-    /// set, but not past `reserve_hint` bytes from the current download offset.
+    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
+    /// Returns true if reservation was successful, false otherwise.
+    ///
+    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
+    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
+    /// ahead past what the read will consume.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheReserveStat * reserve_stat = nullptr,
-        std::optional<size_t> reserve_hint = std::nullopt,
-        FileCacheReserveAhead * reserve_ahead = nullptr);
+        size_t reserve_hint = 0);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -289,10 +256,6 @@ private:
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
-    /// Takes the downloader role of a `PARTIALLY_DOWNLOADED` segment that has no downloader.
-    /// Returns a guard which resets the role, or an empty guard if the role is not taken.
-    /// Only the downloader reserves space, so no reservation runs while the guard holds the role.
-    scope_guard tryTakeDownloaderOfPartiallyDownloaded();
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
@@ -410,11 +373,6 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
-    /// Move the first segment into its own new holder and return it, leaving the rest in this one.
-    /// The hold gauge is unchanged (ownership transfers); the returned holder completes its segment
-    /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
-    std::shared_ptr<FileSegmentsHolder> popHolder();
-
 private:
     FileSegments file_segments{};
 
@@ -422,7 +380,6 @@ private:
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
-using FileSegmentsHolderSharedPtr = std::shared_ptr<FileSegmentsHolder>;
 
 String toString(const FileSegments & file_segments, bool with_state = false);
 

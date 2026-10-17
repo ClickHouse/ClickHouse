@@ -36,14 +36,6 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    /// `samples` must be a constant `UInt*`. On the column-less types-only path the
-    /// constness cannot be decided, so it is still enforced by `getArgumentsThatAreAlwaysConstant`
-    /// and `executeImpl`.
-    String getSignatureString() const override
-    {
-        return "(Array(T), const UInt) -> Array(T)";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
@@ -77,10 +69,11 @@ public:
         pcg64_fast rng(randomSeed());
 
         auto col_res_data = col_array->getDataPtr()->cloneEmpty();
-        auto col_res_offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto col_res_offsets = ColumnUInt64::create(input_rows_count);
+        auto col_res = ColumnArray::create(std::move(col_res_data), std::move(col_res_offsets));
 
         const auto & array_offsets = col_array->getOffsets();
-        auto & res_offsets = col_res_offsets->getData();
+        auto & res_offsets = col_res->getOffsets();
 
         VectorWithMemoryTracking<size_t> indices;
         size_t prev_array_offset = 0;
@@ -96,7 +89,7 @@ public:
             std::shuffle(indices.begin(), indices.end(), rng);
 
             for (UInt64 i = 0; i < cur_samples; i++)
-                col_res_data->insertFrom(col_array->getData(), indices[i]);
+                col_res->getData().insertFrom(col_array->getData(), indices[i]);
 
             res_offsets[row] = prev_res_offset + cur_samples;
 
@@ -105,7 +98,7 @@ public:
             indices.clear();
         }
 
-        return ColumnArray::create(std::move(col_res_data), std::move(col_res_offsets));
+        return col_res;
     }
 };
 

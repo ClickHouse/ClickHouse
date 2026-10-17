@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "Versions des composants"
+sidebarTitle: "Versions des composants"
+description: "Versions stables actuelles de tous les composants de ClickHouse Private."
+---
+
+Versions stables actuelles de tous les composants de ClickHouse Private. Utilisez ces tags lorsque vous copiez des artefacts vers votre registre et lors de l&#39;installation via Helm.
+
+<div id="container-images">
+  ## Images de conteneurs
+</div>
+
+| Composant                | Tag d’image         | Description                                                     |
+| ------------------------ | ------------------- | --------------------------------------------------------------- |
+| clickhouse-server        | `25.12.1.1497`      | serveur ClickHouse (standard)                                   |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | serveur ClickHouse conforme à la norme FIPS 140-2               |
+| clickhouse-keeper        | `26.2.1.258`        | Service de coordination distribué (alternative à ZooKeeper)     |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips`   | ClickHouse Keeper conforme à la norme FIPS 140-2                |
+| clickhouse-operator      | `main-1.18587.1`    | Opérateur Kubernetes pour la gestion du cycle de vie du cluster |
+
+<div id="helm-charts">
+  ## Charts Helm
+</div>
+
+| Chart                          | Version     | Description                                          |
+| ------------------------------ | ----------- | ---------------------------------------------------- |
+| helm/clickhouse-operator-helm  | `1.18587.1` | Installe le ClickHouse opérateur                      |
+| helm/onprem-clickhouse-cluster | `1.1.311`   | Crée une ressource personnalisée ClickHouseCluster   |
+| helm/airgap-management         | `1.165.1`   | API de gestion facultative                           |
+| helm/preflight-check           | `1.31.0`    | Vérifications de préinstallation                     |
+| helm/support-bundle            | `1.11.0`    | Collecte des données de diagnostic pour le dépannage |
+
+<div id="api">
+  ## API
+</div>
+
+| Composant         | Version   |
+| ----------------- | --------- |
+| airgap-management | `1.165.1` |
+
+<div id="notes">
+  ## Remarques
+</div>
+
+* La **version du chart Helm de l’opérateur** (`1.18587.1`) diffère du **tag d’image** de l’opérateur (`main-1.18587.1`). Utilisez la version du chart Helm lors de l’installation avec `helm install`, et le tag d’image lors de la copie des images de conteneur.
+* Les **builds FIPS** ajoutent `-fips` aux tags d’image standard, à la fois pour serveur et pour Keeper.
+* Les tags de version sont remplacés automatiquement lors de la génération de cette documentation. Si vous voyez des variables de modèle brutes (par exemple `25.12.1.1497`), l’étape de build n’a pas été exécutée.

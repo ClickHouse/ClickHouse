@@ -27,150 +27,156 @@ S3 をバックエンドストレージとして利用する ClickHouse は、�
   AWS/GCS のライフサイクルポリシーは設定しないでください。これはサポートされておらず、table が破損するおそれがあります。
 </Warning>
 
-<Steps>
-  <Step title="S3 を ClickHouse のディスクとして使用する" id="1-use-s3-as-a-clickhouse-disk">
-    ### ディスクの作成
+<div id="1-use-s3-as-a-clickhouse-disk">
+  ## 1. ClickHouse のディスクとして S3 を使用する
+</div>
 
-    ストレージ構成を保存するため、ClickHouse の `config.d` ディレクトリに新しいファイルを作成します。
+<div id="creating-a-disk">
+  ### ディスクの作成
+</div>
 
-    ```bash
-    vim /etc/clickhouse-server/config.d/storage_config.xml
-    ```
+ストレージ構成を保存するため、ClickHouse の `config.d` ディレクトリに新しいファイルを作成します。
 
-    新しく作成したファイルに次の XML をコピーし、`BUCKET`、`ACCESS_KEY_ID`、`SECRET_ACCESS_KEY` を、データの保存先となる AWS バケット の詳細に置き換えます。
+```bash
+vim /etc/clickhouse-server/config.d/storage_config.xml
+```
 
-    ```xml
-    <clickhouse>
-      <storage_configuration>
-        <disks>
-          <s3_disk>
-            <type>s3</type>
-            <endpoint>$BUCKET</endpoint>
-            <access_key_id>$ACCESS_KEY_ID</access_key_id>
-            <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
-            <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
-          </s3_disk>
-          <s3_cache>
-            <type>cache</type>
+新しく作成したファイルに次の XML をコピーし、`BUCKET`、`ACCESS_KEY_ID`、`SECRET_ACCESS_KEY` を、データの保存先となる AWS バケット の詳細に置き換えます。
+
+```xml
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3_disk>
+        <type>s3</type>
+        <endpoint>$BUCKET</endpoint>
+        <access_key_id>$ACCESS_KEY_ID</access_key_id>
+        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+      </s3_disk>
+      <s3_cache>
+        <type>cache</type>
+        <disk>s3_disk</disk>
+        <path>/var/lib/clickhouse/disks/s3_cache/</path>
+        <max_size>10Gi</max_size>
+      </s3_cache>
+    </disks>
+    <policies>
+      <s3_main>
+        <volumes>
+          <main>
             <disk>s3_disk</disk>
-            <path>/var/lib/clickhouse/disks/s3_cache/</path>
-            <max_size>10Gi</max_size>
-          </s3_cache>
-        </disks>
-        <policies>
-          <s3_main>
-            <volumes>
-              <main>
-                <disk>s3_disk</disk>
-              </main>
-            </volumes>
-          </s3_main>
-        </policies>
-      </storage_configuration>
-    </clickhouse>
-    ```
+          </main>
+        </volumes>
+      </s3_main>
+    </policies>
+  </storage_configuration>
+</clickhouse>
+```
 
-    S3 ディスクの設定をさらに細かく指定する必要がある場合は、たとえば `region` を指定したり、カスタム HTTP `header` を送信したりできます。関連する設定の一覧は[こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)を参照してください。
+S3 ディスクの設定をさらに細かく指定する必要がある場合は、たとえば `region` を指定したり、カスタム HTTP `header` を送信したりできます。関連する設定の一覧は[こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)を参照してください。
 
-    また、`access_key_id` と `secret_access_key` は以下のものに置き換えることもできます。これにより、環境変数と Amazon EC2 メタデータから認証情報の取得が試行されます。
+また、`access_key_id` と `secret_access_key` は以下のものに置き換えることもできます。これにより、環境変数と Amazon EC2 メタデータから認証情報の取得が試行されます。
 
-    ```bash
-    <use_environment_credentials>true</use_environment_credentials>
-    ```
+```bash
+<use_environment_credentials>true</use_environment_credentials>
+```
 
-    設定ファイルを作成したら、ファイルの所有者を `clickhouse` ユーザーおよびグループに変更する必要があります:
+設定ファイルを作成したら、ファイルの所有者を `clickhouse` ユーザーおよびグループに変更する必要があります:
 
-    ```bash
-    chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
-    ```
+```bash
+chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+```
 
-    これで、変更を反映するために ClickHouse server を再起動できます：
+これで、変更を反映するために ClickHouse server を再起動できます：
 
-    ```bash
-    service clickhouse-server restart
-    ```
-  </Step>
+```bash
+service clickhouse-server restart
+```
 
-  <Step title="S3 をバックエンドにするテーブルを作成する" id="2-create-a-table-backed-by-s3">
-    S3 ディスクが正しく設定されていることを確認するため、テーブルを作成してクエリできるか試します。
+<div id="2-create-a-table-backed-by-s3">
+  ## 2. S3 をバックエンドとするテーブルを作成する
+</div>
 
-    新しい S3 ストレージポリシーを指定して、テーブルを作成します。
+S3 ディスクが適切に設定されていることを確認するため、テーブルを作成してクエリを実行してみます。
 
-    ```sql
-    CREATE TABLE my_s3_table
-      (
-        `id` UInt64,
-        `column1` String
-      )
-    ENGINE = MergeTree
-    ORDER BY id
-    SETTINGS storage_policy = 's3_main';
-    ```
+新しい S3 ストレージポリシーを指定してテーブルを作成します:
 
-    エンジンを `S3BackedMergeTree` として指定する必要がなかったことに注意してください。テーブルがストレージに S3 を使用していることを検出すると、ClickHouse は内部的にエンジンタイプを自動的に変換します。
+```sql
+CREATE TABLE my_s3_table
+  (
+    `id` UInt64,
+    `column1` String
+  )
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
 
-    テーブルが正しいポリシーで作成されたことを確認します:
+エンジンとして `S3BackedMergeTree` を指定する必要がなかった点に注意してください。ClickHouse は、テーブルがストレージに S3 を使用していることを検出すると、内部的にエンジンの種類を自動的に変換します。
 
-    ```sql
-    SHOW CREATE TABLE my_s3_table;
-    ```
+テーブルが正しいポリシーで作成されていることを確認します。
 
-    以下の結果が表示されるはずです:
+```sql
+SHOW CREATE TABLE my_s3_table;
+```
 
-    ```response
-    ┌─statement────────────────────────────────────────────────────
-    │ CREATE TABLE default.my_s3_table
-    (
-      `id` UInt64,
-      `column1` String
-    )
-    ENGINE = MergeTree
-    ORDER BY id
-    SETTINGS storage_policy = 's3_main', index_granularity = 8192
-    └──────────────────────────────────────────────────────────────
-    ```
+次のような結果が表示されます。
 
-    それでは、新しいテーブルにいくつかの行を挿入してみましょう：
+```response
+┌─statement────────────────────────────────────────────────────
+│ CREATE TABLE default.my_s3_table
+(
+  `id` UInt64,
+  `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main', index_granularity = 8192
+└──────────────────────────────────────────────────────────────
+```
 
-    ```sql
-    INSERT INTO my_s3_table (id, column1)
-      VALUES (1, 'abc'), (2, 'xyz');
-    ```
+それでは、新しいテーブルにいくつかの行を挿入してみましょう:
 
-    行が挿入されていることを確認しましょう：
+```sql
+INSERT INTO my_s3_table (id, column1)
+  VALUES (1, 'abc'), (2, 'xyz');
+```
 
-    ```sql
-    SELECT * FROM my_s3_table;
-    ```
+行が挿入されたことを確認しましょう:
 
-    ```response
-    ┌─id─┬─column1─┐
-    │  1 │ abc     │
-    │  2 │ xyz     │
-    └────┴─────────┘
+```sql
+SELECT * FROM my_s3_table;
+```
 
-    2 rows in set. Elapsed: 0.284 sec.
-    ```
+```response
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ xyz     │
+└────┴─────────┘
 
-    AWS コンソールで、データが正常に S3 に挿入されていれば、指定したバケット内に ClickHouse が新しいファイルを作成していることを確認できます。
+2 rows in set. Elapsed: 0.284 sec.
+```
 
-    すべて正常に動作していれば、これでストレージとコンピュートを分離した ClickHouse を利用できています！
+AWS コンソールで、データの S3 への書き込みが正常に完了していれば、指定したバケット内に ClickHouse が新しいファイルを作成していることを確認できるはずです。
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="コンピュートとストレージの分離を使用した S3 バケットの例" border />
-  </Step>
+すべて正常に動作していれば、これでストレージとコンピュートを分離した ClickHouse を利用できるようになります！
 
-  <Step title="フォールトトレランスのためにレプリケーションを実装する（任意）" id="3-implementing-replication-for-fault-tolerance-optional">
-    <Warning>
-      AWS/GCS のライフサイクルポリシーは設定しないでください。これはサポートされておらず、テーブルが壊れるおそれがあります。
-    </Warning>
+<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="コンピュートとストレージの分離を使用した S3 バケットの例" border />
 
-    耐障害性を確保するには、複数の AWS リージョンに分散配置した複数の ClickHouse server ノードと、各ノードに対応する S3 バケットを使用できます。
+<div id="3-implementing-replication-for-fault-tolerance-optional">
+  ## 3. 耐障害性のためのレプリケーションの実装 (任意)
+</div>
 
-    S3 ディスクでのレプリケーションは、`ReplicatedMergeTree` テーブルエンジンを使用することで実現できます。詳細は次のガイドを参照してください。
+<Warning>
+  AWS/GCS のライフサイクルポリシーは設定しないでください。これはサポートされておらず、テーブルの破損を引き起こす可能性があります。
+</Warning>
 
-    * [S3 オブジェクトストレージを使用して 2 つの AWS リージョン間で単一の分片をレプリケートする](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
-  </Step>
-</Steps>
+耐障害性を高めるには、複数の AWS リージョンに分散した複数の ClickHouse server ノードと、各ノードに対応する S3 バケットを使用できます。
+
+S3 ディスクでのレプリケーションは、`ReplicatedMergeTree` テーブルエンジンを使用することで実現できます。詳細については、次のガイドを参照してください。
+
+* [S3 オブジェクトストレージを使用して 2 つの AWS リージョン間で単一の分片をレプリケートする](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
 
 <div id="further-reading">
   ## 参考資料

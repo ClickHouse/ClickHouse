@@ -1,0 +1,103 @@
+---
+slug: /guides/developer/on-the-fly-mutations
+sidebarTitle: 'Mutación sobre la marcha'
+title: 'Mutaciones sobre la marcha'
+keywords: ['Mutación sobre la marcha']
+description: 'Describe las mutaciones sobre la marcha'
+doc_type: 'guide'
+---
+
+<div id="on-the-fly-mutations">
+  ## Mutaciones sobre la marcha
+</div>
+
+Cuando las mutaciones sobre la marcha están habilitadas, las filas actualizadas se marcan inmediatamente como actualizadas y las consultas `SELECT` posteriores devolverán automáticamente los valores modificados. Cuando las mutaciones sobre la marcha no están habilitadas, es posible que tenga que esperar a que las mutaciones se apliquen mediante un proceso en segundo plano para ver los valores modificados.
+
+Las mutaciones sobre la marcha pueden habilitarse para las tablas de la familia `MergeTree` activando la configuración a nivel de consulta `apply_mutations_on_fly`.
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+Vamos a crear una tabla y ejecutar algunas mutaciones:
+
+```sql
+CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+ENGINE = MergeTree ORDER BY id;
+
+-- Deshabilitar la materialización en segundo plano de las mutaciones para mostrar
+-- el comportamiento predeterminado cuando las mutaciones sobre la marcha no están habilitadas
+SYSTEM STOP MERGES test_on_fly_mutations;
+SET mutations_sync = 0;
+
+-- Insertar algunas filas en nuestra nueva tabla
+INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- Actualizar los valores de las filas
+ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+```
+
+Comprobemos el resultado de las actualizaciones con una consulta `SELECT`:
+
+```sql
+-- Deshabilitar explícitamente las mutaciones sobre la marcha
+SET apply_mutations_on_fly = 0;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+Ten en cuenta que los valores de las filas aún no se han actualizado al consultar la nueva tabla:
+
+```response
+┌─id─┬─v─┐
+│  1 │ a │
+│  2 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+Veamos ahora qué ocurre al habilitar las mutaciones sobre la marcha:
+
+```sql
+-- Habilitar mutaciones sobre la marcha
+SET apply_mutations_on_fly = 1;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+La consulta `SELECT` ahora devuelve el resultado correcto de inmediato, sin tener que esperar a que se apliquen las mutaciones:
+
+```response
+┌─id─┬─v─┐
+│  3 │ c │
+└────┴───┘
+```
+
+<div id="performance-impact">
+  ## Impacto en el rendimiento
+</div>
+
+Cuando las mutaciones sobre la marcha están habilitadas, no se materializan de inmediato, sino que solo se aplican durante las consultas `SELECT`. Sin embargo, tenga en cuenta que las mutaciones siguen materializándose de forma asíncrona en segundo plano, lo cual es un proceso costoso.
+
+Si el número de mutaciones enviadas supera constantemente, durante cierto intervalo de tiempo, el número de mutaciones que se procesan en segundo plano, la cola de mutaciones no materializadas pendientes de aplicar seguirá creciendo. Esto acabará degradando el rendimiento de las consultas `SELECT`.
+
+Sugerimos habilitar la configuración `apply_mutations_on_fly` junto con otras configuraciones a nivel de `MergeTree`, como `number_of_mutations_to_throw` y `number_of_mutations_to_delay`, para limitar el crecimiento indefinido de las mutaciones no materializadas.
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ## Compatibilidad con subconsultas y funciones no deterministas
+</div>
+
+Las mutaciones sobre la marcha tienen compatibilidad limitada con las subconsultas y las funciones no deterministas. Solo se admiten subconsultas escalares cuyo resultado tenga un tamaño razonable (controlado por la configuración `mutations_max_literal_size_to_replace`). Solo se admiten funciones no deterministas constantes (p. ej., la función `now()`).
+
+Estos comportamientos se controlan mediante las siguientes configuraciones:
+
+* `mutations_execute_nondeterministic_on_initiator` - si es true, las funciones no deterministas se ejecutan en la réplica iniciadora y se reemplazan por literales en las consultas `UPDATE` y `DELETE`. Valor predeterminado: `false`.
+* `mutations_execute_subqueries_on_initiator` - si es true, las subconsultas escalares se ejecutan en la réplica iniciadora y se reemplazan por literales en las consultas `UPDATE` y `DELETE`. Valor predeterminado: `false`.
+* `mutations_max_literal_size_to_replace` - El tamaño máximo, en bytes, de los literales serializados que se reemplazarán en las consultas `UPDATE` y `DELETE`. Valor predeterminado: `16384` (16 KiB).

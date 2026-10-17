@@ -22,12 +22,7 @@ function cleanup()
 # Clean up any previous state
 cleanup
 
-# Also clean up on TERM: clickhouse-test sends SIGTERM before SIGKILL on timeout.
-trap cleanup EXIT TERM
-
-# Bound every client call so a wedged query/DDL cannot block `wait` until the test cap,
-# where SIGKILL skips the EXIT trap and leaks the global root workload and thread resource.
-CALL_TIMEOUT=30
+trap cleanup EXIT
 
 function thread_query()
 {
@@ -37,7 +32,7 @@ function thread_query()
         # Run a short query that uses CPU scheduling
         # Use smaller numbers so queries finish quickly
         # Ignore expected errors when workload is dropped during query
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
+        $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
             | { grep -v -e "RESOURCE_ACCESS_DENIED" -e "INVALID_SCHEDULER_NODE" -e "There is no resource" -e "^$" || true; }
     done
 }
@@ -49,8 +44,8 @@ function thread_drop_create()
     do
         # Drop and recreate the workload while queries may be running
         # This creates the race condition when queries are releasing their leases
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
+        $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
+        $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
     done
 }
 
@@ -74,4 +69,4 @@ thread_drop_create &
 wait
 
 # Server should still be alive
-timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "SELECT 1"
+$CLICKHOUSE_CLIENT -q "SELECT 1"

@@ -377,10 +377,6 @@ public:
 
     bool isDistributedEngine(bool as_alias = false) const;
 
-    bool isRemoteSecureEngine(bool as_alias = false) const;
-
-    bool isAnyRemoteEngine(bool as_alias = false) const;
-
     bool isDictionaryEngine(bool as_alias = false) const;
 
     bool isGenerateRandomEngine(bool as_alias = false) const;
@@ -453,15 +449,13 @@ public:
     uint32_t idx_counter = 0;
     uint32_t hidx_counter = 0;
     uint32_t proj_counter = 0;
-    uint32_t hproj_counter = 0;
     uint32_t constr_counter = 0;
     std::unordered_map<String, SQLColumn> cols;
     std::unordered_map<String, SQLColumn> staged_cols;
     std::unordered_map<String, String> frozen_partitions;
-    /// Names of hypothetical (WHAT-IF) indexes and projections created on this table. They are
-    /// session scoped on the server, so this is best effort only.
+    /// Names of hypothetical (WHAT-IF) indexes created on this table. They are session
+    /// scoped on the server, so this is best effort only.
     std::unordered_set<String> hypothetical_indexes;
-    std::unordered_set<String> hypothetical_projections;
 
     SQLTable()
         : SQLBase("t")
