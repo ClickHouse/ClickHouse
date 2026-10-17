@@ -139,6 +139,10 @@ For details on how to enable SQL users and set roles, refer to [Defining SQL Use
     Notice that no password was specified, the certificate is used in lieu of a password and is how ClickHouse will authenticate the user.
 </Note>
 
+<Note>
+    The `X-ClickHouse-SSL-Certificate-Auth` and `X-ClickHouse-User` headers can be omitted entirely when the [`ssl_certificate_username_field`](/operations/external-authenticators/ssl-x509#authenticating-https-requests-by-the-certificate-alone) server setting is configured: the user name is then derived from the client certificate itself (for example, from its Common Name).
+</Note>
+
 </Step>
 </Steps>
 
