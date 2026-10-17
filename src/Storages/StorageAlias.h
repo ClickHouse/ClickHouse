@@ -16,7 +16,6 @@ public:
     {
         ContextPtr context;
         AccessType access_type;
-        Names column_names = {};
     };
 
     StorageAlias(
