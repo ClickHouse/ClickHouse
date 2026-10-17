@@ -50,7 +50,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
-    StreamBaseManifestPtr stream_base_manifest)
+    StreamBaseManifestPtr stream_base_manifest,
+    const ContextPtr & writer_context)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -63,7 +64,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     writer_settings = MergeTreeWriterSettings(
-        data_part->storage.getContext()->getSettingsRef(),
+        (writer_context ? writer_context : data_part->storage.getContext())->getSettingsRef(),
         write_settings_,
         storage_settings,
         data_part,

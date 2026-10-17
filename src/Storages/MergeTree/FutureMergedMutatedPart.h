@@ -31,7 +31,13 @@ struct FutureMergedMutatedPart
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
     bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection);
+    /// `base_settings`, when set, replaces the live table settings in the part-format decision - a merge
+    /// freezes the settings it runs with at selection time (see `MergeTreeData::choosePartFormat`).
+    void assign(
+        MergeTreeData::DataPartsVector parts_,
+        MergeTreeData::DataPartsVector patch_parts_,
+        ProjectionDescriptionRawPtr projection,
+        const MergeTreeSettingsPtr & base_settings = {});
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);
 
     /// Raise the mutation version of the result part above what `assign` derived from the sources.

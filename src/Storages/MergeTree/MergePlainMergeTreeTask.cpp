@@ -4,6 +4,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionManager.h>
@@ -13,6 +14,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 
 
@@ -22,6 +24,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char plain_merge_task_pause_before_prepare[];
 }
 
 
@@ -135,20 +142,92 @@ void MergePlainMergeTreeTask::prepare()
         }
     };
 
+    /// Test hook: hold a selected merge here, between selection and execution, so tests can
+    /// deterministically let a TTL boundary pass in that window.
+    FailPointInjection::pauseFailPoint(FailPoints::plain_merge_task_pause_before_prepare);
+
+    /// Re-price the memory reservation against the LIVE state just before the merge constructs its writers.
+    /// The context, the MergeTree settings and time_of_merge are pinned at selection time (see below), but two
+    /// inputs of the estimate cannot be:
+    ///  - the pending mutations: MergeTask builds its own mutations snapshot from the live
+    ///    current_mutations_by_version when it starts, so an ALTER / RENAME COLUMN registered while the merge
+    ///    waits in the background queue is applied on the fly by the merge, and a reservation priced against
+    ///    the selection-time snapshot would miss its conversions. The snapshot below is taken with the same
+    ///    parameters MergeTask uses, and MergeTask is handed this very snapshot, so a mutation registered
+    ///    after this point is not applied by the merge without being priced;
+    ///  - the destination disk's request settings: WriteBufferFromS3 / WriteBufferFromAzureBlobStorage read
+    ///    them from the disk's object storage when they are constructed, and a config reload (applyNewSettings)
+    ///    that raises *_strict_upload_part_size / *_max_upload_part_size / *_max_inflight_parts_for_one_file
+    ///    while the merge waits would let the writers outgrow a reservation priced with the old values.
+    /// The replicated path prices its reservation at task start for the same reason
+    /// (MergeFromLogEntryTask::prepare); reserve unconditionally, like it does - the merge is committed to
+    /// run, and the refreshed reservation still throttles selection of further merges. A change between this
+    /// point and a writer's construction mid-merge is the irreducible remainder, covered by the reactive
+    /// background_memory_tracker.
+    const DiskPtr output_disk = merge_mutate_entry->tagger->reserved_space->getDisk();
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    {
+        const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
+        Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
+        for (const auto & patch : future_part->patch_parts)
+            min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
+        const MergeTreeData::IMutationsSnapshot::Params mutations_params
+        {
+            .metadata_version = metadata_snapshot->getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_patch_metadata_version = min_patch_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = !future_part->patch_parts.empty(),
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+        mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
+        /// `replace` swaps the selection-time reservation for the refreshed one in a single critical
+        /// section; a fresh `reserve` moved over the old value would transiently expose `old + new`
+        /// to concurrent selectors and spuriously reject merges that fit.
+        merge_mutate_entry->tagger->memory_reservation = MergeMemoryReservation::replace(
+            std::move(merge_mutate_entry->tagger->memory_reservation),
+            CompactionStatistics::estimateNeededMemoryForMerge(
+                *future_part,
+                metadata_snapshot,
+                merge_mutate_entry->merge_context,
+                *merge_mutate_entry->data_settings,
+                mutations_snapshot,
+                merge_mutate_entry->time_of_merge,
+                /*output_on_remote_disk=*/ output_disk->isRemote(),
+                {CompactionStatistics::getDiskWriteBufferMemory(output_disk, merge_mutate_entry->merge_context->getWriteSettings())},
+                deduplicate,
+                cleanup));
+    }
+
+    /// The merge runs with the timestamp it was SELECTED at, not with a fresh one: its up-front memory
+    /// reservation priced the TTL trigger of merge_may_reduce_rows against that clock
+    /// (CompactionStatistics::estimateNeededMemoryForMerge), and a merge that waits in the background
+    /// queue while a TTL boundary passes must not execute as a row-reducing TTL merge that the
+    /// reservation priced as an ordinary one. The replicated path pins the clock the same way, via
+    /// entry.create_time (see MergeFromLogEntryTask); rows whose TTL expires while the merge is queued
+    /// are removed by a later TTL merge.
+    /// ... and with the MergeTree settings snapshot taken at selection time, for the same reason: the
+    /// reservation priced the merge's writer decisions against those settings, so a concurrent
+    /// ALTER ... MODIFY SETTING must not change them while the merge waits in the queue.
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
+        merge_mutate_entry->data_settings,
         merge_list_entry.get(),
         {} /* projection_merge_list_element */,
         table_lock_holder,
-        time(nullptr),
+        merge_mutate_entry->time_of_merge,
         task_context,
         merge_mutate_entry->tagger->reserved_space,
         deduplicate,
         deduplicate_by_columns,
         cleanup,
         storage.merging_params,
-        txn);
+        txn,
+        mutations_snapshot);
 }
 
 
@@ -227,10 +306,15 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    context->makeQueryContextForMerge(*storage.getSettings());
-    auto query_id = getQueryId();
-    context->setCurrentQueryId(query_id);
+    /// The merge runs under the context created at SELECTION time (StorageMergeTree::selectPartsToMerge),
+    /// not under a freshly built one: the up-front memory reservation was estimated against that exact
+    /// context, and MergeTask snapshots its reader/writer settings from the context it is given. Building
+    /// a fresh copy of the background context here would let a merge that waited in the background queue
+    /// pick up a different background_profile / read buffer sizes / max_compress_block_size than the
+    /// reservation was priced with. The replicated path pins the context the same way, by estimating and
+    /// merging with the same task_context in MergeFromLogEntryTask.
+    auto context = merge_mutate_entry->merge_context;
+    context->setCurrentQueryId(getQueryId());
     return context;
 }
 
