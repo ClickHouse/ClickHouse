@@ -1,0 +1,5 @@
+one-way impersonation survives refused reset
+explicit authorized return permits reset
+authentication grants survive repeated resets
+reset restores policy defaults without relaxing restrictive defaults
+reset preserves consumed quota

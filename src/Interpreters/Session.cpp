@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
     extern const int ACCESS_DENIED;
+    extern const int INVALID_TRANSACTION;
 }
 
 
@@ -586,17 +587,10 @@ ContextMutablePtr Session::makeSessionContext()
 
     LOG_DEBUG(log, "Creating session context with user_id: {}",
             toString(*user_id));
-    /// Make a new session context.
-    ContextMutablePtr new_session_context;
-    new_session_context = Context::createCopy(global_context);
-    new_session_context->makeSessionContext();
 
-    /// Copy prepared client info to the new session context.
-    new_session_context->setClientInfo(*prepared_client_info);
+    /// Make a new session context with the prepared client info.
+    ContextMutablePtr new_session_context = createSessionContextForUser(*prepared_client_info);
     prepared_client_info.reset();
-
-    /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -607,13 +601,76 @@ ContextMutablePtr Session::makeSessionContext()
         {},
         session_context->getSettingsRef()[Setting::max_sessions_for_user]);
 
-    // Use QUERY source as for SET query for a session
-    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
+    applySettingsFromAuthServer(session_context);
 
     recordLoginSuccess(session_context);
 
     return session_context;
+}
+
+void Session::resetSessionContext(const std::function<void(const ContextMutablePtr &)> & prepare)
+{
+    if (!session_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must exist to be reset");
+    if (named_session)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Named session context cannot be reset");
+    if (!user_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be reset after authentication");
+
+    /// The caller must end the transaction first, so that it is not rolled back without notice.
+    if (session_context->getCurrentTransaction())
+        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+            "Cannot reset the session inside a transaction. Run `COMMIT` or `ROLLBACK` first");
+
+    checkIfUserIsStillValid();
+
+    /// A reset rebuilds the context for the existing authenticated connection. After `EXECUTE AS`
+    /// the session runs as another user, so a reset would give back the rights that `EXECUTE AS` dropped.
+    /// The settings are not checked: a new login of the same user also gets them from its profile.
+    if (session_context->getUserID() != user_id)
+    {
+        const auto & current_client_info = session_context->getClientInfo();
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot reset the session while it runs as user {} after `EXECUTE AS`. "
+            "Only a session that runs as the authenticated user {} can be reset. Open a new connection",
+            current_client_info.current_user, current_client_info.authenticated_user);
+    }
+
+    LOG_DEBUG(log, "{} Resetting session context, user_id: {}", toString(auth_id), toString(*user_id));
+
+    /// Keep the connection data, with the user name from authentication.
+    ClientInfo client_info = session_context->getClientInfo();
+    client_info.current_user = client_info.authenticated_user;
+
+    ContextMutablePtr new_session_context = createSessionContextForUser(client_info);
+    applySettingsFromAuthServer(new_session_context);
+    prepare(new_session_context);
+    /// Resolving access can throw too; finish preparing both values before replacing the live context.
+    auto new_user = new_session_context->getUser();
+
+    /// The user ID does not change, so the session tracker handle stays valid.
+    /// The old context is destroyed at the end of the scope, together with its temporary tables.
+    session_context.swap(new_session_context);
+    user.swap(new_user);
+}
+
+ContextMutablePtr Session::createSessionContextForUser(const ClientInfo & client_info) const
+{
+    ContextMutablePtr new_session_context = Context::createCopy(global_context);
+    new_session_context->makeSessionContext();
+    new_session_context->setClientInfo(client_info);
+
+    /// Set user information for the new context: current profiles, roles, access rights.
+    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+
+    return new_session_context;
+}
+
+void Session::applySettingsFromAuthServer(const ContextMutablePtr & context) const
+{
+    // Use QUERY source as for SET query for a session
+    context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+    context->applySettingsChanges(settings_from_auth_server);
 }
 
 ContextMutablePtr Session::makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_)

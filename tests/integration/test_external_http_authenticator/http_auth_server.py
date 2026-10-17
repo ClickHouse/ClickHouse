@@ -27,6 +27,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_ACCESS_GRANTED(self, user: str) -> None:
         self.send_response(http.HTTPStatus.OK)
         response = USER_RESPONSES.get(user)
+        if user == "reset_profile_user":
+            response = {"settings": {"profile": "'reset_auth_profile'", "auth_num": "UInt64_15"}}
 
         if isinstance(response, dict):
             body = json.dumps(response)

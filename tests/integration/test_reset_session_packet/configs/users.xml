@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <reset_one_session>
+            <max_sessions_for_user>1</max_sessions_for_user>
+        </reset_one_session>
+    </profiles>
+</clickhouse>

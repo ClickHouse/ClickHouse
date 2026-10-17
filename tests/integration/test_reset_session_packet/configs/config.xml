@@ -1,0 +1,6 @@
+<clickhouse>
+    <proto_caps>
+        <send>notchunked_optional</send>
+        <recv>notchunked_optional</recv>
+    </proto_caps>
+</clickhouse>

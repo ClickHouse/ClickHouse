@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import typing
 
 import pytest
@@ -16,6 +17,10 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
 )
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+# A native protocol client that can send the `ResetSession` packet, shared with the stateless tests.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "../../queries/0_stateless/helpers"))
+from native_session_client import NativeSessionClient, expect_error
 
 
 def run_echo_server():
@@ -139,3 +144,71 @@ def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster)
         if isinstance(response, dict):
             for key, value in response.get("settings", {}).items():
                 assert query_settings.get(key) == value
+
+
+def test_reset_session_restores_settings_from_auth_response(started_cluster: ClickHouseCluster):
+    # The `ResetSession` packet makes the session again as at login, so the settings that the
+    # authentication server returned come back after the session changed them.
+    with NativeSessionClient(
+        user="test_user_1",
+        password=GOOD_PASSWORD,
+        database="default",
+        host=instance.ip_address,
+        port=9000,
+    ) as client:
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "15"
+
+        client.query("SET auth_num = 99")
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "99"
+
+        client.reset_session()
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "15"
+
+
+def test_reset_session_replays_profile_and_preserves_state_on_failure(started_cluster):
+    profile = "CREATE SETTINGS PROFILE reset_auth_profile SETTINGS max_block_size = 4242, max_threads = 2 MAX 4"
+    instance.query(profile)
+    instance.query(
+        "CREATE USER reset_profile_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'BASIC'"
+    )
+    instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO reset_profile_user")
+    instance.query("GRANT TABLE ENGINE ON Memory TO reset_profile_user")
+    try:
+        with NativeSessionClient(
+            user="reset_profile_user",
+            password=GOOD_PASSWORD,
+            database="default",
+            host=instance.ip_address,
+            port=9000,
+        ) as client:
+            client.query("SET max_block_size = 1111, auth_num = 99")
+            client.reset_session()
+            assert client.query(
+                "SELECT toString(getSetting('max_block_size')), toString(getSetting('auth_num'))"
+            ) == [["4242", "15"]]
+            expect_error(
+                "SETTING_CONSTRAINT_VIOLATION", client.query, "SET max_threads = 8"
+            )
+
+            client.query("SET max_block_size = 2222, param_kept = 'kept'")
+            client.query("CREATE TEMPORARY TABLE reset_auth_kept (x String)")
+            client.query("INSERT INTO reset_auth_kept VALUES ('kept')")
+            instance.query("DROP SETTINGS PROFILE reset_auth_profile")
+            expect_error("THERE_IS_NO_PROFILE", client.reset_session)
+            assert client.query(
+                "SELECT toString(getSetting('max_block_size')), {kept:String}"
+            ) == [["2222", "kept"]]
+            assert client.value("SELECT x FROM reset_auth_kept") == "kept"
+
+            instance.query(profile)
+            client.reset_session()
+            assert (
+                client.value("SELECT toString(getSetting('max_block_size'))") == "4242"
+            )
+            expect_error(
+                "UNKNOWN_QUERY_PARAMETER", client.query, "SELECT {kept:String}"
+            )
+            expect_error("UNKNOWN_TABLE", client.query, "SELECT x FROM reset_auth_kept")
+    finally:
+        instance.query("DROP USER IF EXISTS reset_profile_user")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS reset_auth_profile")
