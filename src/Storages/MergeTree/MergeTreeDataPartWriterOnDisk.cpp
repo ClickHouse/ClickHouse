@@ -169,10 +169,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
-    /// An encrypting part codec is kept even for incompressible indices, so their data is not written in plain text.
-    CompressionCodecPtr incompressible_index_codec
-        = default_codec->isEncryption() ? default_codec : CompressionCodecFactory::instance().get("NONE", {});
-
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
@@ -238,12 +234,16 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 index_substream.extension,
                 on_disk_stream_name,
                 marks_file_extension,
-                skip_index->isCompressible() ? default_codec : incompressible_index_codec,
+                default_codec,
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
                 packing);
+
+            /// An encrypting part codec is applied to every block, so the index data is not written in plain text.
+            if (!skip_index->isCompressible() && !default_codec->isEncryption())
+                stream->compressor.storeIncompressibleBlocksUncompressed();
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
