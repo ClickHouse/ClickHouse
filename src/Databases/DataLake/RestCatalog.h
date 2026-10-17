@@ -76,6 +76,8 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
+    void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const override;
+
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(
@@ -253,6 +255,13 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token);
+
+private:
+    /// Builds the body of the `POST /tables` request. If there is no `location`, the catalog uses its default location.
+    Poco::JSON::Object::Ptr buildCreateTableRequestBody(
+        const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const;
+
+    std::string getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const;
 };
 
 class OneLakeCatalog : public RestCatalog

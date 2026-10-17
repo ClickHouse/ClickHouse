@@ -444,6 +444,11 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
+void ICatalog::createTableAtDefaultLocation(const String & /*namespace_name*/, const String & /*table_name*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTableAtDefaultLocation is not implemented");
+}
+
 void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
