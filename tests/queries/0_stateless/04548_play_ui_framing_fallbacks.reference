@@ -2,6 +2,9 @@ default format extracted: OK
 framed default format extracted: OK
 rejection pattern extracted: OK
 download framing guard present: OK
+successful writes do not offer download: OK
+restored writes do not offer download: OK
+download handler refuses writes: OK
 framing kind persisted: OK
 restore keys off framing kind: OK
 download strips real format clause: OK
