@@ -175,9 +175,9 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
     if (x == std::numeric_limits<Int64>::min())
         return x;
 
-    /// Negate using unsigned arithmetic to obtain the magnitude;
-    /// `-x` on the signed integer would be undefined behavior on the boundary value.
-    return -transform(-static_cast<UInt64>(x), seed);
+    /// `-x` is representable, because the minimum value is handled above. The permutation keeps
+    /// the highest bit of the magnitude, so the result is below 2^63 and can be negated as `Int64`.
+    return -static_cast<Int64>(transform(static_cast<UInt64>(-x), seed));
 }
 
 
