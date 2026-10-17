@@ -227,10 +227,13 @@ private:
     /// None while every thread is parked: no thread can use a slot.
     SlotCount effectiveMaxSlots() const
     {
-        if (threads.running_count == 0 && threads.parked_count > 0 && threads.preempted.none())
+        if (allParked())
             return 0;
         return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
     }
+
+    /// No thread is running or preempted, and at least one is parked
+    bool allParked() const { return threads.running_count == 0 && threads.parked_count > 0 && threads.preempted.none(); }
 
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
