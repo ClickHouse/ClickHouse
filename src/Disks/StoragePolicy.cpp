@@ -587,4 +587,19 @@ void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");
 }
 
+void StoragePolicySelector::addOrReplaceTemporary(StoragePolicyPtr storage_policy)
+{
+    const auto & name = storage_policy->getName();
+
+    /// Only names in the temporary namespace may be replaced.
+    if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "StoragePolicy {} is not temporary, it cannot be replaced (temporary names start with {})",
+            backQuote(name),
+            backQuote(TMP_STORAGE_POLICY_PREFIX));
+
+    policies[name] = std::move(storage_policy);
+}
+
 }
