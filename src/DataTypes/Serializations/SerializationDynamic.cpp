@@ -708,7 +708,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
     const auto & variant_info = column_dynamic.getVariantInfo();
     if (!variant_info.variant_type->equals(*structure_state->variant_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
     dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumn(), limit, settings, dynamic_state->variant_state, cache);
@@ -781,6 +781,9 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
+    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    checkStackSize();
+
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();

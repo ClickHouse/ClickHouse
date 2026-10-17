@@ -115,12 +115,19 @@ namespace QueryPlanOptimizations
 /// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
 /// the executed read writes its entries under it.
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+
+/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
+/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
+/// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
+bool dependsOnItsBlock(const ActionsDAG & actions);
 }
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
+
+struct HypotheticalProjection;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -206,6 +213,8 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
+        bool exact_ranges_excluded = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -227,6 +236,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -247,6 +257,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -524,9 +535,9 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
-    /// Adds virtual columns for reading from text index.
+    /// Sets the read tasks for text indexes and adds their virtual columns for reading.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
@@ -596,6 +607,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// a hypothetical projection that the projection optimization also weighs
+    void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
+    const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
@@ -623,11 +638,13 @@ public:
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
-    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
-    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
-    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
-    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
-    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    /// step that this step replaces: the projection read built by `optimizeUseNormalProjections`, and the
+    /// steps `clone` and `createLocalParallelReplicasReadingStep` rebuild, which are not always optimized
+    /// again afterwards. `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so
+    /// the descriptors are attached to the base-table read and would be lost otherwise. Every descriptor
+    /// is registered anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the
+    /// key column is prunable through this step's own metadata (the projection's primary key or skip
+    /// indexes).
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
@@ -710,12 +727,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
-    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
-    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
-    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
-    /// (see its description in `Settings.cpp`) and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
+    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
+    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
+    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
+    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
+    /// what still happens with `make_distributed_plan`, and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
@@ -862,6 +879,7 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+    std::shared_ptr<HypotheticalProjection> hypothetical_projection;
 
     /// See enableSealGatedReading.
     struct SealGatedReading

@@ -52,11 +52,7 @@ class SettingsChanges;
 /// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
 /// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
 /// `sumif` is not), so these stay PascalCase.
-inline const Strings aggregate_combinator_suffixes = {
-    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
-    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-};
+const Strings & aggregateCombinatorSuffixes();
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query

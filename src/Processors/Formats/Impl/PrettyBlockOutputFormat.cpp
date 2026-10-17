@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -23,6 +24,8 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -324,6 +327,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 
 void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
+    rethrowBackgroundExceptionIfAny();
+
     if (total_rows >= format_settings.pretty.max_rows)
     {
         total_rows += chunk.getNumRows();
@@ -362,14 +367,55 @@ void PrettyBlockOutputFormat::writingThread()
 {
     std::unique_lock lock(writing_mutex);
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    while (!finish)
+    try
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-            || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+        while (!finish)
         {
-            writeMonoChunkIfNeeded();
-            watch.restart();
+            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
+                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            {
+                writeMonoChunkIfNeeded();
+                watch.restart();
+            }
         }
+    }
+    catch (...)
+    {
+        /// A write error (for example, the client has gone away and the pipe is broken) has to reach
+        /// the query: otherwise the thread just exits, and the query keeps reading and accumulating
+        /// chunks that are never written. Passed to the writing methods, which run under the same mutex.
+        background_exception = std::current_exception();
+        has_background_exception = true;
+        auto exception = background_exception;
+        lock.unlock();
+
+        /// The writing methods are called only when the query produces more output. A query that has
+        /// already produced all of its output and keeps reading (for example, `SELECT DISTINCT` over a
+        /// huge table) would not notice the error until it finishes, so cancel it with this exception.
+        /// In the client the format outlives the query, so its process list element may be gone already.
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto process_list_element = query_context->getProcessListElementSafe())
+                process_list_element->cancelQuery(DB::CancelReason::CANCELLED_BY_ERROR, exception);
+    }
+}
+
+void PrettyBlockOutputFormat::rethrowBackgroundExceptionIfAny()
+{
+    if (background_exception)
+        std::rethrow_exception(background_exception);
+}
+
+void PrettyBlockOutputFormat::checkBackgroundError()
+{
+    /// The remote `clickhouse-client` formats the result itself, and there is no query in its process
+    /// list for `writingThread` to cancel. A query that has already produced all of its output does not
+    /// call the writing methods anymore, so the client calls this while it waits for packets from the
+    /// server. Not waiting for the mutex: if it is busy, the next call will do.
+    if (has_background_exception)
+    {
+        std::unique_lock lock(writing_mutex, std::try_to_lock);
+        if (lock)
+            rethrowBackgroundExceptionIfAny();
     }
 }
 
@@ -1165,6 +1211,17 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
     {
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
+
+        /// The squashed chunk is written by the background thread, long after `work` has taken its
+        /// packet boundary and done its own `auto_flush`. Without doing it here, the rendered table
+        /// stays in the output buffer (or, under framing, in the payload buffer without a packet of
+        /// its own) until the query finishes - which is exactly what the squashing is supposed to
+        /// avoid. This runs under `writing_mutex` (held by `writingThread`), same as `work`, so the
+        /// framing format still sees serialized calls.
+        if (framing)
+            writeFramingPayloadBoundary(FramedPacketKind::Data);
+        else if (auto_flush)
+            flushImpl();
     }
 }
 
@@ -1188,6 +1245,7 @@ PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
+    rethrowBackgroundExceptionIfAny();
     stopThread();
     writeMonoChunkIfNeeded();
     writeSuffixImpl();
