@@ -1,0 +1,8 @@
+Alias-qualified filter over a table function:
+1	a
+Alias-qualified filter in a join:
+1
+Query: SELECT `i` FROM `t` WHERE `i` = 1
+Query: SELECT `i` FROM `t` WHERE `i` = 1
+1
+1

@@ -4,6 +4,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
 namespace DB
@@ -20,7 +21,10 @@ static constexpr auto REFRESH_CURSOR_DOMAIN = "clickhouse.refresh-cursor";
 class WriteTransaction
 {
 public:
-    WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_);
+    WriteTransaction(
+        DeltaLake::KernelHelperPtr kernel_helper_,
+        DB::NamesAndTypesList table_schema_,
+        std::unordered_set<String> table_timestamp_ntz_paths_);
 
     const std::string & getDataPath() const;
 
@@ -54,6 +58,8 @@ public:
     /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
     const DB::NamesAndTypesList & getWriteSchema() const;
 
+    const std::unordered_set<String> & getTimestampNtzPaths() const;
+
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;
     using KernelExternEngine = DeltaLake::KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
@@ -64,6 +70,7 @@ private:
     /// Table logical schema, provided at construction. Used to create the table and, for partitioned
     /// tables, as the write schema (the kernel exposes no partitioned write context via FFI).
     const DB::NamesAndTypesList table_schema;
+    const std::unordered_set<String> table_timestamp_ntz_paths;
     const LoggerPtr log;
     std::string path_prefix;
 
@@ -71,6 +78,7 @@ private:
     KernelTransaction transaction;
     KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;
+    std::unordered_set<String> write_timestamp_ntz_paths;
     std::shared_ptr<DB::StreamingCursor> streaming_cursor;
 
     void assertTransactionCreated() const;

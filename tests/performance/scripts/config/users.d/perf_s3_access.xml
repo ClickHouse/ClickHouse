@@ -1,0 +1,8 @@
+<!-- Using the perf_s3 named collection (config.d/perf_s3.xml) needs a privilege that users.xml users lack by default. -->
+<clickhouse>
+    <users>
+        <default>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>

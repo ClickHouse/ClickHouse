@@ -8,6 +8,7 @@
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
+#    include <Core/DecimalFunctions.h>
 #    include <DataTypes/Native.h>
 #endif
 
@@ -27,6 +28,8 @@ public:
         bool has_date = false;
         bool has_datetime = false;
 
+        const auto result_nested = removeNullable(result_type);
+
         for (const auto & type : types)
         {
             auto type_removed_nullable = removeNullable(type);
@@ -41,6 +44,9 @@ public:
                 return false;
 
             if (!canBeNativeType(type_removed_nullable))
+                return false;
+
+            if (scaleLiftCanOverflow(*type_removed_nullable, *result_nested))
                 return false;
         }
 
@@ -86,6 +92,30 @@ public:
             phi->addIncoming(value, block);
 
         return phi;
+    }
+
+private:
+    /// Compiled code can neither raise nor clamp, so a `Decimal`, `DateTime64` or `Time64` branch whose lift to the result scale
+    /// can leave 32- or 64-bit storage, where the interpreted cast raises `DECIMAL_OVERFLOW` (or, for a `DateTime64`
+    /// branch of a `DateTime64` result or a `Time64` branch of a `Time64` result, clamps to the range of the result), is not compilable.
+    static bool scaleLiftCanOverflow(const IDataType & branch, const IDataType & result)
+    {
+        const bool same_family = (isDecimal(branch) && isDecimal(result))
+            || ((isDateTime64(branch) || isTime64(branch)) && (isDateTime64(result) || isTime64(result)));
+        if (!same_family || result.getSizeOfValueInMemory() > sizeof(Int64))
+            return false;
+        if (branch.getSizeOfValueInMemory() > result.getSizeOfValueInMemory())
+            return true;
+        const UInt32 branch_scale = getDecimalScale(branch);
+        const UInt32 result_scale = getDecimalScale(result);
+        if (result_scale <= branch_scale)
+            return false;
+        const bool branch_is_32 = branch.getSizeOfValueInMemory() == sizeof(Int32);
+        const Int64 lowest = branch_is_32 ? std::numeric_limits<Int32>::lowest() : std::numeric_limits<Int64>::lowest();
+        Int64 lifted = 0;
+        if (common::mulOverflow(lowest, DecimalUtils::scaleMultiplier<Int64>(result_scale - branch_scale), lifted))
+            return true;
+        return result.getSizeOfValueInMemory() == sizeof(Int32) && lifted < std::numeric_limits<Int32>::lowest();
     }
 #endif
 };

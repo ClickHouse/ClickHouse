@@ -78,7 +78,8 @@ private:
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
         if (!data_ref.calculator || data_ref.calculator->isFinalized())
             data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
-                getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+                getCodecOrDefault(),
+                roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
@@ -106,6 +107,8 @@ private:
             ParserCodec codec_parser;
             auto ast
                 = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// The aggregate compresses the serialized values directly, so a declarative codec would measure nothing.
+            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
             return CompressionCodecFactory::instance().get(ast, argument_types[0]);
         }
         return CompressionCodecFactory::instance().getDefaultCodec();

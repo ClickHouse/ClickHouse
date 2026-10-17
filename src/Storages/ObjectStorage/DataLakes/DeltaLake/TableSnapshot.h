@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/JSON/Array.h>
+#include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
@@ -61,6 +62,7 @@ public:
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
+    const std::unordered_set<String> & getTimestampNtzPaths() const;
     /// Configuration of the `domainMetadata` action for `domain` in this snapshot, or nullopt if absent.
     std::optional<std::string> getDomainMetadata(const std::string & domain) const;
 
@@ -109,6 +111,7 @@ private:
         DB::NameToNameMap physical_names_map;
         /// Partition columns list (not stored in read schema)
         DB::Names partition_columns;
+        std::unordered_set<String> timestamp_ntz_paths;
     };
     mutable std::optional<SchemaInfo> schema;
 

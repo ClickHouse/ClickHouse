@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Операторы",
           "pages": [
-            "ru/reference/operators/index",
-            "ru/reference/operators/exists",
-            "ru/reference/operators/distributed-ddl"
+            "ru/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ru/reference/engines/database-engines/index",
             "ru/reference/engines/database-engines/atomic",
             "ru/reference/engines/database-engines/backup",
+            "ru/reference/engines/database-engines/cluster",
             "ru/reference/engines/database-engines/datalake",
             "ru/reference/engines/database-engines/dictionary",
             "ru/reference/engines/database-engines/filesystem",
@@ -428,6 +427,7 @@
             "ru/reference/engines/database-engines/memory",
             "ru/reference/engines/database-engines/mysql",
             "ru/reference/engines/database-engines/ordinary",
+            "ru/reference/engines/database-engines/overlay",
             "ru/reference/engines/database-engines/postgresql",
             "ru/reference/engines/database-engines/remote",
             "ru/reference/engines/database-engines/replicated",
@@ -598,6 +598,7 @@
                 "ru/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "ru/reference/functions/aggregate-functions/maxMap",
                 "ru/reference/functions/aggregate-functions/meanZTest",
+                "ru/reference/functions/aggregate-functions/mergedJSONPatch",
                 "ru/reference/functions/aggregate-functions/median",
                 "ru/reference/functions/aggregate-functions/min",
                 "ru/reference/functions/aggregate-functions/minMap",
@@ -639,6 +640,15 @@
                 "ru/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "ru/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "ru/reference/functions/aggregate-functions/rankCorr",
+                "ru/reference/functions/aggregate-functions/regr_avgx",
+                "ru/reference/functions/aggregate-functions/regr_avgy",
+                "ru/reference/functions/aggregate-functions/regr_count",
+                "ru/reference/functions/aggregate-functions/regr_intercept",
+                "ru/reference/functions/aggregate-functions/regr_r2",
+                "ru/reference/functions/aggregate-functions/regr_slope",
+                "ru/reference/functions/aggregate-functions/regr_sxx",
+                "ru/reference/functions/aggregate-functions/regr_sxy",
+                "ru/reference/functions/aggregate-functions/regr_syy",
                 "ru/reference/functions/aggregate-functions/simpleLinearRegression",
                 "ru/reference/functions/aggregate-functions/singleValueOrNull",
                 "ru/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +669,38 @@
                 "ru/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "ru/reference/functions/aggregate-functions/sumWithOverflow",
                 "ru/reference/functions/aggregate-functions/theilsU",
+                "ru/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "ru/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "ru/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "ru/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "ru/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "ru/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "ru/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "ru/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "ru/reference/functions/aggregate-functions/topK",
                 "ru/reference/functions/aggregate-functions/topKWeighted",
                 "ru/reference/functions/aggregate-functions/uniq",
@@ -945,6 +976,7 @@
           ]
         },
         "ru/reference/formats/SQLInsert",
+        "ru/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -969,15 +1001,6 @@
         "ru/reference/formats/Values",
         "ru/reference/formats/Vertical",
         "ru/reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "Интерфейсы",
-      "pages": [
-        "ru/reference/interfaces/specs/NativeProtocol",
-        "ru/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1029,6 +1052,7 @@
         "ru/reference/system-tables/codecs",
         "ru/reference/system-tables/collations",
         "ru/reference/system-tables/columns",
+        "ru/reference/system-tables/columns_cache",
         "ru/reference/system-tables/completions",
         "ru/reference/system-tables/constraints",
         "ru/reference/system-tables/contributors",
@@ -1187,7 +1211,7 @@
       ]
     },
     {
-      "group": "Озёра данных",
+      "group": "Озера данных",
       "pages": [
         "ru/reference/datalakes"
       ]

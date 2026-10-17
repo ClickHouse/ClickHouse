@@ -158,7 +158,7 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     ContextPtr context,
     bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
