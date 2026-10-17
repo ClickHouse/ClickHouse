@@ -160,16 +160,21 @@ size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
     auto read_buf = disk->readFile(path, getReadSettings());
 
     size_t total_entries = 0;
+    size_t drop_entries = 0;
     while (!read_buf->eof())
     {
         MergeTreeDeduplicationLogRecord record;
         readRecord(record, *read_buf);
         if (record.operation == MergeTreeDeduplicationOp::DROP)
+        {
             deduplication_map.erase(record.block_id);
+            drop_entries++;
+        }
         else
             deduplication_map.insert(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version));
         total_entries++;
     }
+    existing_logs[getLogNumber(path)].drop_entries_count = drop_entries;
     return total_entries;
 }
 
@@ -210,27 +215,33 @@ void MergeTreeDeduplicationLog::rotate()
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
 {
-    size_t current_sum = 0;
+    /// How many entries the logs add to the deduplication window. A DROP record removes the entry of the
+    /// ADD record it cancels, so it counts against the window. Otherwise the pairs of ADD and DROP records
+    /// of the dropped parts would fill the window and the log with the ADD records of the entries that are
+    /// still in it would be deleted.
+    Int64 current_sum = 0;
     size_t remove_from_value = 0;
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
+        const auto & description = itr->second;
+        const Int64 window_entries = static_cast<Int64>(description.entries_count) - 2 * static_cast<Int64>(description.drop_entries_count);
+
         /// Never drop the current active log — it may still be open for writing
         if (itr->first == current_log_number)
         {
-            current_sum += itr->second.entries_count;
+            current_sum += window_entries;
             continue;
         }
 
-        if (current_sum >= deduplication_window)
+        if (static_cast<size_t>(std::max<Int64>(current_sum, 0)) >= deduplication_window)
         {
             /// We have more logs than required, all older files (excluding current) can be dropped
             remove_from_value = itr->first;
             break;
         }
 
-        auto & description = itr->second;
-        current_sum += description.entries_count;
+        current_sum += window_entries;
     }
 
     /// If we found some logs to drop
@@ -404,6 +415,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             writeRecord(record, *current_writer);
             /// We have one more record on disk
             existing_logs[current_log_number].entries_count++;
+            existing_logs[current_log_number].drop_entries_count++;
 
             /// Increment itr before erase, otherwise it will invalidated
             ++itr;
