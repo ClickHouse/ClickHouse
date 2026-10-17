@@ -164,7 +164,8 @@
   function injectPageButton() {
     // The homepage has its own full-width assistant entry point. The page
     // action is meaningful only when a documentation page supplies context.
-    if (window.location.pathname === '/' || document.getElementById('home-assistant-entry')) return true;
+    if (window.location.pathname === '/' || document.title === 'Page Not Found'
+      || document.getElementById('home-assistant-entry')) return true;
 
     var main = document.querySelector('main');
     var title = main && main.querySelector('h1');
