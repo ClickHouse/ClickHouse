@@ -29,6 +29,11 @@ MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
     return underlying->getType();
 }
 
+void MetadataStorageFromCacheObjectStorage::syncMetadataFile(const std::string & path)
+{
+    underlying->syncMetadataFile(path);
+}
+
 std::string MetadataStorageFromCacheObjectStorage::getZooKeeperName() const
 {
     return underlying->getZooKeeperName();
@@ -313,6 +318,11 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     }
 
     return result;
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::setSyncMetadata(bool sync)
+{
+    underlying->setSyncMetadata(sync);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::writeStringToFile(const std::string & path, const std::string & data)

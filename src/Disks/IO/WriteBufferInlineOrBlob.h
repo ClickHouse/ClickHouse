@@ -16,6 +16,11 @@ using FinalizeResult = std::variant<WrittenBlob, InlineData>;
 
 using FinalizeCallback = std::function<void(FinalizeResult result)>;
 
+/// Invoked to fsync the local metadata file that was written for this logical path, when the
+/// caller requested durability (e.g. fsync_after_insert). No-op for metadata storages that are
+/// not backed by a syncable local file.
+using SyncMetadataCallback = std::function<void()>;
+
 /// Writes a file as inline metadata content or as a blob and reports the outcome to a single
 /// `finalize_callback`. Content up to `max_inline_bytes` finishes as `InlineData`; the first byte
 /// past it builds the blob write stack (`create_underlying`) and the write finishes as
@@ -32,10 +37,16 @@ public:
         bool create_blob_if_empty_,
         CreateUnderlying create_underlying_,
         FinalizeCallback finalize_callback_,
+        SyncMetadataCallback sync_metadata_callback_,
         size_t buf_size);
 
     void preFinalize() override;
+
+    /// Sync the blob writers, if any, and request a sync of the local metadata file. The request is
+    /// latched because sync may arrive before or after the metadata is written (compact parts sync a
+    /// stream before finalizing it, wide parts after), and inline content has no blob to sync at all.
     void sync() override;
+
     std::string getFileName() const override { return file_name; }
 
 private:
@@ -50,9 +61,12 @@ private:
     const bool create_blob_if_empty;
     const CreateUnderlying create_underlying;
     const FinalizeCallback finalize_callback;
+    const SyncMetadataCallback sync_metadata_callback;
 
     String accumulated;
     std::unique_ptr<WriteBuffer> underlying;
+    bool sync_requested = false;
+    bool metadata_written = false;
 };
 
 }
