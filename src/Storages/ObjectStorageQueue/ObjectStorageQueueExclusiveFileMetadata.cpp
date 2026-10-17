@@ -7,6 +7,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<UInt64> & loading_retries_ref_,
     std::atomic<size_t> & metadata_ref_count_,
     ObjectStorageQueueMetadata & metadata_,
     const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
@@ -20,6 +21,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
           /* failed_node_path */ std::string(),
           file_status_,
           max_loading_retries_,
+          loading_retries_ref_,
           metadata_ref_count_,
           /* use_persistent_processing_nodes */ false,
           processing_state_cache_ttl_seconds_,
@@ -59,10 +61,12 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 {
     if (retriable)
     {
+        /// Read the live limit: `s3queue_loading_retries` can be lowered while the file is in flight.
+        const UInt64 max_tries = loading_retries_ref.load();
         auto tries = file_status->retries.fetch_add(1, std::memory_order_relaxed);
-        LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_loading_retries);
+        LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_tries);
 
-        if (tries + 1 < max_loading_retries)
+        if (tries + 1 < max_tries)
         {
             releaseProcessingGuard();
             return;
@@ -75,7 +79,7 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
 {
     if (file_status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed &&
-        (!file_status->retries || file_status->retries >= max_loading_retries))
+        (!file_status->retries || file_status->retries >= loading_retries_ref.load()))
     {
         return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Failed};
     }
@@ -91,7 +95,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     return std::pair{true, ObjectStorageQueueIFileMetadata::FileStatus::State::None};
 }
 
-void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
+void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/, bool /*clear_retriable*/)
 {
     releaseProcessingGuard();
 
@@ -117,7 +121,7 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const
 {
     const auto state = file_status->state.load();
 
@@ -126,6 +130,15 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
         case FileStatus::State::Processed: return PathState::Processed;
         case FileStatus::State::Failed:
             failure_message = file_status->getException();
+            {
+                const auto retries = file_status->retries.load();
+                if (retries_out)
+                    *retries_out = retries;
+                /// Exclusive mode has no `.retriable` marker, but a failure is still retryable
+                /// until the retry budget is exhausted. Mirror the claim check in setProcessingImpl().
+                if (is_terminal_out)
+                    *is_terminal_out = (retries == 0 || retries >= loading_retries_ref.load());
+            }
             return PathState::Failed;
         default:
             return PathState::Unknown;
