@@ -5,7 +5,7 @@
 
 #include "config.h"
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>

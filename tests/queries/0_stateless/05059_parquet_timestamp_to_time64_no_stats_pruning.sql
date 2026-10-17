@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- Parquet `TIME` is decoded as `Time64`, so its min/max stats can be used for row group and page
 -- pruning. Parquet `TIMESTAMP` read with a `Time64` type hint is decoded as `DateTime64` and cast
 -- to `Time64` at runtime, and that cast wraps by day, so it is not order-preserving: a row group

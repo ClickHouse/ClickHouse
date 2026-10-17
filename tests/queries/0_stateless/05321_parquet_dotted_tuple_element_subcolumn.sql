@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- A tuple element with a dot in its name, like `a.b`, is read as its own subcolumn from Parquet
 -- when another element, like `a`, has a name that is a prefix of it.
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Regression test for a LOGICAL_ERROR exception in the Parquet V3 native reader:
 #   "Unexpected number of rows in column subchunk 0 1"

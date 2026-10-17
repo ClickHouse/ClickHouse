@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
-#if USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
