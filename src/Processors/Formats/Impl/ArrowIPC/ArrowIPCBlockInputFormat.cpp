@@ -448,7 +448,7 @@ void ArrowIPCBlockInputFormat::prepareStreamReader()
     if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
 
-    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
     /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
     message_reader->skipBody(msg.body_length);
 }
