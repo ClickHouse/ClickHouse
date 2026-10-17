@@ -19,6 +19,8 @@ INSERT INTO t_probe SELECT number, number FROM numbers(100000);
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET use_index_for_in_with_subqueries = 0;
+-- Keep the read in the plan so the assertions below exercise worker-local pruning.
+SET enable_early_constant_folding = 0;
 -- A control's query condition cache entry can zero the next query's selection, and the setting is
 -- randomized in CI, so pin it to keep each control comparable to the distributed query beside it.
 SET use_query_condition_cache = 0;
