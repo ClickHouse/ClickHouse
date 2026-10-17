@@ -3217,3 +3217,148 @@ def test_an_insert_into_a_distributed_table_is_written_when_acknowledged(started
 
     node.query("DROP TABLE db.distributed_writes", password="123")
     node.query("DROP TABLE db.distributed_writes_local", password="123")
+
+
+def test_the_settings_of_a_profile_do_not_weaken_the_replies(started_cluster):
+    """The representation of a `Map` and of a `NULL` member of a named tuple, the skipping of rows
+    that fail to parse or of unavailable shards, and a limit of the result that stops a query without
+    an error would each answer a read or a write with something other than what was asked: they are
+    pinned for the statements of the endpoint, whatever the profile of the user says."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP USER IF EXISTS mongo_lenient_user", password="123")
+    node.query(
+        "CREATE USER mongo_lenient_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS output_format_json_map_as_array_of_tuples = 1, output_format_json_skip_null_value_in_named_tuples = 1, "
+        "input_format_allow_errors_num = 1, input_format_allow_errors_ratio = 1, skip_unavailable_shards = 1, "
+        "max_result_rows = 2, result_overflow_mode = 'break', max_block_size = 1",
+        password="123",
+    )
+    node.query("GRANT ALL ON db.* TO mongo_lenient_user", password="123")
+    for table in ["profile_shapes", "profile_strict", "profile_rows", "profile_missing_shard"]:
+        node.query(f"DROP TABLE IF EXISTS db.{table}", password="123")
+    node.query(
+        "CREATE TABLE db.profile_shapes (id Int64, m Map(String, Int64), t Tuple(a Nullable(Int64))) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query("INSERT INTO db.profile_shapes VALUES (1, {'k': 7}, tuple(NULL))", password="123")
+    node.query("CREATE TABLE db.profile_strict (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
+    node.query("CREATE TABLE db.profile_rows (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
+    node.query("INSERT INTO db.profile_rows SELECT number FROM numbers(5)", password="123")
+    node.query(
+        "CREATE TABLE db.profile_missing_shard (id Int64) ENGINE = Distributed(mongo_remote_shard, db, no_such_table)",
+        password="123",
+    )
+
+    database = make_client(user="mongo_lenient_user", password="mongo_pass", database="db")["db"]
+    assert list(database["profile_shapes"].find({}, {"_id": 0, "id": 0})) == [{"m": {"k": 7}, "t": {"a": None}}]
+
+    with pytest.raises(pymongo.errors.WriteError):
+        database["profile_strict"].insert_one({"id": "oops"})
+    assert node.query("SELECT count() FROM db.profile_strict", password="123") == "0\n"
+
+    with pytest.raises(pymongo.errors.WriteError):
+        database["profile_missing_shard"].insert_one({"id": 1})
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(database["profile_rows"].find({}))
+
+    for table in ["profile_shapes", "profile_strict", "profile_rows", "profile_missing_shard"]:
+        node.query(f"DROP TABLE db.{table}", password="123")
+    node.query("DROP USER mongo_lenient_user", password="123")
+
+
+def test_document_collection_reads(started_cluster):
+    """A collection created by the endpoint: `null` equality matches a missing field and nothing
+    else, a stage after a `$group` reads the documents the group built, an accumulator reads the
+    object ids of the documents even where the group names its key `_id`, and an object id keeps
+    every byte of it."""
+    collection = make_client()["db"]["document_reads"]
+    collection.drop()
+    collection.insert_many(
+        [{"_id": "x", "id": 1, "a": 1, "k": 1}, {"_id": "y", "id": 2, "k": 1}, {"_id": "z", "id": 3, "a": 2, "k": 2}]
+    )
+
+    def ids(query):
+        return sorted(document["id"] for document in collection.find(query))
+
+    assert ids({"a": {"$ne": None}}) == [1, 3]
+    assert ids({"a": None}) == [2]
+    assert ids({"a": {"$in": [None]}}) == [2]
+    assert ids({"a": {"$nin": [None, 2]}}) == [1]
+
+    assert list(collection.aggregate([{"$group": {"_id": "$k", "n": {"$sum": 1}}}, {"$sort": {"n": 1}}])) == [
+        {"_id": 2, "n": 1},
+        {"_id": 1, "n": 2},
+    ]
+    assert list(collection.aggregate([{"$project": {"_id": 0, "id": 1}}, {"$match": {"id": {"$gt": 1}}}, {"$sort": {"id": 1}}])) == [
+        {"id": 2},
+        {"id": 3},
+    ]
+
+    [group] = list(collection.aggregate([{"$group": {"_id": None, "ids": {"$push": "$_id"}}}]))
+    assert group["_id"] is None and sorted(group["ids"]) == ["x", "y", "z"]
+
+    collection.insert_one({"_id": "a\x00b", "id": 4})
+    assert [document["_id"] for document in collection.find({"id": 4})] == ["a\x00b"]
+
+    collection.drop()
+
+
+def test_a_union_of_fields_in_another_order_is_refused(started_cluster):
+    """`$unionWith` is a positional `UNION ALL`, so a collection whose fields are in another order
+    than the ones of the pipeline would have its values returned under the wrong fields."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.union_xy", password="123")
+    node.query("DROP TABLE IF EXISTS db.union_yx", password="123")
+    node.query("CREATE TABLE db.union_xy (x Int64, y Int64) ENGINE = MergeTree ORDER BY x", password="123")
+    node.query("CREATE TABLE db.union_yx (y Int64, x Int64) ENGINE = MergeTree ORDER BY x", password="123")
+    node.query("INSERT INTO db.union_xy VALUES (1, 2)", password="123")
+    node.query("INSERT INTO db.union_yx VALUES (3, 4)", password="123")
+
+    database = make_client()["db"]
+    with pytest.raises(pymongo.errors.OperationFailure, match="same fields in the same order"):
+        list(database["union_xy"].aggregate([{"$project": {"_id": 0}}, {"$unionWith": "union_yx"}]))
+
+    documents = database["union_xy"].aggregate(
+        [{"$project": {"_id": 0, "x": 1, "y": 1}}, {"$unionWith": {"coll": "union_yx", "pipeline": [{"$project": {"_id": 0, "x": 1, "y": 1}}]}}]
+    )
+    assert sorted((document["x"], document["y"]) for document in documents) == [(1, 2), (4, 3)]
+
+    node.query("DROP TABLE db.union_xy", password="123")
+    node.query("DROP TABLE db.union_yx", password="123")
+
+
+def test_the_write_errors_of_a_reply_are_bounded(started_cluster):
+    """An unordered insert whose documents all fail with a message that quotes a large object id
+    still has a reply that fits into one BSON document, with an error for every failed document."""
+    collection = make_client()["db"]["bounded_write_errors"]
+    collection.drop()
+    large_id = "x" * (1 << 20)
+
+    with pytest.raises(pymongo.errors.BulkWriteError) as error:
+        collection.insert_many([{"_id": large_id, "n": n} for n in range(20)], ordered=False)
+    write_errors = error.value.details["writeErrors"]
+    assert sorted(write_error["index"] for write_error in write_errors) == list(range(1, 20))
+    assert all(len(write_error["errmsg"]) <= 1024 for write_error in write_errors)
+    assert collection.count_documents({}) == 1
+
+    collection.drop()
+
+
+def test_a_message_over_the_write_batch_size_is_refused(started_cluster):
+    """The frame limit does not bound the number of documents a message carries; the
+    `maxWriteBatchSize` the server advertises does, before the documents are allocated."""
+    with connect_raw() as sock:
+        sock.sendall(
+            encode_op_msg_with_sequence({"insert": "anything", "$db": "db"}, "documents", [{}] * 100001)
+        )
+        try:
+            reply = read_op_msg(sock)
+            assert reply["ok"] == 0.0
+            assert "maxWriteBatchSize" in reply["errmsg"]
+        except (AssertionError, ConnectionResetError) as e:
+            # A message that cannot be read may also end the connection.
+            if isinstance(e, AssertionError) and "connection closed" not in str(e):
+                raise
