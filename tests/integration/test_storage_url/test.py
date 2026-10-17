@@ -268,6 +268,29 @@ def test_url_wildcard_headers_virtual_column():
     assert int(result.strip()) > 0
 
 
+def test_url_wildcard_headers_virtual_column_order():
+    # The requested virtual columns reach the chunk in the order the query referenced them. The
+    # source used to append `_headers` last, so with `_headers` referenced first the chunk stopped
+    # matching the source header and one column was read through the other's declared type.
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT min(length(mapKeys(_headers)) > 0), min(_time IS NULL) "
+            "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "1\t1"
+
+    # The reverse order was already correct before the fix, so it pins that the special case was
+    # removed rather than moved.
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT min(_time IS NULL), min(length(mapKeys(_headers)) > 0) "
+            "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "1\t1"
+
+
 def test_url_wildcard_empty_listing():
     result = node1.query(
         with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/empty/**/part*.tsv', 'TSV', 'x UInt64')")
