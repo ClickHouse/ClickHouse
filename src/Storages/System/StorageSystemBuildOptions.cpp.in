@@ -52,6 +52,8 @@ const char * auto_config_build[]
     "USE_BZIP2", "@USE_BZIP2@",
     "USE_AMQPCPP", "@USE_AMQPCPP@",
     "USE_ROCKSDB", "@USE_ROCKSDB@",
+    "USE_MAXMINDDB", "@USE_MAXMINDDB@",
+    "USE_LIBARCHIVE", "@USE_LIBARCHIVE@",
     "USE_NURAFT", "@USE_NURAFT@",
     "USE_NLP", "@USE_NLP@",
     "USE_LIBSTEMMER", "@USE_LIBSTEMMER@",
