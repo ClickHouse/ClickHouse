@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Storages/IStorage_fwd.h>
 #include <Common/Logger_fwd.h>
 
 #include <memory>
@@ -95,6 +96,9 @@ bool isInitiatorOnlySettingName(std::string_view name);
 /// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
 /// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
+
+/// The temporary tables of `context` whose names occur as identifiers in `query` or in an `additional_table_filters` value.
+Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & context);
 
 /// Update settings for Distributed query.
 ///
