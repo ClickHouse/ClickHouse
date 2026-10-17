@@ -35,7 +35,7 @@ def rseq_check(image: str, expect_rseq: bool, extra_args: str = "") -> str:
 
 
 def process_pie_check():
-    # Nothing in the build fails when the binary comes out position dependent: -fPIC only makes the
+    # Nothing in the build fails when the binary comes out position dependent: -fPIE only makes the
     # code relocatable, and whether the executable itself is position independent is the linker's
     # decision, so it is checked on the packaged binary instead. A static-PIE is `DYN` with
     # `DF_1_PIE` set just like a dynamically linked one, so the check is the same as on glibc.
