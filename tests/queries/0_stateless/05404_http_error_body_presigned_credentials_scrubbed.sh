@@ -93,10 +93,18 @@ SIG_V4="sigv4${U}"
 TOKEN="tokv4${U}"
 KEY_V2="AKIAV2${U}"
 SIG_V2="sigv2${U}"
+TOKEN_V2="tokv2${U}"
+TOKEN_EXP="tokexp${U}"
+SIG_ENC="sigenc${U}"
 OVL="ovl${U}"
 BASE="http://127.0.0.1:${HTTP_PORT}/bucket/key.csv"
 URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4_SENT}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
 URL_V2="${BASE}?AWSAccessKeyId=${KEY_V2}&Expires=1792200000&Signature=${SIG_V2}%2Bp%2F2%3D"
+# The S3 Express session token, the SigV2 one as presigners spell it, and a signature whose name is percent-encoded: the
+# peer matches names decoded. The URI itself is masked by name as typed, so only the body is checked for this one.
+URL_ALT="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-S3session-Token=${TOKEN_EXP}&x-amz-security-token=${TOKEN_V2}&X-Amz-%53ignature=${SIG_ENC}"
+# A short credential repeated: each '[HIDDEN]' has two 'D', so a scrub that searched its own output would grow exponentially.
+URL_DUP="${BASE}?$(printf 'Signature=D&%.0s' {1..18})Expires=1792200000"
 # The signature is a prefix of the token and comes first: scrubbing it first would leave the token's tail visible.
 URL_OVL="${BASE}?X-Amz-Signature=${OVL}&X-Amz-Security-Token=${OVL}tail&X-Amz-Date=20261016T000000Z"
 
@@ -121,6 +129,8 @@ V4=(-"$KEY_V4" -"$KEY_V4_SENT" -"$SIG_V4" -"$TOKEN"
 V2=(-"$KEY_V2" -"$SIG_V2"
     +"<AWSAccessKeyId>[HIDDEN]</AWSAccessKeyId>" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
     +"<Code>SignatureDoesNotMatch</Code>" +"&amp;Expires=1792200000" +"<RequestId>probe-request-id</RequestId>")
+ALT=(-"$TOKEN_EXP" -"$TOKEN_V2" -"$SIG_ENC" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
+    +"X-Amz-S3session-Token=[HIDDEN]&amp;x-amz-security-token=[HIDDEN]&amp;X-Amz-%53ignature=[HIDDEN]</CanonicalRequest>")
 OV=(-"$OVL" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
     +"X-Amz-Security-Token=[HIDDEN]&amp;X-Amz-Date=20261016T000000Z")
 
@@ -129,10 +139,24 @@ error_line() {
     ${CLICKHOUSE_CLIENT} --query "$1" 2>&1 | grep -F 'Received error from remote server'
 }
 
+body_of() {
+    local body=${1#*body: }
+    echo "${body%%</Error>*}"
+}
+
 check select_sigv4 "$(error_line "SELECT * FROM url('${URL_V4}', 'CSV', 'x UInt8')")" "${V4[@]}"
 check insert_sigv4 "$(error_line "INSERT INTO TABLE FUNCTION url('${URL_V4}', 'CSV', 'x UInt8') VALUES (1)")" "${V4[@]}"
 check select_sigv2 "$(error_line "SELECT * FROM url('${URL_V2}', 'CSV', 'x UInt8')")" "${V2[@]}"
 check select_overlap "$(error_line "SELECT * FROM url('${URL_OVL}', 'CSV', 'x UInt8')")" "${OV[@]}"
+check select_name_spellings "$(body_of "$(error_line "SELECT * FROM url('${URL_ALT}', 'CSV', 'x UInt8')")")" "${ALT[@]}"
+# The server log can be sent along with the error, so the bound is per line.
+LINES=$(error_line "SELECT * FROM url('${URL_DUP}', 'CSV', 'x UInt8')")
+LONGEST=$(awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }' <<< "$LINES")
+if [ "$LONGEST" -lt 4096 ]; then
+    check select_duplicates "$LINES" +"<SignatureProvided>[HIDDEN]</SignatureProvided>"
+else
+    echo "select_duplicates: FAIL a line of $LONGEST bytes"
+fi
 
 # Nothing is selected on success. The needles are split so that this query does not itself contain a credential.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
@@ -142,5 +166,6 @@ ${CLICKHOUSE_CLIENT} --query "
       AND (exception LIKE '%' || 'sigv4' || '${U}%' OR exception LIKE '%' || 'sigv2' || '${U}%'
         OR exception LIKE '%' || 'AKIAV4' || '${U}%' OR exception LIKE '%' || 'AKIAV2' || '${U}%'
         OR exception LIKE '%' || 'tokv4' || '${U}%' OR exception LIKE '%' || 'ovl' || '${U}%'
+        OR exception LIKE '%' || 'tokexp' || '${U}%'
         OR position(exception, 'AKIA%564' || '${U}') > 0)
     FORMAT Vertical"

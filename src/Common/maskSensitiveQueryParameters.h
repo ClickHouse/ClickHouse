@@ -25,7 +25,7 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri);
 
 /// Returns the credentials in the query string of a presigned S3 URL (SigV4 and SigV2): the signature, the
 /// session token and the access key id, each as sent and percent-decoded, so that a text echoing them back can be
-/// scrubbed. URL metadata such as `X-Amz-Date` is not included.
+/// scrubbed. Names are matched percent-decoded and case-insensitively. URL metadata such as `X-Amz-Date` is not included.
 std::vector<std::string> presignedURLCredentials(std::string_view uri);
 
 }

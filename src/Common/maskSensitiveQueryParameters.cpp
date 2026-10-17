@@ -67,14 +67,18 @@ std::string decodeQueryComponent(std::string_view name)
     return decoded;
 }
 
+/// The name as a peer interprets it: percent-decoded and in lower case.
+std::string normalizeParameterName(std::string_view raw_name)
+{
+    std::string name = decodeQueryComponent(raw_name);
+    for (char & c : name)
+        c = asciiToLower(c);
+    return name;
+}
+
 bool isSensitiveParameterName(std::string_view raw_name)
 {
-    const std::string decoded = decodeQueryComponent(raw_name);
-
-    std::string lower;
-    lower.reserve(decoded.size());
-    for (char c : decoded)
-        lower.push_back(asciiToLower(c));
+    const std::string lower = normalizeParameterName(raw_name);
 
     for (auto needle : sensitive_exact_names)
     {
@@ -144,8 +148,8 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
 
 std::vector<std::string> presignedURLCredentials(std::string_view uri)
 {
-    static constexpr std::array<std::string_view, 4> credential_names{
-        "X-Amz-Signature", "X-Amz-Security-Token", "Signature", "AWSAccessKeyId"};
+    static constexpr std::array<std::string_view, 5> credential_names{
+        "x-amz-signature", "x-amz-security-token", "x-amz-s3session-token", "signature", "awsaccesskeyid"};
 
     std::vector<std::string> credentials;
     const size_t question = uri.find('?');
@@ -171,7 +175,7 @@ std::vector<std::string> presignedURLCredentials(std::string_view uri)
         const size_t eq = pair.find('=');
         if (eq == std::string_view::npos)
             continue;
-        const std::string_view name = pair.substr(0, eq);
+        const std::string name = normalizeParameterName(pair.substr(0, eq));
         const std::string_view value = pair.substr(eq + 1);
 
         if (std::ranges::find(credential_names, name) != credential_names.end())
@@ -182,7 +186,7 @@ std::vector<std::string> presignedURLCredentials(std::string_view uri)
                 add(std::string(value));
             add(std::move(decoded));
         }
-        else if (name == "X-Amz-Credential")
+        else if (name == "x-amz-credential")
         {
             /// `<access key id>/<scope>`: the scope is not a secret, and the key id is echoed on its own.
             std::string decoded = decodeQueryComponent(value);
