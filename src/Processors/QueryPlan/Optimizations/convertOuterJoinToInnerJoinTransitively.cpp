@@ -37,45 +37,6 @@ namespace
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NullRejectedCache = std::unordered_map<const ActionsDAG::Node *, NodeSet>;
 
-NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * root)
-{
-    NodeSet result;
-    NodeSet visited;
-    std::vector<const ActionsDAG::Node *> stack{root};
-
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (!visited.insert(node).second)
-            continue;
-
-        switch (node->type)
-        {
-            case ActionsDAG::ActionType::INPUT:
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
-                if (isNullableOrLowCardinalityNullable(node->result_type))
-                    result.insert(node);
-                break;
-            case ActionsDAG::ActionType::ALIAS:
-                if (!node->children.empty())
-                    stack.push_back(node->children.front());
-                break;
-            case ActionsDAG::ActionType::FUNCTION:
-                if (node->function && node->function->isNullPropagating(node->result_type))
-                    stack.insert(stack.end(), node->children.begin(), node->children.end());
-                break;
-            case ActionsDAG::ActionType::COLUMN:
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-                break;
-        }
-    }
-
-    return result;
-}
-
 const NodeSet & collectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache);
 
 /// Inputs that cannot be NULL in a row that passes `predicate`, because a NULL there would make the predicate NULL.
@@ -182,74 +143,6 @@ void collectNullRejectedColumnsFromFilter(const FilterStep & filter, NameSet & n
 
     for (const auto * input : collectNullRejectedInputs(predicate))
         null_rejected_columns.insert(input->result_name);
-}
-
-void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right)
-{
-    const auto & actions = join.getActionsDAG();
-    if (actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(actions))
-        return;
-
-    const auto & join_operator = join.getJoinOperator();
-    /// The sides for which a null-rejecting condition proves the input column not NULL.
-    auto [discards_left, discards_right] = [&]() -> std::pair<bool, bool>
-    {
-        const auto kind = join_operator.kind;
-        switch (join_operator.strictness)
-        {
-            case JoinStrictness::Unspecified:
-            case JoinStrictness::All:
-            case JoinStrictness::Any:
-            case JoinStrictness::Anti:
-                return {isInnerOrRight(kind), isInnerOrLeft(kind)};
-            case JoinStrictness::Semi:
-                return {isLeftOrRight(kind), isLeftOrRight(kind)};
-            default:
-                return {false, false};
-        }
-    }();
-    if (!discards_left && !discards_right)
-        return;
-
-    auto is_null_rejecting_operator = [](JoinConditionOperator op)
-    {
-        switch (op)
-        {
-            case JoinConditionOperator::Equals:
-            case JoinConditionOperator::Less:
-            case JoinConditionOperator::LessOrEquals:
-            case JoinConditionOperator::Greater:
-            case JoinConditionOperator::GreaterOrEquals:
-                return true;
-            default:
-                return false;
-        }
-    };
-
-    for (const auto & expression : join_operator.expression)
-    {
-        auto [op, lhs, rhs] = expression.asBinaryPredicate();
-        if (!is_null_rejecting_operator(op))
-            continue;
-
-        for (const auto & operand : {lhs, rhs})
-        {
-            if (!operand)
-                continue;
-
-            NameSet * side = nullptr;
-            if (discards_left && operand.fromLeft())
-                side = &left;
-            else if (discards_right && operand.fromRight())
-                side = &right;
-
-            if (!side)
-                continue;
-
-            for (const auto * input : collectNullPropagatingInputs(operand.getNode()))
-                side->insert(input->result_name);
-        }
-    }
 }
 
 /// Split a constraint on the join's output header between its two inputs.

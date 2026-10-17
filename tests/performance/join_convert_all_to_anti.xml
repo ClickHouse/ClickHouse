@@ -1,0 +1,23 @@
+<test>
+    <create_query>CREATE TABLE left_table (id UInt64, value String) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE right_table (id UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE right_table_duplicates (id UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE right_table_nullable (id Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- Deterministic data written as one part per table. About 37% of the keys of `left_table` have no match in `right_table`,
+         a matched key has about four rows in `right_table` and about forty rows in `right_table_duplicates`. -->
+    <fill_query>INSERT INTO left_table SELECT cityHash64(number, 7) % 10000000 AS key, toString(key) FROM numbers(10000000) SETTINGS min_insert_block_size_rows = 100000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO right_table SELECT cityHash64(number, 11) % 5000000 FROM numbers(20000000) SETTINGS min_insert_block_size_rows = 100000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO right_table_duplicates SELECT cityHash64(number, 13) % 125000 FROM numbers(5000000) SETTINGS min_insert_block_size_rows = 100000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO right_table_nullable SELECT id FROM right_table SETTINGS min_insert_block_size_rows = 100000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 4, 'join_convert_all_to_anti: expected 1 active part per table') FROM system.parts WHERE database = currentDatabase() AND table IN ('left_table', 'right_table', 'right_table_duplicates', 'right_table_nullable') AND active</fill_query>
+
+    <query>SELECT l.id, l.value FROM left_table AS l LEFT JOIN right_table AS r ON l.id = r.id WHERE r.id IS NULL SETTINGS join_use_nulls = 1 FORMAT Null</query>
+    <query>SELECT l.id, l.value FROM left_table AS l LEFT JOIN right_table_duplicates AS r ON l.id = r.id WHERE r.id IS NULL SETTINGS join_use_nulls = 1 FORMAT Null</query>
+    <query>SELECT l.id, l.value FROM left_table AS l LEFT JOIN right_table_nullable AS r ON l.id = r.id WHERE r.id IS NULL FORMAT Null</query>
+
+    <drop_query>DROP TABLE left_table</drop_query>
+    <drop_query>DROP TABLE right_table</drop_query>
+    <drop_query>DROP TABLE right_table_duplicates</drop_query>
+    <drop_query>DROP TABLE right_table_nullable</drop_query>
+</test>
