@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
@@ -27,6 +28,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -577,13 +579,31 @@ void StorageTimeSeries::prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCac
     auto read_context = Context::createCopy(getContext());
     read_context->makeQueryContext();
     read_context->setInternalQuery(true);
+    read_context->setCurrentQueryId("");
+
+    /// The scan stops with the entries collected so far after as many rows as the cache holds entries,
+    /// as many bytes as the cache holds, or ten seconds. One thread reads the rows in the order of the table.
+    const UInt64 max_bytes = (*storage_settings.get())[TimeSeriesSetting::tags_deduplication_cache_size_bytes];
+    read_context->setSetting("max_threads", Field(UInt64(1)));
+    read_context->setSetting("max_rows_to_read", Field(UInt64(max_entries)));
+    read_context->setSetting("max_bytes_to_read", Field(max_bytes));
+    read_context->setSetting("read_overflow_mode", Field("break"));
+    read_context->setSetting("max_execution_time", Field(UInt64(10)));
+    read_context->setSetting("timeout_overflow_mode", Field("break"));
+
+    Stopwatch watch{CLOCK_MONOTONIC};
+
+    /// The read limits are checked through the process list entry.
+    const auto query_for_logging = union_query->formatForLogging();
+    auto process_list_entry = read_context->getProcessList().insert(
+        query_for_logging, normalizedQueryHash(query_for_logging, false), union_query.get(), read_context, watch.getStart(), /*is_internal=*/ true);
+    read_context->setProcessListElement(process_list_entry->getQueryStatus());
 
     InterpreterSelectQueryAnalyzer interpreter(
         union_query, read_context, SelectQueryOptions().setInternal(true).ignoreAccessCheck());
     auto io = interpreter.execute();
     PullingPipelineExecutor executor(io.pipeline);
 
-    Stopwatch watch;
     size_t rows = 0;
     Block block;
     while (executor.pull(block))

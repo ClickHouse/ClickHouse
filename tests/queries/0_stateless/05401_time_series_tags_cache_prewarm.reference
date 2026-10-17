@@ -8,5 +8,8 @@
 2
 --- three copies of one series and one other series preload both ---
 4
+--- a long run of one series ends the preload before the series stored after it ---
+a	200000
+b	2
 --- a large expiration still preloads the stored series ---
 1
