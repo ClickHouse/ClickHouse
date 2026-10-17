@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <expected>
@@ -17,9 +16,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -140,38 +139,22 @@ namespace
 
         String getName() const override { return function_name; }
 
-        bool isVariadic() const override { return true; }
-
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 0; }
+        size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        String getSignatureString() const override
         {
-            if (arguments.empty())
-                throw Exception(
-                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
+            return error_handling == ParseTimeDeltaErrorHandling::Null
+                ? "(String) -> Nullable(Float64)"
+                : "(String) -> Float64";
+        }
 
-            if (arguments.size() > 1)
-                throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
-
-            FunctionArgumentDescriptors mandatory_args{
-                {"timestr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            };
-
-            validateFunctionArguments(*this, arguments, mandatory_args);
-
-            DataTypePtr return_type = std::make_shared<DataTypeFloat64>();
-            if (error_handling == ParseTimeDeltaErrorHandling::Null)
-                return std::make_shared<DataTypeNullable>(return_type);
-            return return_type;
+        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
+        /// signature, and its tests pin those codes.
+        int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+        {
+            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

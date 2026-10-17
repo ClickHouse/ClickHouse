@@ -223,6 +223,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
@@ -278,14 +283,177 @@ public:
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
-        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// An empty array adds nothing and needs no nested states.
+        if (begin == end)
+            return;
 
-        char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = begin; i < end; ++i)
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// For a single element the direct call is cheaper than the batch call.
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested.data(), arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested.data(), begin, arena);
+    }
+
+    /// The row-at-a-time `add` rejects a row whose array arguments do not share boundaries. The
+    /// batch paths take the boundaries from the first argument alone, so they make the same check.
+    absl::InlinedVector<const IColumn::Offsets *, 5> collectTrailingOffsets(const IColumn ** columns) const
+    {
+        absl::InlinedVector<const IColumn::Offsets *, 5> trailing_offsets;
+        for (size_t i = 1; i < num_arguments; ++i)
+            trailing_offsets.push_back(&assert_cast<const ColumnArray &>(*columns[i]).getOffsets());
+        return trailing_offsets;
+    }
+
+    void assertArraySizesMatch(
+        const absl::InlinedVector<const IColumn::Offsets *, 5> & trailing_offsets,
+        size_t row,
+        size_t begin,
+        size_t end) const
+    {
+        for (const auto * offsets : trailing_offsets)
+            if ((*offsets)[row] != end || (row != 0 && (*offsets)[row - 1] != begin))
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arrays passed to {} aggregate function have different sizes", getName());
+    }
+
+    /// The per-row body shared by the batch paths. `place` already includes any place offset.
+    void addRowToPlace(
+        AggregateDataPtr __restrict place,
+        const IColumn ** nested,
+        const IColumn::Offsets & offsets,
+        const absl::InlinedVector<const IColumn::Offsets *, 5> & trailing_offsets,
+        size_t row,
+        Arena * arena) const
+    {
+        size_t begin = offsets[row - 1];
+        size_t end = offsets[row];
+        assertArraySizesMatch(trailing_offsets, row, begin, end);
+        if (begin == end)
+            return;
+
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested, arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested, begin, arena);
+    }
+
+    /// Optimized batch aggregation for rows belonging to the same place.
+    void addBatchSinglePlace( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
+
+        /// Two loops rather than one with a flag test inside, so the unfiltered path stays
+        /// branch-free; `IAggregateFunctionHelper` splits them for the same reason.
+        if (if_argument_pos >= 0)
         {
-            nested_func->add(nested_state, nested.data(), i, arena);
-            nested_state += nested_size_of_data;
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (flags[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
         }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+    }
+
+    /// `AggregateFunctionIfNullVariadic` (a `*ForEachIf` with a `Nullable` condition) folds the
+    /// condition into `null_map` and lands here, so this must not fall back to the row-at-a-time helper.
+    void addBatchSinglePlaceNotNull( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (!null_map[row] && flags[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (!null_map[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+    }
+
+    /// Optimized batch aggregation across places.
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (flags[row] && places[row])
+                    addRowToPlace(places[row] + place_offset, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (places[row])
+                    addRowToPlace(places[row] + place_offset, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+    }
+
+    /// `IAggregateFunctionHelper` overrides this with a row-at-a-time loop over `add`, which would
+    /// bypass the batch path above. `Aggregator` routes the ordinary grouped case here as soon as the
+    /// hash table has materialized every state, so without this the fast path never runs for GROUP BY.
+    /// The base declaration delegates the same way.
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -312,7 +480,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinaryLittleEndian(state.dynamic_array_size, buf);
@@ -320,7 +488,10 @@ public:
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->serialize(nested_state, buf);
+            /// `isVersioned` and `getDefaultVersion` forward to the nested function, so the version
+            /// is in the nested function's terms already. `deserialize` forwards it, so dropping it
+            /// here would desynchronize the written payload from the later read.
+            nested_func->serialize(nested_state, buf, version);
             nested_state += nested_size_of_data;
         }
     }

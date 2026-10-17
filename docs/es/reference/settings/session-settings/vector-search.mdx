@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ Si una consulta de búsqueda vectorial tiene una cláusula WHERE, esta configura
 * &#39;postfilter&#39; - Usa el índice de similitud vectorial para identificar los vecinos más cercanos y luego aplica otros filtros
 * &#39;prefilter&#39; - Evalúa primero otros filtros y luego realiza una búsqueda brute-force para identificar los vecinos.
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **Alias**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Alias de la configuración 'vector_search_postfilter_multiplier'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Alias de la configuración 'vector_search_postfilter_multiplier'"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nueva configuración. En ese momento se llamaba `vector_search_postfilter_multiplier`, nombre que ahora es un alias de esta."}]}]} />
 
 Multiplica por este valor el número de vecinos más cercanos recuperados del índice de similitud vectorial. Solo se aplica al postfiltrado con otros predicados o si se establece &#39;vector&#95;search&#95;with&#95;rescoring = 1&#39;. Rango válido: [1.0, 1000.0]. Los valores fuera de este rango se rechazan.
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ Habilita una búsqueda vectorial aproximada en dos etapas sin índice (escaneo p
 1. escanear y filtrar los vectores cuantizados (este paso produce `k * vector_search_index_fetch_multiplier` resultados), y
 2. volver a puntuar los vectores encontrados comparándolos con los vectores originales de precisión completa.
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

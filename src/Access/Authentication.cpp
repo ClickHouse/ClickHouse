@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <Common/StringUtils.h>
 
 #if USE_SSL
 #    include <Common/OpenSSLHelpers.h>
@@ -117,6 +118,13 @@ namespace
         if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
             return false;
 
+        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
+        /// a one-time password. Accepting it would let the client skip the second factor.
+        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
+        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
         const auto & password = authentication_method.getPasswordHashBinary();
@@ -214,7 +222,7 @@ namespace
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 const auto & password_plaintext = authentication_method.getPasswordHashBinary();
-                return Util::stringToDigest(password) == password_plaintext ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return constantTimeEquals(Util::stringToDigest(password), password_plaintext) ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
@@ -307,6 +315,11 @@ namespace
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
+                        // Subjects are extracted with their exact bytes, so an embedded NUL byte survives. No valid
+                        // hostname or URI contains one, and '*' must not match a span like "evil\0" in
+                        // "evil\0.corp.example.com", so such a subject never matches a wildcard.
+                        if (certificate_subject.contains('\0'))
+                            continue;
                         // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
                         if (certificate_subject.size() < prefix.size() + suffix.size())
                             continue;

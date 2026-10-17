@@ -45,11 +45,12 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyG
 {
     if (this != &src)
     {
-        nodes = src.nodes;
-        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
-        nodes_by_uuid = src.nodes_by_uuid;
-        levels_calculated = src.levels_calculated;
-        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
+        /// Copying the `nodes` set would share the `Node` objects with the source graph - they are held
+        /// by `shared_ptr` and point at each other - so every modification of the copy would also modify
+        /// the graph it was copied from. Rebuild the nodes instead, which is what makes a copy usable as
+        /// a scratch graph, e.g. to test what a rename would do to the dependencies.
+        clear();
+        mergeWith(src);
     }
     return *this;
 }

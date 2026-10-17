@@ -23,13 +23,15 @@ Pinning is offered only when the table is wide enough to scroll horizontally. Wh
 
 A pinned column slides with the content during horizontal scrolling until it would leave the viewport, at which point it sticks to the near edge — the left edge for columns on the left, the right edge for columns on the right — and stays visible. Several pinned columns stack against the edge in their original order, each delimited from the scrolling content by a border. A pinned cell paints over the ordinary cells scrolling underneath it, including a selected cell, so it always stays readable.
 
-## Shared across results {#shared-across-results}
+## Shared across a result {#shared-across-a-result}
 
-Pins are tracked by column name and shared across every result table on the page, the same way the per-column [color coding modes](/concepts/features/interfaces/web-ui-color-coding) are. Pinning a column named `id` in one result keeps a column named `id` pinned in the other results and in later queries that return the same column.
+Pins are tracked by column name and shared across the result tables that belong to one result — a `Run all` (multi-query) run renders one table per statement, and all of them share the same pinned set — the same way the per-column [color coding modes](/concepts/features/interfaces/web-ui-color-coding) are. Pinning a column named `id` in one of those tables keeps a column named `id` pinned in the others and in later runs of the same query that return the same column.
+
+The pinned set belongs to the result it pins: to the query tab, and within a tab that is a [notebook](/concepts/features/interfaces/web-ui-notebook) to the individual cell. Pinning a column in one cell therefore leaves the other cells — and the other tabs — with their own independent pins.
 
 ## Persistence {#persistence}
 
-The pinned set is remembered in the page URL, in the browser history, and in the per-tab result snapshot, so reloading the page, sharing the link, or navigating back and forward preserves it. Only pinned columns are stored — an empty set adds nothing to the URL or history state — to keep them compact.
+The pinned set is remembered in the page URL, in the browser history, and in the result snapshot of the cell it belongs to, so reloading the page, sharing the link, or navigating back and forward preserves it. Toggling a pin in a cell that does not currently hold the editor updates that cell's saved copy too, so the state survives a reload. Only pinned columns are stored — an empty set adds nothing to the URL or history state — to keep them compact.
 
 ## Limitations {#limitations}
 

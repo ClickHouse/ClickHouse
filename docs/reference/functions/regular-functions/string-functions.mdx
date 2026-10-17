@@ -205,6 +205,8 @@ If the string is not valid Base32-encoded, an exception is thrown.
 base32Decode(encoded)
 ```
 
+**Aliases**: `from_base32`
+
 **Arguments**
 
 - `encoded` — String column or constant. [`String`](/reference/data-types/string)
@@ -238,6 +240,8 @@ Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#se
 ```sql
 base32Encode(plaintext)
 ```
+
+**Aliases**: `to_base32`
 
 **Arguments**
 
@@ -424,6 +428,8 @@ Throws an exception in case of error.
 base64URLDecode(encoded)
 ```
 
+**Aliases**: `from_base64url`
+
 **Arguments**
 
 - `encoded` — String column or constant to encode. If the string is not valid Base64-encoded, an exception is thrown. [`String`](/reference/data-types/string)
@@ -457,6 +463,8 @@ Encodes a string using [Base64](https://datatracker.ietf.org/doc/html/rfc4648#se
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**Aliases**: `to_base64url`
 
 **Arguments**
 
@@ -1097,7 +1105,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
 editDistanceUTF8(s1, s2)
 ```
 
-**Aliases**: `levenshteinDistanceUTF8`
+**Aliases**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Arguments**
 
@@ -1169,6 +1177,8 @@ Checks whether a string ends with the provided suffix.
 ```sql
 endsWith(s, suffix)
 ```
+
+**Aliases**: `ends_with`
 
 **Arguments**
 
@@ -1629,6 +1639,7 @@ SELECT isValidUTF8('\\xc3\\xb1') AS valid, isValidUTF8('\\xc3\\x28') AS invalid
 Introduced in: v24.1.0
 
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+Returns `0` if either string is empty.
 
 **Syntax**
 
@@ -1664,6 +1675,7 @@ SELECT jaroSimilarity('clickhouse', 'click')
 Introduced in: v24.1.0
 
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
+Returns `0` if either string is empty.
 
 **Syntax**
 
@@ -2878,6 +2890,8 @@ Checks whether a string begins with the provided string.
 ```sql
 startsWith(s, prefix)
 ```
+
+**Aliases**: `starts_with`
 
 **Arguments**
 

@@ -1,0 +1,17 @@
+after merge	1	5
+after merge	2	7
+after mutation	1	5
+after mutation	2	7
+on disk	1	5
+on disk	2	7
+mutations of add column	0
+altered after merge	1	5
+altered on disk	1	5
+merged with patch	1	5
+merged on disk	1	5
+added merged with patch	1	5
+added merged with patch	2	0
+added on disk	1	5
+added on disk	2	0
+stale after merge	1	5
+stale on disk	1	5

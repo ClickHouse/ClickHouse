@@ -17,8 +17,9 @@ FROM remote('localhost', generateSeries(1, 3)) AS t
 LEFT JOIN (SELECT generate_series AS c0 FROM generateSeries(1, 3)) AS t2 USING (c0)
 FORMAT Null;
 
--- Simplified reproduction from Kirill Fgrtue
+-- Simplified reproduction from Kirill Fgrtue. The constant `USING` condition determines no join
+-- key, so the join is evaluated by the block nested loop operator.
 SELECT 1 AS c0
 FROM remote('localhost:9000', generateSeries(1, 10)) AS t1
 LEFT JOIN (SELECT 1 AS c0) AS t2 USING (c0)
-FORMAT Null; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+FORMAT Null;
