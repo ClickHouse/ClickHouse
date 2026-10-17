@@ -24,7 +24,6 @@ from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
-    ICEBERG_DATASETS,
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
@@ -160,6 +159,7 @@ RUN_ERRORS_TABLE = "perf_run_errors_v1"
 RUN_WARNING_TEST = "(warning)"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
+CIDB_CHUNK_ROWS = 250_000
 
 # --- Performance dashboard gate -------------------------------------------
 # The dashboard reads the tables this job uploads in the REPORT stage and
@@ -184,6 +184,8 @@ DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
+# Pause between the log export flushes of a nightly run.
+NIGHTLY_FLUSH_INTERVAL_SEC = 900
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -900,6 +902,16 @@ def local_command(binary):
     return f"{binary} local{tmp_option}"
 
 
+def get_binary_commit_sha(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    sha = Shell.get_output_or_raise(
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+    )
+    assert GIT_HASH_RE.fullmatch(sha), f"no GIT_HASH in [{binary}]: [{sha}]"
+    return sha
+
+
 def write_ci_logs_sender_user(config_dir, binary):
     """Write the `ci_logs_sender` user, which the export views run as, into a
     server's users.d - without the settings that build does not know.
@@ -976,9 +988,14 @@ def create_log_export_configs():
     return True
 
 
-def start_log_export(servers):
+# The servers whose export is up with the sends held back; `flush_log_export`
+# serves these only.
+HELD_LOG_EXPORT = []
+
+
+def start_log_export(servers, nightly=False):
     """Create the export views on both servers and hold the sends back until
-    the tests are over.
+    the tests are over (a nightly run releases them between the tests).
 
     The reference server is skipped when the commit of its build cannot be
     read: `commit_sha` is what attributes its rows to a build, and the rows
@@ -998,12 +1015,13 @@ def start_log_export(servers):
     for node_name, server in servers:
         # The patched server runs the build of the commit this check reports
         # for, like every other check; the reference server runs an older
-        # build and names its own commit.
-        if server.is_left:
+        # build and names its own commit. A nightly run tests a binary that
+        # is not the trigger commit, so both name their own.
+        if server.is_left or nightly:
             commit_sha = get_server_commit_sha(server)
             if not commit_sha:
                 print(
-                    "WARNING: Cannot read the build commit of the reference server, "
+                    f"WARNING: Cannot read the build commit of the [{node_name}] server, "
                     "its system logs will not be exported"
                 )
                 continue
@@ -1035,6 +1053,8 @@ def start_log_export(servers):
                     "this server will not export its system logs"
                 )
                 log_export.stop(server.port)
+            else:
+                HELD_LOG_EXPORT.append((node_name, server))
         except Exception:
             traceback.print_exc()
             # The same, for a failure raised rather than reported: whatever the
@@ -1044,6 +1064,30 @@ def start_log_export(servers):
             except Exception:
                 traceback.print_exc()
     return True
+
+
+def flush_log_export(servers):
+    """Between two tests of a nightly run: send the rows held back so far and
+    hold the sends back again, so that no flush carries hours of logs.
+
+    Fails closed like `start_log_export`: a server that cannot hold the sends
+    back again loses its export, never a measurement.
+    """
+    for node_name, server in list(HELD_LOG_EXPORT):
+        try:
+            if log_export.flush_held_rows(server.port):
+                continue
+            print(
+                f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                "again - tearing the export down"
+            )
+        except Exception:
+            traceback.print_exc()
+        HELD_LOG_EXPORT.remove((node_name, server))
+        try:
+            log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
 
 
 def export_system_logs(servers):
@@ -1129,7 +1173,7 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
     return reason if hard_error == error else f"{reason}, earlier error: {hard_error}"
 
 
-def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, deadline):
+def run_report_upload(cfg, cidb, info, reference_sha, tested_sha, compare_against_release, deadline):
     """Upload one entry from REPORT_UPLOADS to the play cluster.
 
     Silently skips if the source TSV is missing or empty (e.g. because the
@@ -1160,7 +1204,7 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
+        CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
     line_count = data.count("\n")
@@ -1175,8 +1219,18 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
     return error
 
 
-def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release, deadline):
-    """Build and upload the merged flamegraph stacks TSV."""
+def split_into_chunks(data, rows):
+    """Split TSV `data` into pieces of at most `rows` lines."""
+    lines = data.splitlines(keepends=True)
+    return ["".join(lines[i : i + rows]) for i in range(0, len(lines), rows)]
+
+
+def insert_flamegraph_stacks(
+    cidb, info, reference_sha, tested_sha, compare_against_release, deadline, nightly=False
+):
+    """Build and upload the merged flamegraph stacks TSV. A nightly run uploads
+    it in chunks of `CIDB_CHUNK_ROWS`, each with its own dedup token,
+    so that no INSERT outlasts the socket timeout."""
     if not build_flamegraph_upload_tsv():
         return True
 
@@ -1193,17 +1247,29 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release,
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
+        CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
-    line_count = data.count("\n")
+    chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
     print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
-    error = insert_into_cidb(cidb, info, FLAMEGRAPH_STACKS_TABLE, query, data, deadline)
-    if error is None:
-        print(f"Inserted [{line_count}] flamegraph stack rows")
-    else:
-        print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
-    return error is None
+    ok = True
+    for i, chunk in enumerate(chunks):
+        line_count = chunk.count("\n")
+        error = insert_into_cidb(
+            cidb,
+            info,
+            FLAMEGRAPH_STACKS_TABLE,
+            query,
+            chunk,
+            deadline,
+            token_key=f"{FLAMEGRAPH_STACKS_TABLE}/{i}" if nightly else None,
+        )
+        if error is None:
+            print(f"Inserted [{line_count}] flamegraph stack rows")
+        else:
+            print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
+            ok = False
+    return ok
 
 
 def match_reference_debug_info():
@@ -1238,6 +1304,8 @@ def match_reference_debug_info():
 
 
 class CHServer:
+    # `tpcds_sf100`: 2.7–3 h.
+    NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
@@ -1299,7 +1367,7 @@ class CHServer:
         # server over HTTP.
         self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
-            --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
+            --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
@@ -1366,15 +1434,18 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
         # --runs ("at least N runs per query") is passed only when explicitly
         # requested; by default the adaptive run policy decides the counts.
         runs_arg = f"--runs {runs}" if runs is not None else ""
+        timeout_prefix = f"timeout -k 60 {cls.NIGHTLY_TEST_TIMEOUT_SEC} " if long else ""
+        if long:
+            print(f"test-start {format_utc_date_time(utc_now())}")
         res, out, err = Shell.get_res_stdout_stderr(
-            f"./tests/performance/scripts/perf.py --host localhost localhost \
+            f"{timeout_prefix}./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
@@ -1382,12 +1453,19 @@ class CHServer:
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {test_file}",
+                {test_file}{' --long' if long else ''}",
             verbose=True,
             strip=False,
         )
         duration = sw.duration
-        if res != 0:
+        clean = not long or "teardown-complete" in out.splitlines()
+        if long:
+            print(f"test-end {format_utc_date_time(utc_now())}")
+            if res != 0:
+                err += f"{test_name}: perf.py exited with status {res} (124 = wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s expired, 137 = killed)\n"
+            if not clean:
+                err += f"{test_name}: teardown incomplete, stopping the batch\n"
+        if res != 0 or not clean:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
         else:
@@ -1396,6 +1474,7 @@ class CHServer:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
             f.write(f"{test_name}\t{duration}\n")
+        return clean
 
     def terminate(self):
         print("Terminate ClickHouse process")
@@ -1428,6 +1507,7 @@ def parse_args():
     )
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
     return parser.parse_args()
 
 
@@ -2366,9 +2446,6 @@ def rebuild_table(port, source, destination):
 
 POPULATE_DONE_MARKER = "test._populate_done"
 
-# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
-PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
-
 
 def populate_data(port):
     # Rebuild the hits datasets on one server, sequentially. The three inserts
@@ -2428,6 +2505,7 @@ def main():
         elif "release_base" in test_option:
             compare_against_release = True
 
+    nightly = "nightly" in test_options
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 
@@ -2439,7 +2517,16 @@ def main():
     info = Info()
     reference_chain = []
 
-    if Utils.is_arm():
+    # Read before any stage, so that a resume attributes the same commits.
+    if nightly:
+        tested_sha = get_binary_commit_sha(f"{args.ch_path}/clickhouse")
+        reference_sha = get_binary_commit_sha(args.reference_path)
+    else:
+        tested_sha = info.sha
+
+    if args.reference_path:
+        link_for_ref_ch = ""
+    elif Utils.is_arm():
         if compare_against_master:
             link_for_ref_ch, reference_chain = find_prev_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
@@ -2491,12 +2578,17 @@ def main():
 
     # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
     test_files = test_discovery.list_test_files("./tests/performance/")
+    if nightly:
+        test_files.remove("calibration.xml")
     # TODO: in PRs filter test files against changed files list if only tests has been changed
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
     else:
         test_files = test_files[batch_num::total_batches]
+    if nightly:
+        # Every measured host runs the yardstick first.
+        test_files.insert(0, "calibration.xml")
     print(f"Job Batch: [{batch_num}/{total_batches}]")
     print(f"Test Files ({len(test_files)}): [{test_files}]")
     assert test_files
@@ -2577,6 +2669,7 @@ def main():
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            f"cp ./tests/config/config.d/top_level_domains_lists.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
@@ -2607,21 +2700,27 @@ def main():
         )
         res = results[-1].is_ok()
 
-    reference_sha = ""
+    if not nightly:
+        reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         reference_source = Path(f"{perf_left}/reference-source.txt")
         # The latest-master URL is mutable: refresh it when entering the install
         # stage. Also invalidate a cached binary when the selected baseline changes.
         if (
-            use_latest_master
+            args.reference_path
+            or use_latest_master
             or not Path(f"{perf_left}/.done").is_file()
             or not reference_source.is_file()
             or reference_source.read_text() != link_for_ref_ch
         ):
             commands = [
                 f"mkdir -p {perf_left_config}",
-                f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}",
+                (
+                    f"cp {args.reference_path} {perf_left}/clickhouse.download"
+                    if args.reference_path
+                    else f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}"
+                ),
                 f"mv {perf_left}/clickhouse.download {perf_left}/clickhouse",
                 f"chmod +x {perf_left}/clickhouse",
                 f"cp -r ./tests/performance {perf_left}/",
@@ -2639,10 +2738,15 @@ def main():
             if res:
                 reference_source.write_text(link_for_ref_ch)
                 Shell.check(f"touch {perf_left}/.done")
-        if res:
+        if res and not nightly:
             reference_sha = Shell.get_output(
                 f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
+
+    # Also on a resume: never attribute measurements to a different reference.
+    if res and nightly:
+        installed_sha = get_binary_commit_sha(f"{perf_left}/clickhouse")
+        assert installed_sha == reference_sha, f"installed reference {installed_sha} is not --reference-path {reference_sha}"
 
     if res and not info.is_local_run:
 
@@ -2847,7 +2951,7 @@ def main():
             Result.from_commands_run(
                 name="Start system log export",
                 command=start_log_export,
-                command_args=[log_export_servers],
+                command_args=[log_export_servers, nightly],
                 with_info=True,
             )
         )
@@ -2882,8 +2986,8 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
-                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
-                    if entry.name in PERSISTENT_USER_FILES:
+                    # Dataset files are hardlinked from db_path and must outlive the tests.
+                    if (Path(db_path) / "user_files" / entry.name).exists():
                         continue
                     if entry.is_symlink():
                         continue
@@ -2893,14 +2997,21 @@ def main():
                         entry.unlink()
 
         def run_tests():
+            last_flush = time.monotonic()
             for test in test_files:
-                CHServer.run_test(
+                clean = CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=10,
+                    max_queries=0 if nightly else 10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
+                    long=nightly,
                 )
                 cleanup_user_files()
+                if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
+                    flush_log_export(log_export_servers)
+                    last_flush = time.monotonic()
+                if not clean:
+                    break
             return True
 
         commands = [
@@ -2946,7 +3057,8 @@ def main():
                 )
         with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
             warnings.write(reference_warning + "\n" if reference_warning else "")
-        Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
+        right_commit = f"echo tested binary commit {tested_sha}" if nightly else "git log -1 HEAD"
+        Shell.check(f"{right_commit} > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)
         )
@@ -2960,7 +3072,8 @@ def main():
         report_pr_number = 0 if info.is_local_run else info.pr_number
         commands = [
             f"PR_TO_TEST={report_pr_number} "
-            f"SHA_TO_TEST={info.sha} "
+            f"SHA_TO_TEST={tested_sha} "
+            f"{'CHPC_NIGHTLY=1 ' if nightly else ''}"
             "stage=get_profiles "
             f"{script_path}",
         ]
@@ -2994,7 +3107,7 @@ def main():
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
                 missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = "failed to prepare the TSV"
-                return True
+                return not nightly
 
             check_start_time = get_check_start_time()
 
@@ -3002,7 +3115,6 @@ def main():
 
             with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
                 data = f.read()
-            line_count = data.count("\n")
 
             insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_RAW_QUERY_METRICS_DATA.format(
@@ -3011,21 +3123,34 @@ def main():
                 CHECK_START_TIME=check_start_time,
                 PR_NUMBER=info.pr_number,
                 REF_SHA=escape_sql_string(reference_sha),
-                CUR_SHA=escape_sql_string(info.sha),
+                CUR_SHA=escape_sql_string(tested_sha),
                 **insert_metadata,
             )
 
             print(f"Do insert raw query metrics query: >>>\n{query}\n<<<")
-            error = insert_into_cidb(
-                cidb, info, RAW_QUERY_METRICS_TABLE, query, data, upload_deadline
-            )
+            chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
+            error = None
+            for i, chunk in enumerate(chunks):
+                line_count = chunk.count("\n")
+                chunk_error = insert_into_cidb(
+                    cidb,
+                    info,
+                    RAW_QUERY_METRICS_TABLE,
+                    query,
+                    chunk,
+                    upload_deadline,
+                    token_key=f"{RAW_QUERY_METRICS_TABLE}/{i}" if nightly else None,
+                )
+                if chunk_error is None:
+                    print(f"Inserted [{line_count}] raw query metric lines")
+                else:
+                    print(f"Inserted [{line_count}] raw query metric lines - failed: {chunk_error}")
+                    error = error or chunk_error
             if error is None:
-                print(f"Inserted [{line_count}] raw query metric lines")
                 del missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE]
             else:
-                print(f"Inserted [{line_count}] raw query metric lines - failed: {error}")
                 missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = error
-            return True
+            return error is None or not nightly
 
         results.append(
             Result.from_commands_run(
@@ -3060,7 +3185,7 @@ def main():
                 EVENT_DATE_TIME=date_time,
                 PR_NUMBER=info.pr_number,
                 REF_SHA=escape_sql_string(reference_sha),
-                CUR_SHA=escape_sql_string(info.sha),
+                CUR_SHA=escape_sql_string(tested_sha),
                 **insert_metadata,
             )
 
@@ -3074,7 +3199,7 @@ def main():
             else:
                 print(f"Inserted [{len(lines)}] lines - failed: {error}")
                 missing_dashboard_inputs[HISTORICAL_DATA_TABLE] = error
-            return True
+            return error is None or not nightly
 
         results.append(
             Result.from_commands_run(
@@ -3092,10 +3217,13 @@ def main():
             Each upload is attempted independently; a failure or missing
             input for one table does not block the others. A failed upload
             does not fail this step; the dashboard gate fails the check when a
-            table it judges from is missing.
+            table it judges from is missing. A nightly run has no dashboard
+            gate, so it fails this step directly when the test times upload
+            fails.
             """
             missing_dashboard_inputs[TEST_TIMES_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
+            ok = True
             for cfg in REPORT_UPLOADS:
                 try:
                     error = run_report_upload(
@@ -3103,6 +3231,7 @@ def main():
                         cidb=cidb,
                         info=info,
                         reference_sha=reference_sha,
+                        tested_sha=tested_sha,
                         compare_against_release=compare_against_release,
                         deadline=upload_deadline,
                     )
@@ -3114,19 +3243,24 @@ def main():
                         missing_dashboard_inputs.pop(cfg["table"], None)
                     else:
                         missing_dashboard_inputs[cfg["table"]] = error
+                # A nightly run requires the test times; the other tables stay best effort.
+                if nightly and cfg["table"] == TEST_TIMES_TABLE:
+                    ok = error is None
 
             try:
                 insert_flamegraph_stacks(
                     cidb=cidb,
                     info=info,
                     reference_sha=reference_sha,
+                    tested_sha=tested_sha,
                     compare_against_release=compare_against_release,
                     deadline=upload_deadline,
+                    nightly=nightly,
                 )
             except Exception:
                 traceback.print_exc()
 
-            return True
+            return ok
 
         results.append(
             Result.from_commands_run(
@@ -3157,6 +3291,8 @@ def main():
             status = Result.Status.OK
             if "errors" in message.lower():
                 status = Result.Status.FAIL
+            elif nightly:
+                print("Nightly run: no performance dashboard or delta gate")
             elif compare_against_release and message:
                 # The release-base comparison is cumulative, so gate on the
                 # delta against the previous master run instead of the
@@ -3308,11 +3444,13 @@ def main():
         dashboard_link = (
             f"{PERF_DASHBOARD_URL}/runs?scope=master&q={(info.sha or '')[:12]}"
         )
-    result.set_label(
-        "Performance dashboard",
-        link=dashboard_link,
-        hint="Combined performance dashboard for this run (all shards, amd + arm)",
-    )
+    # The dashboard does not list nightly runs.
+    if not nightly:
+        result.set_label(
+            "Performance dashboard",
+            link=dashboard_link,
+            hint="Combined performance dashboard for this run (all shards, amd + arm)",
+        )
     result.complete_job()
 
 
