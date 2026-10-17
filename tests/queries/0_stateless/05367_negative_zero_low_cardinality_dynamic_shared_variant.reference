@@ -1,0 +1,9 @@
+LowCardinality(Float64)	true
+LowCardinality(Float64)	true
+1	1	1
+1
+1
+nested
+1
+different values are still distinct
+3

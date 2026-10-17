@@ -23,6 +23,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -74,6 +75,10 @@ String IColumn::getValueName(size_t n, const Options & options) const
 
     HashState h;
     updateHashWithValue(n, h);
+    /// `updateHashWithValue` does not tell `-0.` and `0.` apart, but they are different constants,
+    /// and the name identifies a constant in the actions DAG.
+    if (auto value = serializeValueIfContainsNegativeZero(*this, n))
+        h.update(*value);
     auto p = getSipHash128AsPair(h);
     return fmt::format("{}_{}", p.high64, p.low64);
 }

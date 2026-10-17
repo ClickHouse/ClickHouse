@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -603,6 +604,8 @@ protected:
                 null_maps.push_back(nullptr);
             }
         }
+
+        canonicalizeNegativeZeroInKeyColumns(actual_columns, canonicalized_columns);
     }
 
     /// Return the columns which actually contain the values of the keys.
@@ -644,6 +647,8 @@ protected:
 private:
     ColumnRawPtrs actual_columns;
     ColumnRawPtrs null_maps;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 };
 
 /// Case where nullable keys are not supported.
@@ -651,7 +656,10 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
+    explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns)
+    {
+        canonicalizeNegativeZeroInKeyColumns(actual_columns, canonicalized_columns);
+    }
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
@@ -662,6 +670,8 @@ protected:
 
 private:
     ColumnRawPtrs actual_columns;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 };
 
 }

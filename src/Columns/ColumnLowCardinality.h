@@ -123,6 +123,8 @@ public:
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash &) const override;

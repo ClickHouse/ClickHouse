@@ -4,6 +4,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -1144,11 +1145,11 @@ std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, 
     }
 
     /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
-    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
+    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res, settings);
     return res;
 }
 
-void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const
+void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res, const IColumn::SerializationSettings * settings) const
 {
     /// Calculate total number of paths to serialize and write it.
     const auto & shared_data_offsets = getSharedDataOffsets();
@@ -1177,11 +1178,11 @@ void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena &
             {
                 WriteBufferFromOwnString buf;
                 getDynamicSerialization()->serializeBinary(*dynamic_column, n, buf, getFormatSettings());
-                serializePathAndValueIntoArena(arena, begin, std::string_view(*dynamic_paths_it), buf.str(), res);
+                serializePathAndValueIntoArena(arena, begin, std::string_view(*dynamic_paths_it), buf.str(), res, settings);
             }
             ++dynamic_paths_it;
         }
-        serializePathAndValueIntoArena(arena, begin, std::string_view(path), shared_data_values->getDataAt(i), res);
+        serializePathAndValueIntoArena(arena, begin, std::string_view(path), shared_data_values->getDataAt(i), res, settings);
     }
 
     /// Serialize all remaining paths in dynamic paths.
@@ -1192,13 +1193,23 @@ void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena &
         {
             WriteBufferFromOwnString buf;
             getDynamicSerialization()->serializeBinary(*dynamic_column, n, buf, getFormatSettings());
-            serializePathAndValueIntoArena(arena, begin, std::string_view(*dynamic_paths_it), buf.str(), res);
+            serializePathAndValueIntoArena(arena, begin, std::string_view(*dynamic_paths_it), buf.str(), res, settings);
         }
     }
 }
 
-void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const
+void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res, const IColumn::SerializationSettings * settings) const
 {
+    /// Values of dynamic paths and shared data are binary encoded types and values.
+    /// The serialized value is used as a key in a hash table, see `IColumn::SerializationSettings::canonicalize_negative_zero`.
+    std::optional<String> canonical_value;
+    if (settings && settings->canonicalize_negative_zero)
+    {
+        canonical_value = canonicalizeNegativeZeroInEncodedValue(value);
+        if (canonical_value)
+            value = *canonical_value;
+    }
+
     size_t value_size = value.size();
     size_t path_size = path.size();
     char * pos = arena.allocContinue(sizeof(size_t) + path_size + sizeof(size_t) + value_size, begin);
@@ -1283,8 +1294,13 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
 
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    updateHashWithValue(n, hash, [](const IColumn & column, size_t row, SipHash & value_hash) { column.updateHashWithValue(row, value_hash); });
+}
+
+void ColumnObject::updateHashWithValue(size_t n, SipHash & hash, UpdateHashWithValueFunction update_hash_with_value) const
+{
     for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->updateHashWithValue(n, hash);
+        update_hash_with_value(*typed_paths.find(path)->second, n, hash);
 
     /// The hash of the object in row should not depend on the way we store paths (in dynamic paths or in shared data)
     /// and should be the same for the same objects. To support it we update hash with path and its value (if not null) in
@@ -1304,7 +1320,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             if (!dynamic_column->isNullAt(n))
             {
                 hash.update(*dynamic_paths_it);
-                dynamic_column->updateHashWithValue(n, hash);
+                update_hash_with_value(*dynamic_column, n, hash);
             }
             ++dynamic_paths_it;
         }
@@ -1330,7 +1346,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         hash.update(type_name);
         auto tmp_column = value_type->createColumn();
         getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
-        tmp_column->updateHashWithValue(0, hash);
+        update_hash_with_value(*tmp_column, 0, hash);
     }
 
     /// Iterate over all remaining paths in dynamic paths.
@@ -1340,7 +1356,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         if (!dynamic_column->isNullAt(n))
         {
             hash.update(*dynamic_paths_it);
-            dynamic_column->updateHashWithValue(n, hash);
+            update_hash_with_value(*dynamic_column, n, hash);
         }
     }
 }

@@ -1,6 +1,7 @@
 -- A join runtime filter is a pre-filter, so it may only reject rows the join itself would not match.
--- The join's hash table compares keys bitwise, while `equals` reports NaN unequal to itself and 0.0
--- equal to -0.0, so a key that can carry a float must not take the single-element `equals` shortcut.
+-- The join's hash table compares NaN keys bitwise, while `equals` reports NaN unequal to itself, so a key
+-- that can carry a float must not take the single-element `equals` shortcut. Both agree that 0.0 equals -0.0,
+-- so the ANTI joins below find a match and return no rows, with or without the runtime filter.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;

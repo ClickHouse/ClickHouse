@@ -145,6 +145,9 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    /// The same, but the values of the paths are hashed with `update_hash_with_value`.
+    using UpdateHashWithValueFunction = void (*)(const IColumn & column, size_t n, SipHash & hash);
+    void updateHashWithValue(size_t n, SipHash & hash, UpdateHashWithValueFunction update_hash_with_value) const;
 
     /// Used for deduplication: hashes the raw in-memory representation of typed paths,
     /// dynamic paths and shared data. The hash is the same for the same INSERT data,
@@ -383,8 +386,8 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
-    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
-    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
+    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res, const IColumn::SerializationSettings * settings) const;
+    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res, const IColumn::SerializationSettings * settings) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
     /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
     /// Must be called after any operation that can replace typed path column pointers
