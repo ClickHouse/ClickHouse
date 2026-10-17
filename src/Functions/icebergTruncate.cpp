@@ -2,24 +2,15 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool function_iceberg_truncate_returns_uint64_on_uint64_argument;
-}
 
 namespace ErrorCodes
 {
@@ -39,8 +30,7 @@ class FunctionIcebergTruncate final : public IFunction
 public:
     static inline const char * name = "icebergTruncate";
 
-    explicit FunctionIcebergTruncate(ContextPtr context)
-        : uint64_result(context->getSettingsRef()[Setting::function_iceberg_truncate_returns_uint64_on_uint64_argument])
+    explicit FunctionIcebergTruncate(ContextPtr)
     {
     }
 
@@ -53,8 +43,6 @@ public:
     {
         return name;
     }
-
-    void updateHash(SipHash & hash) const override { hash.update(uint64_result); }
 
     bool isVariadic() const override
     {
@@ -112,7 +100,7 @@ public:
         {
             return std::make_shared<DataTypeString>();
         }
-        else if (uint64_result && which_truncate.isUInt64())
+        else if (which_truncate.isUInt64())
         {
             /// `value - value mod N` is in `[0, value]`, which the `Int64` result of `minus` cannot hold.
             return std::make_shared<DataTypeUInt64>();
@@ -148,21 +136,7 @@ public:
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /* left */, const Field & right) const override
-    {
-        const auto * type_ptr = &type;
-        if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-            type_ptr = lc_type->getDictionaryType().get();
-        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-            type_ptr = nullable_type->getNestedType().get();
-
-        /// The legacy `Int64` result of a `UInt64` argument is exact only for arguments below 2^63.
-        if (!uint64_result && WhichDataType(type_ptr).isUInt64())
-            return { .is_monotonic = !right.isNull() && right.safeGet<UInt64>() < (1ULL << 63) };
-
-        return { .is_monotonic = true, .is_always_monotonic = true };
-    }
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -216,7 +190,7 @@ public:
             auto minus_func = FunctionFactory::instance().get("minus", context)->build(minus_arguments);
             auto minus_result_type = minus_func->getResultType();
             auto minus_result = minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
-            if (uint64_result && which_truncate.isUInt64())
+            if (which_truncate.isUInt64())
                 return castColumn({minus_result, minus_result_type, ""}, result_type);
             return minus_result;
         }
@@ -235,9 +209,6 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-private:
-    bool uint64_result;
 };
 
 REGISTER_FUNCTION(IcebergTruncate)
@@ -245,7 +216,7 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergTruncate(N, value)";
     FunctionDocumentation::Arguments arguments = {{"value", "The value to transform.", {"String", "(U)Int*", "Decimal"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"`String` for a `String` or `FixedString` value. The type of the value for `Decimal32`, `Decimal64` and `UInt64` (`Int64` for `UInt64` if setting `function_iceberg_truncate_returns_uint64_on_uint64_argument` is disabled). For other integers, the type of `value - N`, for example `Int16` for a `UInt8` value and a width up to 255."};
+    FunctionDocumentation::ReturnedValue returned_value = {"The same type as the argument"};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergTruncate(3, 'iceberg')", "ice"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

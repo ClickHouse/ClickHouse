@@ -28,39 +28,4 @@ CREATE TABLE t_wrap (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_wrap VALUES (9223372036854775900), (9223372036854776500);
 SELECT count() FROM t_wrap WHERE icebergTruncate(1000, x) >= 9223372036854776000;
 SELECT count() FROM t_wrap WHERE icebergTruncate(1000, x) < 0;
-
-DROP TABLE IF EXISTS t_dynamic;
-CREATE TABLE t_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_dynamic SELECT toUInt64(18446744073709551615) FROM numbers(1000000);
--- The query condition cache must not serve the verdict of the first query to the second one.
-SELECT count() FROM t_dynamic WHERE icebergTruncate(3, d) = '-1' SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1, parallel_replicas_local_plan = 1;
-SELECT count() FROM t_dynamic WHERE icebergTruncate(3, d) = '-1' SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1, parallel_replicas_local_plan = 1, function_iceberg_truncate_returns_uint64_on_uint64_argument = 0;
-
-SELECT icebergTruncate(3, 18446744073709551615) AS c, toTypeName(c) SETTINGS compatibility = '26.10';
-
-SET function_iceberg_truncate_returns_uint64_on_uint64_argument = 0;
-
-SELECT icebergTruncate(3, 18446744073709551615) AS c, toTypeName(c);
-SELECT count() FROM t_wrap WHERE icebergTruncate(1000, x) < 0;
-
-DROP TABLE IF EXISTS t_wrap_sorted;
-CREATE TABLE t_wrap_sorted (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
-INSERT INTO t_wrap_sorted VALUES (9223372036854775900), (9223372036854776500);
-SELECT count() FROM t_wrap_sorted WHERE icebergTruncate(1000, x) < 0;
-
-DROP TABLE IF EXISTS t_wrap_nullable;
-CREATE TABLE t_wrap_nullable (x Nullable(UInt64)) ENGINE = MergeTree ORDER BY x SETTINGS allow_nullable_key = 1, index_granularity = 1;
-INSERT INTO t_wrap_nullable VALUES (9223372036854775900), (9223372036854776500), (NULL);
-SELECT count() FROM t_wrap_nullable WHERE icebergTruncate(1000, x) < 0;
-
-SET allow_suspicious_low_cardinality_types = 1;
-DROP TABLE IF EXISTS t_wrap_lc;
-CREATE TABLE t_wrap_lc (x LowCardinality(UInt64)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
-INSERT INTO t_wrap_lc VALUES (9223372036854775900), (9223372036854776500);
-SELECT count() FROM t_wrap_lc WHERE icebergTruncate(1000, x) < 0;
-
 DROP TABLE t_wrap;
-DROP TABLE t_wrap_sorted;
-DROP TABLE t_wrap_nullable;
-DROP TABLE t_wrap_lc;
-DROP TABLE t_dynamic;
