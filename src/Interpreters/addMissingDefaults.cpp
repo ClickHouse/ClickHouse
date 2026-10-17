@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -95,6 +96,13 @@ ActionsDAG addMissingDefaults(
     actions.addMaterializingOutputActions(/*materialize_sparse=*/ false);
 
     return actions;
+}
+
+bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
+{
+    const auto & type = column.getTypeInStorage();
+    return !type->getCustomSerialization()
+        || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
 }
 
 }
