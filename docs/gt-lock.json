@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-16T10:12:02.459Z",
+          "updatedAt": "2026-10-17T05:49:39.340Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ja": {
-          "updatedAt": "2026-10-16T10:12:02.658Z",
+          "updatedAt": "2026-10-17T05:49:39.532Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ko": {
-          "updatedAt": "2026-10-16T10:12:02.860Z",
+          "updatedAt": "2026-10-17T05:49:39.730Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-16T10:12:03.062Z",
+          "updatedAt": "2026-10-17T05:49:39.917Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ru": {
-          "updatedAt": "2026-10-16T10:12:03.269Z",
+          "updatedAt": "2026-10-17T05:49:40.113Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "zh": {
-          "updatedAt": "2026-10-16T10:12:03.472Z",
+          "updatedAt": "2026-10-17T05:49:40.302Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "ar": {
-          "updatedAt": "2026-10-16T10:12:03.671Z",
+          "updatedAt": "2026-10-17T05:49:40.491Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         },
         "fr": {
-          "updatedAt": "2026-10-16T10:12:03.879Z",
+          "updatedAt": "2026-10-17T05:49:40.695Z",
           "fileName": "docs.json",
           "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
         }
@@ -95727,51 +95727,50 @@
     },
     {
       "fileId": "34c9a5443f8eed976521e520d4c1751f80198c111514d3627853269a63e75c04",
-      "versionId": "58f4235edcd22a9d98bf0f9e19dbd457cf76d71dc068d166471a46db60799655",
+      "versionId": "2bc18bdc970580c1c971c1b559076cce80dab19cde26134b90203c36e89a4d85",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "es/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "a60686389bade836c17f080dca06f41a8f626113ad96ead7b77a6ccc3435a234"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "ja/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "4e407132558806b0b58314a0f2f8b47bfab8c473bd52e3a062422282153ec9c7"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "ko/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "ed32f72a1c47adebc4a03ea5b5925225b10055d708c16216472b41c0323f1b46"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "pt-BR/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "43e808421891389eddc5da1663eb3ca8cbe93eaa45d1f4c1bae9f6051e5b021c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "ru/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "8cca0efe1ae6df5d29099ef11ca7ed707e228605baea983eca4d8bf619737c4b"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
+          "updatedAt": "2026-10-17T05:49:44.071Z",
           "fileName": "zh/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "556731396b5b0e453ca8ea7896819724595aa781ad3c3eeb7b124c04f85aa5bb"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
-          "fileName": "ar/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "8a8335afb9a14d9f41ceb576316dc7fdb2a952c8f01416995a4a3a56e191c39b"
+          "postProcessHash": "a2045647a5c8f8567823d10247b6caf13f85a403223f2bf1610b1802baf7ea2d"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.560Z",
+          "updatedAt": "2026-10-17T05:49:44.072Z",
           "fileName": "fr/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-          "postProcessHash": "2f11fe3ce64e57df6e42abb1135defef640d6cbdec4ba1c10c8cc1cfe50f9bad"
+          "postProcessHash": "2a23828b1a0174517b4da9ff4da52f6ff37abfe0b50738ea8e709849307edb39"
+        },
+        "ko": {
+          "updatedAt": "2026-10-17T05:49:44.073Z",
+          "fileName": "ko/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "0e66cc0f4dfee5c4545acd9bbbfdde048385c9af61068b4a1fa651be9e560552"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-17T05:49:44.073Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "0560aed91a462682dd123376d16d86c2e4d869f861f37f7ea7017a0085ee139b"
+        },
+        "ru": {
+          "updatedAt": "2026-10-17T05:49:44.074Z",
+          "fileName": "ru/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "4bdb8208ee5d14a2dead4201b2e96c443ddf528ed3cb7fd0edd67287d575ed92"
+        },
+        "ja": {
+          "updatedAt": "2026-10-17T05:49:44.074Z",
+          "fileName": "ja/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "f8accff5baf1b4f6e3e5912d87be1faa0e66fc05d4f8a50bb7ad47e1340de4e3"
+        },
+        "es": {
+          "updatedAt": "2026-10-17T05:49:44.074Z",
+          "fileName": "es/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "92e637d86d2cef2cbe4a26b9b082eb47bb462c404e00f0c551c79afd0b94c9cb"
+        },
+        "ar": {
+          "updatedAt": "2026-10-17T05:49:44.075Z",
+          "fileName": "ar/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
+          "postProcessHash": "b17f01eb1111fc7dc809dd815e8f1fe1d1b7b82362d405d2465e1d41c78e223e"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos.mdx"
     },
     {
       "fileId": "bb6fdc38ac2692777f676078a42ac57d3b0c2c2b6332d091d9e64a4092e85d0c",
