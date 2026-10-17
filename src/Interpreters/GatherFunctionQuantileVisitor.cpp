@@ -39,6 +39,7 @@ static const std::unordered_map<String, String> quantile_fuse_name_mapping =
     {"quantileTiming", "quantilesTiming"},
     {"quantileTimingWeighted", "quantilesTimingWeighted"},
     {"quantileGK", "quantilesGK"},
+    {"quantileREQ", "quantilesREQ"},
 };
 
 String GatherFunctionQuantileData::toFusedNameOrSelf(const String & func_name)
