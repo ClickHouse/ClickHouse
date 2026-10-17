@@ -113,6 +113,7 @@ To customize workload the following settings could be used:
 * `max_burst_bytes` - the maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
 * `max_concurrent_threads_ratio_to_cores` - the same as `max_concurrent_threads`, but normalized to the number of available CPU cores.
+* `max_threads_soft_limit` - (CPU only) per-query soft limit on CPU slots: requests of a query that already holds this many slots are served after all other requests of the workload. See [Per-query soft limit on CPU slots](#max-threads-soft-limit).
 * `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
@@ -240,6 +241,24 @@ CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = 'fair';
 -- Then, per query: keep full weight until it burns 10 CPU-seconds, after which it is de-prioritised.
 SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_lowering_factor = 0.1;
 ```
+
+### Per-query soft limit on CPU slots {#max-threads-soft-limit}
+
+The `max_threads_soft_limit` workload setting keeps wide queries from crowding out narrow ones inside a workload without capping them. Once a query holds this many CPU slots, its requests for further slots are *demoted*: they wait in a separate overflow queue, which is served only when no other CPU request of the workload is waiting. A demoted request goes back to the normal order as soon as the query holds fewer slots than the limit again, so a query is never starved below the limit. Demoted requests are served first-come-first-served among themselves, whatever the `scheduler` of the workload is.
+
+```sql
+-- Queries in `production` compete normally for their first 4 CPU slots; slots above that are served from spare capacity only.
+CREATE OR REPLACE WORKLOAD production IN all SETTINGS max_concurrent_threads = 32, max_threads_soft_limit = 4;
+
+-- A query can override the workload value with the query setting of the same name; `0` disables the limit for the query.
+SELECT ... SETTINGS workload = 'production', max_threads_soft_limit = 8;
+```
+
+- `0` disables the limit, and the limit is disabled by default. The setting can be specified per resource with the `FOR <resource>` clause, and changing it on an existing workload takes effect for waiting requests immediately.
+- When the query setting `max_threads_soft_limit` is changed, even to `0`, it overrides the workload value for the query. Otherwise the workload value applies.
+- It applies only to CPU resources (`MASTER THREAD` and `WORKER THREAD`) and requires CPU slot preemption (`cpu_slot_preemption = 1`, the default).
+- It is a soft limit: a query can still hold more slots when nothing else waits. Use `max_concurrent_threads` for a hard limit on the slots of the whole workload, and the query setting `max_threads` to cap the number of threads of a query. It is unrelated to the server settings `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, which limit the CPU slots of all queries together when no CPU resource is declared.
+- Demoted requests are served only when nothing else waits, so a query that keeps more slots than the limit can make little progress above it while the workload is saturated.
 
 ## Threads vs. CPUs {#threads_vs_cpus}
 
