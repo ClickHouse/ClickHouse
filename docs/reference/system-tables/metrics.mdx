@@ -366,6 +366,10 @@ Total number of acquired CPU slots
 
 Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Current number of threads that have parked (released) their CPU slot for a non-CPU wait, such as blocking I/O or having no task to run
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 Total number of preempted threads waiting for CPU slot
@@ -1178,6 +1182,10 @@ Total number of currently allocated (approved) bytes for memory reservations
 
 Total number of outstanding increase request bytes for memory reservations
 
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Total number of reclaimable memory
+
 ### MemoryTracking {#memorytracking}
 
 Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.
@@ -1370,6 +1378,10 @@ Number of threads in the AzureObjectStorage thread pool running a task.
 
 Number of queued or active jobs in the AzureObjectStorage thread pool.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Size in bytes of ObjectStorageQueue metadata cache.
@@ -1405,6 +1417,10 @@ Number of threads in the S3ObjectStorage thread pool running a task.
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 Number of queued or active jobs in the S3ObjectStorage thread pool.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.
 
 ### OpenFileForRead {#openfileforread}
 
