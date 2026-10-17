@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
+# Tags: no-fasttest
 # - no-fasttest: reads Parquet files from Minio
-# - no-old-analyzer: make_distributed_plan and lazy materialization require the analyzer
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

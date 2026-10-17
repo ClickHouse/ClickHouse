@@ -155,6 +155,9 @@ These functions can be transformed:
 - [count](/reference/functions/aggregate-functions/count) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [has](/reference/functions/regular-functions/array-functions#has) and [notHas](/reference/functions/regular-functions/array-functions#notHas) for `Map` to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -294,7 +297,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."}]}]}/>
 
-Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables. Takes effect only when [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order) is also enabled.
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, and from [Merge](/reference/engines/table-engines/special/merge) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order) is also enabled.
 
 Possible values:
 

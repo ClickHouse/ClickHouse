@@ -49,6 +49,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
@@ -140,6 +141,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
@@ -429,13 +431,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    Macros::MacroExpansionInfo macro_info;
     zk_path = chooseZooKeeperPath(
         getContext(),
         table_id_,
         context_->getSettingsRef(),
         *queue_settings_,
         UUIDHelpers::Nil,
-        &zookeeper_name);
+        &zookeeper_name,
+        &macro_info);
+    if (macro_info.expanded_database)
+        keeper_path_database_name = table_id_.database_name;
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
@@ -465,6 +471,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
@@ -1433,6 +1440,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1467,6 +1475,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1647,7 +1656,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 void StorageObjectStorageQueue::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
@@ -1947,6 +1957,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
@@ -1994,13 +2005,29 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     }
 }
 
+void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
+{
+    /// Compared against the name the path was expanded with, not against the current one: the last step of
+    /// the Ordinary-to-Atomic conversion renames the database back to that name, which leaves the table on
+    /// its own Keeper node and must stay allowed.
+    if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
+        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
+        "and the table would process every file again",
+        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
+}
+
 String StorageObjectStorageQueue::chooseZooKeeperPath(
     const ContextPtr & context_,
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * result_zookeeper_name)
+    String * result_zookeeper_name,
+    Macros::MacroExpansionInfo * result_macro_info)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -2054,6 +2081,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+        if (result_macro_info)
+            *result_macro_info = info;
     }
 
     if (result_zookeeper_name)

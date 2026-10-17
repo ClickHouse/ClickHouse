@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -20,6 +21,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
 }
 namespace ErrorCodes
 {
@@ -200,6 +202,98 @@ TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheWireAtEveryVersion)
     }
 }
 
+/// `use_aggregation_memory_tracker` must travel in the serialized plan: a deserialized `AggregatingStep` takes
+/// every other aggregation setting from the plan, so reading this one from the receiver's session would drop
+/// a `SETTINGS use_aggregation_memory_tracker = 0` of the initiator
+/// (https://github.com/ClickHouse/ClickHouse/issues/123756).
+namespace
+{
+
+QueryPlanSerializationSettings writeAndReadSettings(const IQueryPlanStep & step, UInt64 version)
+{
+    QueryPlanSerializationSettings written;
+    step.serializeSettings(written, version);
+
+    WriteBufferFromOwnString out;
+    written.writeChangedBinary(out);
+
+    ReadBufferFromString in(out.str());
+    QueryPlanSerializationSettings read;
+    read.readBinary(in);
+    return read;
+}
+
+bool deserializedUseAggregationMemoryTracker(
+    bool value, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION, bool receiver_session_value = true)
+{
+    auto params = makeParams(true);
+    params.use_aggregation_memory_tracker = value;
+    auto step = makeAggregatingStepFromParams(std::move(params));
+
+    String bytes = serializeStep(*step, version);
+    QueryPlanSerializationSettings settings = writeAndReadSettings(*step, version);
+
+    auto receiver_context = Context::createCopy(getContext().context);
+    receiver_context->setSetting("use_aggregation_memory_tracker", Field(receiver_session_value));
+
+    ReadBufferFromString in(bytes);
+    DeserializedSetsRegistry registry;
+    auto header = makeHeader();
+    SharedHeaders input_headers{header};
+    IQueryPlanStep::Deserialization ctx{
+        in, registry, {}, receiver_context, input_headers, header, settings, 0, version, 0, false};
+
+    auto restored = AggregatingStep::deserialize(ctx);
+    return typeid_cast<AggregatingStep &>(*restored).getParams().use_aggregation_memory_tracker;
+}
+
+}
+
+TEST(AggregatingStepSettingsRoundTrip, UseAggregationMemoryTrackerSurvivesDeserialization)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// The receiver's session keeps the default `true`, so `false` is the direction that diverges.
+    EXPECT_FALSE(deserializedUseAggregationMemoryTracker(false));
+    EXPECT_TRUE(deserializedUseAggregationMemoryTracker(true));
+}
+
+TEST(AggregatingStepSettingsRoundTrip, UseAggregationMemoryTrackerFromReceiverSessionForOlderStreams)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// An older stream does not carry the name, so the receiver's session decides, not the default `true`.
+    constexpr UInt64 older_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER - 1;
+    EXPECT_FALSE(deserializedUseAggregationMemoryTracker(true, older_version, /*receiver_session_value=*/false));
+    EXPECT_TRUE(deserializedUseAggregationMemoryTracker(false, older_version, /*receiver_session_value=*/true));
+
+    /// A current stream carries the initiator's value, whatever the receiver's session says.
+    EXPECT_FALSE(deserializedUseAggregationMemoryTracker(false, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, /*receiver_session_value=*/true));
+    EXPECT_TRUE(deserializedUseAggregationMemoryTracker(true, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, /*receiver_session_value=*/false));
+}
+
+TEST(AggregatingStepSettingsRoundTrip, UseAggregationMemoryTrackerNotWrittenToOlderPeers)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto params = makeParams(true);
+    params.use_aggregation_memory_tracker = false;
+    auto step = makeAggregatingStepFromParams(std::move(params));
+
+    /// An older peer throws on a name it does not know, so the name must stay off the wire towards it.
+    QueryPlanSerializationSettings written;
+    step->serializeSettings(written, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER - 1);
+    WriteBufferFromOwnString out;
+    written.writeChangedBinary(out);
+    EXPECT_FALSE(out.str().contains("use_aggregation_memory_tracker"));
+
+    auto current_peer = writeAndReadSettings(*step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER);
+    EXPECT_FALSE(current_peer[QueryPlanSerializationSetting::use_aggregation_memory_tracker]);
+}
+
 /// Version gates of the `only_merge` flag (bit 128 on `AggregatingStep`, introduced in
 /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION`): only a gtest can
 /// drive a peer version below it. End-to-end round-trip coverage of the flag itself is carried
@@ -242,7 +336,7 @@ TEST(AggregatingStepOnlyMergeVersionGates, Bit128InStreamBelowMinVersionThrows)
     QueryPlanSerializationSettings settings;
     IQueryPlanStep::Deserialization ctx{
         in, registry, {}, getContext().context, input_headers, header, settings, 0,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION - 1, false};
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION - 1, 0, false};
     try
     {
         AggregatingStep::deserialize(ctx);

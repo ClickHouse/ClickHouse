@@ -2,6 +2,10 @@
 #include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/SymbolsHelper.h>
+#include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -13,6 +17,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <mutex>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -99,7 +105,21 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "last_error_trace",
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "A stack trace that represents a list of physical addresses where the called methods are stored."
+                "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
+                "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse "
+                "server process."
+            },
+        {
+                "last_error_symbols",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Demangled symbol names corresponding to last_error_trace."
+            },
+        {
+                "last_error_lines",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "File names with line numbers corresponding to last_error_trace."
             }
     };
 }
@@ -122,6 +142,54 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(last_error_query_id);
 
     columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
+
+    IColumn & symbols_column = *columns[column_idx++];
+    IColumn & lines_column = *columns[column_idx++];
+
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (!last_error_trace.empty())
+    {
+        std::vector<const void *> frame_pointers;
+        frame_pointers.reserve(last_error_trace.size());
+        for (UInt64 addr : last_error_trace)
+            frame_pointers.push_back(reinterpret_cast<const void *>(addr));
+
+        /// `system.error_log` is filled by a background flush that builds the whole batch inside
+        /// `SystemLog::flushImpl`: a single exception here (`CANNOT_PARSE_DWARF` while reading debug info, a missing or
+        /// truncated `.dSYM`, ...) aborts the flush and drops every pending row of the batch.
+        /// These two columns are diagnostic sugar, so symbolization is best-effort for this table:
+        /// the failure is reported to the server log and the columns are left empty.
+        std::optional<std::pair<std::vector<String>, std::vector<String>>> symbolized;
+        try
+        {
+            symbolized = symbolizeTrace(frame_pointers.data(), frame_pointers.size(), /* need_symbols= */ true, /* need_lines= */ true);
+        }
+        catch (...)
+        {
+            /// Symbolization fails for the whole binary rather than for a single address, so it would
+            /// fail for every row of every flush - report it only once instead of flooding the log.
+            static std::once_flag reported;
+            std::call_once(reported, []
+            {
+                tryLogCurrentException(
+                    getLogger("ErrorLog"),
+                    "Cannot symbolize the stack trace for system.error_log, "
+                    "last_error_symbols and/or last_error_lines will be empty");
+            });
+        }
+
+        /// Insert outside of the `try`: `ColumnArray::insert` appends nested elements before the offset,
+        /// so an exception (e.g. `MEMORY_LIMIT_EXCEEDED`) thrown here must propagate, not leave a partial row.
+        if (symbolized)
+        {
+            symbols_column.insert(Array(symbolized->first.begin(), symbolized->first.end()));
+            lines_column.insert(Array(symbolized->second.begin(), symbolized->second.end()));
+            return;
+        }
+    }
+#endif
+    symbols_column.insertDefault();
+    lines_column.insertDefault();
 }
 
 struct ValuePair
@@ -141,23 +209,22 @@ void ErrorLog::stepFunction(TimePoint current_time)
         std::vector<UInt64> addrs;
         addrs.reserve(trace.size());
         for (auto * ptr : trace)
-            addrs.push_back(reinterpret_cast<uintptr_t>(ptr));
+            addrs.push_back(StackTrace::resolveAddressForStorage(ptr));
         return addrs;
     };
 
-    for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
+    for (const auto code : ErrorCodes::getCodes())
     {
         const auto & error = ErrorCodes::values[code].get();
-        /// previous_values is guarded by the mutex held above; thread-safety analysis cannot see the lock
-        /// through the add() callback, so suppress the false positive on the accesses made inside it.
-        if (error.local.count != previous_values.at(code).local)
+        auto & previous = previous_values[code];
+        if (error.local.count != previous.local)
         {
             this->add([&](ErrorLogElement & element)
             {
                 element = ErrorLogElement {
                     .event_time=event_time,
                     .code=code,
-                    .value=error.local.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).local,
+                    .value=error.local.count - previous.local,
                     .remote=false,
                     .last_error_time=(error.local.error_time_ms / 1000),
                     .last_error_message=error.local.message,
@@ -165,16 +232,16 @@ void ErrorLog::stepFunction(TimePoint current_time)
                     .last_error_trace=to_addrs(error.local.trace)
                 };
             });
-            previous_values[code].local = error.local.count;
+            previous.local = error.local.count;
         }
-        if (error.remote.count != previous_values.at(code).remote)
+        if (error.remote.count != previous.remote)
         {
             add([&](ErrorLogElement & element)
             {
                 element = ErrorLogElement {
                     .event_time=event_time,
                     .code=code,
-                    .value=error.remote.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).remote,
+                    .value=error.remote.count - previous.remote,
                     .remote=true,
                     .last_error_time=(error.remote.error_time_ms / 1000),
                     .last_error_message=error.remote.message,
@@ -182,7 +249,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                     .last_error_trace=to_addrs(error.remote.trace)
                 };
             });
-            previous_values[code].remote = error.remote.count;
+            previous.remote = error.remote.count;
         }
     }
 }

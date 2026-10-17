@@ -98,6 +98,8 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
+
 private:
     using StopCondition = std::function<bool(const String &)>;
     using ExecuteFunc = std::function<void(const String &)>;

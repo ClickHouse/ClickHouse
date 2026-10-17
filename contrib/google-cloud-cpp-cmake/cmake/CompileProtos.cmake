@@ -121,7 +121,8 @@ function (google_cloud_cpp_generate_proto SRCS)
             OUTPUT "${pb_cc}" "${pb_h}"
             COMMAND ${NATIVE_protoc} ARGS --cpp_out "${OUT_DIR}"
                     ${protobuf_include_path} "${file_path}"
-            DEPENDS "${file_path}"
+            # Depend on the compiler too, so that the files are regenerated when protobuf is updated.
+            DEPENDS "${file_path}" ${NATIVE_protoc}
             COMMENT "Running C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()
@@ -212,7 +213,7 @@ function (google_cloud_cpp_generate_grpcpp SRCS)
                 --plugin=protoc-gen-grpc=${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
                 "--grpc_out=${OUT_DIR}" "--cpp_out=${OUT_DIR}"
                 ${protobuf_include_path} "${file_path}"
-            DEPENDS "${file_path}"
+            DEPENDS "${file_path}" ${Protobuf_PROTOC_EXECUTABLE} ${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
             COMMENT "Running gRPC C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()

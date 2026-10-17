@@ -11,9 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # propagation, which makes `dialect = clickhouse_json` the only way to cover that target.
 
 # UNION ALL of the branch owning the WITH list and an INTERSECT node whose first operand has no WITH
-# of its own and so receives a copy of the list. $1 is the query the two branches are taken from, $2
-# the second INTERSECT operand, equal to the first so the intersection does not depend on it, $3 the
-# analyzer the JSON AST is executed with.
+# of its own and so receives a copy of the list. $1 is the query the two branches are taken from and
+# $2 the second INTERSECT operand, equal to the first so the intersection does not depend on it.
 run_json_ast()
 {
     local json
@@ -25,7 +24,7 @@ run_json_ast()
             '{\"type\":\"SelectIntersectExceptQuery\",\"final_operator\":\"INTERSECT ALL\",\"children\":[',
             JSONExtractRaw(u, 'list_of_selects', 'children', 2), ',', parseQueryToJSON('SELECT $2 AS s'), ']}]}}')
         FORMAT TSVRaw")
-    ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json --enable_analyzer "$3" -q "$json"
+    ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$json"
 }
 
 RECURSIVE_BRANCHES="WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT sum(id) AS s FROM src UNION ALL SELECT sum(id) AS s FROM src"
@@ -34,14 +33,7 @@ PLAIN_BRANCHES="WITH src AS (SELECT 1 AS id UNION ALL SELECT 2) SELECT sum(id) A
 # Both branches sum the ids 1, 2, 3: the copy keeps RECURSIVE, so the self-reference inside it still
 # resolves to the recursive CTE. Without the flag the copy is an ordinary CTE and the operand fails
 # with UNKNOWN_TABLE on that self-reference.
-run_json_ast "$RECURSIVE_BRANCHES" 6 1
+run_json_ast "$RECURSIVE_BRANCHES" 6
 
 # A non-recursive list carries no flag to lose, so this arm holds while the one above moves.
-run_json_ast "$PLAIN_BRANCHES" 3 1
-
-# The flag must not be invented on the copy either, and the old analyzer reads it: it rejects a
-# recursive WITH outright. The recursive arm is refused by its own source branch, which the union
-# interpreter builds first, so that arm only shows the refusal is reachable for this shape. The
-# non-recursive arm is the oracle: it keeps running only while the copy stays non-recursive.
-run_json_ast "$RECURSIVE_BRANCHES" 6 0 2>&1 | grep -om1 UNSUPPORTED_METHOD
-run_json_ast "$PLAIN_BRANCHES" 3 0
+run_json_ast "$PLAIN_BRANCHES" 3

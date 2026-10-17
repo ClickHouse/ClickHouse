@@ -21,7 +21,7 @@ void ASTAssignment::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     column_name = r.getString("column_name");
-    children = r.readChildren();
+    children = r.readExpressionChildren();
     if (children.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Assignment JSON must contain exactly one expression child, got {}", children.size());

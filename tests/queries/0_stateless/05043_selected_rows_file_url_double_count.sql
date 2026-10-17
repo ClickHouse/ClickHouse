@@ -87,12 +87,17 @@ FORMAT Null;
 -- Lazy materialization reads the deferred columns of the surviving rows in a second pass, through
 -- an inner pipeline of its own. The two passes read 1000 + 3 rows, which is what arms this cell:
 -- with the optimization off the same query reads 1000.
+-- `use_top_k_dynamic_filtering` is pinned off because the runner randomizes it on: TopN dynamic
+-- filtering skips whole Parquet row groups from the running threshold, so the first pass would
+-- read fewer than 1000 rows and the cell would measure row-group pruning instead of the double
+-- counting it is about.
 SELECT s FROM file('05043_' || currentDatabase() || '.parquet', Parquet, 'k UInt64, s String')
 ORDER BY k LIMIT 3
 SETTINGS log_queries = 1, log_comment = '05043_file_lazy_rows', ast_fuzzer_runs = 0,
     enable_analyzer = 1, query_plan_optimize_lazy_materialization = 1,
     query_plan_max_limit_for_lazy_materialization = 0,
-    query_plan_optimize_lazy_materialization_for_file = 1
+    query_plan_optimize_lazy_materialization_for_file = 1,
+    use_top_k_dynamic_filtering = 0
 FORMAT Null;
 
 -- MergeTree control: has no inner pipeline on its read path and was never affected

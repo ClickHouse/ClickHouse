@@ -10,6 +10,8 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <filesystem>
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
@@ -452,6 +454,12 @@ public:
         return builder;
     }
 
+    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
+    void prepareForTableCreation() const override
+    {
+        std::filesystem::create_directories(path);
+    }
+
 private:
     const std::string table_location;
     const std::string path;
@@ -491,7 +499,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                object_storage->getAzureBlobStorageConnectionParams(),
+                *object_storage->getAzureBlobStorageConnectionParams(),
                 configuration->getRawPath().path);
         }
 #endif

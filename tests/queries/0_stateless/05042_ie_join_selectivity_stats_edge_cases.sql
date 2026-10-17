@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Edge cases of the statistics-based choice of the IEJoin key conditions: comparisons of
 -- constant (single-point range) columns, and value ranges surviving a LIMIT.
 

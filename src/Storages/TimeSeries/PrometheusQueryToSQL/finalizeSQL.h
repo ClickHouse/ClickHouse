@@ -14,7 +14,7 @@ namespace DB::PrometheusQueryToSQL
 /// 2. Two columns named "timestamp", "value" (where the "value" column contain a string), one row
 ///    (if the result of the prometheus query is STRING).
 /// 3. Three columns named "tags", "timestamp", "value" (if the result of the prometheus query is INSTANT VECTOR).
-/// 4. Two columns named "tags", "time_series" (if the result of the prometheus query is RANGE VECTOR).
+/// 4. Two columns named "tags", "samples" (if the result of the prometheus query is RANGE VECTOR).
 ASTPtr finalizeSQL(SQLQueryPiece && result, ConverterContext & context);
 
 }

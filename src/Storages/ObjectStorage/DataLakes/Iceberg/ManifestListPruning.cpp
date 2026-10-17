@@ -8,10 +8,91 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <base/unaligned.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
+
 using namespace DB;
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+std::optional<Int64> decodeSignedInteger(const String & bytes)
+{
+    switch (bytes.size())
+    {
+        case 1:
+            return unalignedLoad<Int8>(bytes.data());
+        case 2:
+            return unalignedLoadLittleEndian<Int16>(bytes.data());
+        case 4:
+            return unalignedLoadLittleEndian<Int32>(bytes.data());
+        case 8:
+            return unalignedLoadLittleEndian<Int64>(bytes.data());
+        default:
+            return {};
+    }
+}
+
+std::optional<Field> deserializeIntegerBound(const String & bytes, const IDataType & type)
+{
+    const auto value = decodeSignedInteger(bytes);
+    if (!value.has_value())
+        return {};
+
+    auto converted = convertFieldToType(Field(*value), type, nullptr, {}, /* strict */ true);
+    if (converted.isNull())
+        return {};
+
+    return converted;
+}
+
+std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
+    const PartitionFieldSummary & summary, const DataTypePtr & type, Int32 partition_spec_id, size_t field_index)
+{
+    if (summary.contains_null || summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
+        || !summary.upper_bound.has_value() || summary.upper_bound->empty())
+        return {};
+
+    const auto non_nullable_type = removeNullable(type);
+    const WhichDataType which(non_nullable_type);
+
+    std::optional<Field> lower;
+    std::optional<Field> upper;
+    if (which.isUInt())
+    {
+        lower = deserializeIntegerBound(*summary.lower_bound, *non_nullable_type);
+        upper = deserializeIntegerBound(*summary.upper_bound, *non_nullable_type);
+    }
+    else
+    {
+        lower = deserializeFieldFromBinaryRepr(*summary.lower_bound, type, true);
+        upper = deserializeFieldFromBinaryRepr(*summary.upper_bound, type, false);
+    }
+
+    if (!lower.has_value() || !upper.has_value())
+        return {};
+
+    if (accurateLess(*upper, *lower))
+    {
+        LOG_WARNING(
+            getLogger("ManifestListPruner"),
+            "Manifest list declares a lower bound above the upper bound for field {} of partition spec {}; skipping "
+            "partition pruning for this field",
+            field_index,
+            partition_spec_id);
+        return {};
+    }
+
+    return std::pair{std::move(*lower), std::move(*upper)};
+}
+
+}
 
 ManifestListPruner::ManifestListPruner(
     const IcebergSchemaProcessor & schema_processor_,
@@ -68,20 +149,11 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     std::vector<FieldRef> right_keys(partition_summaries.size());
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
-        const auto & summary = partition_summaries[i];
-        const auto & type = partition_key.data_types.at(i);
+        auto bounds
+            = boundsOfPartitionFieldSummary(partition_summaries[i], partition_key.data_types.at(i), partition_spec_id, i);
 
-        std::optional<Field> lower;
-        std::optional<Field> upper;
-        if (!summary.contains_nan && summary.lower_bound.has_value() && !summary.lower_bound->empty()
-            && summary.upper_bound.has_value() && !summary.upper_bound->empty())
-        {
-            lower = deserializeFieldFromBinaryRepr(*summary.lower_bound, type, true);
-            upper = deserializeFieldFromBinaryRepr(*summary.upper_bound, type, false);
-        }
-
-        left_keys[i] = (lower.has_value() && !summary.contains_null) ? FieldRef(*lower) : FieldRef(NEGATIVE_INFINITY);
-        right_keys[i] = (upper.has_value() && !summary.contains_null) ? FieldRef(*upper) : FieldRef(POSITIVE_INFINITY);
+        left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
+        right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
     }
 
     return !condition_it->second.condition.mayBeTrueInRange(

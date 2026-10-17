@@ -1,7 +1,9 @@
 #include <Core/BaseSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 
 #include <fmt/ranges.h>
 
@@ -14,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
 }
@@ -28,7 +31,14 @@ void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
 String BaseSettingsHelpers::readString(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
+    return str;
+}
+
+String BaseSettingsHelpers::readName(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in, MAX_SETTING_NAME_SIZE);
     return str;
 }
 
@@ -61,6 +71,11 @@ void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
 }
 
+void BaseSettingsHelpers::throwTooManySettings(std::string_view what)
+{
+    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} received (maximum: {})", String{what}, MAX_SETTINGS_IN_A_SEQUENCE);
+}
+
 void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, std::string_view type)
 {
     throw Exception(
@@ -85,6 +100,17 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
         ErrorCodes::BAD_ARGUMENTS,
         "Setting '{}' is marked as written without a value, which stands for `{} = true`, "
         "but it carries a different value", String{name}, String{name});
+}
+
+String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
+{
+    return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));
+}
+
+String BaseSettingsHelpers::formatValueForErrorMessage(String str)
+{
+    maskURIPassword(&str);
+    return str;
 }
 
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.

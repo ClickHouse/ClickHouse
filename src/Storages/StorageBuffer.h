@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
     StoragePtr getDestinationTable() const;
 
@@ -141,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
