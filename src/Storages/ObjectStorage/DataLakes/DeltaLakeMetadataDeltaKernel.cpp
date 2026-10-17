@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DELTA_KERNEL_ERROR;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -685,6 +686,13 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     auto readable_columns_with_subcolumns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
     auto readable_columns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All));
 
+    /// Unlike the read schema, the table schema contains partition columns, whose values are
+    /// stored in the data file paths rather than in the data files themselves.
+    /// Subcolumns are expanded because a name in storage can be a path into a Tuple
+    /// (`SELECT c1.c2.size0` asks for `c1.c2`), which the table schema itself does not list.
+    const auto table_columns_with_subcolumns = ColumnsDescription(delta_schema)
+        .get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+
     /// We include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
     /// so we want it to be verified that chunk contains all the requested columns.
@@ -697,6 +705,14 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             storage_columns,
             delta_schema,
             log);
+
+        if (!table_columns_with_subcolumns.tryGetByName(name_and_type.getNameInStorage()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Column {} is not present in the DeltaLake table schema. There are only columns: {}. "
+                "The column may have been renamed or dropped in the Delta table",
+                name_and_type.getNameInStorage(), fmt::join(delta_schema.getNames(), ", "));
+
         name_and_type = result_name_and_type;
     }
 
