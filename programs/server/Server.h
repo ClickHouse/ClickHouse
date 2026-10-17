@@ -58,6 +58,9 @@ public:
         return BaseDaemon::isCancelled();
     }
 
+    /// The options of the daemon and of the server itself, without the server settings.
+    void defineBuiltinOptions(Poco::Util::OptionSet & _options);
+
     void defineOptions(Poco::Util::OptionSet & _options) override;
 
 protected:
