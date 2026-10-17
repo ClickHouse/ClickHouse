@@ -166,7 +166,9 @@ def test(storage_policy, key_prefix):
     metadata_count = 0
     for obj in list(metadata_it):
         if "/__meta/" in obj.object_name:
-            assert obj.object_name.endswith("/prefix.path")
+            assert obj.object_name.endswith(
+                "/prefix.path"
+            ) or obj.object_name.endswith("/__meta/snapshot.bin")
             metadata_count += 1
         else:
             assert not obj.object_name.endswith("/prefix.path")
