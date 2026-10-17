@@ -89,7 +89,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
-    size_t positions = 0;
+    bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     ASTPtr preprocessor;
     ASTPtr postprocessor;
@@ -359,8 +359,8 @@ struct TextIndexSerialization
     /// Reads only the version and posting list codec from the start of the header, without the
     /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
-    /// If skip_postings is true, embedded postings are skipped.
-    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool skip_postings = false);
+    /// If `with_postings` is false, embedded postings are skipped.
+    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool with_postings);
     /// Skips a token info without full deserialization and filling the fields.
     static void skipTokenInfo(ReadBuffer & istr);
 
@@ -373,8 +373,8 @@ struct TextIndexSerialization
     static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
 
     /// Deserializes a dictionary block into a new DictionaryBlock.
-    /// If postings_serialization is null, embedded postings are skipped.
-    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool skip_postings = false);
+    /// If `with_postings` is false, embedded postings are skipped.
+    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool with_postings);
 };
 
 using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
@@ -422,9 +422,7 @@ private:
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
-    std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens);
 
-    std::shared_ptr<TextIndexHeader> loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     /// Reads the single-segment posting lists of the needed tokens and folds them into the analyzer.
     /// Opens the postings stream itself, once the tokens are known, with a buffer that fits the largest of the lists.
     void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state);
@@ -516,7 +514,7 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Posting list builders for each token. When positions are enabled,
     /// the builders also accumulate the positions of the tokens.
     TokenToPostingsBuilderMap tokens_map;
-    /// Keys may be serialized into arena (see ArenaKeyHolder).
+    /// Keys may be serialized into arena (see ArenaPackedStringHolder).
     std::unique_ptr<Arena> arena;
     /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
     /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
