@@ -104,9 +104,6 @@ NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
     return result;
 }
 
-namespace
-{
-
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
@@ -189,6 +186,9 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         return false;
     }
 }
+
+namespace
+{
 
 /// Do two types that IDataType::equals() reports as equal still mean different things?
 ///

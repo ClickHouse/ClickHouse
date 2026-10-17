@@ -1,0 +1,10 @@
+-- UInt64 -> UInt8, 260 reads as 4
+4	250
+0
+UInt64
+4	250
+-- metadata-only Enum8 widening keeps min/max from statistics
+0
+Enum8(\'a\' = 1, \'b\' = 2)
+a	b
+1
