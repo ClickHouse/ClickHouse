@@ -26,7 +26,8 @@ from .utils import Utils
 
 
 class CIDBTimeoutError(RuntimeError):
-    """Every attempt of a CIDB request timed out on the client side."""
+    """The last attempt of a CIDB request found the server overloaded: it timed
+    out on the client side, or the server was out of memory."""
 
 
 class CIDB:
@@ -350,15 +351,16 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
-                timed_out = False
+                # An overloaded server times out some requests and rejects others for lack of memory.
+                overloaded = "(total) memory limit exceeded" in response.text
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
-                timed_out = isinstance(ex, requests.exceptions.Timeout)
+                overloaded = isinstance(ex, requests.exceptions.Timeout)
                 error = f"{what} failed, exception [{ex}]"
 
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
-                if timed_out:
+                if overloaded:
                     raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)
