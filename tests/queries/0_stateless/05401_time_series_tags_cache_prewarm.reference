@@ -1,0 +1,15 @@
+--- a restarted table skips the time series already stored ---
+2
+--- a new tag set is still written ---
+3
+--- clearing the cache makes the next insert write the rows again ---
+4
+--- the same check with a tag stored in its own column ---
+2
+--- three copies of one series and one other series preload both ---
+4
+--- a long run of one series ends the preload before the series stored after it ---
+a	200000
+b	2
+--- a large expiration still preloads the stored series ---
+1

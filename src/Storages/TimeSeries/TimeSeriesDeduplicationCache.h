@@ -62,6 +62,14 @@ public:
     /// Called after the pending rows have been written to the table.
     void markRowsAsWritten(PendingRows && pending_rows);
 
+    /// Remembers every row of `block` as already written, without the hit and miss counters.
+    /// Used to fill the cache from the table when the table starts. The time of writing of each row is spread
+    /// uniformly over the expiration period, so the rows are not all written again at the same moment.
+    void addWrittenRows(const Block & block, size_t key_column_index);
+
+    /// The number of entries the cache can hold. A read that fills the cache stops after this many rows.
+    size_t getMaxEntries() const { return max_pending_rows; }
+
 private:
     using TimePoint = std::chrono::steady_clock::time_point;
 
