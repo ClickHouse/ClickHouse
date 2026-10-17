@@ -154,14 +154,15 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
         settings[Setting::max_parser_backtracks]);
 }
 
-static ActionsDAG makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header, bool & remove_filter_column)
+static ActionsDAG makeAdditionalPostFilter(
+    ASTPtr & ast, ContextPtr context, const Block & header, String & filter_column_name, bool & remove_filter_column)
 {
     String result_column_name = ast->getColumnName();
     auto dag = analyzeExpressionToActionsDAG(ast, header.getNamesAndTypesList(), context);
     const ActionsDAG::Node * result_node = &dag.findInOutputs(result_column_name);
 
     /// The filter must not reorder the result columns.
-    remove_filter_column = makeFilterKeepHeader(dag, header, result_node);
+    remove_filter_column = makeFilterKeepHeader(dag, header, result_node, filter_column_name);
     return dag;
 }
 
@@ -175,8 +176,8 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
         return;
 
     bool remove_filter_column = true;
-    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader(), remove_filter_column);
-    std::string filter_name = ast->getColumnName();
+    std::string filter_name;
+    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader(), filter_name, remove_filter_column);
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), std::move(filter_name), remove_filter_column);
     filter_step->setStepDescription("Additional result filter");

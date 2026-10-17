@@ -821,7 +821,7 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
     return additional_result_filter_ast;
 }
 
-bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsDAG::Node * filter_node)
+bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsDAG::Node * filter_node, String & filter_column_name)
 {
     /// Inputs are matched to the header columns by name and position, as `ActionsDAG::updateHeader` does,
     /// so a header with duplicate names gets one input per column.
@@ -851,8 +851,21 @@ bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsD
     }
 
     if (!filter_node_is_header_column)
+    {
+        /// `FilterStep` finds the filter column by name, so a computed filter must not share its name
+        /// with a header column, e.g. a column aliased `greater(a, b)` next to the filter `a > b`.
+        if (header.has(filter_node->result_name))
+        {
+            size_t suffix = 0;
+            String unique_name = "__filter_0";
+            while (header.has(unique_name))
+                unique_name = "__filter_" + std::to_string(++suffix);
+            filter_node = &dag.addAlias(*filter_node, std::move(unique_name));
+        }
         outputs.push_back(filter_node);
+    }
 
+    filter_column_name = filter_node->result_name;
     dag.getOutputs() = std::move(outputs);
     return !filter_node_is_header_column;
 }
