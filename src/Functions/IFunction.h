@@ -255,6 +255,12 @@ public:
       */
     virtual bool isVolumeReducing() const { return false; }
 
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
+      */
+    virtual bool isExpensive() const { return false; }
+
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
       * the function is guaranteed to return 0/false for all such rows.
@@ -491,6 +497,9 @@ public:
 
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
+
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -739,6 +748,8 @@ public:
     virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
