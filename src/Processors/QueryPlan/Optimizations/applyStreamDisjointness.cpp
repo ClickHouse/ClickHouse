@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
@@ -71,8 +72,13 @@ static QueryPlan::Node * skipExpressions(QueryPlan::Node * node)
 /// On highly duplicated input, a preliminary `DISTINCT` emits a stream of tiny chunks. Scattering splits each
 /// of them across all partitions, and the scheduling of the resulting pieces exceeds the gain from parallel
 /// deduplication, so the preliminary step coalesces its output. Its delay is bounded by the rows it consumes,
-/// which requires an input that keeps flowing: a read, possibly through expressions. Above another `DISTINCT`,
-/// a filter, or a join, an unbounded input can stop producing rows while the coalesced keys wait for more.
+/// which requires an input that keeps flowing. Above another `DISTINCT`, a filter, or a join, an unbounded
+/// input can stop producing rows while the coalesced keys wait for more. A leaf of the plan is not enough
+/// either: a view or a remote read runs another query, stored outside the plan tree, that can suppress its
+/// rows in the same way, and a streaming source can wait for new data. So only a read that emits rows from
+/// a finite table (`ReadFromMergeTree`) or from an unconditionally flowing sequence (`ReadFromSystemNumbersStep`),
+/// possibly through expressions, allows coalescing. Rows filtered out inside a `MergeTree` read (for example,
+/// by `PREWHERE`) do not count towards the bound, but the finite table still ends the input.
 static void coalescePreliminaryDistinctOutput(QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
@@ -83,7 +89,11 @@ static void coalescePreliminaryDistinctOutput(QueryPlan::Node & node)
     if (!preliminary || !preliminary->isPreliminary() || preliminary_node->children.size() != 1)
         return;
 
-    if (skipExpressions(preliminary_node->children.front())->children.empty())
+    const auto * input_node = skipExpressions(preliminary_node->children.front());
+    const auto * input_step = input_node->step.get();
+    const bool is_flowing_read
+        = typeid_cast<const ReadFromMergeTree *>(input_step) || typeid_cast<const ReadFromSystemNumbersStep *>(input_step);
+    if (input_node->children.empty() && is_flowing_read)
         preliminary->coalesceOutput();
 }
 
