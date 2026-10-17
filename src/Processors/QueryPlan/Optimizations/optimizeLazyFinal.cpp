@@ -439,11 +439,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         /// With always_read_till_end (e.g. exact_rows_before_limit or WITH TOTALS) the query
         /// reads the whole stream anyway, so the limit does not allow to stop reading early.
         if (const auto * limit_step = typeid_cast<LimitStep *>(step); limit_step && !limit_step->alwaysReadTillEnd())
-        {
-            size_t limit = limit_step->getLimit();
-            size_t offset = limit_step->getOffset();
-            limit_above_reading = limit + offset < limit ? std::numeric_limits<size_t>::max() : limit + offset;
-        }
+            limit_above_reading = limit_step->getLimitWithOffset().value_or(std::numeric_limits<size_t>::max());
         break;
     }
 

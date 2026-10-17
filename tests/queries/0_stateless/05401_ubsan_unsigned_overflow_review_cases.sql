@@ -1,8 +1,8 @@
 -- Weights and granularities near 2^64 must not hit unsigned wrap-around (checked by UBSan).
 
--- The total weight is exactly 2^64 and wraps to zero.
-SELECT quantileExactWeightedInterpolated(x, w) FROM values('x UInt64, w UInt64', (1, 18446744073709551615), (2, 1));
-SELECT quantilesExactWeightedInterpolated(0.5, 0.9)(x, w) FROM values('x UInt64, w UInt64', (1, 18446744073709551615), (2, 1));
+-- The total weight is exactly 2^64 and does not fit `UInt64`.
+SELECT quantileExactWeightedInterpolated(x, w) FROM values('x UInt64, w UInt64', (1, 18446744073709551615), (2, 1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT quantilesExactWeightedInterpolated(0.5, 0.9)(x, w) FROM values('x UInt64, w UInt64', (1, 18446744073709551615), (2, 1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- A large weighted count in the state of `quantileTimingWeighted`: serialization and deserialization.
 SELECT finalizeAggregation(CAST(unhex(hex(quantileTimingWeightedState(toUInt64(1000), toUInt64(9223372036854775808)))), 'AggregateFunction(quantileTimingWeighted, UInt64, UInt64)'));
