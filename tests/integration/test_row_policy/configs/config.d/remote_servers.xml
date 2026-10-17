@@ -28,5 +28,14 @@
                  </replica>
              </shard>
         </test_cluster_two_shards_same_node>
+        <test_secret_cluster_node2>
+            <secret>test_row_policy_secret</secret>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_secret_cluster_node2>
     </remote_servers>
 </clickhouse>
