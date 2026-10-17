@@ -47,9 +47,9 @@ SELECT host_id FROM pv(tenants = ['t1']);
 
 SELECT '-- controls: a regular table function and an ordinary view must not gain a bindable name';
 SELECT numbers.number FROM numbers(3); -- { serverError UNKNOWN_IDENTIFIER }
-SELECT count() FROM local_data JOIN numbers(3) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
+SELECT number FROM numbers(2) AS n JOIN numbers(3) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
 SELECT view.dummy FROM view(SELECT 1 AS dummy); -- { serverError UNKNOWN_IDENTIFIER }
-SELECT count() FROM local_data JOIN view(SELECT 1 AS dummy) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
+SELECT host_id FROM local_data JOIN view(SELECT 1 AS host_id) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
 -- `tenant_id` collides with `local_data`'s, so the matcher must decide whether to qualify it;
 -- an ordinary view contributes no qualification parts, so the second one stays bare.
 DESCRIBE (SELECT * FROM local_data, view(SELECT 't1' AS tenant_id)) SETTINGS joined_subquery_requires_alias = 0;
