@@ -75,6 +75,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
     extern const SettingsBool database_replicated_always_detach_permanently;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -2684,6 +2686,11 @@ static void addInnerTableIds(const IStorage & table, const ContextPtr & context,
         if (auto inner_table = DatabaseCatalog::instance().tryGetTable(inner_id, context->getGlobalContext()))
         {
             ids.push_back(inner_table->getStorageID());
+            /// It is dropped after the commit, so a drop that its dependents would refuse must fail the query here.
+            const auto & settings = context->getSettingsRef();
+            bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(
+                ids.back(), check_ref_deps, !check_ref_deps && settings[Setting::check_table_dependencies]);
             addInnerTableIds(*inner_table, context, add_not_attached, ids);
         }
         /// Not attached, e.g. after a failed `SYSTEM RESTART REPLICA`.
