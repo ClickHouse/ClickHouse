@@ -31,6 +31,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     Ranges hyperrectangle;
     Serializations serializations;
     DataTypes datatypes;
+    std::vector<UInt8> has_meaningful_extremes;
     FormatSettings format_settings;
 };
 
