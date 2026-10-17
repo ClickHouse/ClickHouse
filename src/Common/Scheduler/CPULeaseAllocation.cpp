@@ -583,7 +583,6 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
 
     resumePreempted();
 
-    // A grant that arrives while every thread is parked has no thread to use it
     if (allParked())
         finishSurplusRequests();
 }
