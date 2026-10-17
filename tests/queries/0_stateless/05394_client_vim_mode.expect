@@ -204,5 +204,21 @@ submit
 expect "1501"
 expect ":) "
 
+# The regular history search (Ctrl-T) works in normal mode and stays in normal mode.
+send -- "SELECT 1600+17"
+submit
+expect "1617"
+expect ":) "
+send -- "SELECT 3"
+escape
+send -- "\x14"
+send -- "1600"
+expect "1600+17"
+send -- "\r"
+send -- "\$x"
+submit
+expect "1601"
+expect ":) "
+
 send -- "\4"
 expect eof
