@@ -51,8 +51,10 @@
 #include <base/range.h>
 #include <base/types.h>
 #include <base/PackedStringRef.h>
+#include <base/getL2CacheSize.h>
 #include <fmt/ranges.h>
 
+#include <bit>
 #include <limits>
 #include <numeric>
 
@@ -1571,6 +1573,10 @@ static DictionarySparseIndex serializeTokensAndPostings(
         ? TextIndexSerialization::TokensFormat::FrontCodedStrings
         : TextIndexSerialization::TokensFormat::RawStrings;
 
+    /// The tokens and their builders live in the hash table cells and in the arena, in an order unrelated
+    /// to the sorted one, so visiting them in sorted order misses the CPU cache. Prefetch them a few tokens ahead.
+    static constexpr size_t prefetch_distance = 8;
+
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * params.dictionary_block_size;
@@ -1589,7 +1595,12 @@ static DictionarySparseIndex serializeTokensAndPostings(
         sparse_index_str.insertData(first_token.data(), first_token.size());
 
         serializeTokensImpl(
-            [&](size_t i) { return sorted_tokens[i].token; },
+            [&](size_t i)
+            {
+                if (i + prefetch_distance < num_tokens)
+                    __builtin_prefetch(sorted_tokens[i + prefetch_distance].token.data());
+                return sorted_tokens[i].token;
+            },
             dictionary_stream.compressed_hashing,
             tokens_format,
             block_begin,
@@ -1597,6 +1608,13 @@ static DictionarySparseIndex serializeTokensAndPostings(
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
+            if (i + prefetch_distance < num_tokens)
+            {
+                const auto * next_postings = reinterpret_cast<const char *>(sorted_tokens[i + prefetch_distance].postings);
+                __builtin_prefetch(next_postings);
+                __builtin_prefetch(next_postings + sizeof(PostingListBuilder) - 1);
+            }
+
             const auto & entry = sorted_tokens[i];
             TextIndexSerialization::serializePostingsAndTokenInfo(
                 std::move(*entry.postings),
@@ -1685,6 +1703,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     : params(std::move(params_))
     , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
+    , min_bytes_for_prefetch(getL2CacheSize())
     , arena(std::make_unique<Arena>())
 {
 }
@@ -1715,7 +1734,7 @@ PostingListBuilder::PostingListBuilder(UInt32 first_value, UInt32 first_position
     }
 }
 
-void PostingListBuilder::add(UInt32 value, UInt32 position, const PostingListBuildContext & context)
+void PostingListBuilder::addSlow(UInt32 value, UInt32 position, const PostingListBuildContext & context)
 {
     if (auto * inline_state = std::get_if<Inline>(&state))
     {
@@ -1853,11 +1872,9 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context)
+ALWAYS_INLINE inline void MergeTreeIndexTextGranuleBuilder::addTokenImpl(
+    PackedStringRef packed_key, UInt32 row, UInt32 token_position, const PostingListBuildContext & context)
 {
-    const auto row = static_cast<UInt32>(current_row);
-    auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
-
     /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
@@ -1886,7 +1903,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     if (inserted)
     {
         /// A token from the drop set holds no postings.
-        if (postprocessor_drop_filter && postprocessor_drop_filter->tokens.contains(token))
+        if (postprocessor_drop_filter && postprocessor_drop_filter->tokens.contains(static_cast<std::string_view>(packed_key)))
         {
             constructBuilder(it, PostingListBuilder::Filtered{});
             return;
@@ -1906,6 +1923,61 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
 
     ++num_processed_tokens;
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context)
+{
+    auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
+    addTokenImpl(packed_key, static_cast<UInt32>(current_row), token_position, context);
+}
+
+/// Assigns the fields in place: copying a whole `PreparedToken` built on the stack reads its key with one 16-byte load
+/// right after the two 8-byte stores that built it, which defeats store-to-load forwarding.
+static ALWAYS_INLINE void appendPreparedToken(
+    std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> & tokens, std::string_view token, UInt32 row, UInt32 token_position)
+{
+    auto & prepared = tokens.emplace_back();
+    prepared.key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
+    prepared.row = row;
+    prepared.position = token_position;
+}
+
+void MergeTreeIndexTextGranuleBuilder::prepareDocument(std::string_view document, std::vector<PreparedToken> & tokens) const
+{
+    const auto row = static_cast<UInt32>(current_row);
+    UInt32 token_position = 0;
+    forEachToken(
+        *tokenizer,
+        document.data(),
+        document.size(),
+        [&](const char * token_start, size_t token_length)
+        {
+            appendPreparedToken(tokens, {token_start, token_length}, row, token_position);
+            ++token_position;
+            return false;
+        });
+}
+
+void MergeTreeIndexTextGranuleBuilder::prepareToken(std::string_view token, UInt32 token_position, std::vector<PreparedToken> & tokens) const
+{
+    appendPreparedToken(tokens, token, static_cast<UInt32>(current_row), token_position);
+}
+
+void MergeTreeIndexTextGranuleBuilder::addTokens(std::span<const PreparedToken> tokens, const PostingListBuildContext & context)
+{
+    /// Far enough ahead to overlap the cache misses of several insertions.
+    static constexpr size_t prefetch_distance = 16;
+
+    for (size_t i = 0; i < std::min(prefetch_distance, tokens.size()); ++i)
+        tokens_map.prefetchByHash(tokens_map.hash(tokens[i].key));
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (i + prefetch_distance < tokens.size())
+            tokens_map.prefetchByHash(tokens_map.hash(tokens[i + prefetch_distance].key));
+
+        addTokenImpl(tokens[i].key, tokens[i].row, tokens[i].position, context);
+    }
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1991,6 +2063,20 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     }
 }
 
+/// The first 8 bytes of the token as a big-endian integer padded with zero bytes,
+/// so that comparing the prefixes of two tokens compares these bytes lexicographically.
+static UInt64 getTokenPrefix(std::string_view token)
+{
+    UInt64 prefix = 0;
+    if (!token.empty())
+        memcpy(&prefix, token.data(), std::min(token.size(), sizeof(prefix)));
+
+    if constexpr (std::endian::native == std::endian::little)
+        prefix = std::byteswap(prefix);
+
+    return prefix;
+}
+
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
     SortedTokens sorted_tokens;
@@ -1998,13 +2084,16 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        std::string_view token = static_cast<std::string_view>(key);
         if (mapped.isFiltered())
             return;
-        sorted_tokens.push_back(SortedToken{token, &mapped});
+
+        std::string_view token = static_cast<std::string_view>(key);
+        sorted_tokens.push_back(SortedToken{token, &mapped, getTokenPrefix(token)});
     });
 
-    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
+    /// The tokens live in the hash table cells and in the arena, so comparing them misses the CPU cache
+    /// for a large granule. The prefixes copied into the array decide most of the comparisons.
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return std::tie(lhs.prefix, lhs.token) < std::tie(rhs.prefix, rhs.token); });
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
@@ -2103,22 +2192,40 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         granule_builder.addDocumentsFromLowCardinality(preprocessed_column, offset, rows_read, context);
     }
+    else if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(preprocessed_column.get()))
+    {
+        addDocumentsFromStrings<true>(column_nullable->getNestedColumn(), column_nullable->getNullMapData().data(), offset, rows_read, context);
+    }
     else
     {
-        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
-
-        for (size_t i = offset; i < offset + rows_read; ++i)
-        {
-            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
-            {
-                const std::string_view ref = preprocessed_column->getDataAt(i);
-                granule_builder.addDocument(ref, context);
-            }
-            granule_builder.incrementCurrentRow();
-        }
+        addDocumentsFromStrings<false>(*preprocessed_column, nullptr, offset, rows_read, context);
     }
 
     *pos += rows_read;
+}
+
+template <bool has_null_map>
+void MergeTreeIndexAggregatorText::addDocumentsFromStrings(
+    const IColumn & column, const UInt8 * null_map, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
+{
+    std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> prepared_tokens;
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        if (!has_null_map || !null_map[i])
+        {
+            const std::string_view ref = column.getDataAt(i);
+            if (granule_builder.shouldPrefetch())
+                granule_builder.prepareDocument(ref, prepared_tokens);
+            else
+                granule_builder.addDocument(ref, context);
+        }
+
+        granule_builder.incrementCurrentRow();
+        addPreparedTokens(prepared_tokens, prepared_tokens_batch_size, context);
+    }
+
+    addPreparedTokens(prepared_tokens, 1, context);
 }
 
 template <bool tokenize>
@@ -2138,6 +2245,8 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
         }
     }
 
+    std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> prepared_tokens;
+
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
         /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
@@ -2152,14 +2261,38 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             if (ref.empty())
                 continue;
 
+            const bool prefetch = granule_builder.shouldPrefetch();
             if constexpr (tokenize)
-                granule_builder.addDocument(ref, context);
+            {
+                if (prefetch)
+                    granule_builder.prepareDocument(ref, prepared_tokens);
+                else
+                    granule_builder.addDocument(ref, context);
+            }
             else
-                granule_builder.addToken(ref, token_position++, context);
+            {
+                if (prefetch)
+                    granule_builder.prepareToken(ref, token_position++, prepared_tokens);
+                else
+                    granule_builder.addToken(ref, token_position++, context);
+            }
         }
 
         granule_builder.incrementCurrentRow();
+        addPreparedTokens(prepared_tokens, prepared_tokens_batch_size, context);
     }
+
+    addPreparedTokens(prepared_tokens, 1, context);
+}
+
+void MergeTreeIndexAggregatorText::addPreparedTokens(
+    std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> & prepared_tokens, size_t min_tokens, const PostingListBuildContext & context)
+{
+    if (prepared_tokens.size() < min_tokens)
+        return;
+
+    granule_builder.addTokens(prepared_tokens, context);
+    prepared_tokens.clear();
 }
 
 void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
@@ -2176,9 +2309,32 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     /// Keys already seen in this row; drives `is_duplicate`. See ITokenizer.h.
     absl::flat_hash_set<std::string_view> keys_in_row;
 
+    /// Once the token map outgrows the CPU cache (see `shouldPrefetch`), the tokens of many rows are encoded one after
+    /// another into `prepared_data` and added together. Their keys are built only then: appending may reallocate it.
+    PaddedPODArray<UInt8> prepared_data;
+    std::vector<size_t> prepared_ends;
+    std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> prepared_tokens;
+
+    auto add_prepared_tokens = [&]
+    {
+        size_t begin = 0;
+        for (size_t j = 0; j < prepared_tokens.size(); ++j)
+        {
+            const auto * data = reinterpret_cast<const char *>(prepared_data.data()) + begin;
+            prepared_tokens[j].key = PackedStringRef::build(data, prepared_ends[j] - begin, PackedStringRefHash{});
+            begin = prepared_ends[j];
+        }
+
+        addPreparedTokens(prepared_tokens, 1, context);
+        prepared_data.clear();
+        prepared_ends.clear();
+    };
+
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
         keys_in_row.clear();
+        const bool prefetch = granule_builder.shouldPrefetch();
+        const auto row = static_cast<UInt32>(granule_builder.current_row);
 
         /// One position per map entry, in stored order, as the Array path does.
         UInt32 token_position = 0;
@@ -2188,11 +2344,24 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
             const bool is_duplicate = !keys_in_row.insert(key).second;
 
             KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_duplicate, token);
-            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
+            if (prefetch)
+            {
+                prepared_data.insert(token.begin(), token.end());
+                prepared_ends.push_back(prepared_data.size());
+                prepared_tokens.push_back({.key = {}, .row = row, .position = token_position++});
+            }
+            else
+            {
+                granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
+            }
         }
 
         granule_builder.incrementCurrentRow();
+        if (prepared_tokens.size() >= prepared_tokens_batch_size)
+            add_prepared_tokens();
     }
+
+    add_prepared_tokens();
 }
 
 namespace
