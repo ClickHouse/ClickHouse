@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
@@ -22,6 +23,7 @@
 #include <aws/core/auth/AWSCredentials.h>
 
 #include <filesystem>
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace fs = std::filesystem;
@@ -187,6 +189,13 @@ private:
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
+
+        /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+        {
+            HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(gcp_oauth_headers);
+        }
 
         return S3::ClientFactory::instance().create(
             client_configuration,

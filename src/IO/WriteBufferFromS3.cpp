@@ -719,7 +719,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);

@@ -221,7 +221,7 @@ IStorageURLBase::IStorageURLBase(
 
 namespace
 {
-    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_)
+    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_, const ContextPtr & context)
     {
         HTTPHeaderEntries headers(headers_.begin(), headers_.end());
 
@@ -229,12 +229,12 @@ namespace
         const auto & current_trace_context = OpenTelemetry::CurrentContext();
         if (current_trace_context.isTraceEnabled())
         {
-            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
-
+            /// The user headers are checked in the `StorageURL` constructor; `tracestate` comes from the client as is.
+            HTTPHeaderEntries trace_headers{{"traceparent", current_trace_context.composeTraceparentHeader()}};
             if (!current_trace_context.tracestate.empty())
-            {
-                headers.emplace_back("tracestate", current_trace_context.tracestate);
-            }
+                trace_headers.emplace_back("tracestate", current_trace_context.tracestate);
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(trace_headers);
+            headers.insert(headers.end(), trace_headers.begin(), trace_headers.end());
         }
 
         return headers;
@@ -347,7 +347,7 @@ StorageURLSource::StorageURLSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
-    , headers(getHeaders(headers_))
+    , headers(getHeaders(headers_, context_))
     , need_only_count(need_only_count_)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
