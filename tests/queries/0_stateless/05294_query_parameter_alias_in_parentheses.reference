@@ -1,0 +1,14 @@
+y	plus(y, 1)
+1	2
+plus(y, 1)	y
+2	1
+1
+1
+5	5
+(1,2)	(1,2)
+0.1	0.1
+0.1	0.1
+1	1
+1
+1	1
+CREATE DATABASE d ENGINE = MaterializedPostgreSQL(\'h:5432\', \'db\', \'u\', \'p\') TABLE OVERRIDE t (PARTITION BY (a) ORDER BY ((a AS y) + 1))
