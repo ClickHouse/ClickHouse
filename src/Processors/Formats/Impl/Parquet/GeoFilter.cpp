@@ -121,10 +121,13 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
     filter.query_ymin = ymin;
     filter.query_xmax = xmax;
     filter.query_ymax = ymax;
+    filter.column_is_point = typeid_cast<const DataTypeTuple *>(removeLowCardinalityAndNullable(sample_column->type).get()) != nullptr;
     return filter;
 }
 
-/// Whether the column chunk contains only points and multipoints (also with Z and/or M coordinates).
+/// Whether the column chunk contains only points (also with Z and/or M coordinates).
+/// Multipoints are not included: e.g. `pointInPolygon` accepts their `Array(Point)` representation
+/// as a polygon and connects the vertices.
 bool geospatialStatisticsHaveOnlyPoints(const parq::GeospatialStatistics & statistics)
 {
     /// An empty list means that the types are unknown.
@@ -132,8 +135,7 @@ bool geospatialStatisticsHaveOnlyPoints(const parq::GeospatialStatistics & stati
         return false;
     return std::ranges::all_of(statistics.geospatial_types, [](Int32 geospatial_type)
     {
-        Int32 base_type = geospatial_type % 1000;
-        return geospatial_type > 0 && (base_type == 1 || base_type == 4);
+        return geospatial_type > 0 && geospatial_type % 1000 == 1;
     });
 }
 
@@ -201,11 +203,12 @@ bool rowGroupFailsSpatialFilters(
         /// antimeridian, and the X range is the union of [xmin, +inf) and (-inf, xmax].
         /// It bounds the vertices, but not the straight segments between them, which the
         /// Cartesian predicates use: a segment from 170 to -170 crosses 0. So the wrapped X range
-        /// is used only if the column chunk is known to contain only points.
+        /// is used only if the column chunk is known to contain only points, and the column is
+        /// read as a point, so the predicate cannot connect several vertices with segments.
         bool x_disjoint = false;
         if (bbox.xmin <= bbox.xmax)
             x_disjoint = bbox.xmax < filter.query_xmin || bbox.xmin > filter.query_xmax;
-        else if (geospatialStatisticsHaveOnlyPoints(col_meta.geospatial_statistics))
+        else if (filter.column_is_point && geospatialStatisticsHaveOnlyPoints(col_meta.geospatial_statistics))
             x_disjoint = filter.query_xmax < bbox.xmin && filter.query_xmin > bbox.xmax;
         bool disjoint = x_disjoint
                       || bbox.ymax < filter.query_ymin

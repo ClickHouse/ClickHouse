@@ -1,5 +1,9 @@
 wrapped bbox: 170.0 -170.0
+wrapped bbox: 170.0 -170.0
 --- a polygon with a bounding box crossing the antimeridian
+1
+1
+--- a multipoint with a bounding box crossing the antimeridian, used as a polygon
 1
 1
 --- NULL points read as (0, 0)
