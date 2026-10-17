@@ -162,7 +162,10 @@ DatabaseMySQL::DatabaseMySQL(
         db_disk->createDirectories(metadata_path);
     }
 
-    thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
+    thread = ThreadFromGlobalPool{
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        &DatabaseMySQL::cleanOutdatedTables,
+        this};
 }
 
 bool DatabaseMySQL::empty() const

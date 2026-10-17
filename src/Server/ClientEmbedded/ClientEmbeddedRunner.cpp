@@ -41,7 +41,19 @@ void ClientEmbeddedRunner::run(const NameToNameMap & envs, const String & starti
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Client has been already started");
 
     LOG_DEBUG(log, "Starting embedded client");
-    client_thread = ThreadFromGlobalPool(&ClientEmbeddedRunner::clientRoutine, this, envs, starting_query);
+    try
+    {
+        client_thread = ThreadFromGlobalPool(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ClientEmbeddedRunner::clientRoutine, this, envs, starting_query);
+    }
+    catch (...)
+    {
+        /// The client routine never ran, so `finished` will never be set. Roll back `started`,
+        /// otherwise the session would keep waiting for a client that does not exist
+        /// and reject every later `shell` / `exec` request.
+        started.clear();
+        throw;
+    }
 }
 
 

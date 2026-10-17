@@ -130,7 +130,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     , reload_period(getContext()->getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
-    reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
+    reloading_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { reloadPeriodically(); });
 }
 
 
