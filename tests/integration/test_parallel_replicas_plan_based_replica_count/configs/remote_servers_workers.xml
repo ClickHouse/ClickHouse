@@ -1,0 +1,32 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+
+    <remote_servers>
+        <!-- The workers' view of the same cluster carries one extra replica (`n4`), as during a rolling
+             configuration rollout. `n4` is never contacted: only the initiator builds connection pools.
+             A worker must take the replica count from the initiator, not from this definition. -->
+        <pr_plan_based_asym>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </pr_plan_based_asym>
+    </remote_servers>
+</clickhouse>
