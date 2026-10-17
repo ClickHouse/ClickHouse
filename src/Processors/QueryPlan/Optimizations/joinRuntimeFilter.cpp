@@ -200,9 +200,8 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash, JoinStrictness join_strictness)
+bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash, JoinStrictness join_strictness)
 {
-    /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     /// A `grace_hash` that the join pickers pass over for lack of a spill threshold does not count: the list is cut down to
     /// these algorithms below, and `grace_hash` left alone in it is no longer passed over but refused.
     /// `GraceHashJoin` never executes an `ASOF` join (see `GraceHashJoin::isSupported`), so it must not be treated as a viable

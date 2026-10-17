@@ -1,0 +1,96 @@
+--- shapes of the enclosing query ---
+=== ORDER BY ALL shares the expression with the projection: rewritten 1 ===
+1	10	31
+1	10	31
+1	30	31
+1	30	31
+2	5	1e308
+2	1e308	1e308
+=== TPC-H Q17 shape: rewritten 1 ===
+5
+=== in WHERE with rows kept: rewritten 1 ===
+101	30
+200	1e308
+=== two subqueries in one WHERE: rewritten 1 ===
+101	30
+200	1e308
+=== correlated to the same table: rewritten 1 ===
+2	5	2
+2	1e308	2
+3	-7	1
+=== condition on the correlated table: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	1e308	1e308
+=== condition on an ALIAS column of the correlated table: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+=== join condition on a non-key column: rewritten 0 ===
+2	1e308	1e308
+=== ANY join: rewritten 1 ===
+1	30
+2	1e308
+=== LEFT join, correlated table on the left: rewritten 1 ===
+1	10	100	30
+1	10	101	30
+1	30	100	30
+1	30	101	30
+2	5	200	1e308
+2	1e308	200	1e308
+3	-7	0	-7
+=== third table joined to the other relation: rewritten 1 ===
+1	2	10	30
+1	2	30	30
+1	3	10	30
+1	3	30	30
+2	4	5	1e308
+2	4	1e308	1e308
+=== join_use_nulls: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== LIMIT: rewritten 1 ===
+1	1
+=== IN subquery in WHERE: rewritten 1 ===
+3
+=== non-deterministic condition: rewritten 1 ===
+0
+=== inside a correlated subquery: rewritten 1 ===
+1	1e308
+2	\N
+3	\N
+=== FINAL on both: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	5
+=== additional_table_filters: rewritten 0 ===
+1	10	10
+1	10	10
+2	5	5
+=== self-join: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	5	1e308
+2	1e308	1e308
+2	1e308	1e308
+3	-7	-7
+=== column named like a window column: rewritten 1 ===
+1	5	7
+1	7	7
+2	3	3
+=== subcolumn: rewritten 1 ===
+1	a
+subcolumn: rewritten	1	reads the whole column	0
