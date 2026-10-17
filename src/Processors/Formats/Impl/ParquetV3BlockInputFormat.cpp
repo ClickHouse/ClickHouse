@@ -489,6 +489,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
 | `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
+| `FILE` | [Tuple](/reference/data-types/tuple) of `Nullable` fields, see [below](#file-type) |
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
@@ -540,6 +541,12 @@ Each value keeps its own type. Variant primitive types are read as the matching 
 A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped.
 
 Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled. Writing `Dynamic` or `JSON` columns to Parquet as `VARIANT` is not supported either.
+
+## File references {#file-type}
+
+A group annotated with the Parquet [`FILE`](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#file) logical type represents a reference to a range of bytes, stored inline or in an external file. It is read as a named `Tuple` of the fields present in the file, each of them `Nullable`: `uri`, `content_type` and `checksum` as `Nullable(String)`, `offset` and `size` as `Nullable(Int64)`, and `inline` as `Nullable(String)` with raw bytes. A `null` file reference is read as a tuple with all elements `NULL`. As for any `Tuple`, a subset of the fields can be read by requesting a `Tuple` with fewer elements, or individual fields as subcolumns, such as `file.uri`. The schema of the group is validated: it must contain only these fields, all `OPTIONAL`, with the types defined by the specification, otherwise an exception is thrown. The values are not validated: a value that does not form a valid reference (for example, `offset` without `uri`) is returned as stored. ClickHouse does not resolve the references, that is, it does not read the external files.
+
+On write, such a `Tuple` (with element names being a non-empty subset of the `FILE` fields, integer `offset` and `size`, and `String` or `FixedString` other elements) is written as a `FILE`-annotated group if the setting [`output_format_parquet_write_file_logical_type`](/reference/settings/formats/output-format#output_format_parquet_write_file_logical_type) is enabled. Otherwise it is written as an ordinary group.
 
 ## Geo types (GeoParquet) {#geo-types}
 
@@ -637,6 +644,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
+| `output_format_parquet_write_file_logical_type` | Write a named `Tuple` whose element names are fields of the Parquet `FILE` logical type as a `FILE`-annotated group, see [File references](#file-type). | `0` |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |
 | `input_format_parquet_local_time_as_utc` | true | Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time. |
 )DOCS_MD"});
