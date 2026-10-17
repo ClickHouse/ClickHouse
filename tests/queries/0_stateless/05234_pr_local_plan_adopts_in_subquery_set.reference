@@ -1,0 +1,7 @@
+3749925000
+3749925000
+3749925000
+3749925000
+pr_local_plan_adopts_in_subquery_set_estimate	2	1
+pr_local_plan_adopts_in_subquery_set_estimate_no_prewhere	2	1
+pr_local_plan_adopts_in_subquery_set_no_estimate	2	1
