@@ -126,6 +126,17 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
+    /// Preserve the nested function's sparse semantics, including input order.
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        nested_func->addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
+    }
+
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
