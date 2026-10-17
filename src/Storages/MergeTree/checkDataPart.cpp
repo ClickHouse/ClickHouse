@@ -14,6 +14,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
@@ -153,6 +154,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
         /// But it is OK, because there is a safety guard against deleting too many parts.
         return false;
     }
+}
+
+bool isCancelledPrefixRead()
+{
+    return isPrefixReadCancelled(std::current_exception());
 }
 
 static IMergeTreeDataPart::Checksums checkDataPart(

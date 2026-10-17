@@ -17,4 +17,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
 
+/// True when the exception being handled is a `PrefixReadCancelledException`, i.e. a query
+/// cancellation observed from inside a structure-prefix read rather than a read failure. Keyed on the
+/// exception's TYPE, so nesting handlers and repeated calls all give the same answer.
+bool isCancelledPrefixRead();
+
 }
