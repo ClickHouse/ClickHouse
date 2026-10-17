@@ -101,7 +101,9 @@ void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
 
     auto [host, port] = parseHostPort(base_url);
 
-    getContext()->getRemoteHostFilter().checkHostAndPort(host, std::to_string(port));
+    /// Also rejects control characters such as NUL, which `getaddrinfo` would truncate the host at.
+    getContext()->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(
+        host + ":" + std::to_string(port), static_cast<UInt16>(port), "Hive metastore address");
 
     socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
     transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
