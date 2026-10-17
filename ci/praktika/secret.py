@@ -91,16 +91,17 @@ class Secret:
             """
             Request multiple parameters at once to avoid rate limiting
             """
+            from botocore.exceptions import BotoCoreError, ClientError
+
             assert isinstance(self.name, list)
-            client = self._boto3_client("ssm")
             try:
+                # Client creation fetches credentials, an infra failure; a missing region is a config error (`RuntimeError`), kept fatal.
+                client = self._boto3_client("ssm")
                 res = client.get_parameters(
                     Names=self.name,
                     WithDecryption=True,
                 )
-            except Exception as e:
-                # Scoped to the request alone: the client construction above and the
-                # checks below all have an answer to judge; only this leaves it unknown.
+            except (BotoCoreError, ClientError) as e:
                 raise SecretFetchFailed(
                     f"Failed to fetch parameters {self.name}: {e}"
                 ) from e
