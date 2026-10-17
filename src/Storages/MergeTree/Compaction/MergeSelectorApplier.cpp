@@ -221,10 +221,11 @@ NameSet getMinMaxIndexColumns(const ChooseContext & ctx)
 /// The storage columns that `key_columns` keep on the horizontal stage, like `MergeTask` does: the alias and
 /// ephemeral columns are not merged at all, and a key column that is a subcolumn keeps its whole storage column,
 /// so several subcolumns of one column count once. The persistent virtual columns `_block_number` and
-/// `_block_offset` of the min-max index are merged as they are, see `getMinMaxIndexColumns`.
-NameSet getKeyColumnsInStorage(const ChooseContext & ctx, const NameSet & key_columns)
+/// `_block_offset` of the min-max index are merged as they are, see `getMinMaxIndexColumns`. `metadata` is the one of
+/// the table for the parent merge, or the one of a projection for the merge of its projection parts.
+NameSet getKeyColumnsInStorage(const StorageInMemoryMetadata & metadata, const NameSet & key_columns)
 {
-    const auto physical_columns = ctx.metadata_snapshot.getColumns().getAllPhysical().getNameSet();
+    const auto physical_columns = metadata.getColumns().getAllPhysical().getNameSet();
     NameSet key_columns_in_storage;
     for (const auto & column : key_columns)
     {
@@ -499,7 +500,7 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
 size_t getAffordablePartsToMergeVertically(
     const ChooseContext & ctx, const NameSet & key_columns, const NameSet & expired_columns, size_t affordable_horizontal)
 {
-    const NameSet key_columns_in_storage = getKeyColumnsInStorage(ctx, key_columns);
+    const NameSet key_columns_in_storage = getKeyColumnsInStorage(ctx.metadata_snapshot, key_columns);
     size_t num_expired_columns = 0;
     for (const auto & column : expired_columns)
         if (!key_columns_in_storage.contains(column))
@@ -534,9 +535,10 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
         || range.size() > RowSourcePart::MAX_PARTS)
         return affordable_horizontal;
 
+    /// Several subcolumns of one column in the sorting key of the projection are merged as that one column.
     NameSet key_columns;
     key_columns.insert_range(projection_metadata.getColumnsRequiredForSortingKey());
-    const size_t num_key_columns = std::max<size_t>(1, key_columns.size());
+    const size_t num_key_columns = std::max<size_t>(1, getKeyColumnsInStorage(projection_metadata, key_columns).size());
     if (num_columns < num_key_columns + settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
         return affordable_horizontal;
 
