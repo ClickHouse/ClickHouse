@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -20,6 +21,20 @@ namespace ErrorCodes
 
 namespace DB
 {
+
+std::optional<String> ITableFunction::getNamedCollectionReferencedByArguments(const ASTs & args) const
+{
+    if (isClusterFunction())
+    {
+        /// `*Cluster` functions take the cluster name as the first argument and parse the rest exactly
+        /// like the underlying non-clustered function, e.g. `s3Cluster(cluster, collection, ...)`.
+        if (args.empty())
+            return std::nullopt;
+        ASTs args_without_cluster(args.begin() + 1, args.end());
+        return tryGetUsedNamedCollectionName(getNonClusteredStorageEngineName(), args_without_cluster);
+    }
+    return tryGetUsedNamedCollectionName(getStorageEngineName(), args);
+}
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {

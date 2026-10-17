@@ -394,6 +394,11 @@ static struct InitFiu
     REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    ONCE(drop_database_fail_before_drop) \
+    ONCE(attach_database_fail_after_load) \
+    PAUSEABLE_ONCE(create_table_pause_before_commit) \
+    ONCE(database_remove_detached_permanently_flag_fail) \
+    ONCE(database_atomic_drop_table_fail_before_replace) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \

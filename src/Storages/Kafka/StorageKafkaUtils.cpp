@@ -377,6 +377,7 @@ void registerStorageKafka(StorageFactory & factory)
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         },
