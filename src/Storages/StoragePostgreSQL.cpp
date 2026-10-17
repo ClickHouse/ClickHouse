@@ -898,17 +898,28 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
-        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
-        /// clause on the table takes the final precedence.
+        /// A named collection may set the connection-pool parameters, and an explicit SETTINGS clause on the table takes
+        /// precedence over it. The parameters set by neither are taken from the query-level `postgresql_*` settings
+        /// (preserving the historical behaviour), unless the SETTINGS clause resets them with `name = DEFAULT`. A new table
+        /// stores those that differ from the defaults of the engine, so that it keeps them when it is attached again,
+        /// e.g. on server startup.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(
             args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
-        if (args.storage_def)
-            postgresql_settings.loadFromQuery(*args.storage_def);
+        postgresql_settings.loadFromQuery(*args.storage_def);
+
+        /// The values are stored for every definition this query brings: `CREATE`, an `ATTACH` with the full definition,
+        /// and the execution of a `CREATE` on the other replicas of a `Replicated` database. Unlike
+        /// `isFreshTableDefinition`, the latter counts: those replicas run the original query with the initiator's
+        /// settings, and store the values that the initiator's session sets, as the initiator does. Not for a definition
+        /// read from the stored metadata: on server startup, `UNDROP`, the recovery of a replica, or an `ATTACH` of a
+        /// detached table by its name. Nor for `RESTORE`, which creates the table with its definition from the backup and
+        /// rejects a table whose definition differs from it (`RestorerFromBackup::checkTable`).
+        bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;
+        postgresql_settings.loadFromQueryContext(*args.getLocalContext(), *args.storage_def, /* store_values */ is_new_definition);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -1040,7 +1051,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the defaults of the engine to its `SETTINGS`, so that it keeps them after a server restart. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
