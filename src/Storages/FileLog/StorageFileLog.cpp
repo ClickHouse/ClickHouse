@@ -83,9 +83,10 @@ namespace
 {
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
-    ContextMutablePtr configureContext(ContextPtr context)
+    ContextMutablePtr configureContext(ContextPtr context, const FileLogSettings & filelog_settings)
     {
         auto new_context = Context::createCopy(context);
+        new_context->applySettingsChanges(filelog_settings.getFormatSettings());
         /// It does not make sense to use auto detection here, since the format
         /// will be reset for each message, plus, auto detection takes CPU
         /// time.
@@ -141,7 +142,7 @@ private:
             return Pipe(std::make_unique<NullSource>(std::make_shared<const Block>(header)));
         }
 
-        auto modified_context = Context::createCopy(file_log.filelog_context);
+        auto modified_context = configureContext(getContext(), *file_log.filelog_settings);
 
         auto max_streams_number = std::min<UInt64>((*file_log.filelog_settings)[FileLogSetting::max_threads], file_log.file_infos.file_names.size());
 
@@ -192,7 +193,6 @@ StorageFileLog::StorageFileLog(
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
     , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
@@ -201,6 +201,8 @@ StorageFileLog::StorageFileLog(
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
+    filelog_context = configureContext(getContext(), *filelog_settings);
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -1116,6 +1118,7 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
 - `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
+- Format settings, for example `format_csv_delimiter`, can also be set in the `SETTINGS` clause.
 
 ## Description {#description}
 
