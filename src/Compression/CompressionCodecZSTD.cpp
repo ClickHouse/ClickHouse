@@ -7,7 +7,6 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ObjectPool.h>
 #include <Common/PerCPU.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/memory.h>
@@ -16,6 +15,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ZstdContext.h>
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 namespace DB
 {
@@ -50,19 +54,56 @@ namespace
 /// the next block once it is reset, so the contexts are shared by all queries and tables through process-wide per-CPU pools.
 /// When the pool of the current CPU is empty, an idle context is taken from the pool of another CPU before a new one is created:
 /// threads roam over CPUs, and otherwise every CPU a thread happens to run on would keep its own resident context.
-template <typename ContextPtr, typename Factory>
-typename SimpleObjectPool<ContextPtr>::Pointer getPooledContext(Factory && create)
+template <typename ContextPtr>
+struct ContextPools
 {
-    static const size_t num_pools = PerCPU::getNumPossibleCPUs();
-    static auto * pools = new SimpleObjectPool<ContextPtr>[num_pools];
-    const size_t current = static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools;
-    for (size_t i = 0; i < num_pools; ++i)
+    struct Pool
     {
-        auto holder = pools[(current + i) % num_pools].get([] { return static_cast<ContextPtr *>(nullptr); });
-        if (holder)
-            return holder;
+        std::mutex mutex;
+        std::vector<std::unique_ptr<ContextPtr>> idle;
+    };
+
+    /// Returns a context to the pool of the CPU that took it, which is not necessarily the pool it was taken from.
+    struct Deleter
+    {
+        Pool * pool = nullptr;
+
+        void operator()(ContextPtr * context) const
+        {
+            std::lock_guard lock(pool->mutex);
+            pool->idle.emplace_back(context);
+            ++num_idle;
+        }
+    };
+
+    using Holder = std::unique_ptr<ContextPtr, Deleter>;
+
+    /// Number of idle contexts in all pools, so that no pool is locked when there are none.
+    static inline std::atomic<size_t> num_idle = 0;
+};
+
+template <typename ContextPtr, typename Factory>
+typename ContextPools<ContextPtr>::Holder getPooledContext(Factory && create)
+{
+    using Pools = ContextPools<ContextPtr>;
+    static const size_t num_pools = PerCPU::getNumPossibleCPUs();
+    static auto * pools = new typename Pools::Pool[num_pools];
+    const size_t current = static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools;
+    /// A context taken from another pool goes back to the pool of the current CPU, so it is searched for only once after
+    /// a thread moves to another CPU. The counter may be stale, which costs at most one fruitless search or one new context.
+    for (size_t i = 0; i < num_pools && Pools::num_idle.load(std::memory_order_relaxed) > 0; ++i)
+    {
+        auto & pool = pools[(current + i) % num_pools];
+        std::lock_guard lock(pool.mutex);
+        if (!pool.idle.empty())
+        {
+            ContextPtr * context = pool.idle.back().release();
+            pool.idle.pop_back();
+            --Pools::num_idle;
+            return {context, {&pools[current]}};
+        }
     }
-    return pools[current].get(std::forward<Factory>(create));
+    return {create(), {&pools[current]}};
 }
 
 /// Memory of a context as the memory tracker counts it: the holder, the context from `ZSTD_createCCtx` and the workspace
