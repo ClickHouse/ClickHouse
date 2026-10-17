@@ -122,7 +122,7 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
 
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects,
-    const Strings & body_secrets)
+    const Strings & response_secrets)
 {
     auto status = response.getStatus();
 
@@ -140,7 +140,7 @@ void assertResponseIsOk(
         std::string body_text;
         readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text, body_secrets);
+        throw HTTPException(code, uri, status, response.getReason(), body_text, response_secrets);
     }
 }
 
@@ -150,30 +150,34 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    const Strings & body_secrets)
+    const Strings & response_secrets)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
 
-    /// The response body is remote content that can reflect the request's own credentials back, which
-    /// a server may echo verbatim (e.g. an auth error naming the user). Scrub those exact credential
-    /// strings, keeping the rest of the body - a useful diagnostic that does not carry a credential.
-    /// `uri` arrives unmasked, so that the credentials it carries are scrubbed here too. Longest first: a secret
-    /// contained in a longer one must not break the longer one's match.
+    /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
+    /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
+    /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
+    /// Longest first: a secret contained in a longer one must not break the longer one's match.
     Strings secrets = presignedURLCredentials(uri);
-    secrets.insert(secrets.end(), body_secrets.begin(), body_secrets.end());
+    secrets.insert(secrets.end(), response_secrets.begin(), response_secrets.end());
     std::ranges::stable_sort(secrets, [](const String & a, const String & b) { return a.size() > b.size(); });
 
-    std::string masked_body = body;
-    for (const auto & secret : secrets)
-        if (!secret.empty())
-            boost::replace_all(masked_body, secret, "[HIDDEN]");
+    const auto scrub = [&](std::string text)
+    {
+        for (const auto & secret : secrets)
+        {
+            if (!secret.empty())
+                boost::replace_all(text, secret, "[HIDDEN]");
+        }
+        return text;
+    };
 
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), reason, body.length(), masked_body);
+        masked_uri, static_cast<int>(http_status), scrub(reason), body.length(), scrub(body));
 }
 
 }
