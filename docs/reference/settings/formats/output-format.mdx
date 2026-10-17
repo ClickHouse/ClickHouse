@@ -843,6 +843,16 @@ Write bloom filters in parquet files.
 
 Put crc32 checksums in parquet page headers.
 
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to write a named `Tuple` with fields of the Parquet `FILE` logical type as a `FILE`-annotated group."}]}]}/>
+
+Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
+
+When reading, a `FILE`-annotated group is always read as such a `Tuple` of `Nullable` elements.
+
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

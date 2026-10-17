@@ -75,6 +75,7 @@
             "ko/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "ko/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "커뮤니티 통합",

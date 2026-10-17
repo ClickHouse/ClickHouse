@@ -63,6 +63,9 @@ struct ObjectInfo
     /// Set by the iterator that reads footers ahead (`createIteratorWithParquetFooterPrefetch`), taken by the source that opens the object.
     std::shared_ptr<ParquetPrefetchedFooter> prefetched_footer;
 
+    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
+    std::optional<size_t> archive_entry_index;
+
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
