@@ -30,6 +30,24 @@ Granules: 1/16
 Granules: 16/16
 Name: idx_array_sort
 Granules: 1/16
+tuple hash IN full scan preserves typed rows	1
+tuple hash IN indexed read preserves typed rows	1
+tuple hash IN uses named index and prunes 1/16	1
+tuple hash child expression mismatch full scan preserves typed rows	1
+tuple hash child expression mismatch indexed read preserves typed rows	1
+tuple hash child expression mismatch declines index and reads 16/16	1
+arraySlice IN full scan preserves typed rows	1
+arraySlice IN indexed read preserves typed rows	1
+arraySlice IN uses named index and prunes 1/16	1
+arraySlice offset mismatch full scan preserves typed rows	1
+arraySlice offset mismatch indexed read preserves typed rows	1
+arraySlice offset mismatch declines index and reads 16/16	1
+arrayResize IN full scan preserves typed rows	1
+arrayResize IN indexed read preserves typed rows	1
+arrayResize IN uses named index and prunes 1/16	1
+arrayResize length mismatch full scan preserves every typed row	1
+arrayResize length mismatch indexed read preserves every typed row	1
+arrayResize length mismatch declines index and reads 16/16	1
 map physical	3	[]
 map physical	4	['3']
 array physical	3	[]

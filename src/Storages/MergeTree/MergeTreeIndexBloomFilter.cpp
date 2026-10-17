@@ -433,6 +433,32 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         if (!visited.emplace(pair).second)
             continue;
 
+        if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get()))
+        {
+            const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+            if (!right_tuple)
+                return false;
+
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+            const auto & left_names = left_tuple->getElementNames();
+            const auto & right_names = right_tuple->getElementNames();
+            if (left_elements.size() != right_elements.size()
+                || left_tuple->hasExplicitNames() != right_tuple->hasExplicitNames()
+                || left_names.size() != left_elements.size() || right_names.size() != right_elements.size()
+                || !budget.consume(left_elements.size()))
+                return false;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+            {
+                if (!budget.consume(left_names[i].size()) || !budget.consume(right_names[i].size())
+                    || left_names[i] != right_names[i])
+                    return false;
+                pending.emplace_back(left_elements[i], right_elements[i]);
+            }
+            continue;
+        }
+
         if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_type.get()))
         {
             const auto * right_map = typeid_cast<const DataTypeMap *>(right_type.get());
@@ -707,8 +733,7 @@ bool compareSupportedConstant(
     const IColumn & left_data = left_constant->getDataColumn();
     const IColumn & right_data = right_constant->getDataColumn();
 
-    if (mode == ExpressionMatchMode::DirectIN
-        && compareSupportedNumericConstant(left.result_type, right.result_type, left_data, right_data, budget))
+    if (compareSupportedNumericConstant(left.result_type, right.result_type, left_data, right_data, budget))
         return true;
 
     if (isStringType(left.result_type) && isStringType(right.result_type))

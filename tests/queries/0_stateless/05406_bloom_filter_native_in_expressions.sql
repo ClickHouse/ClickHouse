@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS t_bf_post5_map_expr;
 DROP TABLE IF EXISTS t_bf_post5_array_expr;
 DROP TABLE IF EXISTS t_bf_post5_map_collision;
 DROP TABLE IF EXISTS t_bf_post5_array_collision;
+DROP TABLE IF EXISTS t_bf_post5_intermediate_expr;
+DROP TABLE IF EXISTS t_bf_post5_array_slice_mismatch;
 
 CREATE TABLE t_bf_post5_types
 (
@@ -66,6 +68,46 @@ INSERT INTO t_bf_post5_array_expr VALUES
 (4, ['k4']), (5, ['k5']), (6, ['k6']), (7, ['k7']),
 (8, ['k8']), (9, ['k9']), (10, ['k10']), (11, ['k11']),
 (12, ['k12']), (13, ['k13']), (14, ['k14']), (15, ['k15']);
+
+CREATE TABLE t_bf_post5_intermediate_expr
+(
+    id UInt64,
+    x UInt64,
+    a Array(UInt64),
+    INDEX idx_tuple_hash cityHash64(tuple(x, x)) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_array_slice arraySlice(a, 1) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_array_resize arrayResize(a, 2) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_bf_post5_intermediate_expr
+SELECT toUInt64(number + 1),
+       if(number = 2, toUInt64(103), toUInt64(1000 + number)),
+       if(number = 2,
+          [toUInt64(103), toUInt64(203)],
+          [toUInt64(1000 + number), toUInt64(2000 + number)])
+FROM numbers(16);
+
+CREATE TABLE t_bf_post5_array_slice_mismatch
+(
+    id UInt64,
+    x UInt64,
+    a Array(UInt64),
+    INDEX idx_array_slice_second arraySlice(a, 2) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_bf_post5_array_slice_mismatch
+SELECT toUInt64(number + 1),
+       if(number = 2, toUInt64(103), toUInt64(1000 + number)),
+       if(number = 2,
+          [toUInt64(103), toUInt64(203)],
+          [toUInt64(1000 + number), toUInt64(2000 + number)])
+FROM numbers(16);
 
 -- Collision controls: index only the physical column whose display name matches a function.
 -- The computed function yields '3' on id 3; the quoted physical column yields it on id 4.
@@ -169,6 +211,149 @@ SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_post5_array_expr WHERE arraySort(a) IN (['3']))
 WHERE explain LIKE '%Name: idx_array_sort%' OR explain LIKE '%Granules:%';
 
+-- Separately constructed tuple types and exact numeric arguments remain matchable through expression intermediates.
+SELECT 'tuple hash IN full scan preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE cityHash64(tuple(x, x)) IN (cityHash64(tuple(toUInt64(103), toUInt64(103))))
+SETTINGS use_skip_indexes = 0;
+SELECT 'tuple hash IN indexed read preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE cityHash64(tuple(x, x)) IN (cityHash64(tuple(toUInt64(103), toUInt64(103))))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_tuple_hash') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'tuple hash IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_intermediate_expr
+      WHERE cityHash64(tuple(x, x)) IN (cityHash64(tuple(toUInt64(103), toUInt64(103)))));
+
+-- A different tuple child expression must decline the index without losing the exact matching row.
+SELECT 'tuple hash child expression mismatch full scan preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE cityHash64(tuple(x, x + toUInt64(1))) IN (cityHash64(tuple(toUInt64(103), toUInt64(104))))
+SETTINGS use_skip_indexes = 0;
+SELECT 'tuple hash child expression mismatch indexed read preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE cityHash64(tuple(x, x + toUInt64(1))) IN (cityHash64(tuple(toUInt64(103), toUInt64(104))))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_tuple_hash') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'tuple hash child expression mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_intermediate_expr
+      WHERE cityHash64(tuple(x, x + toUInt64(1))) IN (cityHash64(tuple(toUInt64(103), toUInt64(104)))));
+
+SELECT 'arraySlice IN full scan preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 0;
+SELECT 'arraySlice IN indexed read preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_slice') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arraySlice IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_intermediate_expr
+      WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1);
+
+-- A different numeric slice offset must decline the index that contains only the second slice.
+SELECT 'arraySlice offset mismatch full scan preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_array_slice_mismatch
+WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 0;
+SELECT 'arraySlice offset mismatch indexed read preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_array_slice_mismatch
+WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_slice_second') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arraySlice offset mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_array_slice_mismatch
+      WHERE arrayJoin(arraySlice(a, 1)) IN (toUInt64(103))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1);
+
+SELECT 'arrayResize IN full scan preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arrayResize(a, 2)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 0;
+SELECT 'arrayResize IN indexed read preserves typed rows',
+       arraySort(groupArray((toUInt64(id), toUInt64(x)))) = [(toUInt64(3), toUInt64(103))]
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arrayResize(a, 2)) IN (toUInt64(103))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_resize') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arrayResize IN uses named index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_intermediate_expr
+      WHERE arrayJoin(arrayResize(a, 2)) IN (toUInt64(103))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1);
+
+-- The numeric length mismatch must not use the shorter expression index: the extended zero matches all rows.
+SELECT 'arrayResize length mismatch full scan preserves every typed row',
+       arraySort(groupArray((toUInt64(id), toUInt64(x))))
+           = arrayMap(id -> (toUInt64(id), toUInt64(if(id = 3, 103, 999 + id))), range(1, 17))
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arrayResize(a, 3)) IN (toUInt64(0))
+SETTINGS use_skip_indexes = 0;
+SELECT 'arrayResize length mismatch indexed read preserves every typed row',
+       arraySort(groupArray((toUInt64(id), toUInt64(x))))
+           = arrayMap(id -> (toUInt64(id), toUInt64(if(id = 3, 103, 999 + id))), range(1, 17))
+FROM t_bf_post5_intermediate_expr
+WHERE arrayJoin(arrayResize(a, 3)) IN (toUInt64(0))
+SETTINGS use_skip_indexes = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_array_resize') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arrayResize length mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_post5_intermediate_expr
+      WHERE arrayJoin(arrayResize(a, 3)) IN (toUInt64(0))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1);
+
 -- Read back the physical collision values, then compare indexed/full-scan semantics.
 SELECT 'map physical', id, `mapKeys(m)` FROM t_bf_post5_map_collision WHERE id IN (3, 4) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT 'array physical', id, `arraySort(a)` FROM t_bf_post5_array_collision WHERE id IN (3, 4) ORDER BY id SETTINGS use_skip_indexes = 0;
@@ -194,3 +379,5 @@ DROP TABLE t_bf_post5_map_expr;
 DROP TABLE t_bf_post5_array_expr;
 DROP TABLE t_bf_post5_map_collision;
 DROP TABLE t_bf_post5_array_collision;
+DROP TABLE t_bf_post5_intermediate_expr;
+DROP TABLE t_bf_post5_array_slice_mismatch;

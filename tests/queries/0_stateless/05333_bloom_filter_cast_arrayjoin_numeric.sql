@@ -507,19 +507,23 @@ FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
       SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
                query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
 
-WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
-     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
-     WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
-     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
-     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
-     WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
-     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
-SELECT 'DateTime64 array wrapper mismatch preserves complete typed rows',
-       indexed = full_scan AND full_scan = arrayMap(x -> (x, toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')), range(1, 17));
+SELECT 'DateTime64 array wrapper mismatch full scan preserves complete typed rows',
+       arraySort(groupArray((toUInt64(id), value)))
+           = arrayMap(x -> (x, toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')), range(1, 17))
+FROM t_bf_fixed_array_wrappers
+ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
+WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+         query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32;
+
+SELECT 'DateTime64 array wrapper mismatch indexed read preserves complete typed rows',
+       arraySort(groupArray((toUInt64(id), value)))
+           = arrayMap(x -> (x, toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')), range(1, 17))
+FROM t_bf_fixed_array_wrappers
+ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
+WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+         query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32;
 
 WITH
     groupArray(explain) AS plan,
@@ -562,19 +566,23 @@ FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
       SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
                query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
 
-WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
-     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
-     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
-     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
-     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
-     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
-     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
-SELECT 'UUID array wrapper mismatch preserves complete typed rows',
-       indexed = full_scan AND full_scan = arrayMap(x -> (x, toUUID('00000000-0000-0000-0000-000000000998')), range(1, 17));
+SELECT 'UUID array wrapper mismatch full scan preserves complete typed rows',
+       arraySort(groupArray((toUInt64(id), value)))
+           = arrayMap(x -> (x, toUUID('00000000-0000-0000-0000-000000000998')), range(1, 17))
+FROM t_bf_fixed_array_wrappers
+ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
+WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+         query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32;
+
+SELECT 'UUID array wrapper mismatch indexed read preserves complete typed rows',
+       arraySort(groupArray((toUInt64(id), value)))
+           = arrayMap(x -> (x, toUUID('00000000-0000-0000-0000-000000000998')), range(1, 17))
+FROM t_bf_fixed_array_wrappers
+ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
+WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+         query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32;
 
 WITH
     groupArray(explain) AS plan,

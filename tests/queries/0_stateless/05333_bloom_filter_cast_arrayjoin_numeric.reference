@@ -40,11 +40,13 @@ DateTime64(7) trailing-zero mismatch full OFF/ON typed rows	1
 DateTime64(7) trailing-zero mismatch declines idx_dt64_cast_text, reads 16/16	1
 DateTime64 array wrapper selective needle preserves typed rows	1
 DateTime64 array wrapper selective needle prunes 1/16	1
-DateTime64 array wrapper mismatch preserves complete typed rows	1
+DateTime64 array wrapper mismatch full scan preserves complete typed rows	1
+DateTime64 array wrapper mismatch indexed read preserves complete typed rows	1
 DateTime64 array wrapper mismatch declines named index, reads 16/16	1
 UUID array wrapper selective needle preserves typed rows	1
 UUID array wrapper selective needle prunes 1/16	1
-UUID array wrapper mismatch preserves complete typed rows	1
+UUID array wrapper mismatch full scan preserves complete typed rows	1
+UUID array wrapper mismatch indexed read preserves complete typed rows	1
 UUID array wrapper mismatch declines named index, reads 16/16	1
 FixedString(4) constant append preserves typed padded rows	1
 FixedString(4) constant append prunes 1/16	1
