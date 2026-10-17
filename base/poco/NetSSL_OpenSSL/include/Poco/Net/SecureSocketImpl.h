@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 
 namespace Poco
 {
@@ -224,6 +225,21 @@ namespace Net
         void setMutex(std::unique_ptr<RecursiveMutex> mutex);
         /// Replace the lock guarding SSL operations.
 
+        void setIndependentReadWrite(bool flag);
+        /// Let `receiveBytes` and `sendBytes` progress independently when two callers use the
+        /// socket concurrently, one reading and one writing, as a full-duplex relay does.
+        /// When set, the lock guarding SSL operations is not held while `receiveBytes` or
+        /// `sendBytes` waits for the socket to become readable or writable, so a pending read does
+        /// not block a write, and each operation is bounded by its own timeout (the receive timeout
+        /// for reads, the send timeout for writes) instead of the larger of the two. A zero timeout
+        /// means no timeout at all for that operation.
+        /// The caller must not close the socket while another caller is reading or writing.
+
+        void setPeerIsLocalHost(bool flag);
+        /// Tell whether the peer is the local host, as known by the caller from the address it
+        /// connected to. When set, the relaxed certificate verification uses it instead of
+        /// `isLocalHost`, which resolves the peer host name with a blocking DNS lookup.
+
 
     protected:
         int completeHandshakeImpl(bool verifyPeer);
@@ -246,9 +262,14 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        bool mustRetry(int rc, int sslError, int socketError, Poco::Timespan & remaining_time);
+        bool mustRetry(
+            int rc, int sslError, int socketError, Poco::Timespan & remaining_time,
+            std::unique_lock<RecursiveMutex> * unlockWhileWaiting = nullptr, bool unbounded = false);
         /// Returns true if the last operation should be retried,
         /// otherwise false.
+        ///
+        /// If unlockWhileWaiting is given, it is unlocked during the wait and locked again after it.
+        /// If unbounded is true, the wait never times out.
         ///
         /// In case of an SSL_ERROR_WANT_READ error, and if the socket is
         /// blocking, waits for the underlying socket to become readable.
@@ -318,6 +339,10 @@ namespace Net
         bool _drivingHandshake = false;
         /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
         /// that waiting for the peer stays this class's job rather than the caller's.
+        bool _independentReadWrite = false;
+        /// See `setIndependentReadWrite`.
+        std::optional<bool> _peerIsLocalHost;
+        /// See `setPeerIsLocalHost`.
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;
@@ -327,6 +352,9 @@ namespace Net
 
         Poco::Timespan getMaxTimeoutOrLimit();
         //// Return max(send, receive) if non zero, otherwise maximum timeout
+
+        static Poco::Timespan getTimeoutOrLimit(Poco::Timespan timeout);
+        //// Return the timeout if non zero, otherwise maximum timeout
     };
 
 
