@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -52,6 +53,55 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
     }
 
     return makeASTFunction("toDateTime", literal_ast, std::move(tz_literal));
+}
+
+/// Functions that parse their string argument in the session timezone, with the number of arguments
+/// they have when the optional timezone, which would come right after them, is not given.
+const std::unordered_map<String, size_t> timezone_less_parsers = {
+    {"toDateTime", 1},
+    {"toDateTime64", 2},
+    {"parseDateTimeBestEffort", 1},
+    {"parseDateTime", 2},
+};
+
+/// A string literal inside a function call is parsed by the background mutation thread in the server timezone.
+/// Makes the session timezone explicit, `toDateTime('..')` becomes `toDateTime('..', 'tz')`, the same goes
+/// for `CAST('..' AS DateTime)`. Replaces the node in place and returns true if it was rewritten.
+bool tryAddTimezoneToLiteralParser(ASTPtr & ast, const String & timezone)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.empty())
+        return false;
+
+    auto & arguments = function->arguments->children;
+    const auto * literal = arguments[0]->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return false;
+
+    if (function->name == "CAST" && arguments.size() == 2)
+    {
+        const auto * type_name = arguments[1]->as<ASTLiteral>();
+        auto type = type_name && type_name->value.getType() == Field::Types::String
+            ? DataTypeFactory::instance().tryGet(type_name->value.safeGet<String>())
+            : nullptr;
+        if (!type)
+            return false;
+
+        const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get());
+        const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get());
+        if (!(dt && !dt->hasExplicitTimeZone()) && !(dt64 && !dt64->hasExplicitTimeZone()))
+            return false;
+
+        ast = wrapWithTimezone(arguments[0], type, timezone);
+        return true;
+    }
+
+    auto parser = timezone_less_parsers.find(function->name);
+    if (parser == timezone_less_parsers.end() || arguments.size() != parser->second)
+        return false;
+
+    arguments.push_back(make_intrusive<ASTLiteral>(Field(timezone)));
+    return true;
 }
 
 /// For a comparison like `column >= 'datetime-string'`, try to wrap the string
@@ -163,7 +213,11 @@ public:
     static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * function = ast->as<ASTFunction>())
+        {
             visit(*function, data);
+            if (tryAddTimezoneToLiteralParser(ast, data.session_timezone))
+                data.modified = true;
+        }
         else if (auto * assignment = ast->as<ASTAssignment>())
             visit(*assignment, data);
     }
