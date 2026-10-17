@@ -57,6 +57,8 @@ struct FormatSettings
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
+    bool try_infer_ipv4 = false;
+    bool try_infer_ipv6 = false;
     bool try_infer_exponent_floats = false;
 
     /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
