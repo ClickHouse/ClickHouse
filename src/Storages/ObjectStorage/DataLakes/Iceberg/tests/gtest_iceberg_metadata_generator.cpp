@@ -43,10 +43,8 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    auto metadata_info = generator.generateMetadataPathWithInfo();
     MetadataGenerator(metadata).generateNextMetadata(
         generator,
-        metadata_info.path,
         parent_snapshot_id,
         /*added_files=*/ 1,
         /*added_records=*/ 1,
@@ -65,10 +63,8 @@ String snapshotOperation(
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    auto metadata_info = generator.generateMetadataPathWithInfo();
     auto result = MetadataGenerator(metadata).generateNextMetadata(
         generator,
-        metadata_info.path,
         /*parent_snapshot_id=*/ -1,
         /*added_files=*/ 1,
         /*added_records=*/ 1,
@@ -86,8 +82,7 @@ void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_sna
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    auto metadata_info = generator.generateMetadataPathWithInfo();
-    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
+    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, parent_snapshot_id);
 }
 
 }
@@ -119,9 +114,10 @@ TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
 
 /// snapshots / metadata-log / snapshot-log are optional per the Iceberg spec, so external
 /// engines may produce empty-table metadata that omits any of them. generateNextMetadata must
-/// seed them rather than abort: a missing snapshots throws Poco::InvalidAccessException (empty
-/// Var extracted in getParentSnapshot), a missing log array dereferences a null Array::Ptr
-/// (Poco::NullPointerException, "Null pointer").
+/// seed snapshots and snapshot-log rather than abort: a missing snapshots throws
+/// Poco::InvalidAccessException (empty Var extracted in getParentSnapshot), a missing snapshot-log
+/// dereferences a null Array::Ptr (Poco::NullPointerException, "Null pointer"). metadata-log is
+/// left absent by the generator; addPreviousMetadataFile writes it.
 ///
 /// The exception is a missing `snapshots` combined with a live current snapshot: the commit
 /// preserves previous table contents by locating the parent snapshot's manifest list in
@@ -148,7 +144,7 @@ TEST(IcebergMetadataGenerator, AppendsSnapshotWhenMetadataLogMissing)
     auto metadata = makeMinimalV2Metadata();
     metadata->remove(Iceberg::f_metadata_log);
     EXPECT_NO_THROW(appendSnapshot(metadata));
-    EXPECT_EQ(metadata->getArray(Iceberg::f_metadata_log)->size(), 1u);
+    EXPECT_FALSE(metadata->has(Iceberg::f_metadata_log));
 }
 
 TEST(IcebergMetadataGenerator, AppendsSnapshotWhenSnapshotLogMissing)
@@ -205,6 +201,29 @@ TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
     EXPECT_EQ(
         metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
         metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
+}
+
+/// A file written by an older version lists itself last in `metadata-log`, so loading it as the base
+/// must not record it a second time.
+TEST(IcebergMetadataGenerator, AddPreviousMetadataFileDoesNotRepeatLegacySelfEntry)
+{
+    auto metadata = makeMinimalV2Metadata();
+    metadata->set(Iceberg::f_last_updated_ms, Int64(1700000000000));
+    Poco::JSON::Object::Ptr self_entry = new Poco::JSON::Object;
+    self_entry->set(Iceberg::f_metadata_file, "s3://bucket/table/metadata/v3.metadata.json");
+    self_entry->set(Iceberg::f_timestamp_ms, Int64(1700000000000));
+    metadata->getArray(Iceberg::f_metadata_log)->add(self_entry);
+
+    MetadataGenerator(metadata).addPreviousMetadataFile(
+        Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/table/metadata/v3.metadata.json"));
+    EXPECT_EQ(metadata->getArray(Iceberg::f_metadata_log)->size(), 1u);
+
+    MetadataGenerator(metadata).addPreviousMetadataFile(
+        Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/table/metadata/v4.metadata.json"));
+    auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
+    ASSERT_EQ(metadata_log->size(), 2u);
+    EXPECT_EQ(metadata_log->getObject(1)->getValue<String>(Iceberg::f_metadata_file), "s3://bucket/table/metadata/v4.metadata.json");
+    EXPECT_EQ(metadata_log->getObject(1)->getValue<Int64>(Iceberg::f_timestamp_ms), 1700000000000);
 }
 
 #endif
