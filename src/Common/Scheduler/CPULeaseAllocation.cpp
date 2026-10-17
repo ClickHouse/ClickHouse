@@ -162,13 +162,14 @@ void CPULeaseAllocation::RequestChain::granted()
         head = requests.begin();
 }
 
-bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost requested_ns_)
+bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost requested_ns_, SlotCount held_slots)
 {
     chassert(!enqueued);
 
     head->reset(cost);
     head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
+    head->scheduling.held_slots = static_cast<Int64>(held_slots); // compared with the `max_threads_soft_limit` by the leaf
 
     // Master and worker are distinct resources, each with its own per-query scheduling state, so
     // enqueue to the leaf this request actually targets. `ResourceLink::enqueue` stamps the scheduling
@@ -212,6 +213,15 @@ bool CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
         return canceled;
     }
     return false;
+}
+
+void CPULeaseAllocation::RequestChain::updateHeldSlots(SlotCount held_slots)
+{
+    if (!enqueued)
+        return;
+    auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue;
+    chassert(queue);
+    queue->updateHeldSlots(&*head, static_cast<Int64>(held_slots));
 }
 
 void CPULeaseAllocation::RequestChain::scheduled()
@@ -477,6 +487,7 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
             acquirable.store(false, std::memory_order_relaxed);
         requests.finish();
     }
+    requests.updateHeldSlots(allocated);
 
     // A preempted thread can run on the parked thread's slot
     resumePreempted();
@@ -762,6 +773,8 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
             if (!schedule(lock))
                 grantImpl(lock);
         }
+        else // The pending request may have been demoted while the query held more slots
+            requests.updateHeldSlots(allocated);
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
     }
 }
@@ -788,6 +801,8 @@ void CPULeaseAllocation::finishConsumedRequests(std::unique_lock<std::mutex> & l
         if (!schedule(lock))
             grantImpl(lock);
     }
+    else // The pending request may have been demoted while the query held more slots
+        requests.updateHeldSlots(allocated);
 }
 
 bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
@@ -797,7 +812,7 @@ bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
     requested_ns += cost;
-    if (requests.enqueue(cost, requested_ns))
+    if (requests.enqueue(cost, requested_ns, allocated))
     {
         scheduled_increment.add();
         wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));

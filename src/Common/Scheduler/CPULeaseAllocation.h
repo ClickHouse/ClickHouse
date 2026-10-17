@@ -371,7 +371,11 @@ private:
         RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
         void finish();
         void granted();
-        bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
+        /// `held_slots` is the number of slots the query holds besides the one requested
+        bool enqueue(ResourceCost cost, ResourceCost requested_ns_, SlotCount held_slots);
+        /// Report to the scheduler that the query now holds `held_slots` slots, so a pending request
+        /// demoted by the `max_threads_soft_limit` can be promoted back. No-op if nothing is enqueued.
+        void updateHeldSlots(SlotCount held_slots);
         /// Returns true if the pending request was removed before the scheduler processed it
         bool cancel(std::unique_lock<std::mutex> & lock);
         void scheduled();

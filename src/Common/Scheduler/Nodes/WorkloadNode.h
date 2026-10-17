@@ -60,7 +60,8 @@ struct WorkloadNodeTraits<ITimeSharedNode>
             SchedulerNodeInfo{},
             schedulerFor(settings_, unit),
             unit,
-            settings_.getQueueLimit(unit));
+            settings_.getQueueLimit(unit),
+            settings_.getThreadsSoftLimit(unit));
         result->basename = "queue";
         result->workload = workload;
         return result;
@@ -80,6 +81,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         auto & queue = static_cast<RequestQueue &>(*node);
         queue.updateQueueLimit(settings_.getQueueLimit(unit));
         queue.setScheduler(schedulerFor(settings_, unit));
+        queue.setThreadsSoftLimit(settings_.getThreadsSoftLimit(unit));
     }
 
     static void purgeQueue(const NodePtr & node)

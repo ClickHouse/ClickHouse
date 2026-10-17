@@ -107,6 +107,16 @@ public:
         /// back out — otherwise the query is charged for service it never received, delaying its
         /// future requests. Zero for the other algorithms.
         double vruntime_increment = 0.0;
+
+        /// Number of slots the query already holds when this request (for one more slot) is
+        /// enqueued; compared with the `max_threads_soft_limit` by the leaf. Stamped by
+        /// `CPULeaseAllocation` before enqueue and lowered through `ISchedulerQueue::updateHeldSlots`
+        /// while queued. Zero for requests that do not track held slots (never demoted).
+        Int64 held_slots = 0;
+
+        /// True while the request waits in the leaf's overflow queue (it exceeded the soft limit).
+        /// Owned by the `RequestQueue`: only accessed under the queue mutex.
+        bool demoted = false;
     } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
@@ -136,6 +146,8 @@ public:
         scheduling.key = {0.0, 0};
         scheduling.priority = {};
         scheduling.vruntime_increment = 0.0;
+        scheduling.held_slots = 0;
+        scheduling.demoted = false;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
