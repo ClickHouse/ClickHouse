@@ -740,12 +740,26 @@ static void collectConjuncts(const ActionsDAG::Node & node, std::vector<const Ac
 }
 
 /// A function's result name is derived from its arguments, so it is never hashed, not even as an argument name.
-static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash)
+static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash, bool allow_non_deterministic_constants)
 {
     const auto & value = skipAliases(node);
-    if (value.type == ActionsDAG::ActionType::ARRAY_JOIN || value.type == ActionsDAG::ActionType::PLACEHOLDER
-        || !value.isDeterministic())
+    if (value.type == ActionsDAG::ActionType::ARRAY_JOIN || value.type == ActionsDAG::ActionType::PLACEHOLDER)
         return false;
+
+    if (!value.isDeterministic())
+    {
+        /// A constant folded from e.g. `today()` is compared by its value, which is the same in all DAGs of one query.
+        if (!allow_non_deterministic_constants || !value.column || !isColumnConst(*value.column) || value.is_runtime_filter_id)
+            return false;
+        hash.update(value.type);
+        hash.update(value.result_type->getName());
+        if (value.type == ActionsDAG::ActionType::FUNCTION)
+            hash.update(value.function_base->getName());
+        else
+            hash.update(value.result_name);
+        value.column->updateHashWithValue(0, hash);
+        return true;
+    }
 
     hash.update(value.type);
     hash.update(value.result_type->getName());
@@ -771,21 +785,22 @@ static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash)
     {
         if (!name_insensitive && child->type != ActionsDAG::ActionType::FUNCTION)
             hash.update(child->result_name);
-        if (!updateConditionHash(*child, hash))
+        if (!updateConditionHash(*child, hash, allow_non_deterministic_constants))
             return false;
     }
     return true;
 }
 
-static std::optional<UInt64> getConditionHash(const ActionsDAG::Node & node)
+static std::optional<UInt64> getConditionHash(const ActionsDAG::Node & node, bool allow_non_deterministic_constants)
 {
     SipHash hash;
-    if (!updateConditionHash(node, hash))
+    if (!updateConditionHash(node, hash, allow_non_deterministic_constants))
         return {};
     return hash.get64();
 }
 
-bool isCoveredByFilter(const ActionsDAG::Node & condition, const ActionsDAG & filter, bool allow_top_k_filter)
+bool isCoveredByFilter(
+    const ActionsDAG::Node & condition, const ActionsDAG & filter, bool allow_top_k_filter, bool allow_non_deterministic_constants)
 {
     if (filter.getOutputs().size() != 1)
         return false;
@@ -794,7 +809,7 @@ bool isCoveredByFilter(const ActionsDAG::Node & condition, const ActionsDAG & fi
     collectConjuncts(*filter.getOutputs().front(), conjuncts);
     std::unordered_set<UInt64> filter_conjuncts;
     for (const auto * conjunct : conjuncts)
-        if (auto hash = getConditionHash(*conjunct))
+        if (auto hash = getConditionHash(*conjunct, allow_non_deterministic_constants))
             filter_conjuncts.insert(*hash);
 
     conjuncts.clear();
@@ -804,7 +819,7 @@ bool isCoveredByFilter(const ActionsDAG::Node & condition, const ActionsDAG & fi
         if (allow_top_k_filter && conjunct->type == ActionsDAG::ActionType::FUNCTION
             && conjunct->function_base->getName() == "__topKFilter" && isDeterministicAllowingTopKFilter(conjunct))
             continue;
-        auto hash = getConditionHash(*conjunct);
+        auto hash = getConditionHash(*conjunct, allow_non_deterministic_constants);
         if (!hash || !filter_conjuncts.contains(*hash))
             return false;
     }
@@ -863,6 +878,21 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 const ActionsDAG::Node * res = node_copy.children.front();
                 /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
+                if (!res->result_type->equals(*node->result_type))
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
+                return res;
+            }
+
+            if (node_copy.children.size() < node->children.size())
+            {
+                /// The copy still has the function built for all the arguments of `node`.
+                ActionsDAG tmp_dag;
+                FunctionOverloadResolverPtr func_builder_and
+                    = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                const ActionsDAG::Node * res = &tmp_dag.addFunction(func_builder_and, node_copy.children, {});
+                additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+
                 if (!res->result_type->equals(*node->result_type))
                     res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
 
