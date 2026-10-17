@@ -719,9 +719,11 @@ MutableColumnPtr readColumnFromDesc(
             {
                 uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
                 uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + static_cast<uint64_t>(i) * 8u);
-                if (wire_start != prev_wire_end || wire_end < wire_start)
+                /// Bound by total_chars here: a later decrease is detected only after this copy.
+                if (wire_start != prev_wire_end || wire_end < wire_start || wire_end > total_chars)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_COMPLEX String offsets must be non-decreasing and contiguous");
+                        "COLUMNAR_V1: COL_COMPLEX String offsets must be non-decreasing, contiguous and within {} chars",
+                        total_chars);
                 prev_wire_end = wire_end;
                 uint64_t str_len    = wire_end - wire_start;
                 chars.resize(ch_pos + str_len);

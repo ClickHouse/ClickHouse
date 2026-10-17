@@ -703,113 +703,89 @@ TEST(ColumnarWire, BoundsCheckComplexFixedDataOverflow)
                  DB::Exception);
 }
 
-// ── COL_COMPLEX bounds: array outer offset not monotonic ──────────────────────
+// ── COL_COMPLEX bounds: malformed offset tables ───────────────────────────────
+//
+// The frame ends exactly at the payload, so a decoder that reads past it
+// touches memory outside the allocation and ASan reports it.
+
+static std::vector<uint8_t> makeComplexFrame(uint32_t num_rows, const std::vector<uint64_t> & offsets, std::string_view chars)
+{
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
+    const uint64_t data_size = offsets.size() * sizeof(uint64_t) + chars.size();
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
+
+    ColDescriptor desc{};
+    desc.type        = COL_COMPLEX;
+    desc.data_offset = data_off;
+    desc.data_size   = data_size;
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
+
+    uint8_t * p = buf.data() + data_off;
+    for (uint64_t off : offsets)
+    {
+        unalignedStore<uint64_t>(p, off);
+        p += sizeof(uint64_t);
+    }
+    std::memcpy(p, chars.data(), chars.size());
+    return buf;
+}
+
+static void expectIncorrectData(const std::vector<uint8_t> & buf, const DataTypePtr & type, uint32_t num_rows, std::string_view message)
+{
+    try
+    {
+        readColumnarOutput({buf.data(), buf.size()}, type, num_rows);
+        FAIL() << "expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+        EXPECT_NE(e.message().find(message), std::string::npos) << e.message();
+    }
+}
 
 TEST(ColumnarWire, BoundsCheckComplexArrayOffsetNotMonotonic)
 {
-    const uint32_t num_rows = 2;
-    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
-
-    // Array(UInt64) for 2 rows: outer_offsets = [0, 3, 1] (not monotonic: 1 < 3)
-    // total_elems = outer_offs[2] = 1
-    std::vector<uint8_t> buf(data_off + 3 * 4);
-    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
-
-    ColDescriptor desc{};
-    desc.type        = COL_COMPLEX;
-    desc.data_offset = data_off;
-    desc.data_size   = 3 * 4;  // 3 uint32 offsets
-    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
-
-    // outer_offsets: [0, 3, 1] — non-monotonic
-    uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
-    outer_offs[0] = 0;
-    outer_offs[1] = 3;
-    outer_offs[2] = 1;
-
-    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+    // Array(UInt64), 2 rows: outer offsets [0, 3, 1], then 1 element.
+    auto buf = makeComplexFrame(2, {0, 3, 1, 42}, "");
+    expectIncorrectData(buf, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), 2,
+        "Array offsets must be non-decreasing");
 }
-
-// ── COL_COMPLEX bounds: array offset exceeds total_elems ──────────────────────
 
 TEST(ColumnarWire, BoundsCheckComplexArrayOffsetExceedsTotal)
 {
-    const uint32_t num_rows = 2;
-    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
-
-    // Array(UInt64) for 2 rows: outer_offsets = [0, 2, 5] (off[1]=2 > total=5? No, off[2]=5 > off[1]=2)
-    // Actually: off[2]=5 is total_elems, off[1]=2 should be <= 5 — that's fine.
-    // Let's make off[1]=10 > total=5.
-    std::vector<uint8_t> buf(data_off + 3 * 4);
-    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
-
-    ColDescriptor desc{};
-    desc.type        = COL_COMPLEX;
-    desc.data_offset = data_off;
-    desc.data_size   = 3 * 4;
-    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
-
-    uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
-    outer_offs[0] = 0;
-    outer_offs[1] = 10;  // exceeds total_elems = 5
-    outer_offs[2] = 5;
-
-    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+    // Array(UInt64), 2 rows: outer offsets [0, 10, 5], then 5 elements.
+    auto buf = makeComplexFrame(2, {0, 10, 5, 1, 2, 3, 4, 5}, "");
+    expectIncorrectData(buf, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), 2,
+        "Array offsets must be non-decreasing");
 }
-
-// ── COL_COMPLEX bounds: string offset not monotonic ──────────────────────────
 
 TEST(ColumnarWire, BoundsCheckComplexStringOffsetNotMonotonic)
 {
-    const uint32_t num_rows = 1;
-    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
-
-    // Array(String) for 1 row: wire_offsets = [0, 4, 2] (not monotonic: 2 < 4)
-    // total_chars = wire_offs[1] = 2
-    std::vector<uint8_t> buf(data_off + 3 * 4 + 4);  // offsets + 4 chars
-    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
-
-    ColDescriptor desc{};
-    desc.type        = COL_COMPLEX;
-    desc.data_offset = data_off;
-    desc.data_size   = 3 * 4 + 4;
-    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
-
-    uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
-    wire_offs[0] = 0;
-    wire_offs[1] = 4;
-    wire_offs[2] = 2;  // not monotonic
-
-    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+    // Array(String), 1 row of 3 strings: outer [0, 3], inner [0, 2, 1, 3], 3 chars.
+    auto buf = makeComplexFrame(1, {0, 3, 0, 2, 1, 3}, "abc");
+    expectIncorrectData(buf, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), 1,
+        "String offsets must be non-decreasing");
 }
-
-// ── COL_COMPLEX bounds: string offset exceeds total_chars ────────────────────
 
 TEST(ColumnarWire, BoundsCheckComplexStringOffsetExceedsTotal)
 {
-    const uint32_t num_rows = 1;
-    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
+    // Array(String), 1 row of 2 strings: outer [0, 2], inner [0, 10, 2], 2 chars.
+    auto buf = makeComplexFrame(1, {0, 2, 0, 10, 2}, "ab");
+    expectIncorrectData(buf, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), 1,
+        "String offsets must be non-decreasing");
+}
 
-    // Array(String) for 1 row: wire_offsets = [0, 10, 2] (off[1]=10 > total=2)
-    std::vector<uint8_t> buf(data_off + 3 * 4 + 2);
-    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
-
-    ColDescriptor desc{};
-    desc.type        = COL_COMPLEX;
-    desc.data_offset = data_off;
-    desc.data_size   = 3 * 4 + 2;
-    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
-
-    uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
-    wire_offs[0] = 0;
-    wire_offs[1] = 10;  // exceeds total_chars = 2
-    wire_offs[2] = 2;
-
-    auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+// The first string ends past total_chars and only the next offset decreases:
+// the bound must be checked before the first string is copied.
+TEST(ColumnarWire, BoundsCheckComplexTupleStringOffsetExceedsTotalBeforeCopy)
+{
+    // Tuple(String), 2 rows: offsets [0, 100, 1], 1 char.
+    auto buf = makeComplexFrame(2, {0, 100, 1}, "x");
+    expectIncorrectData(buf, std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>()}), 2,
+        "String offsets must be non-decreasing");
 }
 
 // ── COL_COMPLEX bounds: total_elems exceeds available data ────────────────────
