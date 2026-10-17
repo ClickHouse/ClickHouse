@@ -259,6 +259,8 @@ void deduplicateProjectionAliases(ASTSelectQuery & select_query)
     }
 }
 
+}
+
 /// Apply `deduplicateProjectionAliases` to every `SELECT` in the AST, including
 /// nested subqueries. Each subquery is its own alias scope and the whole AST is
 /// re-analyzed on the remote replica, so the duplicate-alias conflict can occur at
@@ -273,8 +275,6 @@ void deduplicateProjectionAliasesRecursive(const ASTPtr & ast)
 
     for (const auto & child : ast->children)
         deduplicateProjectionAliasesRecursive(child);
-}
-
 }
 
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
