@@ -1,0 +1,25 @@
+parallel fill	1
+parallel non-joined	1
+inner all or2	50000	1
+inner all or3	10049875	1
+inner any or2	29166	1
+left all or2	62500	1
+left any or3	50000	1
+left semi or2	37500	1
+left anti or2	12500	1
+right all or2	208334	1
+right all or3	10049875	1
+right any or2	200000	1
+right semi or2	41666	1
+right anti or2	158334	1
+full all or2	220834	1
+full all or3	10049875	1
+full all nullable	218511	1
+left all use_nulls	1460000	1
+right all filter	202417	1
+full all mixed	237500	1
+right keys	1484999	1
+full all or2 one thread	220834	1
+right mixed dictionary	200000	1
+full mixed dictionary	250000	1
+right or dictionary	208334	1

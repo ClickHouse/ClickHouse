@@ -111,14 +111,21 @@ void accumulateRows(const Block & block, JoinedRows & rows)
         rows.emplace_back(k[i], probe_id[i], rk[i], build_id[i]);
 }
 
-void drainResult(IJoinResult & result, JoinedRows & rows)
+/// Drains one result and returns the probe rows the join did not process, or an empty block. `HashJoin`
+/// stops a block at `max_joined_block_rows` and hands the rest back; `JoiningTransform` re-feeds it.
+Block drainResult(IJoinResult & result, JoinedRows & rows)
 {
     while (true)
     {
         auto r = result.next();
         accumulateRows(r.block, rows);
         if (r.is_last)
-            return;
+        {
+            if (!r.next_block)
+                return {};
+            r.next_block->filterBySelector();
+            return std::move(*r.next_block).getSourceBlock();
+        }
     }
 }
 
@@ -166,6 +173,8 @@ struct BuildOptions
     bool disable_amac = false;
     std::optional<size_t> partition_bits_for_tests;
     size_t l1_cache_bytes_for_tests = 0;
+    /// A second ON clause on the id columns: `probe_id = build_id`, so the join has two disjuncts.
+    bool second_clause_on_ids = false;
 };
 
 std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block & right_header, const BuildOptions & options = {})
@@ -190,6 +199,12 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
     {
         table_join->setAsofInequality(options.asof->inequality);
         table_join->getClauses().back().addKey(options.asof->left_name, options.asof->right_name, /*null_safe_comparison=*/false);
+    }
+    if (options.second_clause_on_ids)
+    {
+        table_join->addDisjunct();
+        table_join->getClauses().back().addKey(
+            left_header.getByPosition(1).name, right_header.getByPosition(1).name, /*null_safe_comparison=*/false);
     }
 
     NamesAndTypesList left_columns;
@@ -308,7 +323,7 @@ bool addBuildBlock(IJoin & join, const Block & block, size_t worker_id = 0)
     return join.addBlockToJoin(block, block.rows(), JoinBuildContext::forStream(worker_id, worker_id + 1));
 }
 
-void addBuildBlocks(PartitionedHashJoin & join, size_t distinct_keys, size_t duplicates, const BuildOptions & options)
+void addBuildBlocks(IJoin & join, size_t distinct_keys, size_t duplicates, const BuildOptions & options)
 {
     forEachBuildBlock(
         distinct_keys,
@@ -379,7 +394,7 @@ size_t smallestBudgetNotSpilling(size_t distinct_keys, size_t duplicates, const 
 /// tuple. With `rotate_lanes` the blocks go through `joinBlock(block, lane)`. The lane cycles over
 /// `0..8`. The join has 2 x num_threads = 8 probe lanes, so lane 8 does not exist. That call takes
 /// the shared pool of `acquireProbeScratch`.
-JoinedRows probeKeys(PartitionedHashJoin & join, const std::vector<UInt64> & keys, bool rotate_lanes = false)
+JoinedRows probeKeys(IJoin & join, const std::vector<UInt64> & keys, bool rotate_lanes = false)
 {
     JoinedRows rows;
     std::vector<UInt64> block_keys;
@@ -392,8 +407,12 @@ JoinedRows probeKeys(PartitionedHashJoin & join, const std::vector<UInt64> & key
         if (block_keys.size() == block_rows || i + 1 == keys.size())
         {
             Block block = twoColumnBlock("k", "probe_id", block_keys, ids);
-            auto result = rotate_lanes ? join.joinBlock(std::move(block), block_index++ % 9) : join.joinBlock(std::move(block));
-            drainResult(*result, rows);
+            while (block.rows() > 0)
+            {
+                auto result = rotate_lanes ? assert_cast<PartitionedHashJoin &>(join).joinBlock(std::move(block), block_index++ % 9)
+                                           : join.joinBlock(std::move(block));
+                block = drainResult(*result, rows);
+            }
             block_keys.clear();
             ids.clear();
         }
@@ -630,9 +649,9 @@ void expectCrossingStats(const CrossingBuild & crossing)
 TEST(PartitionedHashJoin, DenseSketchConcurrentRead)
 {
     constexpr UInt32 words = 300000;
-    constexpr size_t passes = 16;
+    constexpr UInt32 passes = 16;
+    constexpr UInt32 words_per_pass = words / passes;
     DenseHyperLogLog expected;
-    expected.add(7);
     for (UInt32 i = 0; i < words; ++i)
         expected.add(i);
 
@@ -641,20 +660,18 @@ TEST(PartitionedHashJoin, DenseSketchConcurrentRead)
     std::atomic<size_t> writer_phase{0};
     std::thread writer([&]
     {
-        for (size_t phase = 0; phase < passes; ++phase)
+        for (UInt32 phase = 0; phase < passes; ++phase)
         {
             reader_phase.wait(phase, std::memory_order_acquire);
-            for (size_t i = 0; i < 1024; ++i)
-                live.add(7);
+            for (UInt32 i = phase * words_per_pass; i < (phase + 1) * words_per_pass; ++i)
+                live.add(i);
             writer_phase.store(phase + 1, std::memory_order_release);
             writer_phase.notify_one();
         }
-        for (UInt32 i = 0; i < words; ++i)
-            live.add(i);
     });
 
     bool invalid_estimate = false;
-    for (size_t phase = 0; phase < passes; ++phase)
+    for (UInt32 phase = 0; phase < passes; ++phase)
     {
         reader_phase.store(phase + 1, std::memory_order_release);
         reader_phase.notify_one();
@@ -675,6 +692,47 @@ TEST(PartitionedHashJoin, DenseSketchConcurrentRead)
 
 /// Build blocks carrying a worker id, and probe blocks a lane, the join has no entry for must still
 /// produce the exact multiset.
+/// Several ON clauses: one table per clause over the one store. The key count is the clauses' sum, as
+/// `HashJoin` counts its maps, and the probe emits a matching pair once however many clauses reach it.
+TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
+{
+    BuildOptions options;
+    options.second_clause_on_ids = true;
+    const size_t distinct_keys = 20000;
+    const size_t duplicates = 3;
+    BuiltJoin built = buildJoin(distinct_keys, duplicates, options);
+
+    /// `rk` holds `distinct_keys` keys and `build_id` is unique per row.
+    EXPECT_EQ(built.join->getBuildStats(0).distinct_keys, distinct_keys);
+    EXPECT_EQ(built.join->getBuildStats(1).distinct_keys, distinct_keys * duplicates);
+    EXPECT_EQ(built.join->getTotalRowCount(), distinct_keys + distinct_keys * duplicates);
+
+    /// The same blocks through `HashJoin`: the oracle for the count and for the joined rows.
+    auto hash_join = std::make_shared<HashJoin>(
+        built.table_join,
+        std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
+        /*any_take_last_row_=*/false,
+        /*reserve_num_=*/0,
+        /*instance_id_=*/"",
+        HashJoinBuildLayout::oneBucket(1),
+        HashJoinStatsCollectingParams{},
+        /*allow_set_maps_=*/false);
+    addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
+    hash_join->onBuildPhaseFinish();
+    EXPECT_EQ(hash_join->getTotalRowCount(), built.join->getTotalRowCount());
+
+    /// Probe row `i` carries `k = keyOf(i)` and `probe_id = i`. The first clause finds the `duplicates`
+    /// rows of key `i`; the second finds the one row whose `build_id` is `i`. For `i = 0` the first clause
+    /// already emitted that row, so it appears once.
+    std::vector<UInt64> keys(distinct_keys);
+    for (size_t i = 0; i < keys.size(); ++i)
+        keys[i] = keyOf(i);
+    JoinedRows expected = probeKeys(*hash_join, keys);
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(expected.size(), distinct_keys * duplicates + distinct_keys - 1);
+    expectSameRows(probeKeys(*built.join, keys), expected);
+}
+
 TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
 {
     /// The lane table holds 2 x num_threads = 8 lanes, so `% 9` sends every ninth block to lane 8.
@@ -1057,88 +1115,151 @@ TEST(PartitionedHashJoin, SizesTableFromPublishedStatistics)
     expectTableInvariants(spill.join->getBuildStats(), 10000, 10000);
 }
 
+TEST(PartitionedHashJoin, SizesTwoClauseTablesFromSummedStatistics)
+{
+    static std::atomic<UInt64> key_counter{0};
+    const StatsCollectingParams params(
+        0xC1D15117C4C50000ULL + key_counter.fetch_add(1),
+        /*enable_=*/true,
+        /*max_entries_for_hash_table_stats_=*/1024,
+        /*max_size_to_preallocate_=*/1ULL << 40);
+    constexpr size_t distinct_keys = 12000;
+    constexpr size_t duplicates = 2;
+    constexpr size_t summed_keys = distinct_keys * (duplicates + 1);
+
+    BuildOptions options;
+    options.second_clause_on_ids = true;
+    options.stats_collecting_params = &params;
+    options.partition_bits_for_tests = 4;
+    auto cold = buildJoin(distinct_keys, duplicates, options);
+    EXPECT_EQ(cold.join->getBuildStats(0).distinct_keys, distinct_keys);
+    EXPECT_EQ(cold.join->getBuildStats(1).distinct_keys, distinct_keys * duplicates);
+    const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    ASSERT_TRUE(published.has_value());
+    EXPECT_EQ(published->ht_size, summed_keys);
+
+    const auto preallocated_before = ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables];
+    auto warm = makeJoin(options);
+    addBuildBlocks(*warm.join, distinct_keys, duplicates, options);
+    EXPECT_EQ(warm.join->getFillSketchEstimateForTests(0), 0.0);
+    EXPECT_EQ(warm.join->getFillSketchEstimateForTests(1), 0.0);
+    finishBuild(warm, options);
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables] - preallocated_before,
+        summed_keys);
+    for (size_t clause_idx = 0; clause_idx < 2; ++clause_idx)
+    {
+        const auto stats = warm.join->getBuildStats(clause_idx);
+        EXPECT_EQ(stats.hll_estimate, static_cast<double>(summed_keys));
+        EXPECT_EQ(stats.table_size_degree, Key64Table::degreeFor(distinct_keys * duplicates));
+        EXPECT_EQ(stats.table_resizes, 0u);
+    }
+    EXPECT_EQ(warm.join->getBuildStats(0).distinct_keys, distinct_keys);
+    EXPECT_EQ(warm.join->getBuildStats(1).distinct_keys, distinct_keys * duplicates);
+    EXPECT_EQ(warm.join->getTotalRowCount(), summed_keys);
+
+    auto hash_join = std::make_shared<HashJoin>(
+        warm.table_join,
+        std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
+        /*any_take_last_row_=*/false,
+        /*reserve_num_=*/0,
+        /*instance_id_=*/"",
+        HashJoinBuildLayout::oneBucket(1),
+        HashJoinStatsCollectingParams{},
+        /*allow_set_maps_=*/false);
+    addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
+    hash_join->onBuildPhaseFinish();
+    std::vector<UInt64> keys(distinct_keys);
+    for (size_t i = 0; i < keys.size(); ++i)
+        keys[i] = keyOf(i);
+    JoinedRows expected = probeKeys(*hash_join, keys);
+    std::sort(expected.begin(), expected.end());
+    expectSameRows(probeKeys(*warm.join, keys), expected);
+}
+
 TEST(PartitionedHashJoin, LiveEstimateGatePreservesFirstSpillPoint)
 {
     constexpr size_t keys_per_block = 512;
     constexpr size_t blocks = 16;
 
-    const auto first_spill = [](const std::vector<size_t> & predictions, size_t budget)
+    for (bool second_clause_on_ids : {false, true})
     {
-        return static_cast<size_t>(std::find_if(predictions.begin(), predictions.end(), [budget](size_t bytes) { return bytes >= budget; })
-                                   - predictions.begin());
-    };
-
-    for (size_t lanes : {1, 2, 4, 8, 16})
-    {
-        SCOPED_TRACE(lanes);
-        const auto prediction_trace = [&](bool gate_enabled, std::vector<size_t> & estimates)
+        SCOPED_TRACE(second_clause_on_ids ? "two clauses" : "one clause");
+        for (size_t lanes : {1, 2, 4, 8, 16})
         {
-            BuildOptions options;
-            options.num_threads = lanes;
-            options.max_bytes_before_external_join = 1ULL << 30;
-            auto built = makeJoin(options);
-            built.join->setLiveEstimateGateEnabledForTests(gate_enabled);
-
-            std::vector<size_t> predictions;
-            predictions.reserve(blocks + 6);
-            const auto add_block = [&](size_t first_key, size_t count, size_t lane, size_t block_no, bool repeat_key = false)
+            SCOPED_TRACE(lanes);
+            const auto prediction_trace = [&](bool gate_enabled, std::array<std::vector<size_t>, 2> & estimates)
             {
-                /// `SpillingHashJoin` checks the prediction before admitting each block.
-                predictions.push_back(built.join->predictedResidentBytes());
-                estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
+                BuildOptions options;
+                options.num_threads = lanes;
+                options.second_clause_on_ids = second_clause_on_ids;
+                options.max_bytes_before_external_join = 1ULL << 30;
+                auto built = makeJoin(options);
+                built.join->setLiveEstimateGateEnabledForTests(gate_enabled);
 
-                std::vector<UInt64> keys;
-                std::vector<UInt64> ids;
-                keys.reserve(count);
-                ids.reserve(count);
-                for (size_t i = 0; i < count; ++i)
+                std::vector<size_t> predictions;
+                predictions.reserve(blocks + 6);
+                const auto record_prediction = [&](bool at_barrier = false)
                 {
-                    keys.push_back(keyOf(first_key + (repeat_key ? 0 : i)));
-                    ids.push_back(block_no * 20000 + i);
-                }
-                EXPECT_TRUE(addBuildBlock(*built.join, twoColumnBlock("rk", "build_id", keys, ids), lane));
+                    /// `SpillingHashJoin` checks the prediction before admitting each block.
+                    predictions.push_back(built.join->predictedResidentBytes(at_barrier));
+                    for (size_t clause_idx = 0; clause_idx < (second_clause_on_ids ? 2 : 1); ++clause_idx)
+                        estimates[clause_idx].push_back(built.join->getCachedLiveDistinctEstimateForTests(clause_idx));
+                };
+                const auto add_block = [&](size_t first_key, size_t count, size_t lane, size_t block_no, bool repeat_key = false)
+                {
+                    record_prediction();
+
+                    std::vector<UInt64> keys;
+                    std::vector<UInt64> ids;
+                    keys.reserve(count);
+                    ids.reserve(count);
+                    for (size_t i = 0; i < count; ++i)
+                    {
+                        keys.push_back(keyOf(first_key + (repeat_key ? 0 : i)));
+                        ids.push_back(block_no * 20000 + i);
+                    }
+                    EXPECT_TRUE(addBuildBlock(*built.join, twoColumnBlock("rk", "build_id", keys, ids), lane));
+                };
+                for (size_t block_no = 0; block_no < blocks; ++block_no)
+                    add_block(block_no * keys_per_block, keys_per_block, block_no % lanes, block_no);
+
+                add_block(100000, 11000, 0, blocks);
+                /// The repeated `rk` key leaves clause 0 clean while fresh `build_id` values dirty clause 1.
+                add_block(0, 1200, 0, blocks + 1, /*repeat_key=*/true);
+                add_block(200000, 1000, 2 % lanes, blocks + 2);
+                add_block(0, 300, 0, blocks + 3, /*repeat_key=*/true);
+
+                record_prediction(/*at_barrier=*/true);
+                return predictions;
             };
-            for (size_t block_no = 0; block_no < blocks; ++block_no)
-                add_block(block_no * keys_per_block, keys_per_block, block_no % lanes, block_no);
 
-            add_block(100000, 11000, 0, blocks);
-            /// Repeating a key in its original lane forces a clean refresh before new keys arrive.
-            add_block(0, 1200, 0, blocks + 1, /*repeat_key=*/true);
-            add_block(200000, 1000, 2 % lanes, blocks + 2);
-            add_block(0, 300, 0, blocks + 3, /*repeat_key=*/true);
-
-            /// The wrapper makes one last prediction when no further block can trigger a switch.
-            predictions.push_back(built.join->predictedResidentBytes(/*at_barrier=*/true));
-            estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
-            return predictions;
-        };
-
-        std::vector<size_t> full_estimates;
-        std::vector<size_t> gated_estimates;
-        const auto full_merge = prediction_trace(/*gate_enabled=*/false, full_estimates);
-        const auto gated = prediction_trace(/*gate_enabled=*/true, gated_estimates);
-        ASSERT_EQ(gated.size(), full_merge.size());
-        EXPECT_EQ(gated, full_merge);
-        EXPECT_EQ(gated_estimates, full_estimates);
-        ASSERT_GT(*std::min_element(full_merge.begin(), full_merge.end()), 0u);
-
-        for (size_t prediction : full_merge)
-        {
-            for (size_t budget : {prediction - 1, prediction, prediction + 1})
-                EXPECT_EQ(first_spill(gated, budget), first_spill(full_merge, budget)) << "budget " << budget;
+            std::array<std::vector<size_t>, 2> full_estimates;
+            std::array<std::vector<size_t>, 2> gated_estimates;
+            const auto full_merge = prediction_trace(/*gate_enabled=*/false, full_estimates);
+            const auto gated = prediction_trace(/*gate_enabled=*/true, gated_estimates);
+            ASSERT_EQ(gated.size(), full_merge.size());
+            EXPECT_EQ(gated, full_merge);
+            EXPECT_EQ(gated_estimates, full_estimates);
+            ASSERT_GT(*std::min_element(full_merge.begin(), full_merge.end()), 0u);
+            if (second_clause_on_ids && lanes > 1)
+            {
+                EXPECT_EQ(full_estimates[0][blocks + 1], full_estimates[0][blocks + 2]);
+                EXPECT_GT(full_estimates[1][blocks + 2], full_estimates[1][blocks + 1]);
+            }
         }
     }
 }
 
-static void checkLiveEstimateConcurrentFill(bool spill_enabled)
+static void checkLiveEstimateConcurrentFill(bool spill_enabled, size_t workers, bool second_clause_on_ids)
 {
-    constexpr size_t workers = 4;
-    constexpr size_t blocks_per_worker = 16;
+    const size_t blocks_per_worker = 64 / workers;
     constexpr size_t keys_per_block = 1024;
-    constexpr size_t distinct_keys = workers * blocks_per_worker * keys_per_block;
+    const size_t distinct_keys = workers * blocks_per_worker * keys_per_block;
 
     BuildOptions options;
     options.num_threads = workers;
+    options.second_clause_on_ids = second_clause_on_ids;
     options.max_bytes_before_external_join = spill_enabled ? 1ULL << 30 : 0;
     auto built = makeJoin(options);
 
@@ -1146,22 +1267,17 @@ static void checkLiveEstimateConcurrentFill(bool spill_enabled)
     std::atomic<bool> start{false};
     std::atomic<bool> done{false};
     std::atomic<bool> inserts_ok{true};
-    std::atomic<size_t> active_writers{0};
-    std::atomic<size_t> reads_during_fill{0};
-    std::thread reader([&]
-    {
-        ThreadStatus thread_status;
-        reader_ready.store(true, std::memory_order_release);
-        reader_ready.notify_one();
-        start.wait(false, std::memory_order_acquire);
-        while (!done.load(std::memory_order_acquire))
+    std::optional<std::thread> reader;
+    if (workers > 1)
+        reader.emplace([&]
         {
-            const bool active_before = active_writers.load(std::memory_order_acquire) != 0;
-            built.join->predictedResidentBytes();
-            if (active_before && active_writers.load(std::memory_order_acquire) != 0)
-                reads_during_fill.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
+            ThreadStatus thread_status;
+            reader_ready.store(true, std::memory_order_release);
+            reader_ready.notify_one();
+            start.wait(false, std::memory_order_acquire);
+            while (!done.load(std::memory_order_acquire))
+                built.join->predictedResidentBytes();
+        });
 
     std::vector<std::thread> writers;
     writers.reserve(workers);
@@ -1181,41 +1297,83 @@ static void checkLiveEstimateConcurrentFill(bool spill_enabled)
                 for (size_t i = 0; i < keys_per_block; ++i)
                 {
                     keys.push_back(keyOf(first + i));
-                    ids.push_back(first + i);
+                    ids.push_back(second_clause_on_ids ? (first + i + distinct_keys / 2) % distinct_keys : first + i);
                 }
                 const Block block = twoColumnBlock("rk", "build_id", keys, ids);
-                active_writers.fetch_add(1, std::memory_order_release);
                 if (!addBuildBlock(*built.join, block, worker))
                     inserts_ok.store(false, std::memory_order_relaxed);
-                active_writers.fetch_sub(1, std::memory_order_release);
             }
         });
     }
 
-    reader_ready.wait(false, std::memory_order_acquire);
+    if (reader)
+        reader_ready.wait(false, std::memory_order_acquire);
     start.store(true, std::memory_order_release);
     start.notify_all();
     for (auto & writer : writers)
         writer.join();
     done.store(true, std::memory_order_release);
-    reader.join();
+    if (reader)
+        reader->join();
 
     ASSERT_TRUE(inserts_ok.load(std::memory_order_relaxed));
-    EXPECT_GT(reads_during_fill.load(std::memory_order_relaxed), 0u);
+    if (reader)
+    {
+        built.join->predictedResidentBytes();
+        EXPECT_GT(built.join->getCachedLiveDistinctEstimateForTests(0), 0u);
+        if (second_clause_on_ids)
+            EXPECT_GT(built.join->getCachedLiveDistinctEstimateForTests(1), 0u);
+    }
     finishBuild(built, options);
     EXPECT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits);
     expectTableInvariants(built.join->getBuildStats(), distinct_keys, distinct_keys);
-    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+    if (second_clause_on_ids)
+    {
+        expectTableInvariants(built.join->getBuildStats(1), distinct_keys, distinct_keys);
+        EXPECT_EQ(built.join->getTotalRowCount(), 2 * distinct_keys);
+    }
+    if (!second_clause_on_ids)
+    {
+        probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+        return;
+    }
+
+    JoinedRows expected;
+    expected.reserve(2 * distinct_keys);
+    std::vector<UInt64> keys(distinct_keys + 100);
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        keys[i] = i < distinct_keys ? keyOf(i) : i * key_step + 2;
+        if (i < distinct_keys)
+        {
+            expected.emplace_back(keyOf(i), i, keyOf(i), (i + distinct_keys / 2) % distinct_keys);
+            expected.emplace_back(keyOf(i), i, keyOf((i + distinct_keys / 2) % distinct_keys), i);
+        }
+    }
+    std::sort(expected.begin(), expected.end());
+    expectSameRows(probeKeys(*built.join, keys), expected);
 }
 
 TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithSpill)
 {
-    checkLiveEstimateConcurrentFill(true);
+    for (bool second_clause_on_ids : {false, true})
+        for (size_t workers : {1, 2, 4, 8, 16})
+        {
+            SCOPED_TRACE(second_clause_on_ids ? "two clauses" : "one clause");
+            SCOPED_TRACE(workers);
+            checkLiveEstimateConcurrentFill(true, workers, second_clause_on_ids);
+        }
 }
 
 TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithoutSpill)
 {
-    checkLiveEstimateConcurrentFill(false);
+    for (bool second_clause_on_ids : {false, true})
+        for (size_t workers : {1, 2, 4, 8, 16})
+        {
+            SCOPED_TRACE(second_clause_on_ids ? "two clauses" : "one clause");
+            SCOPED_TRACE(workers);
+            checkLiveEstimateConcurrentFill(false, workers, second_clause_on_ids);
+        }
 }
 
 /// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table
@@ -1700,7 +1858,7 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     std::atomic<size_t> accumulated_bytes{0};
     size_t a_destructions = 0;
     size_t b_destructions = 0;
-    HashJoinClause clause(schema, *table_join, false, 1, 0, build_blocks, accumulated_bytes, getLogger("AsofGrowthCleanup"));
+    HashJoinClause clause(schema, *table_join, 0, false, 1, 0, build_blocks, accumulated_bytes, getLogger("AsofGrowthCleanup"));
     clause.beginSinglePartitionInsert(1, 129, false);
     auto & table = *std::get<HashJoinTableMapsAsof>(clause.tableMaps().maps).key64;
     using Table = std::remove_reference_t<decltype(table)>;
@@ -1732,7 +1890,8 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     keys.insert(keys.end(), padding.begin() + 1, padding.end());
     const Block block = uint64Block({{"rk", keys}, {"ts", std::vector<UInt64>(keys.size(), 1)}});
     HashJoinClause::FillBlock fill;
-    fill.key_columns = {block.getByName("rk").column.get(), block.getByName("ts").column.get()};
+    fill.clauses.resize(1);
+    fill.clauses[0].key_columns = {block.getByName("rk").column.get(), block.getByName("ts").column.get()};
     fill.rows = keys.size();
     clause.insertSingleLaneBlock(fill);
 
