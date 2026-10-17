@@ -51,7 +51,7 @@ The terminal uses [xterm.js](https://xtermjs.org/) for rendering. All assets are
 
 ## Integration with `/play` {#play-integration}
 
-The [`/play`](/concepts/features/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (for example, when `enable_webterminal` is set to `false`).
+The [`/play`](/concepts/features/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page probes `/webterminal` on the configured server and hides the terminal controls when the endpoint is unavailable (for example, when `enable_webterminal` is set to `false`). The panel embeds the terminal only when that server is at the origin of the `/play` page itself, because the embedded terminal accepts credentials only from a parent at its own origin or on its short, fixed allowlist of trusted hosts. When `/play` is pointed at a server of another origin, the icon opens the terminal of that server in a new tab instead, where the user logs in by hand.
 
 ## Integration with the documentation website {#docs-integration}
 
