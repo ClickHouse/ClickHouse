@@ -1,0 +1,3 @@
+read_after_alter	20000	199990000
+distinct_marks_per_part	2
+total	40000	799980000
