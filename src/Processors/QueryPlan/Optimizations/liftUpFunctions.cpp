@@ -132,6 +132,13 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     auto description = parent_step->getStepDescription();
     auto new_expression_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
     new_expression_step->setStepDescription(fmt::format("{} [lifted up part]", description), settings.max_step_description_length);
+
+    /// A sort `LIMIT` that fits in one block leaves the lifted expression a single chunk, and a single
+    /// chunk cannot be spread over more than one stream: the scatter/gather pair would only add
+    /// processors to the very case the lift already made cheap.
+    const UInt64 sort_limit = sorting_step->getLimit();
+    if (sort_limit == 0 || sort_limit > sorting_step->getSettings().max_block_size)
+        new_expression_step->setParallelizeSingleStream();
     parent_step = std::move(new_expression_step);
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
