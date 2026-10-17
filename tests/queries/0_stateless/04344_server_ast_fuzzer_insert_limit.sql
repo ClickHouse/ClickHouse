@@ -25,10 +25,7 @@ SELECT sum(number) FROM numbers(100)
 SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw';
 
 DROP TABLE IF EXISTS t_04344;
--- Keep this table on the local disk: on a write-through filesystem cache, debug and sanitizer builds run
--- randomized full-cache consistency checks that can block a part write past max_execution_time.
-CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree ORDER BY a
-SETTINGS storage_policy = 'default';
+CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04344 SELECT number, toString(number), range(number % 8) FROM numbers(100)
 SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw';
 

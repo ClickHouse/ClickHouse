@@ -198,8 +198,6 @@ private:
 
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsUTF8" : "sparseGrams";
-    static constexpr auto signature
-        = "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(String)";
     static constexpr auto strings_argument_position = 0uz;
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
@@ -243,7 +241,7 @@ public:
         if (min_ngram_length < 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_ngram_length' must be greater or equal to 3");
 
-        if (arguments.size() >= 3)
+        if (arguments.size() == 3)
             max_ngram_length = arguments[2].column->getUInt(0);
 
         if (max_ngram_length < min_ngram_length)

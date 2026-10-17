@@ -227,7 +227,7 @@ void BigQueryConfiguration::checkHeaders(const ContextPtr & context) const
         headers.emplace_back("Authorization", "Bearer " + access_token);
     if (!billing_project.empty())
         headers.emplace_back("X-Goog-User-Project", billing_project);
-    context->getHTTPHeaderFilter().checkHeaders(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 }

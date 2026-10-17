@@ -4,14 +4,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/DecimalScaleBounds.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <string_view>
 #include <type_traits>
 
 namespace DB
@@ -115,67 +113,6 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     return createDecimal<DataTypeDecimal>(precision, scale);
 }
 
-namespace
-{
-
-/// Out of line: an inlined `throw` gives the per-element conversions below a
-/// `-fstack-protector-strong` canary. Values by value, so no local's address escapes.
-template <typename T, typename U>
-[[noreturn]] NO_INLINE void throwDecimalScaleOverflow(std::string_view to_family_name, T value, U multiplier)
-{
-    throw Exception(
-        ErrorCodes::DECIMAL_OVERFLOW,
-        "{} convert overflow while multiplying {} by scale {}",
-        to_family_name,
-        toString(value),
-        toString(multiplier));
-}
-
-template <typename T, typename U>
-[[noreturn]] NO_INLINE void throwDecimalRangeOverflow(std::string_view to_family_name, T value, U min, U max)
-{
-    throw Exception(
-        ErrorCodes::DECIMAL_OVERFLOW,
-        "{} convert overflow: {} is not in range ({}, {})",
-        to_family_name,
-        toString(value),
-        toString(min),
-        toString(max));
-}
-
-[[noreturn]] NO_INLINE void throwDecimalConvertOverflow(std::string_view to_family_name, std::string_view reason)
-{
-    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. {}", to_family_name, reason);
-}
-
-/// Whether the integer `value` keeps its value when cast to the signed intermediate type `To`.
-template <typename To, typename From>
-bool fitsIntermediate(From value)
-{
-    if constexpr (is_unsigned_v<From> && sizeof(From) >= sizeof(To))
-        return value <= static_cast<From>(std::numeric_limits<To>::max());
-    else
-        return true;
-}
-
-/// The integers of type `From` whose product with the positive `multiplier` fits into `To`.
-template <typename From, typename To, typename Wide>
-std::pair<From, From> scaledSourceBounds(Wide multiplier)
-{
-    Wide min_value = static_cast<Wide>(std::numeric_limits<To>::min()) / multiplier;
-    Wide max_value = static_cast<Wide>(std::numeric_limits<To>::max()) / multiplier;
-    if constexpr (sizeof(From) < sizeof(To))
-    {
-        min_value = std::max(min_value, static_cast<Wide>(std::numeric_limits<From>::min()));
-        max_value = std::min(max_value, static_cast<Wide>(std::numeric_limits<From>::max()));
-    }
-    else if constexpr (is_unsigned_v<From>)
-        min_value = 0;
-    return {static_cast<From>(min_value), static_cast<From>(max_value)};
-}
-
-}
-
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
 ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
@@ -190,11 +127,12 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
     MaxNativeType converted_value;
     if (scale_to > scale_from)
     {
-        const MaxNativeType multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
-        if (DecimalScaleBounds<MaxNativeType>(multiplier).mulOverflow(static_cast<MaxNativeType>(value.value), converted_value))
+        converted_value = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
+        if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
         {
             if constexpr (throw_exception)
-                throwDecimalScaleOverflow(ToDataType::family_name, value.value, multiplier);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
+                                std::string(ToDataType::family_name), toString(value.value), toString(converted_value));
             else
                 return ReturnType(false);
         }
@@ -214,11 +152,10 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
         {
             if constexpr (throw_exception)
-                throwDecimalRangeOverflow(
-                    ToDataType::family_name,
-                    converted_value,
-                    std::numeric_limits<typename ToFieldType::NativeType>::min(),
-                    std::numeric_limits<typename ToFieldType::NativeType>::max());
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
+                                std::string(ToDataType::family_name), toString(converted_value),
+                                toString(std::numeric_limits<typename ToFieldType::NativeType>::min()),
+                                toString(std::numeric_limits<typename ToFieldType::NativeType>::max()));
             else
                 return ReturnType(false);
         }
@@ -251,11 +188,10 @@ NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
     if (scale_to > scale_from)
     {
         const MaxNativeType multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
-        const DecimalScaleBounds<MaxNativeType> bounds(multiplier);
         for (size_t i = 0; i < size; ++i)
         {
             MaxNativeType converted_value;
-            bool mul_overflow = bounds.mulOverflow(static_cast<MaxNativeType>(from[i].value), converted_value);
+            bool mul_overflow = common::mulOverflow(static_cast<MaxNativeType>(from[i].value), multiplier, converted_value);
 
             bool range_overflow = false;
             if constexpr (check_overflow)
@@ -474,7 +410,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
         if (!isFinite(value))
         {
             if constexpr (throw_exception)
-                throwDecimalConvertOverflow(ToDataType::family_name, "Cannot convert infinity or NaN to decimal");
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
             else
                 return ReturnType(false);
         }
@@ -485,7 +421,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
             out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
         {
             if constexpr (throw_exception)
-                throwDecimalConvertOverflow(ToDataType::family_name, "Float is out of Decimal range");
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
             else
                 return ReturnType(false);
         }
@@ -496,17 +432,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
     else
     {
         if constexpr (is_big_int_v<FromFieldType>)
-        {
-            if (!fitsIntermediate<Int256>(value))
-            {
-                if constexpr (throw_exception)
-                    throwDecimalRangeOverflow(
-                        ToDataType::family_name, value, std::numeric_limits<ToNativeType>::min(), std::numeric_limits<ToNativeType>::max());
-                else
-                    return ReturnType(false);
-            }
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal256>, ToDataType, ReturnType>(static_cast<Int256>(value), 0, scale, result));
-        }
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(static_cast<Int128>(value), 0, scale, result));
         else
@@ -584,8 +510,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             for (size_t i = 0; i < size; ++i)
             {
                 WideType converted_value = static_cast<WideType>(from[i]);
-                bool overflow = !fitsIntermediate<WideType>(from[i])
-                             || converted_value < std::numeric_limits<ToNativeType>::min()
+                bool overflow = converted_value < std::numeric_limits<ToNativeType>::min()
                              || converted_value > std::numeric_limits<ToNativeType>::max();
 
                 if constexpr (has_nullmap)
@@ -604,8 +529,6 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         else
         {
             const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
-            const auto [min_value, max_value] = scaledSourceBounds<FromFieldType, ToNativeType>(multiplier);
-            const auto to_multiplier = static_cast<ToNativeType>(multiplier);
             /// At x86-64-v3 with `__AVX2__` the loop and SLP vectorizers widen the per-row Int128
             /// stores into YMM/XMM packs (`vmovq`/`vpunpcklqdq`/`vmovdqu`) wrapping the BMI2
             /// `mulxq`, regressing `sum #16`/`decimal_casts #2` ~7-12%. Plain GPR stores keep the
@@ -615,21 +538,22 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
 #endif
             for (size_t i = 0; i < size; ++i)
             {
-                bool overflow = from[i] > max_value;
-                if constexpr (is_signed_v<FromFieldType>)
-                    overflow |= from[i] < min_value;
-                ToNativeType converted_value = common::mulIgnoreOverflow(static_cast<ToNativeType>(from[i]), to_multiplier);
+                WideType converted_value;
+                bool overflow = common::mulOverflow(static_cast<WideType>(from[i]), multiplier, converted_value);
+
+                overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
+                         || converted_value > std::numeric_limits<ToNativeType>::max();
 
                 if constexpr (has_nullmap)
                 {
                     nullmap[i] = overflow;
-                    to[i] = overflow ? static_cast<ToNativeType>(0) : converted_value;
+                    to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(converted_value);
                 }
                 else
                 {
                     if (overflow)
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
-                    to[i] = converted_value;
+                    to[i] = static_cast<ToNativeType>(converted_value);
                 }
             }
         }
@@ -788,9 +712,9 @@ Some functions on Decimal return result as Float64 (for example, var or stddev).
 
 During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
 
-<Warning>
+:::warning
 Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
-</Warning>
+:::
 
 ```sql
 SELECT toDecimal32(2, 4) AS x, x / 3
@@ -831,14 +755,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-With `decimal_check_overflow` enabled (the default), a comparison of values with different scales is exact, even when a value does not fit into the type at the common scale:
+Overflow checks happen not only on arithmetic operations but also on value comparison:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-1
+DB::Exception: Can't compare.
 ```
 
 **See also**

@@ -7,11 +7,13 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'إضافة']
 ---
 
-## المقدمة {#introduction}
+<div id="introduction">
+  ## المقدمة
+</div>
 
-يُشغِّل [pg&#95;clickhouse]، وهو إضافة open-source لـ PostgreSQL، استعلامات تحليلية
+يُشغِّل [pg&#95;clickhouse]، وهو إضافة open-source لـ PostgreSQL، استعلامات تحليلية
 على ClickHouse مباشرةً من PostgreSQL من دون إعادة كتابة أي SQL. وهو يدعم
-PostgreSQL 14 والإصدارات الأحدث وClickHouse v23 والإصدارات الأحدث.
+PostgreSQL 13 والإصدارات الأحدث وClickHouse v23 والإصدارات الأحدث.
 
 بمجرد أن يبدأ [ClickPipes](/ar/integrations/clickpipes/home) في مزامنة البيانات إلى ClickHouse،
 استخدم pg&#95;clickhouse لاستيراد [import foreign tables] بسرعة وسهولة إلى
@@ -19,7 +21,9 @@ PostgreSQL 14 والإصدارات الأحدث وClickHouse v23 والإصدا�
 الجداول، مع الحفاظ على قاعدة الشيفرة الحالية لديك مع تمرير التنفيذ إلى
 ClickHouse.
 
-## بدء الاستخدام {#getting-started}
+<div id="getting-started">
+  ## بدء الاستخدام
+</div>
 
 أسهل طريقة لتجربة pg&#95;clickhouse هي استخدام [صورة Docker]، المبنية على
 صورة PostgreSQL القياسية لـ Docker والمرفقة بامتدادي pg&#95;clickhouse و[re2]:
@@ -33,7 +37,9 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 راجع [الدليل التعليمي] لبدء استيراد جداول ClickHouse وتمرير
 الاستعلامات إلى المصدر.
 
-## حالة الاختبار: TPC-H {#test-case-tpc-h}
+<div id="test-case-tpc-h">
+  ## حالة الاختبار: TPC-H
+</div>
 
 يقارن هذا الجدول أداء استعلامات [TPC-H] بين جداول PostgreSQL العادية
 و pg&#95;clickhouse المتصل بـ ClickHouse، وقد جرى تحميل كليهما بعامل scaling
@@ -66,9 +72,13 @@ pushdown كامل ضمن عدة فحوصات خارجية. أُجريت جميع
 | [استعلام 21] | 1145 مللي ثانية |   4470 مللي ثانية |          |
 | [استعلام 22] |  270 مللي ثانية |     45 مللي ثانية |     ✼    |
 
-### التجميع من الشيفرة المصدرية {#compile-from-source}
+<div id="compile-from-source">
+  ### التجميع من الشيفرة المصدرية
+</div>
 
-#### Unix بشكل عام {#general-unix}
+<div id="general-unix">
+  #### Unix بشكل عام
+</div>
 
 تتضمن حزم التطوير الخاصة بـ PostgreSQL و curl كلاً من `pg_config` و
 `curl-config` ضمن المسار، لذا يُفترض أن تتمكن ببساطة من تشغيل `make` (أو
@@ -76,7 +86,9 @@ pushdown كامل ضمن عدة فحوصات خارجية. أُجريت جميع
 `CREATE EXTENSION pg_clickhouse`
 في قاعدة البيانات.
 
-#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
+<div id="debian--ubuntu--apt">
+  #### Debian / Ubuntu / APT
+</div>
 
 راجع [PostgreSQL Apt] للاطّلاع على تفاصيل جلب الحزم من مستودع PostgreSQL Apt.
 
@@ -91,7 +103,9 @@ sudo apt install \
   g++
 ```
 
-#### RedHat / CentOS / Yum {#redhat--centos--yum}
+<div id="redhat--centos--yum">
+  #### RedHat / CentOS / Yum
+</div>
 
 ```sh
 sudo yum install \
@@ -106,7 +120,9 @@ sudo yum install \
 
 راجع [PostgreSQL Yum] للاطلاع على تفاصيل الجلب من مستودع PostgreSQL Yum.
 
-#### التثبيت من PGXN {#install-from-pgxn}
+<div id="install-from-pgxn">
+  #### التثبيت من PGXN
+</div>
 
 بعد استيفاء التبعيات المذكورة أعلاه، استخدم [عميل PGXN] (المتوفّر عبر
 [Homebrew] و[Apt] وحزم Yum باسم `pgxnclient`) لتنزيل `pg_clickhouse` وتجميعه
@@ -116,7 +132,9 @@ sudo yum install \
 pgxn install pg_clickhouse
 ```
 
-#### التجميع والتثبيت {#compile-and-install}
+<div id="compile-and-install">
+  #### التجميع والتثبيت
+</div>
 
 لتجميع مكتبة ClickHouse وتثبيتها وإضافة `pg_clickhouse`، شغّل:
 
@@ -189,7 +207,9 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-#### الاختبار {#testing}
+<div id="testing">
+  #### الاختبار
+</div>
 
 لتشغيل مجموعة الاختبارات، بعد تثبيت الإضافة، نفِّذ
 
@@ -210,7 +230,9 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-### التحميل {#loading}
+<div id="loading">
+  ### التحميل
+</div>
 
 بمجرد تثبيت `pg_clickhouse`، يمكنك إضافته إلى إحدى قواعد البيانات عبر الاتصال
 كمستخدم فائق الصلاحيات ثم تنفيذ:
@@ -227,13 +249,17 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-## التبعيات {#dependencies}
+<div id="dependencies">
+  ## التبعيات
+</div>
 
-تتطلب إضافة `pg_clickhouse` [PostgreSQL] 14 أو إصدارًا أحدث، و[libcurl]،
-و[libuuid]. كما يتطلب إصدار الإضافة مُصرّفًا للغتَي C وC++، و[libSSL]، و[GNU
+تتطلب إضافة `pg_clickhouse` [PostgreSQL] 13 أو إصدارًا أحدث، و[libcurl]،
+و[libuuid]. كما يتطلب بناء الإضافة مُصرّفًا للغتَي C وC++، و[libSSL]، و[GNU
 make]، و[CMake].
 
-## خريطة الطريق {#road-map}
+<div id="road-map">
+  ## خريطة الطريق
+</div>
 
 ينصبّ تركيزنا الأول حاليًا على استكمال تغطية `pushdown` لأعباء العمل التحليلية قبل
 إضافة ميزات DML. خريطة الطريق لدينا:
@@ -252,7 +278,9 @@ make]، و[CMake].
 * إضافة دعم `pushdown` لاستعلامات UNION عندما تستعلم جميعها من قاعدة
   البيانات البعيدة
 
-## المؤلفون {#authors}
+<div id="authors">
+  ## المؤلفون
+</div>
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
@@ -260,7 +288,9 @@ make]، و[CMake].
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-## حقوق النشر {#copyright}
+<div id="copyright">
+  ## حقوق النشر
+</div>
 
 * حقوق النشر (c) 2025-2026، ClickHouse
 * أجزاء من حقوق النشر (c) 2023-2025، Ildus Kurbangaliev

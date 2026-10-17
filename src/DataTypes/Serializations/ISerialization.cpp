@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -177,10 +176,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
-    MapKeyValue,
-    ObjectDistinctPaths,
-    ObjectSubObject,
-    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const
@@ -300,11 +295,8 @@ namespace
 
 using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
-/// Renders the substream path by passing its pieces to `append` in order, so the same rendering can either
-/// be materialized into a string or fed into a hash without building the string.
-template <typename Append>
-void appendNameForSubstreamPath(
-    Append && append,
+String getNameForSubstreamPath(
+    String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
     bool escape_for_file_name,
@@ -318,129 +310,100 @@ void appendNameForSubstreamPath(
     for (auto it = begin; it != end; ++it)
     {
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
-            append(".null");
+            stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
-        {
-            append(".size");
-            append(toString(array_level));
-        }
+            stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
-            append(".size");
+            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
-            append(".dict");
+            stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
-            append(".dict_prefix");
+            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseElements && encode_sparse_stream)
-            append(".sparse");
+            stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
-            append(".sparse.idx");
+            stream_name += ".sparse.idx";
         else if (it->type == Substream::ReplicatedElements)
-            append(".repl");
+            stream_name += ".repl";
         else if (it->type == Substream::ReplicatedIndexes)
-            append(".repl.idx");
+            stream_name += ".repl.idx";
         else if (Substream::named_types.contains(it->type))
         {
+            auto substream_name = "." + it->name_of_substream;
+
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
             if (it->type == Substream::TupleElement && escape_for_file_name)
-                append(escapeForFileName("." + it->name_of_substream));
+                stream_name += escapeForFileName(substream_name);
             else
-            {
-                append(".");
-                append(it->name_of_substream);
-            }
+                stream_name += substream_name;
         }
         else if (it->type == Substream::VariantDiscriminators)
-            append(".variant_discr");
+            stream_name += ".variant_discr";
         else if (it->type == Substream::VariantDiscriminatorsPrefix)
-            append(".variant_discr_prefix");
+            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
-            append(".variant_offsets");
+            stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
         {
-            append(".");
             if (escape_for_file_name && escape_variant_substreams)
-                append(escapeForFileName(it->variant_element_name));
+                stream_name += "." + escapeForFileName(it->variant_element_name);
             else
-                append(it->variant_element_name);
+                stream_name += "." + it->variant_element_name;
         }
         else if (it->type == Substream::VariantElementNullMap)
         {
-            append(".");
             if (escape_for_file_name && escape_variant_substreams)
-                append(escapeForFileName(it->variant_element_name));
+                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
             else
-                append(it->variant_element_name);
-            append(".null");
+                stream_name += "." + it->variant_element_name + ".null";
         }
         else if (it->type == SubstreamType::DynamicStructure)
-            append(".dynamic_structure");
+            stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
-            append(".object_structure");
+            stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
-            append(".object_shared_data");
+            stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::Bucket)
-        {
-            append(".");
-            append(std::to_string(it->bucket));
-        }
+            stream_name += "." + std::to_string(it->bucket);
         else if (it->type == SubstreamType::MapBucketsInfo)
-            append(".buckets_info");
+            stream_name += ".buckets_info";
         else if (it->type == SubstreamType::MapBucketIndexes)
-            append(".bucket_indexes");
+            stream_name += ".bucket_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
-            append(".structure");
+            stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
-            append(".structure_prefix");
+            stream_name += ".structure_prefix";
         else if (it->type == SubstreamType::ObjectSharedDataStructureSuffix)
-            append(".structure_suffix");
+            stream_name += ".structure_suffix";
         else if (it->type == SubstreamType::ObjectSharedDataSubstreams)
-            append(".substreams");
+            stream_name += ".substreams";
         else if (it->type == SubstreamType::ObjectSharedDataPathsMarks)
-            append(".paths_marks");
+            stream_name += ".paths_marks";
         else if (it->type == SubstreamType::ObjectSharedDataSubstreamsMarks)
-            append(".substreams_marks");
+            stream_name += ".substreams_marks";
         else if (it->type == SubstreamType::ObjectSharedDataPathsSubstreamsMetadata)
-            append(".paths_substreams_metadata");
+            stream_name += ".paths_substreams_metadata";
         else if (it->type == SubstreamType::ObjectSharedDataPathsInfos)
-            append(".paths_infos");
+            stream_name += ".paths_infos";
         else if (it->type == SubstreamType::ObjectSharedDataData)
-            append(".data");
+            stream_name += ".data";
         else if (it->type == SubstreamType::ObjectSharedDataCopy)
-            append(".copy");
+            stream_name += ".copy";
         else if (it->type == SubstreamType::ObjectSharedDataCopySizes)
-            append(".sizes");
+            stream_name += ".sizes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyPathsIndexes)
-            append(".paths_indexes");
+            stream_name += ".paths_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
-            append(".values");
+            stream_name += ".values";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-        {
-            append(".");
-            if (escape_for_file_name)
-                append(escapeForFileName(it->object_path_name));
-            else
-                append(it->object_path_name);
-        }
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
-}
 
-String getNameForSubstreamPath(
-    String stream_name,
-    SubstreamIterator begin,
-    SubstreamIterator end,
-    bool escape_for_file_name,
-    bool encode_sparse_stream,
-    bool escape_variant_substreams,
-    size_t initial_array_level = 0)
-{
-    appendNameForSubstreamPath(
-        [&](std::string_view piece) { stream_name.append(piece); },
-        begin, end, escape_for_file_name, encode_sparse_stream, escape_variant_substreams, initial_array_level);
     return stream_name;
 }
 
@@ -522,16 +485,10 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
     return subcolumn_name;
 }
 
-UInt128 ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
+String ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
 {
     /// Unlike the subcolumn name, this rendering is injective, so two substreams never share a cache slot.
-    /// The key is the hash of the rendering: `SipHash` is a streaming hash, so feeding it the pieces gives
-    /// the hash of their concatenation, without building the string for every cache lookup.
-    SipHash hash;
-    appendNameForSubstreamPath(
-        [&](std::string_view piece) { hash.update(piece); },
-        path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
-    return hash.get128();
+    return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
 }
 
 namespace
@@ -617,8 +574,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::SparseOffsets
-            || elem.type == Substream::MapBucketsInfo)
+            || elem.type == Substream::SparseOffsets)
             return false;
     }
     return true;
@@ -847,8 +803,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
     }
 }
 
-ISerialization::SubstreamData
-ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, const Substream * selected_terminal)
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     chassert(prefix_len <= path.size());
     if (prefix_len == 0)
@@ -864,16 +819,11 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
     if (!res.column && res.lazy_column_creator)
         res.column = res.lazy_column_creator();
 
-    const auto & terminal = selected_terminal ? *selected_terminal : path[last_elem];
-
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
-        auto creator = path[i].creator;
+        const auto & creator = path[i].creator;
         if (creator)
         {
-            if (auto specialized = creator->specializeForSelectedSubcolumn(terminal))
-                creator = std::move(specialized);
-
             res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
             res.column = res.column ? creator->create(res.column) : res.column;

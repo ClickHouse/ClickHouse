@@ -3,7 +3,6 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
@@ -93,25 +92,13 @@ namespace
         ASTs res;
 
         boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
-        grantees->names = make_intrusive<ASTUserNamesWithHost>(grantee.getName());
+        grantees->names.push_back(grantee.getName());
 
-        AccessRights access_copy;
-
+        AccessRights access = grantee.access;
         if (final)
-        {
-            access_copy = grantee.access;
-            unionAccessFromRoles(access_copy, grantee, access_control);
-        }
+            unionAccessFromRoles(access, grantee, access_control);
 
-        const AccessRights & access = final ? access_copy : grantee.access;
-
-        getGrantsFromAccess(
-            res,
-            access,
-            grantees,
-            access_control,
-            attach_mode,
-            with_implicit);
+        getGrantsFromAccess(res, access, grantees, access_control, attach_mode, with_implicit);
 
         if (!final)
         {
