@@ -41,6 +41,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -242,6 +243,9 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
+
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
 
                 if (!path.empty())
                     path += '.';
