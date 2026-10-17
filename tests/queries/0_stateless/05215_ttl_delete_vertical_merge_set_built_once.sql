@@ -1,6 +1,6 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
--- A vertical rows-TTL merge builds the TTL expressions twice; a `WHERE ... IN (SELECT ...)` set must be
--- filled once and shared, and without the shared cache the counter below reads 2. Settings are pinned:
+-- A vertical rows-TTL merge evaluates the TTL once, after the merge, so a `WHERE ... IN (SELECT ...)` set
+-- is filled once and the counter below reads 1. Settings are pinned:
 -- `SetsBuiltFromSubquery` reaches `part_log` only while a small set is built on the merge's own thread.
 
 SET optimize_throw_if_noop = 0;

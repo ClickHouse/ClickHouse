@@ -3,10 +3,8 @@
 --
 -- When a table has a row TTL that directly references a column (result_column = "dt"),
 -- executeExpressionAndGetColumn returns the ColumnSparse from the block without unwrapping.
--- This caused both:
---   TTLDeleteFilterTransform::extractTimestamps  (vertical merge + optimize_ttl_delete=1)
---   ITTLAlgorithm::getTimestampByIndex           (via TTLTransform in all merge paths)
--- to crash with "Unexpected type of result TTL column".
+-- This caused the TTL timestamp extraction to crash in every merge path with
+-- "Unexpected type of result TTL column".
 --
 -- Key conditions:
 --  1. Table-level row TTL = direct column reference -> result_column = "dt" is in block.
@@ -16,7 +14,7 @@
 --  4. Vertical merge is activated (thresholds set low) for test 1.
 --     Horizontal merge is forced (thresholds set high) for test 2.
 
--- Test 1: TTLDeleteFilterTransform::extractTimestamps (vertical merge path).
+-- Test 1: vertical merge.
 DROP TABLE IF EXISTS t_ttl_sparse_v;
 
 CREATE TABLE t_ttl_sparse_v

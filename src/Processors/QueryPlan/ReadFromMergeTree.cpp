@@ -1402,7 +1402,6 @@ Pipe ReadFromMergeTree::readByLayers(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions=*/ false);
 
@@ -2318,7 +2317,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*limit=*/ 0,
                     /*always_read_till_end=*/ false,
                     /*out_row_sources_buf=*/ nullptr,
-                    /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 

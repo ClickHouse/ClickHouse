@@ -3,7 +3,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -26,7 +25,6 @@ public:
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions_ = true,
         size_t virtual_row_prefetch_window_ = 0);
@@ -54,10 +52,6 @@ private:
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
-
-    /// The position of the filter column of lightweight delete, which is a stored column no
-    /// transform computes. A TTL merge's mask arrives on the chunks instead.
-    ssize_t filter_column_position = -1;
 
     bool apply_virtual_row_conversions;
 
@@ -99,11 +93,6 @@ private:
     /// Chunks currently being merged.
     Inputs current_inputs;
 
-    /// Per source, the rows to keep in the chunk above, or nullptr when that chunk is not
-    /// filtered. Valid for exactly as long as the chunk, so it is refreshed whenever one arrives
-    /// and dropped when one is passed through whole.
-    VectorWithMemoryTracking<const IColumnFilter *> source_row_filter_masks;
-
     SortingQueueStrategy sorting_queue_strategy;
 
     SortCursorImpls cursors;
@@ -116,9 +105,6 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
-    /// Where the rows to keep come from: the filter column of the header, or the chunk's
-    /// `RowFilterInfo`. Resolved once per chunk, so the per-row path is one indexed read.
-    const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
     /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it

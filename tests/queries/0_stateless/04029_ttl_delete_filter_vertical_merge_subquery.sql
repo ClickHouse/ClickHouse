@@ -1,8 +1,5 @@
--- Regression test for FutureSet identity mismatch in TTLDeleteFilterStep.
--- When vertical merge is used with TTL ... WHERE col IN (SELECT ...),
--- the FutureSet objects must be shared between CreatingSetStep and the
--- TTLDeleteFilterTransform. Previously, transformPipeline() created new
--- transforms with new FutureSet objects that were never filled.
+-- Regression test: a vertical merge with TTL ... WHERE col IN (SELECT ...) must read the set the
+-- subquery filled, not an unfilled one.
 
 SET optimize_throw_if_noop = 0;
 

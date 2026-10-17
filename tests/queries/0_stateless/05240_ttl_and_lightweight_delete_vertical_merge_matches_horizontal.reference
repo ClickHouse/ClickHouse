@@ -1,0 +1,15 @@
+test1_rows	6652
+test1_expected_rows	6652
+test1_same_rows	1
+test1_algo	t_ttl_lwd_ord_h	Horizontal
+test1_algo	t_ttl_lwd_ord_v	Vertical
+test2_expected_rows	1
+test2_same_rows	1
+test2_algo	t_ttl_lwd_repl_h	Horizontal
+test2_algo	t_ttl_lwd_repl_v	Vertical
+test3_rows	0	0
+test3_algo	t_ttl_lwd_all_h	Horizontal
+test3_algo	t_ttl_lwd_all_v	Vertical
+test4_rows	7479
+test4_expected_rows	7479
+test4_algo	t_ttl_pos_v	Vertical

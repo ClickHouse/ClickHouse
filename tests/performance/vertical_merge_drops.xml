@@ -1,0 +1,110 @@
+<test>
+    <!--
+        Times a merge that drops rows outside the merging algorithm: lightweight-deleted rows in
+        `MergeTree` and `ReplacingMergeTree`, both merged vertically, and rows expired by a rows TTL
+        beside a lightweight delete, merged vertically where the server can and horizontally
+        otherwise.
+
+        Each measured run merges the same fixture: ten parts with interleaving keys and an applied
+        lightweight delete. A merged result has neither, so the fixture is re-attached for every
+        run: `ATTACH PARTITION ... FROM` clones its parts rather than moving them. The client start,
+        the `TRUNCATE` and the clone are inside the timed unit; they cost 0.08 s of a 0.44 s run on
+        a release build, a floor under any delta the test can resolve.
+
+        This is a shell-script query (type="shell") because the timed unit is three statements:
+        the native protocol accepts only one statement per query, while `clickhouse client`
+        accepts several in a single `query` option.
+
+        `max_bytes_to_merge_at_*_space_in_pool = 1` keeps background merges away from the fixture,
+        in the source tables and between the ATTACH and the timed `OPTIMIZE`, and
+        `max_number_of_merges_with_ttl_in_pool = 0` does the same for TTL merges.
+    -->
+    <create_query>
+        CREATE TABLE vmd_mt_src (k UInt64, d DateTime, v1 UInt64, v2 UInt64, v3 UInt64, v4 UInt64, v5 UInt64, v6 UInt64, v7 UInt64, s1 String, s2 String, s3 String)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE vmd_mt AS vmd_mt_src
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+
+    <create_query>
+        CREATE TABLE vmd_replacing_src AS vmd_mt_src
+        ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE vmd_replacing AS vmd_mt_src
+        ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+
+    <create_query>
+        CREATE TABLE vmd_ttl_src AS vmd_mt_src
+        ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 DAY
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            max_number_of_merges_with_ttl_in_pool = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE vmd_ttl AS vmd_mt_src
+        ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 DAY
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            max_number_of_merges_with_ttl_in_pool = 0,
+            vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO vmd_mt_src
+        SELECT cityHash64(number, 1), if(number % 10 &lt; 3, now() - INTERVAL 2 DAY, now() + INTERVAL 10 YEAR),
+               number, number * 3, number * 7, cityHash64(number, 2), cityHash64(number, 3), cityHash64(number, 4), cityHash64(number, 5),
+               toString(number % 1000), toString(cityHash64(number, 6) % 100000), concat('s', toString(number % 77))
+        FROM numbers(1000000)
+        SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>
+        INSERT INTO vmd_replacing_src SELECT * FROM vmd_mt_src
+        SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+            max_threads = 1, preferred_block_size_bytes = 0
+    </fill_query>
+    <fill_query>
+        INSERT INTO vmd_ttl_src SELECT * FROM vmd_mt_src
+        SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+            max_threads = 1, preferred_block_size_bytes = 0
+    </fill_query>
+    <fill_query>DELETE FROM vmd_mt_src WHERE v1 % 10 = 5 SETTINGS lightweight_deletes_sync = 2</fill_query>
+    <fill_query>DELETE FROM vmd_replacing_src WHERE v1 % 10 = 5 SETTINGS lightweight_deletes_sync = 2</fill_query>
+    <fill_query>DELETE FROM vmd_ttl_src WHERE v1 % 10 = 5 SETTINGS lightweight_deletes_sync = 2</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE vmd_mt;
+            ALTER TABLE vmd_mt ATTACH PARTITION tuple() FROM vmd_mt_src;
+            OPTIMIZE TABLE vmd_mt FINAL;
+        "
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE vmd_replacing;
+            ALTER TABLE vmd_replacing ATTACH PARTITION tuple() FROM vmd_replacing_src;
+            OPTIMIZE TABLE vmd_replacing FINAL;
+        "
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE vmd_ttl;
+            ALTER TABLE vmd_ttl ATTACH PARTITION tuple() FROM vmd_ttl_src;
+            OPTIMIZE TABLE vmd_ttl FINAL;
+        "
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS vmd_mt</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmd_mt_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmd_replacing</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmd_replacing_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmd_ttl</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmd_ttl_src</drop_query>
+</test>

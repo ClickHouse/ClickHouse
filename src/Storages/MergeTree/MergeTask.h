@@ -235,7 +235,6 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
-        bool vertical_ttl_delete{false};
         /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
@@ -284,6 +283,8 @@ private:
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
+        /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` keeps.
+        std::unique_ptr<TemporaryDataBuffer> ttl_kept_rows;
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
@@ -316,6 +317,14 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
+    friend class RowsSourcesTemporaryFile;
+    friend size_t rewriteRowsSources(
+        ReadBuffer & in,
+        WriteBuffer & out,
+        std::vector<QueryPipeline> row_exists_per_part,
+        TemporaryDataBuffer * ttl_kept_rows,
+        const GlobalRuntimeContext & global_ctx);
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -333,9 +342,9 @@ private:
 
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
         /// Shared across all projections since they all consume the same source blocks.
-        /// Only the columns required by at least one projection (plus _row_exists when
-        /// present) are squashed, so wide source columns no projection reads are not
-        /// retained in memory until the squash boundary.
+        /// Only the columns required by at least one projection are squashed, so wide
+        /// source columns no projection reads are not retained in memory until the
+        /// squash boundary.
         std::optional<Squashing> pre_calculate_squash;
         NameSet pre_calculate_required_columns;
         UInt64 pre_calculate_starting_offset{0};
@@ -473,15 +482,17 @@ private:
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
         bool prepareVerticalMergeForAllColumns() const;
+        bool rewriteRowsSourcesForVerticalMerge() const;
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
+        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 4>;
 
         const VerticalMergeStageSubtasks subtasks
         {
             &VerticalMergeStage::prepareVerticalMergeForAllColumns,
+            &VerticalMergeStage::rewriteRowsSourcesForVerticalMerge,
             &VerticalMergeStage::executeVerticalMergeForAllColumns,
             &VerticalMergeStage::finalizeVerticalMergeForAllColumns
         };
@@ -493,6 +504,8 @@ private:
         void finalizeVerticalMergeForOneColumn() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        /// Each part's `_row_exists` without the mask, for `rewriteRowsSources`; empty unless `vertical_lightweight_delete`.
+        std::vector<QueryPipeline> createPipelinesForReadingRowExists() const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -621,7 +634,6 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
-    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);
