@@ -247,7 +247,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsFloat replicated_max_ratio_of_wrong_parts;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
-    extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool share_nested_offsets;

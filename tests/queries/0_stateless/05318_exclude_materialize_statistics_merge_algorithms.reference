@@ -1,0 +1,9 @@
+Vertical merge excludes a and b
+a	0
+b	0
+c	1
+ReplacingMergeTree merge removes rows and excludes b
+100
+a	1
+b	0
+c	1

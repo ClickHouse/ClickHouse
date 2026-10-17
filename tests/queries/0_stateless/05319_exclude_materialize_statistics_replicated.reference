@@ -1,0 +1,7 @@
+Both replicas have the merged part without statistics for b
+tab_r1	a	1
+tab_r1	b	0
+tab_r1	c	1
+tab_r2	a	1
+tab_r2	b	0
+tab_r2	c	1
