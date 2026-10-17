@@ -84,3 +84,9 @@ SELECT number,
        toInt8(accurateCastOrDefault(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
        isNull(accurateCastOrNull(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$))
 FROM numbers(4) ORDER BY number;
+
+-- Values outside the target Enum, including in-range integers and fractional numbers.
+SELECT toInt8(accurateCastOrDefault(toInt8(0), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(toInt8(0), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault(toFloat64(1.5), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(toFloat64(1.5), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
