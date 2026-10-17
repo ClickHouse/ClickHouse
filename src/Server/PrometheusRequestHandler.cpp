@@ -10,9 +10,11 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -35,7 +37,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -445,8 +451,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API (/api/v1/query, query_range, series, labels,
+/// label/<name>/values, metadata) and the always-empty rules, alerts and query_exemplars endpoints.
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -459,12 +465,17 @@ public:
         LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
+        empty_result = getEmptyResult(Poco::URI(request.getURI()).getPath());
     }
 
     bool isSettingLikeParameter(const String & name) override
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
         if (name.empty())
+            return false;
+
+        /// The endpoints with an empty result run no query, so their parameters are not settings.
+        if (empty_result)
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
@@ -511,6 +522,13 @@ public:
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
                 formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
+            if (empty_result)
+            {
+                validateEmptyResultRequest(uri_path);
+                writeString(*empty_result, getOutputStream(response));
                 return;
             }
 
@@ -647,6 +665,73 @@ public:
     }
 
 private:
+    /// ClickHouse has no rules, alerts or exemplars, so these endpoints always return an empty result.
+    static std::optional<std::string_view> getEmptyResult(std::string_view uri_path)
+    {
+        if (uri_path.ends_with("/rules"))
+            return R"({"status":"success","data":{"groups":[]}})";
+        if (uri_path.ends_with("/alerts"))
+            return R"({"status":"success","data":{"alerts":[]}})";
+        if (uri_path.ends_with("/query_exemplars"))
+            return R"({"status":"success","data":[]})";
+        return std::nullopt;
+    }
+
+    std::optional<std::string_view> empty_result;
+
+    /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
+    void validateEmptyResultRequest(std::string_view uri_path) const
+    {
+        if (uri_path.ends_with("/query_exemplars"))
+        {
+            String start = params->get("start", "");
+            String end = params->get("end", "");
+            Int64 start_time = start.empty() ? std::numeric_limits<Int64>::min() : parseTimeSeriesTimestamp(start, 3).value;
+            Int64 end_time = end.empty() ? std::numeric_limits<Int64>::max() : parseTimeSeriesTimestamp(end, 3).value;
+            if (end_time < start_time)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'end' timestamp must not be before the 'start' timestamp");
+
+            /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
+            /// The SQL is never run, so it may name a table that doesn't exist.
+            PrometheusQueryEvaluationSettings evaluation_settings;
+            evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
+            evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+            evaluation_settings.use_current_time = true;
+            PrometheusQueryToSQL::Converter{std::make_shared<PrometheusQueryTree>(params->get("query", "")), evaluation_settings}.getSQL();
+        }
+        else if (uri_path.ends_with("/rules"))
+        {
+            String type = Poco::toLower(params->get("type", ""));
+            if (!type.empty() && type != "alert" && type != "record")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'type' parameter: '{}', expected 'alert' or 'record'", type);
+
+            static const NameSet bool_values{"", "1", "t", "true", "0", "f", "false"};
+            String exclude_alerts = params->get("exclude_alerts", "");
+            if (!bool_values.contains(Poco::toLower(exclude_alerts)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'exclude_alerts' parameter: '{}', expected a boolean", exclude_alerts);
+
+            for (const auto & match : params->getAll("match[]"))
+            {
+                PrometheusQueryTree selector;
+                selector.parse(match);
+                const auto * root = selector.getRoot();
+                if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector", quoteString(match));
+            }
+
+            String group_limit = params->get("group_limit", "");
+            String group_next_token = params->get("group_next_token", "");
+            Int64 parsed_group_limit = 0;
+            if (!group_limit.empty() && (!tryParse(parsed_group_limit, group_limit.data(), group_limit.size()) || parsed_group_limit <= 0))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value of the 'group_limit' parameter: '{}', expected a positive integer", group_limit);
+
+            /// There are no rule groups, so no token is valid.
+            if (!group_next_token.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'group_next_token' parameter: '{}'", group_next_token);
+        }
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
@@ -753,8 +838,8 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
-        /// are served by the Query implementation, which itself returns 404 for unknown paths.
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, rules, alerts,
+        /// query_exemplars) are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
 
