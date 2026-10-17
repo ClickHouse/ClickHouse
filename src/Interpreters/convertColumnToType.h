@@ -18,10 +18,11 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (currently: plain numeric-to-numeric in the default mode) go through
-  * `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not yet
-  * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
-  * so more column-native fast paths can be added without changing results.
+  * column-natively (currently: plain native-numeric-to-native-numeric, in every `strict` /
+  * `convert_inexact_floats` mode) read the scalar directly out of the `IColumn`; the rest still
+  * delegate to `convertFieldToType` (same behavior, just not yet `Field`-free). The behavior is pinned
+  * by `gtest_convert_column_to_type` against `convertFieldToType`, so more column-native fast paths
+  * can be added without changing results.
   *
   * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
   * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
