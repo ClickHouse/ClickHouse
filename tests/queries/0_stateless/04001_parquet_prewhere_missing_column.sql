@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- Regression test: PREWHERE on a Parquet file with a column declared in the schema
 -- but not present in the actual file. When the missing column appears both in the
 -- PREWHERE condition and in the SELECT list, it stays in the format header as a

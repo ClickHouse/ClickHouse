@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 #
 # Test GeoParquet spatial page-level pruning via covering.bbox column index.
 # The test file has 1 row group with 3 pages (6 rows each):

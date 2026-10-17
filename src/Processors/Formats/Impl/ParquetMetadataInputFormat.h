@@ -1,6 +1,6 @@
 #pragma once
 #include "config.h"
-#if USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>

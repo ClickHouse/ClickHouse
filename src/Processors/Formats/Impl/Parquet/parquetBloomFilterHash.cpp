@@ -7,46 +7,75 @@
 
 #if USE_PARQUET
 
-#include <parquet/metadata.h>
-#include <parquet/xxhasher.h>
+#include <xxhash.h>
 
 namespace DB
 {
 
-static bool isParquetStringTypeSupportedForBloomFilters(
-    const std::shared_ptr<const parquet::LogicalType> & logical_type,
-    parquet::ConvertedType::type converted_type)
+using Parquet::parq::SchemaElement;
+using Parquet::parq::ConvertedType;
+
+namespace
 {
-    if (logical_type &&
-        !logical_type->is_none()
-        && !(logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON()))
+
+uint64_t hashBytes(const void * data, size_t size)
+{
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+    return XXH_INLINE_XXH64(data, size, /*seed*/ 0);
+#pragma clang diagnostic pop
+}
+
+template <typename T>
+uint64_t hashValue(T value)
+{
+    return hashBytes(&value, sizeof(T));
+}
+
+}
+
+/// A column without a logical or converted type is eligible for both string and integer hashing.
+/// A logical type, if present, takes precedence over the legacy converted type.
+static bool isParquetStringTypeSupportedForBloomFilters(const SchemaElement & schema_element)
+{
+    if (schema_element.__isset.logicalType)
     {
-        return false;
+        const auto & logical_type = schema_element.logicalType;
+        return logical_type.__isset.STRING || logical_type.__isset.JSON || logical_type.__isset.BSON;
     }
 
-    if (parquet::ConvertedType::type::NONE != converted_type &&
-        !(converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8
-          || converted_type == parquet::ConvertedType::BSON))
+    if (schema_element.__isset.converted_type)
     {
-        return false;
+        const auto converted_type = schema_element.converted_type;
+        return converted_type == ConvertedType::UTF8 || converted_type == ConvertedType::JSON || converted_type == ConvertedType::BSON;
     }
 
     return true;
 }
 
-static bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+static bool isParquetIntegerTypeSupportedForBloomFilters(const SchemaElement & schema_element)
 {
-    if (logical_type && !logical_type->is_none() && !logical_type->is_int())
-    {
-        return false;
-    }
+    if (schema_element.__isset.logicalType)
+        return schema_element.logicalType.__isset.INTEGER;
 
-    if (parquet::ConvertedType::type::NONE != converted_type && !(converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
-                                                                  || converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::INT_64
-                                                                  || converted_type == parquet::ConvertedType::UINT_8 || converted_type == parquet::ConvertedType::UINT_16
-                                                                  || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64))
+    if (schema_element.__isset.converted_type)
     {
-        return false;
+        switch (schema_element.converted_type)
+        {
+            case ConvertedType::INT_8:
+            case ConvertedType::INT_16:
+            case ConvertedType::INT_32:
+            case ConvertedType::INT_64:
+            case ConvertedType::UINT_8:
+            case ConvertedType::UINT_16:
+            case ConvertedType::UINT_32:
+            case ConvertedType::UINT_64:
+                return true;
+            default:
+                return false;
+        }
     }
 
     return true;
@@ -56,12 +85,7 @@ template <typename T>
 uint64_t hashSpecialFLBATypes(const Field & field)
 {
     const T & value = field.safeGet<T>();
-
-    parquet::FLBA flba(reinterpret_cast<const uint8_t*>(&value));
-
-    parquet::XxHasher hasher;
-
-    return hasher.Hash(&flba, sizeof(T));
+    return hashBytes(&value, sizeof(T));
 };
 
 static std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
@@ -73,18 +97,13 @@ static std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Fiel
         return std::nullopt;
     }
 
-    parquet::XxHasher hasher;
-    parquet::ByteArray ba { field.safeGet<std::string>() };
-
-    return hasher.Hash(&ba);
+    const auto & value = field.safeGet<std::string>();
+    return hashBytes(value.data(), value.size());
 }
 
-static std::optional<uint64_t> tryHashString(
-    const Field & field,
-    const std::shared_ptr<const parquet::LogicalType> & logical_type,
-    parquet::ConvertedType::type converted_type)
+static std::optional<uint64_t> tryHashString(const Field & field, const SchemaElement & schema_element)
 {
-    if (!isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
+    if (!isParquetStringTypeSupportedForBloomFilters(schema_element))
     {
         return std::nullopt;
     }
@@ -92,24 +111,20 @@ static std::optional<uint64_t> tryHashString(
     return tryHashStringWithoutCompatibilityCheck(field);
 }
 
-static std::optional<uint64_t> tryHashFLBA(
-    const Field & field,
-    const std::shared_ptr<const parquet::LogicalType> & logical_type,
-    parquet::ConvertedType::type converted_type,
-    std::size_t parquet_column_length)
+static std::optional<uint64_t> tryHashFLBA(const Field & field, const SchemaElement & schema_element)
 {
     /// `DECIMAL`-annotated fixed arrays are deliberately ineligible. `parquetTryHashColumn` sees
     /// ClickHouse's native little-endian wide integers, while the Parquet bloom filter hashes the
     /// canonical big-endian decimal bytes; hashing either representation here would mismatch the
     /// other side of the predicate.
-    if (!isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
+    if (!isParquetStringTypeSupportedForBloomFilters(schema_element))
     {
         return std::nullopt;
     }
 
     const auto field_type = field.getType();
 
-    if (field_type == Field::Types::Which::IPv6 && parquet_column_length == sizeof(IPv6))
+    if (field_type == Field::Types::Which::IPv6 && schema_element.type_length == sizeof(IPv6))
     {
         return hashSpecialFLBATypes<IPv6>(field);
     }
@@ -118,22 +133,20 @@ static std::optional<uint64_t> tryHashFLBA(
 }
 
 template <typename ParquetPhysicalType>
-std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+std::optional<uint64_t> tryHashInt(const Field & field, const SchemaElement & schema_element)
 {
-    if (!isParquetIntegerTypeSupportedForBloomFilters(logical_type, converted_type))
+    if (!isParquetIntegerTypeSupportedForBloomFilters(schema_element))
     {
         return std::nullopt;
     }
 
-    parquet::XxHasher hasher;
-
     if (field.getType() == Field::Types::Which::Int64)
     {
-        return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<int64_t>()));
+        return hashValue(static_cast<ParquetPhysicalType>(field.safeGet<int64_t>()));
     }
     else if (field.getType() == Field::Types::Which::UInt64)
     {
-        return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<uint64_t>()));
+        return hashValue(static_cast<ParquetPhysicalType>(field.safeGet<uint64_t>()));
     }
     else if (field.getType() == Field::Types::IPv4)
     {
@@ -145,7 +158,7 @@ std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<co
          * */
         if constexpr (std::is_same_v<int32_t, ParquetPhysicalType>)
         {
-            return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<IPv4>()));
+            return hashValue(static_cast<ParquetPhysicalType>(field.safeGet<IPv4>()));
         }
     }
 
@@ -158,9 +171,8 @@ static bool tryHashIntegerColumnTyped(const IColumn & column, std::vector<uint64
     const auto * typed = checkAndGetColumn<ColumnVector<T>>(&column);
     if (!typed)
         return false;
-    parquet::XxHasher hasher;
     for (T value : typed->getData())
-        hashes.emplace_back(hasher.Hash(static_cast<ParquetPhysicalType>(value)));
+        hashes.emplace_back(hashValue(static_cast<ParquetPhysicalType>(value)));
     return true;
 }
 
@@ -182,28 +194,24 @@ static bool tryHashIntegerColumn(const IColumn & column, std::vector<uint64_t> &
         || tryHashIntegerColumnTyped<ParquetPhysicalType, UInt64>(column, hashes);
 }
 
-std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<uint64_t> parquetTryHashField(const Field & field, const SchemaElement & schema_element)
 {
-    const auto physical_type = parquet_column_descriptor->physical_type();
-    const auto & logical_type = parquet_column_descriptor->logical_type();
-    const auto converted_type = parquet_column_descriptor->converted_type();
-
-    switch (physical_type)
+    switch (schema_element.type)
     {
-        case parquet::Type::type::INT32:
-            return tryHashInt<int32_t>(field, logical_type, converted_type);
-        case parquet::Type::type::INT64:
-            return tryHashInt<int64_t>(field, logical_type, converted_type);
-        case parquet::Type::type::BYTE_ARRAY:
-            return tryHashString(field, logical_type, converted_type);
-        case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            return tryHashFLBA(field, logical_type, converted_type, parquet_column_descriptor->type_length());
+        case Parquet::parq::Type::INT32:
+            return tryHashInt<int32_t>(field, schema_element);
+        case Parquet::parq::Type::INT64:
+            return tryHashInt<int64_t>(field, schema_element);
+        case Parquet::parq::Type::BYTE_ARRAY:
+            return tryHashString(field, schema_element);
+        case Parquet::parq::Type::FIXED_LEN_BYTE_ARRAY:
+            return tryHashFLBA(field, schema_element);
         default:
             return std::nullopt;
     }
 }
 
-std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const SchemaElement & schema_element)
 {
     const IColumn * column = data_column;
     if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
@@ -224,22 +232,19 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
     /// `Field` and allocate nothing. The digest must stay identical to what `parquetTryHashField`
     /// produces for query constants: `tryHashString`/`tryHashFLBA` hash the raw value bytes after the
     /// same string-type check, so equal values keep hashing equal on both sides.
-    const auto physical_type = parquet_column_descriptor->physical_type();
-    if ((physical_type == parquet::Type::type::BYTE_ARRAY || physical_type == parquet::Type::type::FIXED_LEN_BYTE_ARRAY)
+    const auto physical_type = schema_element.type;
+    if ((physical_type == Parquet::parq::Type::BYTE_ARRAY || physical_type == Parquet::parq::Type::FIXED_LEN_BYTE_ARRAY)
         && (checkAndGetColumn<ColumnString>(column) || checkAndGetColumn<ColumnFixedString>(column)))
     {
-        if (!isParquetStringTypeSupportedForBloomFilters(
-                parquet_column_descriptor->logical_type(), parquet_column_descriptor->converted_type()))
+        if (!isParquetStringTypeSupportedForBloomFilters(schema_element))
         {
             return std::nullopt;
         }
 
-        parquet::XxHasher hasher;
         for (size_t i = 0u; i < column->size(); i++)
         {
             std::string_view value = column->getDataAt(i);
-            parquet::ByteArray ba{value};
-            hashes.emplace_back(hasher.Hash(&ba));
+            hashes.emplace_back(hashBytes(value.data(), value.size()));
         }
 
         return hashes;
@@ -251,12 +256,11 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
     /// pruning stage. The type check is the same one `tryHashInt` applies per value, hoisted out of
     /// the loop; a column the dispatch below does not recognize (e.g. `IPv4`) falls through to the
     /// generic path unchanged.
-    if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
+    if (physical_type == Parquet::parq::Type::INT32 || physical_type == Parquet::parq::Type::INT64)
     {
-        if (isParquetIntegerTypeSupportedForBloomFilters(
-                parquet_column_descriptor->logical_type(), parquet_column_descriptor->converted_type()))
+        if (isParquetIntegerTypeSupportedForBloomFilters(schema_element))
         {
-            bool done = physical_type == parquet::Type::type::INT32
+            bool done = physical_type == Parquet::parq::Type::INT32
                 ? tryHashIntegerColumn<int32_t>(*column, hashes)
                 : tryHashIntegerColumn<int64_t>(*column, hashes);
             if (done)
@@ -269,7 +273,7 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
         Field f;
         column->get(i, f);
 
-        auto hashed_value = parquetTryHashField(f, parquet_column_descriptor);
+        auto hashed_value = parquetTryHashField(f, schema_element);
 
         if (!hashed_value)
         {

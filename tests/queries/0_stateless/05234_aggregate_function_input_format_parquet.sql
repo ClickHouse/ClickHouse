@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Parquet is not available in the fast test.
-
 -- `aggregate_function_input_format` applies to the formats that read columns, not rows, as well:
 -- an `AggregateFunction(f, T)` column is read as a column of `T` (or `Array(T)`), and the states are built from it.
 

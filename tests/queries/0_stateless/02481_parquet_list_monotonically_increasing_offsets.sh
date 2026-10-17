@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan, no-fasttest, no-tsan, no-msan, no-asan, no-parallel
+# Tags: no-ubsan, no-tsan, no-msan, no-asan, no-parallel
 # - It is too slow under TSan
 # - It eats too much memory under ASan or MSan
 # Memory limits: 10 GiB

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 #
 # GeoParquet spatial pruning must not hide the "Polygon is not valid" exception.
 # `tryExtractBboxFromColumn` (src/Common/GeoBbox.h) builds a pruning bbox directly
