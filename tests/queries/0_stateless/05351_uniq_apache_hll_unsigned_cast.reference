@@ -1,0 +1,17 @@
+by value, as Java and Spark hash a long
+1
+1
+1
+a cast to the signed type of the same width gives the sketch of the C++ library
+1
+1
+1
+1
+1
+1
+the two are different sketches for these values
+1
+the values below the signed range are not affected
+1
+1
+a cast that checks the range rejects these values
