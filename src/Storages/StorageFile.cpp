@@ -3391,8 +3391,16 @@ public:
 
     ~StorageFileSink() override
     {
-        if (isCancelled())
+        /// A file that is not published yet and is still open has not been completed: the insert has failed while
+        /// writing it. The table does not read it, but a glob pattern over the directory would, and the next truncating
+        /// insert would not delete it either, as it deletes only the files the table knows. So the file is removed:
+        /// the insert has created it itself - the first file of the insert that steps aside from a non-empty one and
+        /// the next files of a split insert are always new names, or names it has truncated and overwritten.
+        const bool file_is_unfinished = !path_is_published && naked_buffer && !use_table_fd;
+        if (isCancelled() || file_is_unfinished)
             cancelBuffers();
+        if (file_is_unfinished)
+            removeUnfinishedFile();
     }
 
     void checkSplittingIsPossible() const
@@ -3540,6 +3548,16 @@ private:
             write_buf->cancel();
         if (naked_buffer)
             naked_buffer->cancel();
+    }
+
+    void removeUnfinishedFile() noexcept
+    {
+        std::error_code error;
+        if (fs::remove(path, error))
+            LOG_INFO(getLogger("StorageFile"), "Removed the file {} that a failed insert into the table {} has not finished", path, table_name_for_log);
+        else if (error)
+            LOG_WARNING(getLogger("StorageFile"), "Cannot remove the file {} that a failed insert into the table {} has not finished: {}",
+                path, table_name_for_log, error.message());
     }
 
     /// The buffer the data is formatted into: the compressing wrapper if the data is compressed, the file buffer otherwise.
@@ -3852,6 +3870,23 @@ SinkToStoragePtr StorageFile::write(
             ErrorCodes::INCORRECT_FILE_NAME,
             "Cannot split the data by size while writing into the table {}: its path does not name a file to write into",
             getStorageID().getNameForLogs());
+
+    /// The next files are named after the first one, so they are only as safe as a sibling of a regular file is.
+    /// `checkCreationIsAllowed` makes an exception for exactly `/dev/null`, and not for `/dev/null.1`, `/dev/null.2`, ...,
+    /// which are outside of the directory of the user files, and the same holds for any other device or pipe that
+    /// the path names. Splitting a stream that is not a file makes no sense anyway, so it is refused before anything
+    /// is probed, opened or deleted. A directory is left to fail on opening, as it does without splitting.
+    if (split_on_write_by_size_bytes && !use_table_fd)
+    {
+        std::error_code error;
+        const auto status = fs::status(path, error);
+        if (fs::exists(status) && !fs::is_regular_file(status) && !fs::is_directory(status))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot split the data by size while writing into {}: it is not a regular file. "
+                "Set `engine_file_split_on_write_by_size_bytes` to 0 to write into it",
+                path);
+    }
 
     /// A truncating insert overwrites the table: the numbered files of the previous split inserts are forgotten,
     /// and the numbering starts over, overwriting them one by one. It does not matter whether the current
