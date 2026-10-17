@@ -21,6 +21,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -155,23 +156,38 @@ String getNextKeyForSplittingBySize(
     }
 }
 
+/// The cleanup reserves a key for the time it checks and removes its object, like a writer does for the time
+/// it writes it. Checking for a reservation without taking one would leave a window between the check and the
+/// removal, in which a concurrent insert could reserve the key, commit its object and go on writing the next one -
+/// and the cleanup would then remove the object of an insert that is not over. Returns false when another insert
+/// into the table is writing the key right now: it holds the reservation of every key it has generated until it
+/// is over, also of the keys it has already committed and published.
+static bool tryReserveStaleKeyForRemoval(StorageObjectStorageConfiguration & configuration, const String & stale_key, const LoggerPtr & log)
+{
+    /// The key may be published or committed already - this is what the cleanup removes - so it is reserved
+    /// against the concurrent writers only, like the starting key of an insert.
+    if (configuration.tryReserveStartingPathForWrite(stale_key))
+        return true;
+    LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+    return false;
+}
+
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    StorageObjectStorageConfiguration & configuration,
     const std::vector<String> & stale_keys,
     const std::function<void(const String &)> & on_removed,
     const LoggerPtr & log)
 {
     for (const auto & stale_key : stale_keys)
     {
-        /// The insert writing this object is not over: it holds the reservation of every key it has generated
-        /// until it is, also of the keys it has already committed and published. The truncating insert cannot
-        /// reuse this key either - `tryReservePathForWrite` refuses a reserved key - so it steps over it.
-        if (configuration.isPathReservedForWrite(stale_key))
-        {
-            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+        /// The truncating insert cannot reuse a key that a running insert is writing either -
+        /// `tryReservePathForWrite` refuses a reserved key - so it steps over it.
+        if (!tryReserveStaleKeyForRemoval(configuration, stale_key, log))
             continue;
-        }
+        /// The key is released only after it has been retired from the list of the paths, so that a concurrent
+        /// insert cannot take it while the table still lists it.
+        SCOPE_EXIT({ configuration.releasePathReservedForWrite(stale_key); });
 
         object_storage.removeObjectIfExists(StoredObject(stale_key));
         /// Logged here rather than left to the object storage: `S3` and `Azure` log the objects they delete, `HDFS` and `Local` do not.
@@ -201,12 +217,11 @@ void removeStaleSplitObjectsByNumber(
         String stale_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
 
-        /// See `removeStaleSplitObjects`. The object may or may not be there yet, so the probing goes on past it.
-        if (configuration.isPathReservedForWrite(stale_key))
-        {
-            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+        /// See `removeStaleSplitObjects`. The object of a key that is being written may or may not be there yet,
+        /// so the probing goes on past it.
+        if (!tryReserveStaleKeyForRemoval(configuration, stale_key, log))
             continue;
-        }
+        SCOPE_EXIT({ configuration.releasePathReservedForWrite(stale_key); });
 
         /// A key committed by a previous insert into this table names an object, even if the object storage
         /// does not report it yet. Its key is dropped along with the object, so that the rewrite can take it again.

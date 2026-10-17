@@ -232,6 +232,7 @@ public:
     /// reserved against the concurrent inserts into the table only: when the object is not there yet, the
     /// reservation is the only thing that tells the concurrent inserts apart, and they would all write it.
     /// Returns false when another insert into this table is writing this key right now.
+    /// A truncating insert reserves the published keys it removes in the same way, see `removeStaleSplitObjects`.
     bool tryReserveStartingPathForWrite(const String & path)
     {
         std::lock_guard lock(paths_mutex);
@@ -242,14 +243,6 @@ public:
     {
         std::lock_guard lock(paths_mutex);
         paths_reserved_for_write.paths.erase(path);
-    }
-
-    /// Whether an insert into this table is writing this key right now. A truncating insert leaves such objects
-    /// alone when it deletes the objects of the previous inserts: they belong to an insert that is not over yet.
-    bool isPathReservedForWrite(const String & path) const
-    {
-        std::lock_guard lock(paths_mutex);
-        return paths_reserved_for_write.paths.contains(path);
     }
 
     /// A partitioned insert writes the keys of the partitions, which are not in the list of the paths of the table:
