@@ -46,7 +46,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
         elif path.startswith("/ranges/"):
             # Answers a range GET with the status in the path, and the signature and the bearer token as its reason
-            # phrase. A plain GET is cut short, so that the read is resumed with a range.
+            # phrase. A plain GET is cut short, so that the read is resumed with a range. The close is announced: the
+            # client could reuse a silently closed connection before it notices the close.
             body = b"1\n" * 32
             if "Range" in self.headers:
                 token = self.headers["Authorization"].removeprefix("Bearer ")
@@ -54,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_response(200)
                 sent = body[:8]
-                self.close_connection = True
+                self.send_header("Connection", "close")
             self.send_header("Accept-Ranges", "bytes")
         else:
             key_id = params.get("X-Amz-Credential", "").split("/")[0] or params.get("AWSAccessKeyId", "")
