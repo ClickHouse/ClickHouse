@@ -11,17 +11,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 DB="${CLICKHOUSE_DATABASE}"
 TABLE="put_table_05029"
+DOTTED_TABLE="${TABLE}.JSON"
 NO_INSERT_USER="put_no_insert_05029_${DB}"
 
 cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS \`${NO_INSERT_USER}\`"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.\`${DOTTED_TABLE}\`"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.${TABLE}"
 }
 trap cleanup EXIT
 
 cleanup
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.${TABLE} (a UInt32, b String) ENGINE=Memory"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.\`${DOTTED_TABLE}\` (a UInt32, b String) ENGINE=Memory"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER \`${NO_INSERT_USER}\` IDENTIFIED WITH no_password SETTINGS http_allow_database_as_path = 1, http_allow_table_as_file = 1"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${DB}.${TABLE} TO \`${NO_INSERT_USER}\`"
 
@@ -33,6 +36,13 @@ printf '1,"one"\n2,"two"\n' \
 echo "-- JSONEachRow format from the path"
 printf '{"a":3,"b":"three"}\n' \
     | curl -sS -X PUT -H 'Content-Type: application/json' --data-binary @- "${BASE_URL}/${DB}/${TABLE}.JSONEachRow"
+
+echo "-- dotted table name with a separate format suffix"
+printf '18,"dotted"\n' \
+    | curl -fsS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+        "${BASE_URL}/${DB}/${DOTTED_TABLE}.CSV" >/dev/null
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.\`${DOTTED_TABLE}\` WHERE a = 18 AND b = 'dotted'" | grep -qx '1'
+echo "dotted-table-upload: OK"
 
 echo "-- inserted rows"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB}.${TABLE} ORDER BY a"
@@ -294,99 +304,76 @@ def read_response(sock):
     return headers, body
 
 
-sock = socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30)
-try:
-    body = b'4,"four"\n'
+def put_request(path, body):
+    headers = (
+        f"PUT {path} HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: keep-alive\r\n\r\n"
+    )
+    return headers.encode() + body
+
+
+def check_reuse(label, first_request, display=True):
+    with socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30) as sock:
+        sock.sendall(first_request)
+        first_headers, _ = read_response(sock)
+        first_status = int(first_headers.split(b" ", 2)[1])
+        if not 400 <= first_status < 600:
+            raise RuntimeError(f"expected request failure, got HTTP {first_status}")
+        first_connection_close = b"connection: close" in first_headers.lower()
+        if first_connection_close:
+            raise RuntimeError("error response closed a reusable connection")
+
+        sock.sendall(
+            b"GET /?query=SELECT+1 HTTP/1.1\r\n"
+            b"Host: localhost\r\n"
+            b"Connection: close\r\n\r\n"
+        )
+        second_headers, _ = read_response(sock)
+        second_status = int(second_headers.split(b" ", 2)[1])
+        if second_status != 200:
+            raise RuntimeError(f"expected a reusable connection, got HTTP {second_status}")
+
+    if display:
+        first_prefix = f"{label}-first" if label else "first"
+        second_prefix = f"{label}-second" if label else "second"
+        print(f"{first_prefix}-status: {first_status}")
+        print(f"{first_prefix}-connection-close: {first_connection_close}")
+        print(f"{second_prefix}-status: {second_status}")
+
+
+check_reuse("", put_request("/${DB}/${TABLE}.UnknownFormat", b'4,"four"\n'))
+check_reuse("parser", put_request("/${DB}/${TABLE}.CSV", b'11,"parser"\nnot-a-number,"bad"\n'))
+check_reuse(
+    "compressed-parser",
+    put_request("/${DB}/${TABLE}.CSV.gz", gzip.compress(b'15,"compressed-parser"\nnot-a-number,"bad"\n')),
+)
+
+check_reuse(
+    "get-error",
+    b"GET /?query=SELECT+FROM HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n",
+    display=False,
+)
+print("get-error-reuse: OK")
+check_reuse(
+    "post-error",
+    b"POST /?query=SELECT+FROM HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
+    display=False,
+)
+print("post-error-reuse: OK")
+
+with socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30) as sock:
     sock.sendall(
-        b"PUT /${DB}/${TABLE}.UnknownFormat HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-        b"Connection: keep-alive\r\n\r\n"
-        + body
-    )
-    first_headers, _ = read_response(sock)
-
-    sock.sendall(
-        b"GET /?query=SELECT+1 HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Connection: close\r\n\r\n"
-    )
-    second_headers, _ = read_response(sock)
-finally:
-    sock.close()
-
-print("first-status:", first_headers.split(b" ", 2)[1].decode())
-print("first-connection-close:", b"connection: close" in first_headers.lower())
-print("second-status:", second_headers.split(b" ", 2)[1].decode())
-
-parser_sock = socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30)
-try:
-    body = b'11,"parser"\nnot-a-number,"bad"\n'
-    parser_sock.sendall(
-        b"PUT /${DB}/${TABLE}.CSV HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-        b"Connection: keep-alive\r\n\r\n"
-        + body
-    )
-    parser_first_headers, _ = read_response(parser_sock)
-
-    parser_sock.sendall(
-        b"GET /?query=SELECT+1 HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Connection: close\r\n\r\n"
-    )
-    parser_second_headers, _ = read_response(parser_sock)
-finally:
-    parser_sock.close()
-
-parser_first_status = parser_first_headers.split(b" ", 2)[1]
-if not 400 <= int(parser_first_status) < 600:
-    raise RuntimeError(f"expected parser failure, got HTTP {parser_first_status.decode()}")
-print("parser-first-status:", parser_first_status.decode())
-print("parser-first-connection-close:", b"connection: close" in parser_first_headers.lower())
-print("parser-second-status:", parser_second_headers.split(b" ", 2)[1].decode())
-
-compressed_parser_sock = socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30)
-try:
-    body = gzip.compress(b'15,"compressed-parser"\nnot-a-number,"bad"\n')
-    compressed_parser_sock.sendall(
-        b"PUT /${DB}/${TABLE}.CSV.gz HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-        b"Connection: keep-alive\r\n\r\n"
-        + body
-    )
-    compressed_parser_first_headers, _ = read_response(compressed_parser_sock)
-
-    compressed_parser_sock.sendall(
-        b"GET /?query=SELECT+1 HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Connection: close\r\n\r\n"
-    )
-    compressed_parser_second_headers, _ = read_response(compressed_parser_sock)
-finally:
-    compressed_parser_sock.close()
-
-compressed_parser_first_status = compressed_parser_first_headers.split(b" ", 2)[1]
-if not 400 <= int(compressed_parser_first_status) < 600:
-    raise RuntimeError(f"expected compressed parser failure, got HTTP {compressed_parser_first_status.decode()}")
-print("compressed-parser-first-status:", compressed_parser_first_status.decode())
-print("compressed-parser-first-connection-close:", b"connection: close" in compressed_parser_first_headers.lower())
-print("compressed-parser-second-status:", compressed_parser_second_headers.split(b" ", 2)[1].decode())
-
-chunked_sock = socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30)
-try:
-    chunked_sock.sendall(
         b"PUT /${DB}/${TABLE}.CSV HTTP/1.1\r\n"
         b"Host: localhost\r\n"
         b"Transfer-Encoding: chunked\r\n"
         b"Connection: close\r\n\r\n"
         b"0\r\n\r\n"
     )
-    chunked_empty_headers, _ = read_response(chunked_sock)
-finally:
-    chunked_sock.close()
-
-print("chunked-empty-status:", chunked_empty_headers.split(b" ", 2)[1].decode())
+    chunked_empty_headers, _ = read_response(sock)
+chunked_empty_status = int(chunked_empty_headers.split(b" ", 2)[1])
+if chunked_empty_status != 400:
+    raise RuntimeError(f"expected empty-body rejection, got HTTP {chunked_empty_status}")
+print("chunked-empty-status:", chunked_empty_status)
 PY
