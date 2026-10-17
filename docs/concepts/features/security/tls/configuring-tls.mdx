@@ -651,7 +651,8 @@ ClickHouse server and ClickHouse Keeper watch the files referenced by `certifica
 in the `openSSL.server` and `openSSL.client` sections (and in `protocols.*` for composable protocols), or the files in the
 directory if `caConfig` is a directory. When one of these files changes, or when `SYSTEM RELOAD CONFIG` is executed, the
 certificates are reloaded and used for all new TLS connections, including HTTPS, the secure native protocol, interserver
-connections, connections to Keeper and the Raft connections between Keeper nodes. Established connections keep using the
+connections, connections to Keeper and the Raft connections between Keeper nodes. The same applies to `ssl_cert_file`,
+`ssl_key_file` and `ssl_ca_cert_file` in the `grpc` section. Established connections keep using the
 certificates they were opened with.
 
 To rotate a CA without downtime, first replace the `caConfig` file with a bundle that contains both the old and the new

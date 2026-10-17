@@ -5,10 +5,13 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <openssl/pem.h>
 #include <Server/ACME/Client.h>
 
 
@@ -123,6 +126,34 @@ std::unique_ptr<const CertificateReloader::CAStore> loadCAStore(const std::strin
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot get CA certificates from SSL context: {}", Poco::Net::Utility::getLastError());
 
     return std::make_unique<const CertificateReloader::CAStore>(store, context.getCAPaths());
+}
+
+std::string readFileContents(const std::string & path)
+{
+    ReadBufferFromFile in(path);
+    std::string contents;
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+void validatePEMFiles(const CertificateReloader::PEMFiles & files)
+{
+    auto certificates = X509Certificate::fromBuffer(files.certificate_chain);
+
+    /// Not `KeyPair::fromPEMString`, which also accepts a public key. Encrypted keys are rejected.
+    std::unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_mem_buf(files.private_key.data(), static_cast<int>(files.private_key.size())), BIO_free);
+    if (!bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", Poco::Net::Utility::getLastError());
+    auto no_password = [](char *, int, int, void *) { return 0; };
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(PEM_read_bio_PrivateKey(bio.get(), nullptr, no_password, nullptr), EVP_PKEY_free);
+    if (!key)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot read an unencrypted private key: {}", Poco::Net::Utility::getLastError());
+
+    if (X509_check_private_key(static_cast<X509 *>(certificates.front()), key.get()) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "The private key does not match the certificate: {}", Poco::Net::Utility::getLastError());
+
+    if (!files.root_certificates.empty())
+        X509Certificate::fromBuffer(files.root_certificates);
 }
 
 }
@@ -392,6 +423,77 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
     std::lock_guard lock{data_mutex};
     for (auto & item : data_index)
         tryLoadImpl(config, item.second->ctx, item.first);
+    for (auto & [_, consumer] : pem_consumers)
+        tryLoadPEMConsumerImpl(config, consumer, /* initial */ false);
+}
+
+
+void CertificateReloader::tryLoadPEMConsumerImpl(const Poco::Util::AbstractConfiguration & config, PEMConsumer & consumer, bool initial)
+{
+    try
+    {
+        std::string new_cert_path = config.getString(consumer.keys.certificate, "");
+        std::string new_key_path = config.getString(consumer.keys.private_key, "");
+        std::string new_ca_path = consumer.keys.root_certificates.empty() ? "" : config.getString(consumer.keys.root_certificates, "");
+
+        if (new_cert_path.empty() || new_key_path.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Both '{}' and '{}' must be set", consumer.keys.certificate, consumer.keys.private_key);
+
+        /// Remember the modification times only on success, so that a failed load is retried.
+        File new_cert_file = consumer.cert_file;
+        File new_key_file = consumer.key_file;
+        File new_ca_file = consumer.ca_file;
+        bool cert_file_changed = new_cert_file.changeIfModified(new_cert_path, log);
+        bool key_file_changed = new_key_file.changeIfModified(new_key_path, log);
+        bool ca_file_changed = new_ca_file.changeIfModified(new_ca_path, log);
+        if (!initial && !cert_file_changed && !key_file_changed && !ca_file_changed)
+            return;
+
+        LOG_DEBUG(log, "Loading certificate ({}), key ({}) and CA ({}).", new_cert_path, new_key_path, new_ca_path);
+
+        PEMFiles files;
+        files.certificate_chain = readFileContents(new_cert_path);
+        files.private_key = readFileContents(new_key_path);
+        if (!new_ca_path.empty())
+            files.root_certificates = readFileContents(new_ca_path);
+
+        validatePEMFiles(files);
+        consumer.callback(files);
+
+        consumer.cert_file = std::move(new_cert_file);
+        consumer.key_file = std::move(new_key_file);
+        consumer.ca_file = std::move(new_ca_file);
+
+        LOG_INFO(log, "Loaded certificate ({}), key ({}) and CA ({}).", new_cert_path, new_key_path, new_ca_path);
+    }
+    catch (...)
+    {
+        if (initial)
+            throw;
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+    }
+}
+
+
+UInt64 CertificateReloader::registerPEMConsumer(const Poco::Util::AbstractConfiguration & config, PEMFileKeys keys, PEMFilesCallback callback)
+{
+    std::lock_guard lock{data_mutex};
+
+    PEMConsumer consumer;
+    consumer.keys = std::move(keys);
+    consumer.callback = std::move(callback);
+    tryLoadPEMConsumerImpl(config, consumer, /* initial */ true);
+
+    UInt64 id = next_pem_consumer_id++;
+    pem_consumers.emplace(id, std::move(consumer));
+    return id;
+}
+
+
+void CertificateReloader::unregisterPEMConsumer(UInt64 id)
+{
+    std::lock_guard lock{data_mutex};
+    pem_consumers.erase(id);
 }
 
 

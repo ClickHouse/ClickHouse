@@ -19,7 +19,9 @@
 #include <chrono>
 #include <string>
 #include <filesystem>
+#include <functional>
 #include <list>
+#include <map>
 #include <optional>
 #include <unordered_map>
 #include <mutex>
@@ -39,6 +41,7 @@ namespace DB
 ///
 /// An `SSL_CTX` that is shared between threads must not be modified, so instead of touching the contexts on reload,
 /// both callbacks apply the current immutable snapshot (`MultiVersion`) to each new connection.
+/// Servers with their own TLS stack (e.g. gRPC) get the PEM contents through a callback instead (`registerPEMConsumer`).
 class CertificateReloader
 {
 public:
@@ -107,6 +110,25 @@ public:
         explicit MultiData(SSL_CTX * ctx_) : ctx(ctx_) {}
     };
 
+    struct PEMFiles
+    {
+        std::string certificate_chain;
+        std::string private_key;
+        /// Empty if no CA file is configured.
+        std::string root_certificates;
+    };
+
+    using PEMFilesCallback = std::function<void(const PEMFiles &)>;
+
+    /// Config keys of the files.
+    struct PEMFileKeys
+    {
+        std::string certificate;
+        std::string private_key;
+        /// Empty if CA certificates are not used.
+        std::string root_certificates;
+    };
+
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
@@ -129,8 +151,15 @@ public:
     /// false if the caller has to configure them on the context itself.
     bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas_default);
 
-    /// Handle configuration reload for all contexts
+    /// Handle configuration reload for all contexts and PEM consumers
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
+
+    /// Load the files now (throws on error) and pass them to `callback`, then again from `tryReloadAll` when they change and are valid.
+    /// `callback` is called under the internal mutex. Returns an id for `unregisterPEMConsumer`.
+    UInt64 registerPEMConsumer(const Poco::Util::AbstractConfiguration & config, PEMFileKeys keys, PEMFilesCallback callback);
+
+    /// After it returns, the callback is not running and will not be called again.
+    void unregisterPEMConsumer(UInt64 id);
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
@@ -160,10 +189,26 @@ private:
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
+    struct PEMConsumer
+    {
+        PEMFileKeys keys;
+        PEMFilesCallback callback;
+
+        File cert_file{"certificate"};
+        File key_file{"key"};
+        File ca_file{"CA"};
+    };
+
+    /// Unless `initial`, loads only changed files and logs errors instead of throwing.
+    void tryLoadPEMConsumerImpl(const Poco::Util::AbstractConfiguration & config, PEMConsumer & consumer, bool initial) TSA_REQUIRES(data_mutex);
+
     LoggerPtr log = getLogger("CertificateReloader");
 
     std::list<MultiData> data TSA_GUARDED_BY(data_mutex);
     std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);
+
+    std::map<UInt64, PEMConsumer> pem_consumers TSA_GUARDED_BY(data_mutex);
+    UInt64 next_pem_consumer_id TSA_GUARDED_BY(data_mutex) = 0;
     mutable std::mutex data_mutex;
 };
 

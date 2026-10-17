@@ -6,16 +6,21 @@
 
 #include "clickhouse_grpc.grpc.pb.h"
 #include <Poco/Net/SocketAddress.h>
+#include <memory>
+#include <optional>
 #include <base/types.h>
 #include <Common/Logger.h>
 #include <Server/IGRPCServer.h>
 
 namespace Poco { class Logger; }
 
+namespace Poco::Util { class AbstractConfiguration; }
+
 namespace grpc
 {
 class Server;
 class ServerCompletionQueue;
+class ServerCredentials;
 }
 
 namespace DB
@@ -47,6 +52,8 @@ private:
     using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
     class Runner;
 
+    std::shared_ptr<grpc::ServerCredentials> makeCredentials(const Poco::Util::AbstractConfiguration & config);
+
     IServer & iserver;
     const Poco::Net::SocketAddress address_to_listen;
     LoggerRawPtr log;
@@ -54,6 +61,8 @@ private:
     std::unique_ptr<grpc::Server> grpc_server;
     std::unique_ptr<grpc::ServerCompletionQueue> queue;
     std::unique_ptr<Runner> runner;
+    /// Registration in CertificateReloader, if TLS is enabled.
+    std::optional<UInt64> pem_consumer_id;
 };
 }
 #endif
