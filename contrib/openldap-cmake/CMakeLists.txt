@@ -14,6 +14,8 @@ if (
     set (_system_processor "x86_64")
 elseif ("${_system_processor}" STREQUAL "arm64")
     set (_system_processor "aarch64")
+elseif ("${_system_processor}" STREQUAL "powerpc64le")
+    set (_system_processor "ppc64le")
 endif ()
 if (NOT(
     ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
@@ -23,6 +25,7 @@ if (NOT(
     ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "loongarch64") OR
     ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
     ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "aarch64" ) OR
+    ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "ppc64le" ) OR
     ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  ) OR
     ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "aarch64"   )
 ))
@@ -58,6 +61,8 @@ elseif(
     "${_system_processor}" STREQUAL "arm64"
 )
     set (_system_processor "aarch64")
+elseif("${_system_processor}" STREQUAL "powerpc64le")
+    set (_system_processor "ppc64le")
 endif()
 
 set(_extra_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_system_name}_${_system_processor}")
