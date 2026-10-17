@@ -1686,7 +1686,7 @@ inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf);
 
 inline void readBinary(MacAddress & x, ReadBuffer & buf)
 {
-    UInt64 value;
+    UInt64 value = 0;
     readPODBinary(value, buf);
     x = MacAddress(value);
 }

@@ -532,7 +532,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::MacAddress:
         {
-            UInt64 value;
+            UInt64 value = 0;
             readBinary(value, buf);
             return MacAddress(value);
         }

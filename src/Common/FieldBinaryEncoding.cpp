@@ -366,7 +366,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             return decodeValueLittleEndian<IPv6>(buf);
         case FieldBinaryTypeIndex::MacAddress:
         {
-            UInt64 value;
+            UInt64 value = 0;
             readBinaryLittleEndian(value, buf);
             return MacAddress(value);
         }

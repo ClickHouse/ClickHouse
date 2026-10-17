@@ -135,7 +135,7 @@ void SerializationMacAddress::serializeBinary(const Field & field, WriteBuffer &
 
 void SerializationMacAddress::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
-    UInt64 u;
+    UInt64 u = 0;
     readBinary(u, istr);
     field = NearestFieldType<MacAddress>(MacAddress(u));
 }
@@ -147,7 +147,7 @@ void SerializationMacAddress::serializeBinary(const IColumn & column, size_t row
 
 void SerializationMacAddress::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    UInt64 u;
+    UInt64 u = 0;
     readBinary(u, istr);
     assert_cast<ColumnVector<MacAddress> &>(column).getData().push_back(MacAddress(u));
 }
