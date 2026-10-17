@@ -59,3 +59,9 @@ continue from their current values instead of restarting near zero. Closing the 
 back or forward to another history entry, do stop the query.
 
 Only small results are snapshotted for restore. A large result (above the snapshot size limit) or an image result is not persisted: after a tab switch or reload the tab keeps its query but not the rendered result, and re-running the query reproduces it. This applies both to single-query results and to the combined output of a "Run all" (multi-query) run.
+
+## Plan view {#plan-view}
+
+An `EXPLAIN` or a `SELECT` offers a **Plan** toggle beside **Logs** and **Metrics**, which shows the
+statement's query plan as a tree or a graph, with the details of each node. See
+[Web UI Plan View](/concepts/features/interfaces/web-ui-plan-view).
