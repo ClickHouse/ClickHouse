@@ -62,6 +62,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_materialized_cte;
     extern const SettingsString filter;
@@ -73,6 +74,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsUInt64 max_execution_speed;
     extern const SettingsUInt64 max_execution_speed_bytes;
@@ -87,6 +89,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsDouble offset;
@@ -360,12 +363,14 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         const bool has_whole_result_settings = settings[Setting::max_result_rows] || settings[Setting::max_result_bytes]
             || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
             || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
-            || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
-        /// A GROUP BY, sorting, JOIN or set limit would see one chunk at a time, a read, network, speed or leaf time limit would start again for each chunk,
+            || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty()
+            || !settings[Setting::additional_result_filter].value.empty();
+        /// A GROUP BY, sorting, JOIN or set limit would see one chunk at a time, a read, network, transfer, speed or leaf time limit would start again for each chunk,
         /// and a time limit with `timeout_overflow_mode = 'break'` would stop elsewhere, so they don't let the query be split either.
         const bool has_whole_query_limits = settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort]
             || settings[Setting::max_bytes_to_sort] || settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join]
             || settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set] || settings[Setting::max_network_bytes]
+            || settings[Setting::max_rows_to_transfer] || settings[Setting::max_bytes_to_transfer]
             || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
             || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
             || settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0

@@ -237,6 +237,8 @@ HOURLY = 'count_values("hour", floor(vector(time() / 3600)))'
         ("node_load1", {"sort": "-1"}),
         ("sum by (mode) (rate(node_cpu_seconds_total[5m]))", {"select": "tags, arraySlice(samples, 1, 2) AS samples"}),
         ("sum by (mode) (rate(node_cpu_seconds_total[5m]))", {"filter": "length(samples) > 100"}),
+        # Each chunk has at most 60 samples per series, so the filter would drop every chunk.
+        ("vector(1)", {"additional_result_filter": "length(samples) > 100"}),
     ],
 )
 def test_whole_result_settings_disable_splitting(query, params):
@@ -273,7 +275,7 @@ def test_group_by_sort_and_join_limits_disable_splitting(query, params):
     assert (response.status_code, response.text) == (expected.status_code, expected.text)
 
 
-# The set, read, network, speed and leaf time limits are loose enough for the whole query, but each chunk would start them again, so the query is executed at once.
+# The set, read, network, transfer, speed and leaf time limits are loose enough for the whole query, but each chunk would start them again, so the query is executed at once.
 @pytest.mark.parametrize(
     "params",
     [
@@ -285,6 +287,8 @@ def test_group_by_sort_and_join_limits_disable_splitting(query, params):
         {"max_rows_in_set": 1000000000},
         {"max_bytes_in_set": 1000000000000},
         {"max_network_bytes": 1000000000000},
+        {"max_rows_to_transfer": 1000000000},
+        {"max_bytes_to_transfer": 1000000000000},
         {"max_estimated_execution_time": 1000000},
         {"min_execution_speed": 1},
         {"min_execution_speed_bytes": 1},
