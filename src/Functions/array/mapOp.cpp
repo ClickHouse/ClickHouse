@@ -65,12 +65,12 @@ private:
     /// Value-type promotion follows the same rule as the underlying numeric
     /// op (e.g. `Map(K, UInt8) + Map(K, UInt8)` → `Map(K, UInt64)`), which
     /// isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Map(K : Any, Any), ...) -> Map(K, Any)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

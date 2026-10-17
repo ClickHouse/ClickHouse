@@ -100,10 +100,10 @@ public:
     /// The approximate amount of memory retained by this object, including the object itself.
     /// It is the weight of the object in the statistics cache, so it must not be underestimated.
     /// It does not include the description of the statistics, see `descriptionAllocatedBytes`.
-    virtual size_t allocatedBytes() const = 0;
+    [[nodiscard]] virtual size_t allocatedBytes() const = 0;
 
     /// The memory retained by the description of the statistics (its AST), not including the object itself.
-    size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
+    [[nodiscard]] size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
 
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
@@ -178,7 +178,7 @@ public:
     [[nodiscard]] Estimate getEstimate() const;
     [[nodiscard]] String getNameForLogs() const;
     /// The approximate amount of memory retained by this object and its statistics objects.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
     [[nodiscard]] DataTypePtr getDataType() const { return stats_desc.data_type; }
 
     [[nodiscard]] const StatsMap & getStats() const { return stats; }

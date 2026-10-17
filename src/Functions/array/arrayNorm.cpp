@@ -193,7 +193,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// 1-arg norms (`array<L1|L2|L2Squared|Linf>Norm`) and the 2-arg `arrayLpNorm` share
         /// the same nested-element → return-type table: arrays of BFloat16 or Float32

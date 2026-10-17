@@ -799,7 +799,7 @@ public:
     [[nodiscard]] virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
+    [[nodiscard]] virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** The error code reported when the number of arguments does not fit the function's signature.
       *
@@ -809,13 +809,13 @@ public:
       * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
       * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
       */
-    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+    [[nodiscard]] virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
 
     /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
-    virtual String getSignatureString() const { return {}; }
+    [[nodiscard]] virtual String getSignatureString() const { return {}; }
 
     /// See IFunction::signaturePropagatesNullability.
-    virtual bool signaturePropagatesNullability() const { return false; }
+    [[nodiscard]] virtual bool signaturePropagatesNullability() const { return false; }
 
     [[nodiscard]] virtual bool isVariadic() const { return false; }
 

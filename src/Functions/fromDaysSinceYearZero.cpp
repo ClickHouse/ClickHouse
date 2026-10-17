@@ -51,7 +51,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(NativeInteger) -> " + typename Traits::ReturnDataType{}.getName();
     }

@@ -38,7 +38,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array, ...) -> UInt32"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array, ...) -> UInt32"; }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

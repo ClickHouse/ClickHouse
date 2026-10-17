@@ -33,7 +33,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ResultType, UInt16>)
             return "(String) -> UInt16";

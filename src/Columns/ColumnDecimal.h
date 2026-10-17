@@ -106,7 +106,7 @@ public:
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const final;
     void updateHashFast(SipHash & hash) const final;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #else
     [[nodiscard]] int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #endif

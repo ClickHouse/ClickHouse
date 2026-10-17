@@ -746,7 +746,7 @@ public:
         PrimaryIndexCachePtr primary_index_cache;
         StatisticsCachePtr statistics_cache;
 
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
+        [[nodiscard]] bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
     };
 
     /// Returns caches that should be prewarmed for a part of the given size.

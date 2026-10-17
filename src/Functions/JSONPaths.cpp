@@ -109,7 +109,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Impl::with_types)
             return "(JSON) -> Map(String, String)";

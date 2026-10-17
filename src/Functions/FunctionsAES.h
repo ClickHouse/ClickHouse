@@ -252,7 +252,7 @@ private:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
             return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
@@ -761,7 +761,7 @@ private:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)

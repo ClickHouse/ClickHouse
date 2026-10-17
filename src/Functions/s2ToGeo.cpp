@@ -50,7 +50,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64) -> Tuple(Float64, Float64)";
     }

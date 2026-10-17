@@ -57,7 +57,7 @@ public:
     /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
     /// `Array(...) | Nothing` argument into it), so the accepted arities are
     /// `1 + 2 * N` and a call like `timeSeriesTagsToGroup([])` is valid.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(Tuple(String, String)) | Nothing,"
                " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
@@ -70,7 +70,7 @@ public:
     /// override below is authoritative (it runs the helper). Route the types-only path to it too,
     /// so the base `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the
     /// approximate signature string as a validator.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -102,7 +102,7 @@ public:
     /// expired by plan-optimization time, which would otherwise raise a `Context has expired`
     /// logical error. The real group lookup only needs to happen at execution time, so the
     /// dry run returns a column of the right type without consulting the collector.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumn()->cloneResized(input_rows_count);
     }

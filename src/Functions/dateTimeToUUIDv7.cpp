@@ -42,7 +42,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     [[nodiscard]] bool isVariadic() const final { return false; }
 
-    String getSignatureString() const override { return "(DateTime) -> UUID"; }
+    [[nodiscard]] String getSignatureString() const override { return "(DateTime) -> UUID"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override
     {

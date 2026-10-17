@@ -113,7 +113,7 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (is_utf8)
             return

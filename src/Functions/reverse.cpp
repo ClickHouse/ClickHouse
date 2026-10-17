@@ -46,7 +46,7 @@ public:
     /// `FunctionReverse` covers String/FixedString/Tuple inputs — the
     /// `ReverseOverloadResolver` routes Array(...) inputs to `arrayReverse`
     /// before this class is built, so Array is not part of this signature.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(S : StringOrFixedString) -> S OR (T : Tuple) -> reverseTuple(T)";
     }

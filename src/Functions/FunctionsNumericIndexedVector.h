@@ -48,7 +48,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
@@ -132,7 +132,7 @@ public:
     /// Binary ops between two NumericIndexedVector sketches or a sketch and a
     /// scalar. Both sketches must share inner index/value types, which the DSL
     /// doesn't model, so the signature is documentation-only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
                " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
@@ -141,7 +141,7 @@ public:
     /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative: `executeImpl` selects
     /// the implementation from the first argument and reinterprets the second state as the same
     /// specialization, so mismatched inner types must be rejected here.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -546,7 +546,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
     }
@@ -650,7 +650,7 @@ public:
     /// The result type is the sketch's value type V (the second inner argument
     /// of `groupNumericIndexedVector`). The DSL captures it directly inside
     /// the matcher, so the signature is authoritative for this function.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
     }
@@ -750,7 +750,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
     }
@@ -836,7 +836,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
     }

@@ -44,7 +44,7 @@ public:
     /// (whose type is taken from the trailing `acc_initial` argument),
     /// followed by one element per parallel array; the lambda must return
     /// the accumulator type, which is also the result type.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Function((A : Any, Any, ...), A), Array, ..., A) -> A";
     }

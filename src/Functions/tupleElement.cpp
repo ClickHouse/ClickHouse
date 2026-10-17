@@ -67,7 +67,7 @@ public:
     /// a combined `@` sub-column, and the optional third argument is the type used when the element
     /// is missing — so it stays in the dedicated `getReturnTypeImpl` below. The signature string is
     /// purely descriptive; it is only rendered, never applied.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple | Nullable(Tuple) | Array | QBit | JSON | Nullable(JSON), const index_or_name, [Any default]) -> Any";
     }
@@ -77,7 +77,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

@@ -28,7 +28,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString) -> UInt64";
     }

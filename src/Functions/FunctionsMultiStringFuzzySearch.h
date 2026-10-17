@@ -62,7 +62,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String elem_type = DataTypeNumber<typename Impl::ResultType>{}.getName();
         if constexpr (Impl::is_column_array)

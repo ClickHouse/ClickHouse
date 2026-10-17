@@ -40,7 +40,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     [[nodiscard]] bool isVariadic() const final { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([Any]) -> UUID";
     }

@@ -56,7 +56,7 @@ public:
         return ignore_set ? 0 : 2;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
         /// hence the optional second argument there.
@@ -67,7 +67,7 @@ public:
     /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
     /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
     /// delegate to the signature.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(

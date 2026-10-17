@@ -121,7 +121,7 @@ public:
     }
 
     /// The largest number of encoded dimensions the implementation supports.
-    virtual size_t getMaxDimensions() const { return 8; }
+    [[nodiscard]] virtual size_t getMaxDimensions() const { return 8; }
 
     /// `mortonEncode`/`hilbertEncode` accept either (a) one to `getMaxDimensions()`
     /// `NativeUInt`s (encoded as a single space-filling-curve key), or (b) a leading
@@ -132,7 +132,7 @@ public:
     /// yet correlate the `Tuple` size with the number of mask arguments (that
     /// would need a shared count variable, e.g.
     /// `(Tuple(NativeUInt...{N}), NativeUInt...{N})`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const size_t max_dimensions = getMaxDimensions();
 
@@ -174,13 +174,13 @@ public:
                             getName(), getMaxDimensions());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkNumberOfDimensions(arguments);
         return IFunction::getReturnTypeImpl(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());
@@ -213,7 +213,7 @@ public:
     /// dimensions to decode into) or a constant `Tuple` of bit-shift masks;
     /// the result is a tuple of decoded coordinates (`UInt64` by default,
     /// shrunk per the mask when one is provided).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The `const` modifier applies to the whole first argument; it cannot be repeated
         /// inside the `|` alternation (the parser only accepts one `const` per argument).
@@ -225,7 +225,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

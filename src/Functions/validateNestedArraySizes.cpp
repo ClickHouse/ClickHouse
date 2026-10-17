@@ -30,7 +30,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt8, Array, Array, ...) -> UInt8";
     }

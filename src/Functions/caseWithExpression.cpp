@@ -47,7 +47,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Arguments: expr, when1, then1, when2, then2, ..., else.
         /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
@@ -59,7 +59,7 @@ public:
     /// Before the declarative signature, an empty call was `TOO_FEW_ARGUMENTS_FOR_FUNCTION` and any
     /// other unusable arity - fewer than four arguments, or an odd number of them - was
     /// `BAD_ARGUMENTS`. Both codes are pinned by the tests of the `CASE` construction.
-    int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
     {
         return number_of_arguments == 0 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::BAD_ARGUMENTS;
     }

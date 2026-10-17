@@ -353,7 +353,7 @@ public:
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String return_type = typename Distribution::ReturnType{}.getName();
         String args;

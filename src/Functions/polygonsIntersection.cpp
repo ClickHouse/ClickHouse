@@ -51,7 +51,7 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> MultiPolygon";
     }

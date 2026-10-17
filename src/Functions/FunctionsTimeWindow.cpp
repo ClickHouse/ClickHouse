@@ -149,7 +149,7 @@ public:
     /// `... -> DateTime | Tuple(...)` cannot be parsed — it raises `SYNTAX_ERROR` on the
     /// types-only path. Keep it empty until return-type unions are supported; the
     /// `getReturnTypeImpl(ColumnsWithTypeAndName)` override resolves the exact shape.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "";
     }

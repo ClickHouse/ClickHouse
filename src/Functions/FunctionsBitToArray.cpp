@@ -50,7 +50,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Integer) -> String"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Integer) -> String"; }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -139,7 +139,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(T : Integer) -> Array(T)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(T : Integer) -> Array(T)"; }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -220,7 +220,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Integer) -> Array(UInt64)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Integer) -> Array(UInt64)"; }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

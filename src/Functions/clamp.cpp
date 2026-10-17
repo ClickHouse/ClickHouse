@@ -30,7 +30,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionClamp>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T1, T2, T3) -> leastSupertype(T1, T2, T3)";
     }

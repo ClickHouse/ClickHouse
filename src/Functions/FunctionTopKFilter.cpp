@@ -102,7 +102,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> UInt8";
     }

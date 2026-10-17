@@ -163,7 +163,7 @@ public:
         return Impl::getArgumentsThatAreAlwaysConstant();
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String elem = DataTypeNumber<typename Impl::ResultType>{}.getName();
         const String ret = (execution_error_policy == ExecutionErrorPolicy::Null)

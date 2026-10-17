@@ -1871,7 +1871,7 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, [Integer]) -> UInt64";
     }

@@ -43,7 +43,7 @@ public:
         return false;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `BFloat16` is not a `NativeNumber` but is accepted by these predicates (matches the
         /// legacy `isNativeNumber(arg) || isBFloat16(arg)` check); `Decimal` / wide integers stay rejected.

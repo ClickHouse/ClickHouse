@@ -47,7 +47,7 @@ public:
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64, UInt16) -> Array(UInt64)";
     }

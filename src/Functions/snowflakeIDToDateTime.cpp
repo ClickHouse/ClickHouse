@@ -49,7 +49,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// (UInt64 value, [const NativeUInt epoch, [String tz]]). Note tz requires epoch, so the
         /// optional groups can't be flattened to `(UInt64, [const NativeUInt], [String])` — that
@@ -117,7 +117,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (allow_nonconst_timezone_arguments)
             return

@@ -33,7 +33,7 @@ public:
         return false;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> UInt8";
     }
@@ -49,7 +49,7 @@ public:
     /// (the subquery doesn't have a regular column type), so we must not
     /// validate the argument count via the declarative signature here; just
     /// return `UInt8` directly.
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

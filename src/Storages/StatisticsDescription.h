@@ -41,7 +41,7 @@ struct SingleStatisticsDescription
     bool operator==(const SingleStatisticsDescription & other) const;
 
     /// The memory retained by `ast` (an upper bound), not including the object itself.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 class ColumnsDescription;

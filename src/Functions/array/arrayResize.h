@@ -23,7 +23,7 @@ public:
     /// Documentation-only signature (the function overrides
     /// `getReturnTypeImpl(ColumnsWithTypeAndName)` so the DSL is bypassed at
     /// type-check time). The runtime additionally rejects a Nullable size argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(NULL, Any, Any) -> NULL"

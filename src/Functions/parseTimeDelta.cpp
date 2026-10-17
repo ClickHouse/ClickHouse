@@ -111,16 +111,16 @@ namespace
 
         [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "(String) -> Float64";
         }
 
         /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
         /// signature, and its tests pin those codes.
-        int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+        [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
         {
             return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
         }

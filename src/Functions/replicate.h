@@ -38,7 +38,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T, Array, ...) -> Array(T)";
     }

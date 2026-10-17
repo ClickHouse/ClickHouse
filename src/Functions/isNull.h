@@ -22,7 +22,7 @@ public:
     static FunctionPtr create(ContextPtr context);
 
     [[nodiscard]] std::string getName() const override { return name; }
-    String getSignatureString() const override { return "(Any) -> UInt8"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Any) -> UInt8"; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }

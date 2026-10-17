@@ -62,7 +62,7 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
+    [[nodiscard]] String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {

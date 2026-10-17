@@ -30,7 +30,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Integer | Float, ...) -> String";
     }

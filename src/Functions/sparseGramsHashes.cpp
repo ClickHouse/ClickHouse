@@ -31,9 +31,9 @@ public:
     [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `SparseGramsImpl::init` reads the optional `min_ngram_length` / `max_ngram_length` /
         /// `min_cutoff_length` arguments exactly once per block with `getUInt(0)`, so they must be

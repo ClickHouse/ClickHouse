@@ -34,7 +34,7 @@ private:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(NativeNumber | Decimal | BFloat16, NativeNumber | Decimal | BFloat16) -> Float64";
     }

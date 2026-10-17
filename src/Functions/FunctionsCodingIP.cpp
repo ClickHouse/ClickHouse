@@ -61,7 +61,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads, so a
         /// wrong-width FixedString is rejected at analysis time on every path.
@@ -135,7 +135,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads. The
         /// two byte-count arguments are always constant (see `getArgumentsThatAreAlwaysConstant`).
@@ -278,7 +278,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
             return "(MaybeNullable(StringOrFixedString)) -> Nullable(FixedString(16))";
@@ -376,7 +376,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return mask_tail_octets == 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(IPv4 | UInt8 | UInt16 | UInt32) -> String";
     }
@@ -441,7 +441,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
             return "(MaybeNullable(String)) -> Nullable(UInt32)";
@@ -499,7 +499,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// For backward compatibility IPv4ToIPv6 is overloaded: UInt32 → FixedString(16), IPv4 → IPv6.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(UInt32) -> FixedString(16)"
@@ -578,7 +578,7 @@ public:
     [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64) -> String";
     }
@@ -707,7 +707,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String) -> UInt64";
     }
@@ -797,7 +797,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width the implementation reads
         /// (16 raw bytes per row); a narrower FixedString is rejected at analysis time, avoiding
@@ -941,7 +941,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(IPv4 | UInt8 | UInt16 | UInt32, UInt8) -> Tuple(IPv4, IPv4)";
     }
@@ -989,7 +989,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String) -> UInt8";
     }
@@ -1043,7 +1043,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String) -> UInt8";
     }

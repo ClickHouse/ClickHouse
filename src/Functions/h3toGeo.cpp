@@ -58,7 +58,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return h3togeo_lon_lat_result_order
             ? "(UInt64) -> Tuple(longitude Float64, latitude Float64)"

@@ -42,14 +42,14 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([Any]) -> FixedString(26)";
     }
 
     /// The function accepted at most one (ignored) argument and reported anything beyond that as
     /// `TOO_MANY_ARGUMENTS_FOR_FUNCTION` before it adopted the declarative signature; tests pin that code.
-    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
     {
         return ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     }

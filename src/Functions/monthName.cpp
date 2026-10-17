@@ -30,7 +30,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Legacy `isDateOrDateTime` matched only Date / DateTime / DateTime64 — not Date32.
         return "(Date | DateTime | DateTime64) -> String";

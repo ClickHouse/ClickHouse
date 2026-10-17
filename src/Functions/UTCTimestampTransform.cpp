@@ -48,7 +48,7 @@ namespace
 
         [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return
                 "(DateTime, const String) -> DateTime"
@@ -71,7 +71,7 @@ namespace
             }
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].get());
             return IFunction::getReturnTypeImpl(arguments);

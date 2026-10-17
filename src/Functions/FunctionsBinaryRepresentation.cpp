@@ -241,7 +241,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
         /// master. Date / DateTime / DateTime64 are not handled explicitly in
@@ -643,7 +643,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
+    [[nodiscard]] String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

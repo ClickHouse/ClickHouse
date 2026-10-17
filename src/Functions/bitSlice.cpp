@@ -38,7 +38,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).
         return

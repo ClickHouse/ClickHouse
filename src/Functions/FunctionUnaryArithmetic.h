@@ -214,7 +214,7 @@ public:
     ///   `system.functions` but the long-form `getReturnTypeImpl(DataTypes)`
     ///   stays authoritative — used when the legacy dispatch isn't expressible
     ///   in the DSL (e.g. `negate` routing tuples to `tupleNegate`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Op<UInt8>::signature; })
             return Op<UInt8>::signature;
@@ -224,7 +224,7 @@ public:
             return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Like `BinaryArithmeticOverloadResolver`, only `signature` (authoritative)
         /// drives the DSL path; `signature_documentation` is bypassed so the legacy

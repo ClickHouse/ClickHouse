@@ -624,7 +624,7 @@ namespace
         /// Documentation-only — the override below is authoritative (it computes
         /// the DateTime64 scale from the number of `S` placeholders in the
         /// format string, and attaches the timezone from the optional third arg).
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             String result;
             if constexpr (return_type == ReturnType::DateTime)
@@ -641,7 +641,7 @@ namespace
         /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
         /// Decline this entry point instead of letting the documentation-only signature above
         /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

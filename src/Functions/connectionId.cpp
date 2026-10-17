@@ -30,7 +30,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "() -> UInt64"; }
+    [[nodiscard]] String getSignatureString() const override { return "() -> UInt64"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

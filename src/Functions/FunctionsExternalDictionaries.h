@@ -919,7 +919,7 @@ private:
         return impl.isInjective(sample_columns);
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// dictGetUInt8/Int64/Date/UUID/IPv4/String/... - the typed variants always return
         /// the type embedded in the function name. Arguments mirror dictGet: at minimum

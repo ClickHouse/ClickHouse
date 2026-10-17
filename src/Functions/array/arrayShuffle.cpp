@@ -68,7 +68,7 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Traits::has_limit)
             return "(Array(T), [const Integer], [const Integer]) -> Array(T)";

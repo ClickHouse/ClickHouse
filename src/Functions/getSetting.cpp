@@ -50,7 +50,7 @@ public:
 
     /// Documentation-only — the result type is the dynamic type of the
     /// setting value resolved at query time from its const-string name.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (mode == ErrorHandlingMode::Default)
             return "(const String, Any) -> Any";

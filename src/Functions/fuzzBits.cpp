@@ -66,7 +66,7 @@ public:
     /// function on a single row and stamp that one fuzzed value onto every row of the result.
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : StringOrFixedString, const Float) -> T";
     }

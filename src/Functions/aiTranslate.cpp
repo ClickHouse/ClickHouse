@@ -25,7 +25,7 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `instructions` and `temperature` are optional, but `temperature` is only
         /// valid once `instructions` is present, so the optional positions are spelled

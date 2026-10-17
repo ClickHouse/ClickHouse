@@ -47,7 +47,7 @@ public:
     /// Documentation-only — the result type is the requested variant
     /// element (or array of), looked up dynamically from the const-string
     /// or const-Array(String) type-name in the second argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Dynamic, const String) -> Any";
     }

@@ -98,7 +98,7 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
         /// walks back through the args before `...` and groups them by index coherence:
@@ -116,7 +116,7 @@ public:
     /// type-function always uses the strict mode), so when that setting is enabled, compute the common
     /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
     /// The `ColumnsWithTypeAndName` overload is overridden too so both analysis paths agree.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!allow_lossy_numeric_supertype)
             return FunctionIfBase::getReturnTypeImpl(arguments);

@@ -141,7 +141,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString | LowCardinality(StringOrFixedString), "
                "StringOrFixedString | LowCardinality(StringOrFixedString)) -> UInt8";
@@ -176,7 +176,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(StringOrFixedString | LowCardinality(StringOrFixedString)) -> "

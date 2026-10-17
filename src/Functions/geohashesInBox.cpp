@@ -37,7 +37,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 5; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Enforce the same exact native Float type across the 4 coordinate args via a shared
         /// type variable. The matcher is `NativeFloat` (Float32 or Float64), not `Float`, because

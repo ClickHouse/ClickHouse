@@ -189,7 +189,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"

@@ -49,7 +49,7 @@ public:
     /// (or array of, when called on Array(Variant)), looked up dynamically from
     /// the const-string type-name in the second argument. The optional third
     /// argument is the default value.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Variant | Array, const String, [Any]) -> Any";
     }

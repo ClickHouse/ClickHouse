@@ -66,7 +66,7 @@ public:
     /// auto-detection, so when the setting is off the third alternative goes
     /// through plain `leastSupertype` (and the runtime override stays
     /// authoritative when a Variant slips in).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (use_variant_as_common_type)
             return "(Nothing, T) -> T"
@@ -112,7 +112,7 @@ public:
         return getLeastSupertype(args, allow_lossy_numeric_supertype);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }

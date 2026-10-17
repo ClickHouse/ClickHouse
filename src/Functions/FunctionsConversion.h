@@ -3860,7 +3860,7 @@ public:
     /// `signature` constant describing the simple non-Nullable shape; the override
     /// continues to handle Nullable propagation and the (optional) trailing
     /// scale/timezone arguments.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;
@@ -3914,7 +3914,7 @@ public:
 
     /// The types-only entry point must agree with the column-aware one above, so it applies the
     /// same `cast_keep_nullable` rule before deferring to the declarative path.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkLegacyToTimeArity(arguments);
 
@@ -3932,7 +3932,7 @@ public:
     /// See IFunction::signaturePropagatesNullability. The conversion functions do not use
     /// useDefaultImplementationForNulls, so the declarative path must propagate Nullable itself
     /// for the authoritative `Name`s.
-    bool signaturePropagatesNullability() const override
+    [[nodiscard]] bool signaturePropagatesNullability() const override
     {
         return requires { Name::authoritative; };
     }
@@ -4460,7 +4460,7 @@ public:
     /// the `Name` may expose a `signature` constant. The override below
     /// retains authoritative control over Nullable / scale / timezone
     /// argument handling; the string is surfaced via `system.functions`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;

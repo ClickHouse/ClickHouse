@@ -44,7 +44,7 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(const String, Nullable(String), const Array(String), [const Number]) -> Nullable(String)"

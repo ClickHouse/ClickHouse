@@ -42,7 +42,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(Integer | NativeFloat | Decimal | IsNothing), [NativeInteger]) -> Array(Float64)";
     }

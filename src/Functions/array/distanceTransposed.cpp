@@ -315,7 +315,7 @@ public:
     /// The second shape is an internal compiler-generated optimisation and
     /// is not normally written by users; the runtime validates the exact
     /// shape and the QBit/element types. Result is always `Float64`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(QBit, Array, const UInt8) -> Float64"
                " OR (FixedString, ..., UInt, Array) -> Float64";

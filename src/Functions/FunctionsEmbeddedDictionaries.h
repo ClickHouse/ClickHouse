@@ -150,7 +150,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String t{TypeName<T>};
         return
@@ -228,7 +228,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String t{TypeName<T>};
         return
@@ -347,7 +347,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String t{TypeName<T>};
         return
@@ -537,7 +537,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(UInt32) -> String"

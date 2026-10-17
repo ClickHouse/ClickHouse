@@ -33,7 +33,7 @@ public:
     {
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// When extended results are enabled, Date32 and DateTime64 inputs get a DateTime64 return
         /// whose scale comes from the source (or default 3 for Date32). Other inputs return DateTime.

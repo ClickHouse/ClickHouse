@@ -89,7 +89,7 @@ public:
     /// `signature` static member the framework uses it for type checking and return-type
     /// resolution; otherwise we fall back to the legacy `Generator::checkArguments` path
     /// which always returns `Array(String)`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Generator::signature; })
             return Generator::signature;

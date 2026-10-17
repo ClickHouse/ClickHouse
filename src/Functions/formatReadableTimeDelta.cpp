@@ -48,7 +48,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `Interval` arguments are accepted in addition to numbers (master added
         /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.

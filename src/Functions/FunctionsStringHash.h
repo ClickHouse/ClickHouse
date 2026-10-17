@@ -68,7 +68,7 @@ public:
     ///   `ColumnsWithTypeAndName` path below stays authoritative.
     /// Value bounds (`shingle_size > 0`, `num_hashes ≤ 25`, etc.) are still
     /// enforced separately at execute time.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (is_arg)
             return "";

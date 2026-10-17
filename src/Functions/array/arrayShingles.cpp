@@ -25,7 +25,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array(T), Integer) -> Array(Array(T))"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array(T), Integer) -> Array(Array(T))"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

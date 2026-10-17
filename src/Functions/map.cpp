@@ -93,7 +93,7 @@ public:
     /// and `leastSupertype{,OrVariant}` folds even-indexed and odd-indexed positions
     /// independently. Picks the variant-falling-back type function when
     /// `use_variant_as_common_type` is on.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (use_variant_as_common_type)
             return "() -> Map(Nothing, Nothing)"
@@ -105,7 +105,7 @@ public:
     /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
     /// type-function always uses the strict mode), so when that setting is enabled, compute the common
     /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!allow_lossy_numeric_supertype)
             return IFunction::getReturnTypeImpl(arguments);
@@ -203,12 +203,12 @@ public:
     /// becomes the corresponding side). The composite return type isn't
     /// expressible in the DSL, so legacy `getReturnTypeImpl(DataTypes)` stays
     /// authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(K : Any) | Map(Any, Any), Array(V : Any) | Map(Any, Any)) -> Map(K, V)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -326,7 +326,7 @@ public:
     /// `mapUpdate(left, right)` — both arguments must be `Map`s with identical key and
     /// value types. Capturing `K`/`V` from the first argument and re-using them in the
     /// second forces type-level equality at type-check time.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(M : Map(K, V), Map(K, V)) -> M";
     }

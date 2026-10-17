@@ -41,7 +41,7 @@ private:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `Float32`/`Float64` keep their precision unless `always_returns_float64`; other `Number` types, including `BFloat16`, become `Float64`.
         if constexpr (Impl::always_returns_float64)
@@ -50,7 +50,7 @@ private:
             return R"sig(("Float32") -> "Float32" OR ("Float64") -> "Float64" OR (Number) -> Float64)sig";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

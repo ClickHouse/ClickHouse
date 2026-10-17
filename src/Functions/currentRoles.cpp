@@ -75,7 +75,7 @@ namespace
         [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
         [[nodiscard]] bool isDeterministic() const override { return false; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "() -> Array(String)";
         }

@@ -83,7 +83,7 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// All non-last arguments are stripped of Nullable before computing the supertype,
         /// so the result is non-Nullable iff the last argument is non-Nullable.
@@ -107,7 +107,7 @@ public:
     /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
     /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
     /// forwards to the `DataTypes` one so both analysis paths share this logic.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());

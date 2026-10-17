@@ -27,7 +27,7 @@ public:
 
     /// `hilbertEncode` only implements the one- and two-dimensional curves; `executeImpl` below
     /// rejects anything wider. Declare that limit so the call is rejected during analysis.
-    size_t getMaxDimensions() const override { return 2; }
+    [[nodiscard]] size_t getMaxDimensions() const override { return 2; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

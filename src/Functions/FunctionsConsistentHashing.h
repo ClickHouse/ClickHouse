@@ -40,7 +40,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// executeImpl only supports NativeInteger/IPv4 for the hash value; the second arg
         /// (number of buckets) must be a constant native integer — wide (128/256-bit)

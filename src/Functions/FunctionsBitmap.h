@@ -104,7 +104,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(T : NativeInteger)) -> AggregateFunction('groupBitmap', T)";
     }
@@ -191,7 +191,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupBitmap', T)) -> Array(T)";
     }
@@ -275,7 +275,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(B : AggregateFunction('groupBitmap', Any), NativeUInt, NativeUInt) -> B";
     }
@@ -434,7 +434,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(B : AggregateFunction('groupBitmap', Any), Array(NativeUInt), Array(NativeUInt)) -> B";
     }
@@ -583,7 +583,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupBitmap', Any)) -> " + DataTypeNumber<ToType>{}.getName();
     }
@@ -752,7 +752,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupBitmap', NativeInteger), NativeInteger) -> UInt8";
     }
@@ -846,7 +846,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(AggregateFunction('groupBitmap', T), AggregateFunction('groupBitmap', T)) -> "
             + DataTypeNumber<ToType>{}.getName();
@@ -979,7 +979,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(B : AggregateFunction('groupBitmap', T), AggregateFunction('groupBitmap', T)) -> B";
     }

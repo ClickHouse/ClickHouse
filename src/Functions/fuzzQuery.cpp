@@ -57,7 +57,7 @@ public:
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String) -> String";
     }

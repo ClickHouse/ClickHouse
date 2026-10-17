@@ -31,7 +31,7 @@ public:
     /// Documentation-only — the result is the sum of `notEquals` results across
     /// matched tuple elements, so its width depends on the input tuple size
     /// (e.g. `Tuple` of 1 element → `UInt8`, 2 elements → `UInt16`, etc).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple, Tuple) -> UInt";
     }

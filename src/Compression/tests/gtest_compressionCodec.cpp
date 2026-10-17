@@ -1792,8 +1792,8 @@ TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
     /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
 #ifndef DEBUG_OR_SANITIZER_BUILD
     auto decoder = std::make_shared<CompressionCodecMultiple>();
-    EXPECT_THROW(decoder->getCodecDescription(), Exception);
-    EXPECT_THROW(decoder->getFullCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getFullCodecDescription(), Exception);
     /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
     EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
 #endif

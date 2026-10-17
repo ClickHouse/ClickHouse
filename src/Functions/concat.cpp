@@ -44,7 +44,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
         /// passthrough in `executeImpl` that returns the input column unchanged, which would

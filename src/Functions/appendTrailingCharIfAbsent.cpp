@@ -42,7 +42,7 @@ private:
         return 2;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, const String) -> String";
     }

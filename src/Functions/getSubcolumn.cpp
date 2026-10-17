@@ -30,7 +30,7 @@ public:
 
     /// Declarative signature — looks up the named subcolumn's type on the
     /// first argument via the `subcolumnTypeOf` type function.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : Any, const name String) -> subcolumnTypeOf(T, name)";
     }

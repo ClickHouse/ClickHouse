@@ -102,7 +102,7 @@ public:
 
     [[nodiscard]] SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
 
-    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
+    [[nodiscard]] SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
     {
         return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
     }

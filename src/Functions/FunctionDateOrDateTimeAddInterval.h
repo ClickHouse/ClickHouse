@@ -1025,7 +1025,7 @@ public:
     /// string. The concrete result type depends on the input date type and
     /// the precision of the interval unit (e.g. `addSeconds(Date, ...)`
     /// promotes to `DateTime`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Date | Date32 | Time | Time64 | DateTime | DateTime64 | String, NativeNumber, [const String]) -> Any";
     }
@@ -1035,7 +1035,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

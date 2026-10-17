@@ -53,7 +53,7 @@ public:
     /// Read per executing node, so two nodes can disagree.
     [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([StringOrFixedString]) -> UInt64";
     }

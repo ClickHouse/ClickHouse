@@ -36,7 +36,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(NativeUInt, ...) -> String";
     }
@@ -83,7 +83,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String) -> Array(UInt64)";
     }

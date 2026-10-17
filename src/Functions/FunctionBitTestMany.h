@@ -32,7 +32,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Both positions match the legacy checks exactly: `isInteger` for the value and
         /// `isUInt` for every bit position, so wide integers are accepted here and rejected

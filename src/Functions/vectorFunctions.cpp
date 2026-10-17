@@ -96,7 +96,7 @@ public:
     /// Documentation-only — element-wise binary op applied to each pair of
     /// tuple elements; the result is a tuple whose i-th element type follows
     /// the underlying scalar op's promotion rules.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple, Tuple) -> Tuple";
     }
@@ -106,7 +106,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -210,7 +210,7 @@ public:
 
     /// Documentation-only — element-wise `negate` applied to each tuple element;
     /// the result tuple's i-th element type follows scalar `negate` promotion.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple) -> Tuple";
     }
@@ -220,7 +220,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -306,7 +306,7 @@ public:
     /// Documentation-only — applies the scalar op to each tuple element with
     /// the same right-hand operand; the result tuple's i-th element type
     /// follows the underlying scalar op's promotion rules.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple, Any) -> Tuple";
     }
@@ -316,7 +316,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -531,7 +531,7 @@ public:
     /// Documentation-only — applies `plus`/`minus` with each tuple-element
     /// interval to the date/datetime. The concrete result type depends on
     /// the date/datetime input and the precision of the intervals.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Date | Date32 | DateTime | DateTime64, Tuple) -> Any";
     }
@@ -638,12 +638,12 @@ public:
     /// If the right-hand interval shares the unit of the last element of the
     /// tuple, it's merged in place; otherwise it's appended. The composite
     /// per-element-interval-kind result isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple | Interval, Interval) -> Tuple";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -1377,7 +1377,7 @@ public:
     /// `Lp` variant takes a `p` parameter; the others are unary. The result
     /// element type is computed from `LNorm / TupleDivideByNumber`, so the
     /// string is surfaced via `system.functions` only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return "(Tuple, const Float | UInt) -> Tuple";
@@ -1398,7 +1398,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -1564,7 +1564,7 @@ public:
     /// the shape accepted by both the tuple- and array-path. The actual return
     /// type is computed by the underlying `tuple_function` / `array_function`,
     /// so the string is surfaced via `system.functions` only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Traits::signature; })
             return Traits::signature;
@@ -1574,7 +1574,7 @@ public:
 
     /// The signature is documentation-only. Route type-only calls to the selected
     /// implementation instead of letting the base class evaluate `Traits::signature`.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

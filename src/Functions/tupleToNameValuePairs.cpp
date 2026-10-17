@@ -49,7 +49,7 @@ public:
     /// strips Nullable before extracting the element type), so a second alternative
     /// covers that input shape. The result is never wrapped in Nullable in either
     /// case — the runtime always returns Array(Tuple(String, T)).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(Tuple(T, T, ...)) -> Array(Tuple(String, T))"

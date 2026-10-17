@@ -66,7 +66,7 @@ public:
     /// argument promotes the result), which isn't expressible in the DSL.
     /// `timeSeriesFromGrid` wraps each timestamp with the matching value from
     /// the trailing `Array(Float*)` / `Array(Nullable(Float*))` argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (with_values)
             return "(DateTime | DateTime64 | UInt32,"
@@ -84,7 +84,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

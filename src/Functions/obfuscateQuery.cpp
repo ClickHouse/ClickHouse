@@ -282,7 +282,7 @@ public:
         return name == "obfuscateQueryWithSeed";
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (name == "obfuscateQueryWithSeed")
             return "(String, Integer | String) -> String";

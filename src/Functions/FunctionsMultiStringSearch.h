@@ -78,7 +78,7 @@ public:
     /// Declarative signature — `Impl::ResultType` is one of `UInt8`, `UInt64` or
     /// `Array(UInt8)` depending on the variant (any-match / first-index /
     /// all-indices), driven by `Impl::is_column_array`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Impl::is_column_array)
             return "(String, Array(String)) -> Array(" + String(DataTypeNumber<typename Impl::ResultType>{}.getName()) + ")";

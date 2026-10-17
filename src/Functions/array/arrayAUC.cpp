@@ -146,7 +146,7 @@ public:
     /// `scores` and `labels` must be Array of numeric (labels can also be Enum).
     /// Optional `scale` is a const Bool (only for ROC); optional `offsets` is
     /// an Array of integers. Result is `Float64`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (is_pr)
             return "(Array, Array, [Array]) -> Float64";
@@ -163,7 +163,7 @@ public:
     /// argument must be a constant, which cannot be checked from the types alone. Decline this
     /// entry point (as it behaved before the signature was added) instead of letting it accept
     /// shapes the authoritative resolver below rejects.
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

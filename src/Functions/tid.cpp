@@ -19,7 +19,7 @@ namespace
 
         [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-        String getSignatureString() const override { return "() -> UInt64"; }
+        [[nodiscard]] String getSignatureString() const override { return "() -> UInt64"; }
 
         [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {

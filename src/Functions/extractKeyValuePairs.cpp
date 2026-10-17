@@ -443,7 +443,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Documentation only: the legacy `getReturnTypeImpl` below still runs to keep the per-argument error messages.
         return "(StringOrFixedString, [StringOrFixedString], [StringOrFixedString], [StringOrFixedString], [StringOrFixedString]) -> Map(String, String)";

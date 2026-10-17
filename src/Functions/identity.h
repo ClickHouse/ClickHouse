@@ -37,7 +37,7 @@ public:
     [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(T) -> T"; }
+    [[nodiscard]] String getSignatureString() const override { return "(T) -> T"; }
 
     /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
     /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
@@ -115,7 +115,7 @@ public:
     /// which the legacy `getReturnTypeImpl` below preserves. Returning an
     /// empty string disables the declarative-signature framework, so the
     /// manual override is fully authoritative.
-    String getSignatureString() const override { return ""; }
+    [[nodiscard]] String getSignatureString() const override { return ""; }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

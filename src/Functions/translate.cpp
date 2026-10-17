@@ -318,7 +318,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : StringOrFixedString, const StringOrFixedString, const StringOrFixedString) -> T";
     }

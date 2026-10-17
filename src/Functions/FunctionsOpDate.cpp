@@ -36,7 +36,7 @@ public:
     /// to plus/minus, whose own resolution determines the exact result type).
     /// String inputs are accepted and parsed as a Date/DateTime by the
     /// underlying operator.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(DateOrDateTime | String, Interval) -> DateOrDateTime";
     }
@@ -46,7 +46,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

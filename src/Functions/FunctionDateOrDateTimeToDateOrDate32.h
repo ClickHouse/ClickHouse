@@ -32,7 +32,7 @@ public:
     {
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `checkArguments(..., is_result_type_date_or_date32=true)` originally disallowed a
         /// timezone arg when the 1st argument was Date or Date32; only DateTime/DateTime64

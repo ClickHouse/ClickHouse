@@ -32,7 +32,7 @@ namespace
         [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
         [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return
                 "(Nullable(Any)) -> Nullable(\"Bool\")"

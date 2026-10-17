@@ -25,7 +25,7 @@ public:
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     [[nodiscard]] String getNameForLogs() const override { return "CMSketch"; }
-    size_t allocatedBytes() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;

@@ -42,7 +42,7 @@ namespace
         [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
         [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "(String) -> Nullable(UInt64)";
         }

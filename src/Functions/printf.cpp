@@ -171,7 +171,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// format string + 0+ substitution args (numbers or strings).
         return

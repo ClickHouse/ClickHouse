@@ -43,7 +43,7 @@ public:
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
     [[nodiscard]] String getNameForLogs() const override;
-    size_t allocatedBytes() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 
     [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
 

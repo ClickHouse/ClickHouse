@@ -57,7 +57,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The extension name (argument 0) is always constant: it is listed in
         /// `getArgumentsThatAreAlwaysConstant` and `executeImpl` rejects anything but a

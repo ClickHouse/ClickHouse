@@ -38,7 +38,7 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T) -> T";
     }

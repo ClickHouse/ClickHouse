@@ -42,7 +42,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String t = DataTypeNumber<typename Impl::ResultType>{}.getName();
         return "(String, String) -> " + t;

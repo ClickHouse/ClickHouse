@@ -126,7 +126,7 @@ private:
     const char * label;
 
     [[nodiscard]] String getASTId() const { return ast.getID(' '); }
-    String getNodeId(const IAST & a) const { return "n" + std::to_string(node_ids.try_emplace(&a, node_ids.size()).first->second); }
+    [[nodiscard]] String getNodeId(const IAST & a) const { return "n" + std::to_string(node_ids.try_emplace(&a, node_ids.size()).first->second); }
 
     void printNode() const
     {

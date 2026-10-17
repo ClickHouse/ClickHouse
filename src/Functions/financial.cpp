@@ -378,7 +378,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Keep this aligned with `dispatchCashflowDate` / `dispatchDate`:
         /// cashflow accepts Int8/16/32/64 and Float32/64 (no UInt, no Decimal,
@@ -494,7 +494,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Cashflow array must contain only Int8/16/32/64 or Float32/64; see
         /// the inline dispatch in `executeImpl`.
@@ -580,7 +580,7 @@ public:
     [[nodiscard]] bool isDeterministic() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64; date accepts Date or Date32. See `dispatchCashflowDate`
@@ -685,7 +685,7 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64. See the dispatch tree in `executeImpl`.

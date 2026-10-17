@@ -85,7 +85,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Float | NativeUInt) -> UInt8"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Float | NativeUInt) -> UInt8"; }
     [[nodiscard]] ColumnPtr
     executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {

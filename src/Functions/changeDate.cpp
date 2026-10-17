@@ -58,7 +58,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// When the component is a time-of-day field (Hour/Minute/Second), date-only inputs
         /// are promoted: Date -> DateTime, Date32 -> DateTime64(3). Other inputs keep their type.

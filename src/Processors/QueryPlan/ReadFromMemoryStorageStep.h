@@ -69,10 +69,10 @@ public:
 
     /// The key of the query condition cache for the filter of the query pushed down to this step,
     /// or std::nullopt if the cache cannot be used for it. See `updateQueryConditionCache`.
-    std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;
+    [[nodiscard]] std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;
 
     /// Lazy materialization (see `optimizeLazyMaterialization2`).
-    bool canUseLazyMaterialization() const;
+    [[nodiscard]] bool canUseLazyMaterialization() const;
     /// Removes the columns that are not in `required_names` and are not needed by the in-source filters
     /// from the read, makes the read produce the `__global_row_index` column, and returns a step that
     /// reads the removed columns for the given rows. Returns nullptr if there is nothing to remove.
@@ -115,7 +115,7 @@ public:
 
     void setLazyMaterializingRows(MemoryLazyMaterializingRowsPtr lazy_materializing_rows_);
 
-    String getName() const override { return "LazilyReadFromMemoryStorage"; }
+    [[nodiscard]] String getName() const override { return "LazilyReadFromMemoryStorage"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

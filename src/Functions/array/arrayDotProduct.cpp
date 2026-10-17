@@ -157,7 +157,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return String(Kernel::signature); }
+    [[nodiscard]] String getSignatureString() const override { return String(Kernel::signature); }
 
 #define SUPPORTED_TYPES(ACTION) \
     ACTION(UInt8) \

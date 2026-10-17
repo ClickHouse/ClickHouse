@@ -79,7 +79,7 @@ private:
     /// an `onlyNull` argument collapses the whole result to a scalar `Nullable(Nothing)`, and an
     /// `IPv4` counts as `UInt32`. The `Nothing` alternative accepts a bare `NULL` literal in any
     /// position so `range(NULL)` keeps reaching `rangeResult`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// One arm per arity: the `rangeResult` type function cannot reference an absent optional
         /// capture, so the three lengths are spelled out explicitly instead of using `[optional]`.

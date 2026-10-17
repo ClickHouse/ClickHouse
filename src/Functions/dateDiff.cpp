@@ -348,7 +348,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String, DateOrDateTime, DateOrDateTime, [const String]) -> Int64";
     }
@@ -424,7 +424,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(DateOrDateTime, DateOrDateTime) -> Int64";
     }

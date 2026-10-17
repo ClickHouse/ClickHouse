@@ -30,7 +30,7 @@ public:
     [[nodiscard]] bool isDeterministic() const override { return false; }
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(...) -> UInt64";
     }

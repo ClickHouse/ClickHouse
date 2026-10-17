@@ -60,7 +60,7 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override { return "(String) -> UInt64"; }
+    [[nodiscard]] String getSignatureString() const override { return "(String) -> UInt64"; }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

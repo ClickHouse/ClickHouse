@@ -20,7 +20,7 @@ class FunctionDateOrDateTimeToSomething final : public IFunctionDateOrDateTime<T
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
@@ -78,7 +78,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

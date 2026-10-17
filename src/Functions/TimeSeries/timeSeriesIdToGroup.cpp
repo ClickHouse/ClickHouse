@@ -55,12 +55,12 @@ public:
     /// authoritative (it runs the helper). Route the types-only path to it too, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the approximate
     /// signature string as a validator.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64 | UInt128 | UUID | FixedString) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

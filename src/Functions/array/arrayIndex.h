@@ -633,7 +633,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
             return "(Array, Any) -> UInt8"

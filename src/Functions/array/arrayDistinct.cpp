@@ -39,7 +39,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(Array(T)) -> Array(removeNullable(T))"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array(T)) -> Array(removeNullable(T))"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 

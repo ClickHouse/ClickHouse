@@ -48,7 +48,7 @@ public:
     /// and all-unique unquoted-identifier argument names, the result is a
     /// named tuple — that's not expressible in the DSL, so the legacy
     /// `getReturnTypeImpl` stays authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(A1 : Any, ...) -> Tuple(A1, ...)";
     }
@@ -56,7 +56,7 @@ public:
     /// The signature is documentation-only: in particular, it cannot express
     /// the zero-argument case or tuple element names. Keep both return-type
     /// entry points on the authoritative implementation below.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

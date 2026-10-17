@@ -62,7 +62,7 @@ public:
         return false;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a
         /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,

@@ -69,7 +69,7 @@ public:
     /// The signature is documentation-only: `arrayUnion` additionally rejects mixing
     /// `Decimal` with non-`Decimal` elements, which `leastSupertype` accepts, so both
     /// entry points resolve through the handwritten `getReturnTypeImpl` below.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (mode == ArraySetMode::Intersect)
             return "(Array(T), ...) -> Array(mostSubtype(T, ...))";
@@ -78,7 +78,7 @@ public:
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());

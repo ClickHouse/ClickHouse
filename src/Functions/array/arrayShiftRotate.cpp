@@ -53,7 +53,7 @@ public:
     /// docs-only for `Shift` because its optional default-value uses a
     /// more permissive "must not widen past the element type" rule that
     /// the current DSL doesn't capture.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Rotate)
             return "(Array(T : Any), NativeInteger) -> Array(T)";
@@ -61,7 +61,7 @@ public:
             return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Authoritative for `Rotate` (DSL drives the result); bypass for
         /// `Shift` so the legacy `getReturnTypeImpl(DataTypes)` runs.

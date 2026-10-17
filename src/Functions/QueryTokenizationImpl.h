@@ -79,7 +79,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The "type" tuple element is an Enum8 with a non-trivial member list that the
         /// signature grammar cannot lex directly — embed the rendered name as a double-quoted

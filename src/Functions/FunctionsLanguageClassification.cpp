@@ -133,7 +133,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(String) -> Map(String, Float32)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(String) -> Map(String, Float32)"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

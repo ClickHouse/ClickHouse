@@ -44,7 +44,7 @@ public:
     /// the type in Nullable without modifying inner types.
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T) -> Nullable(T)";
     }

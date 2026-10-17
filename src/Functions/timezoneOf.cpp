@@ -28,7 +28,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Legacy validator removed Nullable before checking DateTime/DateTime64.
         return "(MaybeNullable(DateTime | DateTime64)) -> String";

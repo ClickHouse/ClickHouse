@@ -48,7 +48,7 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(26)` encodes the exact ULID byte length, so a wrong-width FixedString is
         /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.

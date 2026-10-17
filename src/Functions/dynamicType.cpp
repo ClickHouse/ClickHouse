@@ -39,7 +39,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Dynamic) -> LowCardinality(String)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Dynamic) -> LowCardinality(String)"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -91,7 +91,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Dynamic) -> Bool"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Dynamic) -> Bool"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

@@ -496,7 +496,7 @@ public:
     /// Documentation-only — `JSON_*` functions take a JSON `String` plus a
     /// const-`String` JSONPath; the result-type varies by `Impl` (delegated
     /// to `Impl::signature`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature; })
             return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature;
@@ -509,7 +509,7 @@ public:
     /// the `ColumnsWithTypeAndName` override below is authoritative. Route the types-only
     /// path to it as well, so the base `IFunction::getReturnTypeImpl(DataTypes)` never
     /// applies the documentation string.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

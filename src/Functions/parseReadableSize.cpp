@@ -59,7 +59,7 @@ public:
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return error_handling == ErrorHandling::Null
             ? "(String) -> Nullable(UInt64)"

@@ -46,7 +46,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The third argument's presence depends on `allow_custom_error_code_in_throwif`;
         /// when the setting is off, calls with three arguments must be rejected by the
@@ -67,7 +67,7 @@ public:
     /// function's tests assert (the exact "should be 1 or 2" arity wording and the
     /// "Third argument ... must be Int8, Int16 or Int32" message) cannot be produced by the
     /// generic matcher. Keep the authoritative validation here and let the signature serve as documentation.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 

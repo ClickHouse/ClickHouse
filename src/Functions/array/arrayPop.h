@@ -27,7 +27,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(T)) -> Array(T) OR (NULL) -> NULL";
     }

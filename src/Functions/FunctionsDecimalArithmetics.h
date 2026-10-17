@@ -251,7 +251,7 @@ public:
     /// third argument is a const-`UInt8` scale for the result. The output is
     /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
     /// stays authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
     }
@@ -298,7 +298,7 @@ public:
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

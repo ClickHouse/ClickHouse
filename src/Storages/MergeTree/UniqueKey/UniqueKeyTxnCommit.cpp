@@ -252,7 +252,7 @@ private:
     [[nodiscard]] const Block & incomingBlock() const { return *block; }
 
     /// Compute the kills of this part's own conflicting rows
-    DeleteBitmapPtr computeOwnKills(const std::vector<size_t> & conflict_rows) const;
+    [[nodiscard]] DeleteBitmapPtr computeOwnKills(const std::vector<size_t> & conflict_rows) const;
 
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;

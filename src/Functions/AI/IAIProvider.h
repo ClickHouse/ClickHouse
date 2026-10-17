@@ -152,7 +152,7 @@ public:
     virtual void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
 
     /// Provider-specific headers (credentials, API version) sent with every request.
-    virtual HTTPHeaderEntries getHeaders() const = 0;
+    [[nodiscard]] virtual HTTPHeaderEntries getHeaders() const = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
     [[nodiscard]] virtual bool supportsEmbeddings() const { return false; }

@@ -49,7 +49,7 @@ public:
         return name;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(...) -> UInt8";
     }

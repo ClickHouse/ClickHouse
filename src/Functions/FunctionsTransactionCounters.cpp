@@ -34,7 +34,7 @@ public:
     /// downstream forks may extend TransactionID with extra components, and a hardcoded
     /// 3-element tuple would then reject the constant value produced by getValue
     /// (CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE).
-    String getSignatureString() const override { return "() -> " + getTransactionIDDataType()->getName(); }
+    [[nodiscard]] String getSignatureString() const override { return "() -> " + getTransactionIDDataType()->getName(); }
 
     /// Reads the executing node's transaction state.
     [[nodiscard]] bool isServerConstant() const override { return true; }

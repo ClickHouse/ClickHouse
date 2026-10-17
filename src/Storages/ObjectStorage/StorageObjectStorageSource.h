@@ -348,7 +348,7 @@ public:
             IArchiveReader::FileInfo && file_info_,
             std::optional<size_t> archive_entry_index_);
 
-        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
+        [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile() const;
 
         [[nodiscard]] std::string getFileName() const override
         {

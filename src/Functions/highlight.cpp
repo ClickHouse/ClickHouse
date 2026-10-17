@@ -52,7 +52,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, Array(String), [const String, const String]) -> String";
     }

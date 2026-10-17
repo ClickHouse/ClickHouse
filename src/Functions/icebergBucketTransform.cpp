@@ -55,7 +55,7 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override { return "(Any) -> Int32"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Any) -> Int32"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
@@ -318,7 +318,7 @@ public:
     /// argument should surface the dedicated `BAD_ARGUMENTS` "Invalid iceberg sort order" message
     /// from `parseTransformAndArgument`, not a generic `ILLEGAL_COLUMN` from the signature matcher;
     /// and return-type inference in `ChunkPartitioner` passes a placeholder (non-const) column here.
-    String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {

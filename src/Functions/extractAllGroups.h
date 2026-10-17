@@ -75,7 +75,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The regexp must be a constant: `executeImpl` reads it via
         /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,

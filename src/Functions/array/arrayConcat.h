@@ -19,7 +19,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : Array, ...) -> leastSupertype(T, ...)";
     }

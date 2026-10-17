@@ -54,7 +54,7 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Variadic over T1..Tn; the type-function ellipsis needs the variable index to
         /// build the group-to-repeat, hence the explicit `T1` rather than bare `T`.
@@ -64,7 +64,7 @@ public:
     /// Cap the arity at 1024 like the legacy `getReturnTypeImpl` did. The DSL
     /// signature has no upper-bound matcher, so enforce it here before
     /// delegating to the DSL for the actual return-type computation.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         constexpr size_t max_args = 1024;
         if (arguments.size() > max_args)

@@ -248,7 +248,7 @@ public:
     /// `Any` inner type accepts all of these; the runtime then validates the
     /// nested shape, the tuple arity (must be 2), and the element types
     /// (must be `NativeNumber`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// This signature is documentation-only: the polygon arguments' full contract — the
         /// array nesting depth (1 to 3), the innermost tuple arity (exactly 2) and its element
@@ -271,7 +271,7 @@ public:
     /// loose) declarative signature and skips the per-shape checks, allowing malformed polygon
     /// arguments to slip through to `executeImpl`. The return type is fully determined by the
     /// argument types, so no column-level information is required here.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes argument_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

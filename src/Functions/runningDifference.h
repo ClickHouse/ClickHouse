@@ -208,12 +208,12 @@ public:
     /// Documentation-only — pairwise difference of consecutive rows; result
     /// widens to fit a signed difference (`UInt8` → `Int16`, `Date` → `Int32`,
     /// `Float*` → `Float64`, …). The widening rule isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(MaybeNullable(Number | Date | DateTime)) -> MaybeNullable(Number)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

@@ -67,7 +67,7 @@ private:
     /// permit the invalid `N == 0` case. Leave the signature empty so the
     /// `getReturnTypeImpl(DataTypes)` override below stays authoritative on both the
     /// column and the types-only paths.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "";
     }

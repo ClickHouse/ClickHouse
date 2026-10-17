@@ -56,7 +56,7 @@ public:
     /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
     /// `Array(...) | Nothing` argument into it), so the accepted arities are
     /// `2 + 2 * N` and calls like `timeSeriesStoreTags(id, [])` are valid.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(I : Any,"
                " Array(Tuple(String, String)) | Nothing,"
@@ -73,7 +73,7 @@ public:
     /// `ColumnsWithTypeAndName` override below is authoritative (it runs the helpers). Route
     /// the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never applies the approximate signature string as a validator.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -106,12 +106,12 @@ public:
     /// was created with may already have expired by plan-optimization time, which would otherwise
     /// raise a `Context has expired` logical error. The function returns its `id` argument
     /// unchanged, so the dry-run result is just that column.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         return arguments[0].column;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
         auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();

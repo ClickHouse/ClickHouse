@@ -17,7 +17,7 @@ class FunctionCustomWeekToSomething final : public IFunctionCustomWeek<Transform
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String to = ToDataType{}.getName();
         const String input_matcher = Transform::value_may_be_string

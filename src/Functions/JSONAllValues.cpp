@@ -54,7 +54,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    String getSignatureString() const override { return "(JSON) -> Array(String)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(JSON) -> Array(String)"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {

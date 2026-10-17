@@ -39,7 +39,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> UInt8";
     }

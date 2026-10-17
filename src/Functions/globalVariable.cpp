@@ -50,7 +50,7 @@ public:
 
     /// Documentation-only — the result type is looked up from the
     /// per-variable map, so it varies with the const-string argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String) -> Any";
     }

@@ -59,12 +59,12 @@ public:
     /// For string-like inputs the result is `String`; for integers and
     /// `Decimal*` the result widens via internal `plus`/`minus` calls (e.g.
     /// `UInt32 → Int64`), which isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const UInt, StringOrFixedString | NativeInteger | Decimal) -> Any";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

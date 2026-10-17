@@ -217,7 +217,7 @@ namespace DB
             return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "(MaybeNullable(String | IPv4 | IPv6), String) -> UInt8";
         }

@@ -42,7 +42,7 @@ public:
 
     /// The signature returns the argument type verbatim, so a custom type name such as `Geometry`
     /// survives return-type inference just like the legacy `getReturnTypeImpl` it replaced.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T) -> T";
     }

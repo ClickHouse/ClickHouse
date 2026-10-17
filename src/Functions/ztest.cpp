@@ -49,7 +49,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt, UInt, UInt, UInt, Float, const String) -> "
                "Tuple(z_statistic Float64, p_value Float64, "

@@ -80,7 +80,7 @@ public:
     /// the DSL reports a clean `ILLEGAL_COLUMN` ("argument must be a constant expression") instead
     /// of the internal exception a bare `FixedString` return raised by resolving to the zero-argument
     /// `FixedString` type function.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, const N UInt) -> FixedString(N)";
     }

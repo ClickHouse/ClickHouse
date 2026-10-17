@@ -173,7 +173,7 @@ public:
     /// in `createScalar`). The declarative signature reflects that — even though the
     /// `scalar.type` getter is still consulted by the dispatcher, having a signature
     /// here lets `system.functions` advertise it to users and tooling.
-    String getSignatureString() const override { return "() -> UInt32"; }
+    [[nodiscard]] String getSignatureString() const override { return "() -> UInt32"; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {

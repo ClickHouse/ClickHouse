@@ -39,7 +39,7 @@ public:
     /// `samples` must be a constant `UInt*`. On the column-less types-only path the
     /// constness cannot be decided, so it is still enforced by `getArgumentsThatAreAlwaysConstant`
     /// and `executeImpl`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Array(T), const UInt) -> Array(T)";
     }

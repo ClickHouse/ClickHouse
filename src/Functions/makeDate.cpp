@@ -78,7 +78,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String to = typename Traits::ReturnDataType{}.getName();
         return
@@ -177,7 +177,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String to = typename Traits::ReturnDataType{}.getName();
         return "(Number) -> " + to;
@@ -333,7 +333,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(Number, Number, Number, Number, Number, Number) -> DateTime"
@@ -395,7 +395,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(Number, Number, Number, Number, Number, Number) -> DateTime64(3)"
@@ -502,7 +502,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(Number) -> DateTime"
@@ -567,7 +567,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(Number) -> DateTime64(3)"

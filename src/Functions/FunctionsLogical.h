@@ -232,7 +232,7 @@ public:
     /// any count, independently typed. (A bare `T, T, ...` would instead force the first two
     /// operands to share a type.) Too-few-arguments now surfaces as
     /// `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`, the code the declarative checker uses for arity.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Impl::specialImplementationForNulls())
         {
@@ -244,7 +244,7 @@ public:
 
     /// The signature accepts two or more arguments, so the only possible arity error is a call with
     /// fewer than two - the legacy resolver reported it as `TOO_FEW_ARGUMENTS_FOR_FUNCTION`.
-    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
     {
         return ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     }
@@ -319,7 +319,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Bool) -> Bool OR (NativeNumber) -> UInt8";
     }

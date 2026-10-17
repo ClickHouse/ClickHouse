@@ -120,7 +120,7 @@ public:
     ///   `system.functions` but the adapter override stays authoritative —
     ///   used when the result type depends on the wrapped `Impl`'s widening
     ///   logic or on a value-side dispatch (e.g. `mapConcat`, `mapApply`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;
@@ -148,7 +148,7 @@ public:
         impl.getLambdaArgumentTypes(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// With `Name::signature` (authoritative) the base types-only path applies the DSL.
         if constexpr (requires { Name::signature; })

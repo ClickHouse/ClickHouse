@@ -100,7 +100,7 @@ public:
     /// clear-depth, then per-array (array, optional const-`UInt` depth)
     /// groups. The result is a nested array of `UInt32` whose depth matches
     /// the maximum effective input depth — not expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([const UInt], Array, [const UInt], ...) -> Array(UInt32)";
     }
@@ -123,7 +123,7 @@ public:
         return type;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// The documentation signature cannot represent the input-dependent
         /// nesting depth. Reuse the authoritative implementation so callers

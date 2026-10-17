@@ -34,7 +34,7 @@ public:
     [[nodiscard]] bool isDeterministic() const override { return false; }
     [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Note: when scale is provided as a constant argument, the DSL uses the
         /// runtime value of the constant column to construct DateTime64(scale).

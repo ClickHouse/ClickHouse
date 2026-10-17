@@ -40,7 +40,7 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const N NativeUInt) -> FixedString(N)";
     }

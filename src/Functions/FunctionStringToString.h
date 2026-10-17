@@ -47,7 +47,7 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : StringOrFixedString) -> T";
     }

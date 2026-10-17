@@ -170,7 +170,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "() -> UInt64 OR ([Any]) -> UInt64 OR (Any, const NativeUInt) -> UInt64";
     }

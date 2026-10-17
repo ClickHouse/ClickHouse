@@ -88,12 +88,12 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(Array, Array) -> Float64"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array, Array) -> Float64"; }
 
     /// Route the types-only entry point through the resolver below as well, so it
     /// rejects element types without a common subtype instead of applying the bare
     /// signature. That resolver only looks at the argument types.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

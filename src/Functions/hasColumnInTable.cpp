@@ -58,7 +58,7 @@ public:
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String, const String, const String) -> UInt8";
     }

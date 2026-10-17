@@ -320,7 +320,7 @@ struct PartFromSample
     }
 
     [[nodiscard]] UInt64 bytes() const { return bytes_before_sample_row.back(); }
-    UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
+    [[nodiscard]] UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row

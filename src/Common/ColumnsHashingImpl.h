@@ -613,7 +613,7 @@ protected:
         return actual_columns;
     }
 
-    const ColumnRawPtrs & getNullMaps() const
+    [[nodiscard]] const ColumnRawPtrs & getNullMaps() const
     {
         return null_maps;
     }

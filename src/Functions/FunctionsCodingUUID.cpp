@@ -138,7 +138,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(16)` (uuid_bytes_length) is the exact width `executeImpl` reads, so a
         /// wrong-width FixedString is rejected at analysis time. The optional second argument
@@ -212,7 +212,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
         /// wrong-width FixedString is rejected at analysis time.
@@ -309,7 +309,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
         return "(UUID, [const Int8 | UInt8]) -> FixedString(16)";
@@ -375,7 +375,7 @@ public:
     /// Declarative signature — extracts the timestamp embedded in a UUIDv7
     /// as a `DateTime64(3)`, optionally tagged with the const-string timezone
     /// from the second argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UUID) -> DateTime64(3)"
                " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";

@@ -248,16 +248,16 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayPermutations>(std::move(context_)); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     /// The default implementation for constants would execute only one row and wrap the result into a constant,
     /// so `function_range_max_elements_in_block` would be checked against one row instead of the whole block.
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
             {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
@@ -268,7 +268,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(array_type->getNestedType()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool array_is_const = false;
         const ColumnArray * column_array = getArrayColumn(arguments[0].column, array_is_const);
@@ -346,16 +346,16 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayKCombinatorics>(std::move(context_)); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     /// The default implementation for constants would execute only one row and wrap the result into a constant,
     /// so `function_range_max_elements_in_block` would be checked against one row instead of the whole block.
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
             {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
@@ -367,7 +367,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(array_type->getNestedType()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool array_is_const = false;
         const ColumnArray * column_array = getArrayColumn(arguments[0].column, array_is_const);

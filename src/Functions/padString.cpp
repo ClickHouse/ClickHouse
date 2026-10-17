@@ -165,7 +165,7 @@ namespace
 
         [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "(StringOrFixedString, Integer, [const String]) -> String";
         }

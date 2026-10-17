@@ -70,13 +70,13 @@ namespace DB
         /// identical inner-argument lists of any length; the result is the first
         /// argument's sketch type. The DSL models neither the variadic inner-argument
         /// list nor its equality, so the signature is documentation-only.
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return "(A : AggregateFunction('uniqTheta', Any), AggregateFunction('uniqTheta', Any)) -> A";
         }
 
         /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative.
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             DataTypes data_types(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)

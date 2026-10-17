@@ -90,7 +90,7 @@ public:
     ///   via `system.functions` but legacy `getReturnTypeImpl` below stays
     ///   authoritative — used when the widening rule isn't expressible in
     ///   the current DSL (e.g. `arraySum`, `arrayCumSum`, `arrayDifference`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Impl::signature; })
             return Impl::signature;
@@ -299,7 +299,7 @@ public:
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Documentation-only signatures must not take the base types-only
         /// path: it applies the DSL result directly and bypasses the legacy

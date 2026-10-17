@@ -1834,7 +1834,7 @@ public:
     /// Nullable element. The DSL doesn't capture this matrix concisely, so
     /// the legacy `getReturnTypeImpl(DataTypes)` remains authoritative;
     /// the string is surfaced via `system.functions`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> UInt8";
     }
@@ -1843,7 +1843,7 @@ public:
     /// and does not capture Nullable propagation for tuples. Delegate to the
     /// legacy `DataTypes` overload, which performs full validation and wraps
     /// the result in `Nullable(UInt8)` when any tuple element is nullable.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());

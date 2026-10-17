@@ -63,7 +63,7 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([Any]) -> " + DataTypeNumber<ToType>{}.getName();
     }

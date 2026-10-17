@@ -83,7 +83,7 @@ public:
     /// Documentation-only — result type is parsed from the const-string
     /// type-name (2nd argument). If the value can't be cast, the optional
     /// default (3rd argument) is returned instead.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, const String, [Any]) -> Any";
     }
@@ -288,7 +288,7 @@ private:
     /// is required before the optional default value; for `DateTime` /
     /// `DateTime64` a const-`String` timezone may follow; the trailing
     /// argument is the optional fallback that's returned when parsing fails.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String target = type->getName();
         if (isDecimal(type) || isDateTime64(type))

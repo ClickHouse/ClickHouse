@@ -147,7 +147,7 @@ public:
 
     /// This method implemented in header because it could be possibly devirtualized.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
 #else
     [[nodiscard]] int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif

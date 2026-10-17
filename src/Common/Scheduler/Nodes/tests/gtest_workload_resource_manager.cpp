@@ -953,7 +953,7 @@ public:
         return *this;
     }
 
-    UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
+    [[nodiscard]] UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
     {
         // It is hard to calculate tight upper bound for burst.
         // First, we take into account configured burst,
@@ -1773,13 +1773,13 @@ struct ProfileEventCounter
         initial_value = getValue();
     }
 
-    size_t count() const
+    [[nodiscard]] size_t count() const
     {
         return getValue() - initial_value;
     }
 
 private:
-    size_t getValue() const
+    [[nodiscard]] size_t getValue() const
     {
         return ProfileEvents::global_counters[event];
     }

@@ -49,7 +49,7 @@ private:
     /// `K` and `V` must be signed/unsigned integer types; `max_key` is also
     /// a non-Nullable integer. The runtime additionally rejects mixed-width
     /// keys and out-of-range `max_key`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(M : Map(Integer, Integer), [Integer]) -> M"
                " OR (Array(K : Integer), Array(V : Integer), [Integer]) -> Tuple(Array(K), Array(V))";

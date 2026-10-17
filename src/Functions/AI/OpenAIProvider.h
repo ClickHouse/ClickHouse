@@ -34,7 +34,7 @@ public:
     OpenAIProvider(const String & endpoint_, const String & api_key_);
 
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
-    HTTPHeaderEntries getHeaders() const override;
+    [[nodiscard]] HTTPHeaderEntries getHeaders() const override;
 
     [[nodiscard]] bool supportsEmbeddings() const override { return true; }
     void embed(

@@ -31,7 +31,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "() -> String"

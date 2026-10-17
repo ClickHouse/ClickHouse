@@ -240,7 +240,7 @@ public:
     ///   `timeSlots(DateTime64(s), Decimal64(d) [, Decimal64])` -> `Array(DateTime64(max(s, d)))`
     /// The DateTime64 result's scale is `max(start_scale, duration_scale)`,
     /// not derivable from the DSL — the override below is authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(DateTime, UInt32, [const UInt]) -> Array(DateTime)"
                " OR (DateTime64, Decimal64, [const Decimal64]) -> Array(DateTime64)";
@@ -251,7 +251,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

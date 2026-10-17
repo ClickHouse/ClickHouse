@@ -64,7 +64,7 @@ public:
 
     /// Documentation-only — the result type is the named aggregate function's
     /// result type, resolved at query time from the const-string first argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(const String, Array, ...) -> Any";
     }
