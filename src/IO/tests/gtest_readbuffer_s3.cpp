@@ -775,6 +775,31 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReportsResponseVersion)
     ASSERT_EQ(version->safeGet<String>(), "version-1");
 }
 
+TEST_F(ReadBufferFromS3Test, ReadBigAtReportsNoVersionForNull)
+{
+    /// Every upload made while versioning is suspended has the version `null`, so it names no one upload.
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", /*version_id_=*/"", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "1234567890";
+    client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
+    {
+        auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::StdStreamFromReadBuffer>(
+            "test response stream", std::make_unique<FakeResponseBody>(body, std::make_shared<CountedSession>()), body.size()));
+        Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
+            std::move(response_stream),
+            Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}, {"x-amz-version-id", "null"}});
+        return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
+    };
+
+    std::vector<char> data(body.size());
+    ASSERT_EQ(subject.readBigAt(data.data(), data.size(), /*range_begin=*/0, /*progress_callback=*/{}), body.size());
+    auto version = subject.getMetadata("version_id");
+    ASSERT_TRUE(version.has_value());
+    ASSERT_EQ(version->safeGet<String>(), "");
+}
+
 TEST(DeleteFilesFromS3, ChangedObjectWinsOverOtherErrors)
 {
     /// One response refuses the pinned key as rewritten and fails another key for an ordinary reason.

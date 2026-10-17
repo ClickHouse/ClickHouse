@@ -36,6 +36,9 @@ struct ObjectInfo
     ObjectHeaders headers; /// Always read from the HEAD response; empty for whatever the object does not set.
 };
 
+/// Empty for `null`, the version id that every upload made while versioning is off or suspended shares.
+inline String pinnableVersionId(const String & version_id) { return version_id == "null" ? String{} : version_id; }
+
 /// Ignore if object does not exist
 ObjectInfo getObjectInfoIfExists(
     const S3::Client & client,

@@ -702,7 +702,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         }
         {
             std::lock_guard lock(response_version_id_mutex);
-            response_version_id = result.GetVersionId();
+            response_version_id = S3::pinnableVersionId(result.GetVersionId());
         }
         return result;
     }
