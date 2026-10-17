@@ -30,6 +30,9 @@ public:
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
         std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        /// An upper bound on the rows of the posting blocks of `token_info` these rows reach, finer than `clipRowsRange`.
+        /// With `stop_at_first_block`, returns a nonzero value as soon as one block is reachable.
+        size_t countReachableRows(const TokenPostingsInfo & token_info, bool stop_at_first_block) const;
         PostingList clipPostings(const PostingList & postings);
         size_t getSizeInBytes() const;
 
@@ -92,7 +95,10 @@ public:
     bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
-    void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
+    /// Returns false when the clip leaves the token empty and no postings will ever be read for it.
+    bool addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
+    /// The rows in the token's posting blocks that the readable rows can reach, see `ReadableRows::countReachableRows`.
+    size_t countReachableRows(const TokenPostingsInfo & token_info, bool stop_at_first_block) const;
     void addPostings(std::string_view token, const PostingList & postings);
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
