@@ -200,9 +200,9 @@ try
     {
         prof_active = read_mallctl("prof.active", std::type_identity<bool>{});
         lg_sample = read_mallctl("prof.lg_sample", std::type_identity<size_t>{});
-        /// MibCache::tryGetValue rather than getValue: surface mallctl absence as a JSON `errors`
+        /// NumericPathCache::tryGetValue rather than getValue: surface mallctl absence as a JSON `errors`
         /// entry instead of asserting in debug builds (jemalloc may be built without prof.*).
-        if (bool tai = false; Jemalloc::getThreadProfileInitMib().tryGetValue(tai))
+        if (bool tai = false; Jemalloc::getThreadProfileInitNumericPath().tryGetValue(tai))
             thread_active_init = tai;
         else
             errors.add("prof.thread_active_init");

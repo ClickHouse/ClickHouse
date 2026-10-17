@@ -76,6 +76,41 @@ endif ()
 
 message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
+# The C++ reimplementation of jemalloc in `base/allocator` exposes the same `je_*` API and behaves identically.
+# It has no platform configuration for E2K (see `base/allocator/Config.h`), so it is off there.
+if (ARCH_E2K)
+    set (ENABLE_CPP_ALLOCATOR_DEFAULT OFF)
+else ()
+    set (ENABLE_CPP_ALLOCATOR_DEFAULT ON)
+endif ()
+option (ENABLE_CPP_ALLOCATOR "Use the C++ reimplementation of jemalloc (base/allocator) instead of contrib/jemalloc" ${ENABLE_CPP_ALLOCATOR_DEFAULT})
+if (ENABLE_CPP_ALLOCATOR)
+    if (ARCH_E2K)
+        message (FATAL_ERROR "ENABLE_CPP_ALLOCATOR is not supported on E2K, use -DENABLE_CPP_ALLOCATOR=0")
+    endif ()
+    set (ALLOCATOR_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF}")
+    set (ALLOCATOR_UAF_DETECTION ${ENABLE_JEMALLOC_UAF_SAN})
+    set (ALLOCATOR_MUSL ${USE_MUSL})
+    if (OS_LINUX AND ARCH_AARCH64)
+        # See the comment below about the page size of jemalloc on aarch64.
+        set (JEMALLOC_AARCH64_PAGE_SIZE_KIB 64 CACHE STRING "jemalloc page size on aarch64, in KiB (4, 16 or 64). Must not be less than the kernel page size.")
+        if (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 4)
+            set (ALLOCATOR_LG_PAGE 12)
+        elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 16)
+            set (ALLOCATOR_LG_PAGE 14)
+        elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 64)
+            set (ALLOCATOR_LG_PAGE 16)
+        else ()
+            message (FATAL_ERROR "Invalid JEMALLOC_AARCH64_PAGE_SIZE_KIB=${JEMALLOC_AARCH64_PAGE_SIZE_KIB}, must be 4, 16 or 64")
+        endif ()
+    endif ()
+    message (STATUS "Using the C++ allocator from base/allocator")
+    add_subdirectory ("${ClickHouse_SOURCE_DIR}/base/allocator" "${CMAKE_CURRENT_BINARY_DIR}/allocator")
+    target_compile_definitions (_allocator INTERFACE -DJEMALLOC_NO_RENAME)
+    add_library (ch_contrib::jemalloc ALIAS _allocator)
+    return ()
+endif ()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
 set (SRCS
@@ -150,6 +185,8 @@ set (SRCS
 if (OS_DARWIN)
     list(APPEND SRCS "${LIBRARY_DIR}/src/zone.c")
 endif ()
+
+list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/numeric_path.c")
 
 add_library(_jemalloc ${SRCS})
 
