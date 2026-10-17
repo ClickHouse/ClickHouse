@@ -2,7 +2,6 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
 
 namespace DB
@@ -14,9 +13,8 @@ using JoinPtr = std::shared_ptr<IJoin>;
 struct LogicalJoinInfo
 {
     String readable_relation_name;
-    JoinEstimation estimation;
+    std::optional<UInt64> result_rows_estimation;
     JoinLocality locality{};
-    UInt64 cluster_id = 0;
 };
 
 /// Join two data streams.
@@ -48,14 +46,6 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
-    /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;
-    /// also it is not clear whether a Join is ever the top of a replicas plan,
-    /// i.e. not followed by an ExpressionStep.
-    /// Output-byte collection is nevertheless supported here for completeness, but only on the
-    /// analyzer path: `updatePipeline` appends the collector only there, so claiming support
-    /// otherwise would silently report zero output bytes.
-    bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
-
     void describePipeline(FormatSettings & settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
@@ -83,10 +73,6 @@ public:
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
-
-    /// Gate the probe-side reads on the build completion seal carrying the given runtime
-    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
-    void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }
@@ -95,24 +81,16 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
-
-    const JoinEstimation & getEstimation() const { return estimation; }
-    UInt64 getClusterId() const { return cluster_id; }
-
 private:
     bool optimized = false;
     void updateOutputHeader() override;
-
-    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
     String join_readable_relation_name;
 
     JoinPtr join;
-    JoinEstimation estimation;
-    UInt64 cluster_id = 0;
+    std::optional<size_t> result_rows_estimation;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
@@ -126,9 +104,6 @@ private:
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
-
-    /// See enableSealGatedProbeReading.
-    std::optional<String> seal_gate;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep
@@ -159,8 +134,6 @@ public:
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
-
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     void updateOutputHeader() override;

@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -9,10 +8,10 @@
 #include <base/sort.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -32,7 +31,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Graphite
 {
-static UnorderedMapWithMemoryTracking<RuleType, const String> ruleTypeMap =
+static std::unordered_map<RuleType, const String> ruleTypeMap =
 {
    { RuleTypeAll, "all" },
    { RuleTypePlain, "plain" },
@@ -299,13 +298,13 @@ std::string buildTaggedRegex(std::string regexp_str)
     * nam.*\?(.*&)?tag1=val1&(.*&)?tag2=val2(&.*)?$
     */
 
-    VectorWithMemoryTracking<std::string> tags;
+    std::vector<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (!tags[0].contains('='))  /// NOLINT(readability-static-accessed-through-instance)
+    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";

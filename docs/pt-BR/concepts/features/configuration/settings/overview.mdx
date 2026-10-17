@@ -46,11 +46,11 @@ SELECT name, value FROM system.settings WHERE name = 'max_threads'
 O resultado será algo como isto:
 
 ```response
-┌─name────────┬─value───┐
-│ max_threads │ auto(8) │
-└─────────────┴─────────┘
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
 
-1 row in set. Elapsed: 0.002 sec.
+1 linha no conjunto. Elapsed: 0.002 sec.
 ```
 
 <div id="further-reading">
@@ -59,6 +59,6 @@ O resultado será algo como isto:
 
 * Consulte [configurações globais do servidor](/pt-BR/reference/settings/server-settings/settings) para saber mais sobre como configurar seu
   servidor ClickHouse no nível global.
-* Consulte [configurações de sessão](/pt-BR/concepts/features/configuration/settings/settings-query-level) para saber mais sobre como configurar seu servidor ClickHouse
+* Consulte [configuração de sessão](/pt-BR/concepts/features/configuration/settings/settings-query-level) para saber mais sobre como configurar seu servidor ClickHouse
   no nível da sessão.
 * Consulte [hierarquia de contexto](/pt-BR/resources/develop-contribute/introduction/architecture#context) para saber mais sobre o processamento da configuração pelo ClickHouse.

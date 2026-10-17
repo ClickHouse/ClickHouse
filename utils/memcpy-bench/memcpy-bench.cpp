@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <random>
 #include <iostream>
 #include <iomanip>
 #include <thread>
@@ -133,13 +134,14 @@ static void * memcpySSE2(void * __restrict destination, const void * __restrict 
 {
     unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
+    size_t padding;
 
     // small memory copy
     if (size <= 16)
         return memcpy_tiny(dst, src, size);
 
     // align destination to 16 bytes boundary
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
 
     if (padding > 0)
     {
@@ -169,13 +171,14 @@ static void * memcpySSE2Unrolled2(void * __restrict destination, const void * __
 {
     unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
+    size_t padding;
 
     // small memory copy
     if (size <= 32)
         return memcpy_tiny(dst, src, size);
 
     // align destination to 16 bytes boundary
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
 
     if (padding > 0)
     {
@@ -208,13 +211,14 @@ static void * memcpySSE2Unrolled4(void * __restrict destination, const void * __
 {
     unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
+    size_t padding;
 
     // small memory copy
     if (size <= 64)
         return memcpy_tiny(dst, src, size);
 
     // align destination to 16 bytes boundary
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
 
     if (padding > 0)
     {
@@ -254,13 +258,14 @@ static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __
 {
     unsigned char *dst = reinterpret_cast<unsigned char *>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char *>(source);
+    size_t padding;
 
     // small memory copy
     if (size <= 128)
         return memcpy_tiny(dst, src, size);
 
     // align destination to 16 bytes boundary
-    size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
+    padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;
 
     if (padding > 0)
     {
@@ -359,9 +364,8 @@ memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & sr
     }
 }
 
-#if 0
 __attribute__((__target__("avx")))
-static void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t * __restrict & __restrict src, size_t & __restrict size)
+void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t * __restrict & __restrict src, size_t & __restrict size)
 {
     size_t padding = (32 - (reinterpret_cast<size_t>(dst) & 31)) & 31;
 
@@ -407,7 +411,6 @@ static void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const ui
         size -= 256;
     }
 }
-#endif
 
 bool have_avx = true;
 
@@ -830,8 +833,7 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
     return ret;
 }
 
-__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2")))
-static void *
+__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void *
 ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
     char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
@@ -915,14 +917,14 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 
 
-static void * sz_copy_haswell_cast(void * __restrict destination, const void * __restrict source, size_t size)
+void * sz_copy_haswell_cast(void * __restrict destination, const void * __restrict source, size_t size)
 {
     void * dst = destination;
     sz_copy_haswell(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
     return dst;
 }
 
-static void * sz_copy_skylake_cast(void * __restrict destination, const void * __restrict source, size_t size)
+void * sz_copy_skylake_cast(void * __restrict destination, const void * __restrict source, size_t size)
 {
     void * dst = destination;
     sz_copy_skylake(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
@@ -969,7 +971,7 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     return 0;
 }
 
-static uint64_t dispatchVariants(
+uint64_t dispatchVariants(
     size_t memcpy_variant, size_t generator_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads)
 {
     if (generator_variant == 1)
@@ -1002,7 +1004,7 @@ int main(int argc, char ** argv)
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.contains("help") || !options.contains("variant"))
+    if (options.count("help") || !options.count("variant"))
     {
         std::cout << R"(Usage:
 
@@ -1046,8 +1048,8 @@ clickhouse-local --structure '
     size_t memcpy_variant = options["variant"].as<size_t>();
     size_t generator_variant = options["distribution"].as<size_t>();
 
-    size_t iterations = 0;
-    if (options.contains("iterations"))
+    size_t iterations;
+    if (options.count("iterations"))
     {
         iterations = options["iterations"].as<size_t>();
     }
@@ -1073,7 +1075,7 @@ clickhouse-local --structure '
 
     std::cout << std::fixed << std::setprecision(3);
 
-    if (options.contains("tsv"))
+    if (options.count("tsv"))
     {
         std::cout
             << '\t' << size

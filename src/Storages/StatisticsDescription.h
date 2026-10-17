@@ -16,7 +16,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
-    Basic = 4,
+    Basic = 4, /// Min, max, string-length min/max, and null count, depending on the column type.
     UniqV2 = 5,
 
     Max = 63,
@@ -39,9 +39,6 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;
-
-    /// The memory retained by `ast` (an upper bound), not including the object itself.
-    size_t allocatedBytes() const;
 };
 
 class ColumnsDescription;

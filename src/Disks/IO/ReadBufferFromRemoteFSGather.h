@@ -9,8 +9,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 class FilesystemCacheLog;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 /**
  * Remote disk might need to split one clickhouse file into multiple files in remote fs.
@@ -28,8 +26,7 @@ public:
         const StoredObjects & blobs_to_read_,
         size_t min_bytes_for_seek_,
         bool use_external_buffer_,
-        size_t buffer_size,
-        QueryStatusPtr query_status_);
+        size_t buffer_size);
 
     String getFileName() const override { return current_object.remote_path; }
 
@@ -51,13 +48,6 @@ public:
 
     bool isContentCached(size_t offset, size_t size) override;
 
-    /// Positioned reads are supported only for single-blob files; that's always the case on
-    /// "plain" object storage disks, while e.g. a file written with WriteMode::Append on an "s3"
-    /// disk consists of multiple blobs.
-    bool supportsReadAt() override;
-
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
-
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);
 
@@ -75,14 +65,9 @@ private:
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
     const String query_id;
-    /// Null unless `interruptible_reads` was set: resolved by the caller, never here,
-    /// because a gather can be constructed on a pool worker with no query context.
-    const QueryStatusPtr query_status;
     const bool use_external_buffer;
 
-    /// `std::nullopt` means "no right bound". A plain `0` sentinel could not tell an unbounded read
-    /// apart from an empty range at the start of the file.
-    std::optional<size_t> read_until_position;
+    size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
 
     StoredObject current_object;

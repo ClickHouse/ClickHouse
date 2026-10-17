@@ -18,6 +18,9 @@ FROM t_case_split_78352 ORDER BY id
 SETTINGS enable_analyzer = 1;
 
 SELECT 'memory table, analyzer=0:';
+SELECT id, CASE id WHEN 1 THEN splitByString('#', input) ELSE splitByString('', '') END AS result
+FROM t_case_split_78352 ORDER BY id
+SETTINGS enable_analyzer = 0;
 
 DROP TABLE t_case_split_78352;
 
@@ -27,6 +30,9 @@ FROM (SELECT materialize(1) AS id, materialize('a#b#c#d') AS input)
 SETTINGS enable_analyzer = 1;
 
 SELECT 'materialize subquery, analyzer=0:';
+SELECT id, CASE id WHEN 1 THEN splitByString('#', input) ELSE splitByString('', '') END AS result
+FROM (SELECT materialize(1) AS id, materialize('a#b#c#d') AS input)
+SETTINGS enable_analyzer = 0;
 
 SELECT 'all-constant subquery, analyzer=1:';
 SELECT id, CASE id WHEN 1 THEN splitByString('#', input) ELSE splitByString('', '') END AS result
@@ -34,3 +40,6 @@ FROM (SELECT 1 AS id, 'a#b#c#d' AS input)
 SETTINGS enable_analyzer = 1;
 
 SELECT 'all-constant subquery, analyzer=0:';
+SELECT id, CASE id WHEN 1 THEN splitByString('#', input) ELSE splitByString('', '') END AS result
+FROM (SELECT 1 AS id, 'a#b#c#d' AS input)
+SETTINGS enable_analyzer = 0;

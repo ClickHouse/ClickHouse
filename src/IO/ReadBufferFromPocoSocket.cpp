@@ -12,21 +12,6 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/checkSSLReturnCode.h>
 
-#include <algorithm>
-
-namespace
-{
-    /// How much the last read of a handshake deadline may overdraw it, to catch late bytes.
-    constexpr size_t MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS = 100;
-
-    Poco::Timespan getSocketTimeoutFromKernel(const Poco::Net::Socket & socket, int option)
-    {
-        Poco::Timespan timeout;
-        socket.getOption(SOL_SOCKET, option, timeout);
-        return timeout;
-    }
-}
-
 namespace ProfileEvents
 {
     extern const Event NetworkReceiveElapsedMicroseconds;
@@ -99,13 +84,11 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
     {
         throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket (peer: {}, local: {})", e.displayText(), peer_address.toString(), socket.address().toString());
     }
-    catch (const Poco::TimeoutException & e)
+    catch (const Poco::TimeoutException &)
     {
-        /// Carries what timed out, e.g. the TLS handshake rather than an ordinary read.
-        const std::string detail = e.message().empty() ? "" : ": " + e.message();
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms){}",
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
             peer_address.toString(), socket.address().toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds(), detail);
+            socket.impl()->getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
@@ -120,7 +103,12 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
 
 bool ReadBufferFromPocoSocketBase::nextImpl()
 {
-    applyHandshakeDeadlineToSocket();
+    if (handshake_timeout_milliseconds > 0 && handshake_stopwatch.elapsedMilliseconds() > handshake_timeout_milliseconds)
+        throw NetException(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "Handshake timeout exceeded ({} milliseconds, peer: {})",
+            handshake_timeout_milliseconds,
+            peer_address.toString());
 
     if (internal_buffer.size() > INT_MAX)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
@@ -169,91 +157,20 @@ bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds)
 
 void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_microseconds)
 {
-    if (!receive_timeout_microseconds)
-        return;
-
-    const Poco::Timespan timeout(static_cast<Poco::Timespan::TimeDiff>(receive_timeout_microseconds));
-    if (receive_timeout_before_handshake)
-        receive_timeout_before_handshake = timeout;
-    else
-        socket.setReceiveTimeout(timeout);
+    socket.setReceiveTimeout(Poco::Timespan(receive_timeout_microseconds, 0));
 }
 
 void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_milliseconds)
 {
     handshake_timeout_milliseconds = timeout_milliseconds;
-    if (!handshake_timeout_milliseconds)
-        return;
-
-    handshake_stopwatch.restart();
-
-    if (!receive_timeout_before_handshake)
-        receive_timeout_before_handshake = getSocketTimeoutFromKernel(socket, SO_RCVTIMEO);
-    if (!send_timeout_before_handshake)
-        send_timeout_before_handshake = getSocketTimeoutFromKernel(socket, SO_SNDTIMEO);
-
-    /// Now as well as per read, for the handshake reads that never reach nextImpl.
-    clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds);
-}
-
-void ReadBufferFromPocoSocketBase::adoptHandshakeDeadlineFrom(const ReadBufferFromPocoSocketBase & other)
-{
-    if (!other.handshake_timeout_milliseconds)
-        return;
-
-    handshake_timeout_milliseconds = other.handshake_timeout_milliseconds;
-    handshake_stopwatch = other.handshake_stopwatch;
-    /// Take the baselines too: this socket is already clamped, so reading them here would record the
-    /// handshake window as the timeout to restore once the phase ends.
-    receive_timeout_before_handshake = other.receive_timeout_before_handshake;
-    send_timeout_before_handshake = other.send_timeout_before_handshake;
-}
-
-void ReadBufferFromPocoSocketBase::applyHandshakeDeadlineToSocket()
-{
-    if (!handshake_timeout_milliseconds)
-        return;
-
-    const UInt64 elapsed = handshake_stopwatch.elapsedMilliseconds();
-    if (elapsed >= handshake_timeout_milliseconds)
-        throw NetException(
-            ErrorCodes::SOCKET_TIMEOUT,
-            "Handshake timeout exceeded ({} milliseconds, peer: {})",
-            handshake_timeout_milliseconds,
-            peer_address.toString());
-
-    /// Per read: a byte sent just before each timeout would otherwise restart the socket timer.
-    clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds - elapsed);
-}
-
-void ReadBufferFromPocoSocketBase::clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left)
-{
-    Poco::Timespan read_window(
-        static_cast<Poco::Timespan::TimeDiff>(std::max<UInt64>(milliseconds_left, MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS)) * 1000);
-    if (receive_timeout_before_handshake > Poco::Timespan(0) && receive_timeout_before_handshake < read_window)
-        read_window = *receive_timeout_before_handshake;
-
-    socket.setReceiveTimeout(read_window);
-    /// `getMaxTimeoutOrLimit` takes the greater of the two, so the send side has to come down too.
-    if (socket.getSendTimeout() > read_window)
-        socket.setSendTimeout(read_window);
+    if (handshake_timeout_milliseconds > 0)
+        handshake_stopwatch.restart();
 }
 
 void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
 {
     handshake_timeout_milliseconds = 0;
     handshake_stopwatch.stop();
-
-    if (receive_timeout_before_handshake)
-    {
-        socket.setReceiveTimeout(*receive_timeout_before_handshake);
-        receive_timeout_before_handshake.reset();
-    }
-    if (send_timeout_before_handshake)
-    {
-        socket.setSendTimeout(*send_timeout_before_handshake);
-        send_timeout_before_handshake.reset();
-    }
 }
 
 void ReadBufferFromPocoSocketBase::setAsyncCallback(AsyncCallback async_callback_)

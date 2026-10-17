@@ -83,6 +83,7 @@ void setUpConfig(const std::string & file_name)
                 <path>local_blob_storage_dir/</path>
                 <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
+                <use_fake_transaction>false</use_fake_transaction>
                 <persistent_removal_log>true</persistent_removal_log>
                 <data_background_cleanup>
                     <enabled>true</enabled>
@@ -95,6 +96,7 @@ void setUpConfig(const std::string & file_name)
                 <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_plain_rewritable_dir/</path>
                 <metadata_type>plain_rewritable</metadata_type>
+                <use_fake_transaction>false</use_fake_transaction>
             </local_plain_rewritable_disk>
         </disks>
     </storage_configuration>
@@ -237,7 +239,7 @@ public:
             getContext().context,
             initialized_disks,
             /*attach*/ false,
-            /*custom_disk*/ false,
+            /*custom_disk*/ true,
             /*skip_types*/ {});
 
         initialized_disks.emplace(name, disk);

@@ -20,7 +20,6 @@ namespace ErrorCodes
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(DatabaseDataLakeCatalogType, catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, catalog_credential, "", "", 0) \
-    DECLARE(Bool, use_unity_catalog_v2, false, "Use the new Unity catalog implementation, which serves both Delta Lake and Iceberg tables. Only for catalog_type = 'unity'", 0) \
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0) \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0) \
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0) \
@@ -39,7 +38,6 @@ namespace ErrorCodes
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
     DECLARE(String, onelake_bearer_token, "", "Pre-obtained bearer token for OneLake, scoped to https://storage.azure.com. The token is static and not refreshed, so a long-lived database must be recreated once it expires", 0) \
-    DECLARE(String, onelake_refresh_token, "", "Entra ID refresh token for OneLake. Access tokens are obtained and renewed with it transparently. Requires `onelake_client_id`; `onelake_client_secret` is needed only for confidential app registrations. The refresh token itself is not rotated: once it expires (90 days by default) or is revoked, provide a fresh one with `ALTER DATABASE ... MODIFY SETTING onelake_refresh_token = '<token>'`", 0) \
     DECLARE(Bool, onelake_use_blob_endpoint, true, "Use the Blob endpoint (.blob.fabric.microsoft.com) for OneLake reads; writes use the DFS endpoint (.dfs.fabric.microsoft.com). When disabled, reads use the DFS endpoint too. With remote_url_allow_hosts set, allowlist both hosts or INSERT is rejected", 0) \
     DECLARE(String, google_project_id, "", "Google Cloud project ID for BigLake. Required for BigLake catalog. Used in x-goog-user-project header. If not set and google_adc_quota_project_id is provided, it latter will be used", 0) \
     DECLARE(String, google_service_account, "", "Google Cloud service account email for metadata service authentication. Default: 'default'. Only used when ADC credentials are not provided", 0) \
@@ -52,7 +50,7 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
-    DECLARE(Bool, flat_namespaces, false, "The catalog supports only single-level namespaces, so only top-level namespaces are listed and sub-namespaces are not requested. Set this for Iceberg REST catalogs that reject the `parent` query parameter of the list-namespaces endpoint, such as Apache Polaris federated to AWS Glue, which answers `Glue dataCatalog does not support multipart namespace` with HTTP 400. Some catalogs instead ignore `parent` and echo top-level namespaces back for every parent; without this setting those are listed as fake nested namespaces. Not needed for catalog types that are always flat (`delta_sharing`, BigLake, S3 Tables).", 0) \
+    DECLARE(Bool, flat_namespaces, false, "The catalog supports only single-level namespaces, so only top-level namespaces are listed and sub-namespaces are not requested. Set this for Iceberg REST catalogs that reject the `parent` query parameter of the list-namespaces endpoint, such as Apache Polaris federated to AWS Glue, which answers `Glue dataCatalog does not support multipart namespace` with HTTP 400. Some catalogs instead ignore `parent` and echo top-level namespaces back for every parent; without this setting those are listed as fake nested namespaces. Not needed for catalog types that are always flat (`delta_sharing`, BigLake).", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
@@ -112,28 +110,13 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
     return changes;
 }
 
-bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
-{
-    return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
-}
-
-static const String & getSettingNameByOffset(size_t offset)
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
 {
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
-    const size_t index = accessor.findByOffset(offset);
+    const size_t index = accessor.findByOffset(setting.offset);
     if (index == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown database DataLake setting");
     return accessor.getName(index);
-}
-
-const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
-{
-    return getSettingNameByOffset(setting.offset);
-}
-
-const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsBool setting)
-{
-    return getSettingNameByOffset(setting.offset);
 }
 
 }

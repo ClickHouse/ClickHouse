@@ -187,7 +187,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
    * IPv6 네트워크에서 Docker로 ClickHouse를 실행하는 경우 `network=host`가 설정되어 있는지 확인하십시오.
 
 2. 엔드포인트 설정.
-   * [listen&#95;host](/ko/reference/settings/server-settings/settings/listen#listen_host) 및 [tcp&#95;port](/ko/reference/settings/server-settings/settings/tcp-port#tcp_port) 설정을 확인하십시오.
+   * [listen&#95;host](/ko/reference/settings/server-settings/settings#listen_host) 및 [tcp&#95;port](/ko/reference/settings/server-settings/settings#tcp_port) 설정을 확인하십시오.
    * ClickHouse 서버는 기본적으로 localhost에서의 연결만 허용합니다.
 
 3. HTTP 프로토콜 설정:
@@ -197,8 +197,8 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 4. 보안 연결 설정.
 
    * 다음을 확인하십시오:
-     * [tcp&#95;port&#95;secure](/ko/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) 설정
-     * [SSL certificates](/ko/reference/settings/server-settings/settings/other#openssl) 설정
+     * [tcp&#95;port&#95;secure](/ko/reference/settings/server-settings/settings#tcp_port_secure) 설정
+     * [SSL certificates](/ko/reference/settings/server-settings/settings#openssl) 설정
    * 연결할 때 올바른 매개변수를 사용하십시오. 예를 들어 `clickhouse_client`에서는 `port_secure` 매개변수를 사용하십시오.
 
 5. 사용자 설정:

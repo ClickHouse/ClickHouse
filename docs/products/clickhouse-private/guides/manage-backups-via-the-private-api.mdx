@@ -1,0 +1,174 @@
+---
+noindex: true
+title: "Manage Backups via the Private API"
+sidebarTitle: "Manage backups via API"
+description: "Create, monitor, schedule, and restore ClickHouse backups using the Private API."
+---
+
+Create, monitor, schedule, and restore ClickHouse backups using the Private API.
+
+For manual backup operations without the API, see [Backup and Restore](/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+## Prerequisites
+
+- ClickHouse Private API installed and accessible (e.g., via port-forward to `http://localhost:8080/`)
+- At least one ClickHouse cluster deployed (this guide uses `default-xx-01`)
+
+## Create a Full Backup
+
+``` json
+{
+    "incremental": false
+}
+```
+
+``` bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+The response includes a UUID identifying the backup.
+
+## Check Backup Status
+
+Query a specific backup by UUID:
+
+``` bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+When the backup completes successfully, the `status.state` field returns `Ready`.
+
+## List All Backups
+
+``` bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+The endpoint supports query parameters for filtering and sorting. For example, to find the last successful backup:
+
+``` bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+## Create Incremental Backups
+
+Incremental backups only back up data that changed since a previous backup, forming a chain with a full backup as the starting point.
+
+``` json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+``` bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+## Back Up Specific Tables or Databases
+
+Control what gets backed up using the `databases` and `tables` fields. Table names must be fully qualified (i.e., `db.table`).
+
+``` json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+``` bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+## Schedule Backups with a CronJob
+
+Use a Kubernetes CronJob to automate backup creation:
+
+``` yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+This schedules a full backup daily at 2 AM. It assumes the Private API is reachable via `http://clickhouse-private-api-airgap-management:8080`.
+
+## Restore from a Backup
+
+### Via the API
+
+The API exposes a restore endpoint that restores a backup onto a different target instance:
+
+``` bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+For safety, the API disallows restoration on the same instance. It is recommended to spin up a new cluster for the restore to avoid overloading the original.
+
+### Manual SQL Alternative
+
+For fine-grained control, restore directly with SQL. For example, to restore a single database under a new name:
+
+``` sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+## Manage Backup Lifecycle
+
+### S3 Lifecycle Policy
+
+Use S3 lifecycle policies to transition and expire old backups automatically:
+
+``` json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+This example moves backups to Standard-IA after 7 days, to Glacier after 30 days, and deletes them after 90 days.
+
+### Backup Chain Integrity Warning
+
+S3 lifecycle policies are not aware of incremental backup chains. If a full backup at the base of a chain is deleted while incremental backups still reference it, those incremental backups become unrestorable.
+
+Ensure your retention period for full backups exceeds the time between full backup cycles. Regularly test that your backups can be restored.

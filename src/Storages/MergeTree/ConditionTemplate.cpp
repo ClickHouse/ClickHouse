@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -37,10 +36,9 @@ void fillPartitionConstantsSubstitution(
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
     const ActionsDAG & predicate_dag,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context,
     const MergeTreePartition & partition)
 {
-    const auto partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, context);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto & key_dag = partition_key.expression->getActionsDAG();
     const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
     const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
@@ -91,15 +89,14 @@ ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const MergeTreePartition & partition,
     const std::string & partition_id,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     chassert(predicate_node);
 
     auto dag = ActionsDAG::cloneSubDAG({predicate_node}, /*remove_aliases=*/false);
 
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, context, partition);
+    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, partition);
     fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, partition_id, partition);
 
     dag.substitute(substitutions);
@@ -193,30 +190,18 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 }
 
 template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPart(const MergeTreeDataPartPtr & part) const
+const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartition & partition) const
 {
-    return generateForPartition(part->partition, part->info.getPartitionId(), part->isProjectionPart());
-}
-
-template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const
-{
-    return generateForPartition(part_info.getPartition(), part_info.getPartInfo().getPartitionId(), part_info.isProjectionPart());
-}
-
-template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPartition(
-    const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const
-{
-    if (skip_folding || !dag || !dag->predicate || is_projection_part)
+    if (skip_folding || !dag || !dag->predicate)
         return generateUnsubstituted();
 
+    const std::string partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
     if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 
     try
     {
-        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot, context);
+        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot);
         chassert(!specialized.getOutputs().empty());
 
         Cond produced = generate(&specialized, specialized.getOutputs().front());

@@ -9,7 +9,7 @@ keywords: ['usuários na Cloud', 'gerenciamento de acesso', 'segurança', 'geren
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 Este guia é destinado a usuários com a função Admin no ClickHouse Cloud.
 
@@ -24,25 +24,33 @@ Este guia é destinado a usuários com a função Admin no ClickHouse Cloud.
 Os administradores podem convidar vários usuários de uma só vez e atribuir uma ou mais funções no momento do convite.
 
 <Steps>
-  <Step title="Acesse as configurações da organização e selecione Users and roles" id="users-and-roles-1">
+  <Step>
+    ### Acesse as configurações da organização e selecione Users and roles
+
     Na página de serviços, selecione o nome da sua organização. No menu pop-up, selecione o item de menu `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title="Selecione 'Invite members' no canto superior esquerdo" id="invite-members">
+  <Step>
+    ### Selecione &#39;Invite members&#39; no canto superior esquerdo
+
     Clique no botão `Invite members` no canto superior esquerdo.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step title="Insira o endereço de e-mail dos novos membros e atribua funções" id="add-email-and-roles">
+  <Step>
+    ### Insira o endereço de e-mail dos novos membros e atribua funções
+
     Insira os endereços de e-mail na parte superior da tela de convite. Selecione uma ou mais funções para atribuir aos usuários.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step title={<>Clique em <code>Send invites</code></>} id="send-invites">
+  <Step>
+    ### Clique em `Send invites`
+
     Clique em `Send invites` na parte inferior da tela. Os usuários receberão um e-mail pelo qual poderão entrar na organização. Para mais informações sobre como aceitar convites, consulte [Gerenciar minha conta](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -68,31 +76,39 @@ Se a sua organização estiver configurada para [SAML SSO](/pt-BR/products/cloud
 Quando houver pelo menos um usuário SAML na organização com a função Admin atribuída, remova da organização os usuários que usam outros métodos de autenticação para impor autenticação somente por SAML em toda a organização.
 
 <div id="manage-role-assignments">
-  ## Manage user role assignments
+  ## Gerenciar atribuições de funções de usuário
 </div>
 
 Usuários com a função Admin podem atualizar as permissões de outros usuários a qualquer momento.
 
 <Steps>
-  <Step title="Acesse configuração da organização e selecione Users and roles" id="users-and-roles-2">
+  <Step>
+    ### Acesse configuração da organização e selecione Users and roles
+
     Na página de serviços, selecione o nome da sua organização. No menu pop-up, selecione o item `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title="Selecione o usuário a ser atualizado e selecione Edit" id="select-user-to-update">
+  <Step>
+    ### Selecione o usuário a ser atualizado e selecione Edit
+
     Selecione o item de menu no final da linha do usuário cujo acesso você deseja modificar. No menu pop-up, selecione `Edit`.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step title="Atualize as permissões" id="update-permissions">
+  <Step>
+    ### Atualize as permissões
+
     Clique na caixa `Roles` para expandir o menu. Marque as caixas de seleção para adicionar ou remover funções do usuário. Consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles) para ver a lista de funções e permissões associadas.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step title="Salve suas alterações" id="save-changes">
+  <Step>
+    ### Salve suas alterações
+
     Salve suas alterações com o botão `Save changes` na parte inferior da guia.
   </Step>
 </Steps>

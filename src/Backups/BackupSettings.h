@@ -1,12 +1,9 @@
 #pragma once
 
-#include "config.h"
-
 #include <map>
 #include <optional>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
-#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -46,22 +43,6 @@ struct BackupSettings
 
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
-
-    /// Whether to fsync the backup's files, the `.backup` manifest and the containing
-    /// directories to local storage before the backup is reported as created, so that an
-    /// acknowledged backup survives power loss. Applies to `File` destinations and to `Disk`
-    /// destinations whose disk stores plain local files. On an object-storage disk the uploaded
-    /// objects are already durable, and the local metadata files a `metadata_type = local` disk
-    /// reaches them through are fsynced the same way.
-    /// For `BACKUP ON CLUSTER` the guarantee only holds for a cluster whose hosts all know this
-    /// setting: a value left at the default is not forwarded to the other hosts, so a host running
-    /// a version that predates the setting writes its share on the pre-fsync path. Naming the
-    /// setting in the query forwards it, which makes such a host refuse the backup instead.
-    bool fsync_backup_files = true;
-
-    /// Whether `fsync_backup_files` was named in the query's SETTINGS clause. A value equal to the
-    /// default is indistinguishable from an unset one, so this is what tells the two apart.
-    bool fsync_backup_files_specified = false;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
@@ -130,19 +111,6 @@ struct BackupSettings
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
 
-#if CLICKHOUSE_CLOUD
-    /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
-    /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is
-    /// recorded, so a small value costs parallelism, not just Keeper round-trips. Backups of tens of
-    /// millions of files are ordinary for this feature, which is why the default is not in the thousands.
-    /// The replayed work after a failure stays bounded by `resumable_backup_batch_size_bytes` below.
-    UInt64 resumable_backup_batch_size = 50000;
-
-    /// Target number of unique new data bytes written between Keeper checkpoints. This is what bounds the
-    /// data a retry has to copy again; the file count above bounds per-file overhead for small files.
-    UInt64 resumable_backup_batch_size_bytes = 10ULL * 1024 * 1024 * 1024;
-#endif
-
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -176,7 +144,7 @@ struct BackupSettings
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 
     struct Util
     {

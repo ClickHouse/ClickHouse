@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-Whenever a set of rows is inserted into the table, instead of creating (at[ least](/reference/settings/session-settings/max-insert#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
+Whenever a set of rows is inserted into the table, instead of creating (at[ least](/reference/settings/session-settings#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="Partitions" />
 
@@ -56,7 +56,7 @@ Conversely, if queries need to query across partitions performance may be negati
 In summary, users should primarily think of partitioning as a data management technique. For an example of managing data, see ["Managing Data"](/guides/use-cases/observability/build-your-own/managing-data) from the observability use-case guide and ["What are table partitions used for?"](/concepts/core-concepts/partitions#data-management) from Core Concepts - Table partitions.
 
 ## Choose a low cardinality partitioning key {#choose-a-low-cardinality-partitioning-key}
-Importantly, a higher number of parts will negatively affect query performance. ClickHouse will therefore respond to inserts with a [“too many parts”](/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) error if the number of parts exceeds specified limits either in [total](/reference/settings/merge-tree-settings/max-parts#max_parts_in_total) or [per partition](/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
+Importantly, a higher number of parts will negatively affect query performance. ClickHouse will therefore respond to inserts with a [“too many parts”](/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) error if the number of parts exceeds specified limits either in [total](/reference/settings/merge-tree-settings#max_parts_in_total) or [per partition](/reference/settings/merge-tree-settings#parts_to_throw_insert).
 
 Choosing the right **cardinality** for the partitioning key is critical. A high-cardinality partitioning key - where the number of distinct partition values is large - can lead to a proliferation of data parts. Since ClickHouse doesn't merge parts across partitions, too many partitions will result in too many unmerged parts, eventually triggering the “Too many parts” error. [Merges are essential](/concepts/core-concepts/merges) for reducing storage fragmentation and optimizing query speed, but with high-cardinality partitions, that merge potential is lost.
 

@@ -1,0 +1,222 @@
+---
+slug: /cloud/managed-postgres/benchmarks
+sidebarTitle: 'ベンチマーク'
+title: 'パフォーマンスベンチマーク'
+description: 'ClickHouse が管理する Postgres と AWS Aurora、RDS、その他のマネージド PostgreSQL サービスのパフォーマンスを比較したベンチマーク'
+keywords: ['Postgres ベンチマーク', 'パフォーマンス', 'pgbench', 'aurora', 'rds', 'tps', 'レイテンシ', 'nvme パフォーマンス']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  **要点**
+
+  * 標準的な [`pgbench`](https://www.postgresql.org/docs/current/pgbench.html) テストを使用して、**ClickHouse が管理する Postgres** を AWS RDS (16k プロビジョンド IOPS) および Aurora IO Optimized とベンチマーク比較
+  * **性能**: ClickHouse の NVMe ベースの Postgres は、I/O 集約型ワークロードで **4.3～9 倍高速**、CPU 負荷が支配的なシナリオでも **12% 高速**
+  * **高いトランザクション処理量、低レイテンシのデータアクセス、I/O ボトルネックのない安定した性能** を求める、急成長中の AI 主導ワークロードに最適
+</Info>
+
+<div id="overview">
+  ## ベンチマークの概要
+</div>
+
+中程度および高い並行性のシナリオにおけるワークロードの性能を評価するため、PostgreSQL の標準的なベンチマークツールである `pgbench` を使用して包括的なパフォーマンステストを実施しました。
+
+<div id="benchmarks">
+  ## ベンチマーク
+</div>
+
+すべてのパフォーマンステストは、公平な比較を行えるよう、PostgreSQLデータベースと同じコンピュート容量を持ち、同じリージョンおよびアベイラビリティゾーンに配置されたクライアント VM を使用して実施しました。
+
+<div id="test1">
+  ### テスト 1: I/O 集約型 - 読み取り+書き込み (500 GB データセット)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readwrite.webp" alt="I/O 集約型の読み取り+書き込みベンチマーク結果" size="md" border />
+
+**RDS (16k IOPS) に対するパフォーマンス改善:**
+
+* **TPS が 326% 高い** (4.3 倍高速)
+
+**Aurora IO Optimized に対するパフォーマンス改善:**
+
+* **TPS が 345% 高い** (4.5 倍高速)
+
+**分析**: 読み取りと書き込みが混在するワークロードでは、NVMe ストレージの性能上の優位性が最も顕著に表れます。これは、高スループットのデータインジェストと低レイテンシの読み取りの両方を必要とする**急成長中の AI 主導ワークロードにとって、最も現実的なシナリオ**です。**ClickHouse が管理する Postgres は、より高い並行度でも 19.8K TPS を達成**しており、負荷下でも NVMe ストレージが効果的にスケールすることを示しています。これは**RDS および Aurora より 4.3～4.5 倍高速**です。ネットワーク接続型ストレージソリューションは書き込み負荷の高い処理に苦戦し、RDS と Aurora は、プロビジョニング済みの容量があり、Aurora の IO Optimized 構成であっても、4.4K～4.6K TPS で頭打ちになりました。
+
+<div id="test1-setup">
+  #### セットアップ
+</div>
+
+このテストでは、500 GB の大規模データセットを使用して、読み取りと書き込みが混在するワークロードでの性能を評価し、ストレージサブシステムの読み取りパスと書き込みパスの両方に負荷をかけます。
+
+**インスタンス構成:**
+
+| 構成           | ClickHouse が管理する Postgres | RDS with 16k IOPS        | Aurora IO Optimized       |
+| ------------ | ------------------------- | ------------------------ | ------------------------- |
+| **PG バージョン** | 17                        | 17                       | 17                        |
+| **vCPU**     | 16                        | 16                       | 16                        |
+| **RAM**      | 64 GB                     | 64 GB                    | 128 GB                    |
+| **ディスクサイズ**  | 1 TB                      | 1 TB                     | 1 TB                      |
+| **ディスクタイプ**  | NVMe (無制限 IOPS)           | ネットワーク接続型 (16,000 IOPS)  | ネットワーク接続型 (IO Optimized)  |
+
+**テスト構成:**
+
+```bash
+# データベースを初期化（500 GB のデータセット）
+pgbench -i -s 34247
+
+# 読み取り/書き込みベンチマーク
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30
+```
+
+<div id="test2">
+  ### テスト 2: I/O 集約型 - 読み取り専用 (500 GB データセット)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readonly.webp" alt="I/O 集約型の読み取り専用ベンチマーク結果" size="md" border />
+
+**RDS (16k IOPS) に対するパフォーマンス改善:**
+
+* **TPS が 802% 向上** (9.0 倍高速)
+
+**分析**: I/O ボトルネックのある読み取り集約型ワークロードでは、性能差が大幅に広がります。**ClickHouse が管理する Postgres は 84.8K TPS を記録**した一方、16,000 プロビジョンド IOPS の RDS は、同等のコンピュートリソースでありながら 9.4K TPS にとどまりました。主な違いは、ClickHouse の NVMe ストレージは並行性の向上に合わせてスケールできるのに対し、ネットワーク接続型ストレージはプロビジョンド IOPS の上限に縛られる点です。RDS はプロビジョンド IOPS を設定していてもなお ClickHouse より 9 倍遅く、I/O 集約型ワークロードではストレージアーキテクチャが決定的に重要であることを示しています。
+
+<div id="test1-setup">
+  #### セットアップ
+</div>
+
+このテストでは、メモリに収まりきらない大規模な 500 GB のデータセットを用いて読み取り性能を評価し、ディスク I/O 性能に負荷をかけます。
+
+**インスタンス構成:**
+
+| 構成           | ClickHouse が管理する Postgres | 16k IOPS の RDS           |
+| ------------ | ------------------------- | ------------------------ |
+| **PG バージョン** | 17                        | 17                       |
+| **vCPUs**    | 16                        | 16                       |
+| **RAM**      | 64 GB                     | 64 GB                    |
+| **ディスクサイズ**  | 1 TB                      | 1 TB                     |
+| **ディスクタイプ**  | NVMe (無制限 IOPS)           | ネットワーク接続型 (16,000 IOPS)  |
+
+**テスト構成:**
+
+```bash
+# データベースの初期化（500 GB データセット）
+pgbench -i -s 34247
+
+# 読み取り専用ベンチマーク
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
+```
+
+<div id="test3">
+  ### テスト 3: CPU 高負荷 (データがメモリに収まる)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/compute-intensive.webp" alt="CPU 高負荷ベンチマークの結果" size="md" border />
+
+**パフォーマンス改善:**
+
+* **RDS PostgreSQL と比べて TPS が 12.3% 高い**
+
+**分析**: ディスク I/O がほとんど発生しない CPU ボトルネックのシナリオでも、**ClickHouse が管理する Postgres は 36.5K TPS を記録し、最も高い性能を示しました**。両サービスとも CPU 使用率は 100% に達しましたが、ClickHouse の NVMe ストレージは、より高い cache ヒット率により優れたパフォーマンスを発揮しました。RDS に対する 12% の優位性は、ワークロードが主に CPU ボトルネックとなる場合でも、基盤となるインフラストラクチャが高効率であることを示しています。
+
+<div id="test1-setup">
+  #### セットアップ
+</div>
+
+このテストでは、ワーキングセットがメモリに完全に収まる場合の CPU 性能を評価し、ディスク I/O の影響を最小限に抑えます。
+
+**インスタンス構成:**
+
+| Configuration  | ClickHouse が管理する Postgres | RDS PostgreSQL  |
+| -------------- | ------------------------- | --------------- |
+| **PG Version** | 17                        | 17              |
+| **vCPUs**      | 2                         | 2               |
+| **RAM**        | 8 GB                      | 8 GB            |
+| **Disk Type**  | NVMe                      | ネットワーク接続型 (gp3) |
+
+**テスト構成:**
+
+```bash
+# データベースを初期化（2 GB のデータセット）
+pgbench -i -s 136
+
+# データセットをメモリに読み込むためのウォームアップ実行
+pgbench -c 1 -T 60 -S -M prepared
+
+# ベンチマークを実行（読み取り専用、プリペアドステートメント）
+pgbench -c 32 -j 16 -T 300 -S -M prepared -P 30
+```
+
+<div id="summary">
+  ## パフォーマンス概要
+</div>
+
+<div id="key-findings">
+  ### 主な結果
+</div>
+
+3 つのベンチマークシナリオすべてで、ClickHouse が管理する Postgres は一貫して優れたパフォーマンスを発揮しました。
+
+1. **I/O 集約型の読み取り+書き込みワークロード**: RDS (16k IOPS) および Aurora IO Optimized と比べて TPS が 4.3～4.5 倍
+2. **I/O 集約型の読み取りワークロード**: 16k IOPS の RDS と比べて TPS が 9 倍
+3. **CPU-bound ワークロード**: RDS より TPS が 12% 高い
+
+<div id="when-it-excels">
+  ### Postgres by ClickHouse が真価を発揮する場面
+</div>
+
+Postgres by ClickHouse は、次のようなアプリケーションに最適です。
+
+* **急成長する AI 主導のワークロードを支える**必要があり、高スループットのデータインジェスト、頻繁な upsert、リアルタイムの特徴量更新に加え、ClickHouse とのシームレスなインテグレーションにより OLAP ワークロード向けの分析をそのまま利用したい
+* 頻繁な書き込みや更新、または読み書きが混在する処理を行う
+* 安定して高性能なストレージを必要とする
+* 現在、従来型のマネージド Postgres サービスの IOPS 制限に悩まされている
+
+**将来的に分析が必要になることを見込んでおり**、さらに ClickHouse とのより深い連携も想定しているなら――トランザクションデータがリアルタイムのダッシュボード、feature store、ML パイプラインに流れ込む現代の AI ワークロードでは一般的なことですが――**Postgres by ClickHouse を第一候補にすべきです**。ネイティブインテグレーションにより、複雑な ETL パイプラインが不要になり、運用データベースと分析クエリの間でシームレスなデータフローを実現できます。
+
+<div id="nvme-advantage">
+  ### NVMe アーキテクチャの利点
+</div>
+
+この性能面での優位性は、アーキテクチャの根本的な違いにあります。
+
+| Aspect                  | NVMe ストレージ (Managed Postgres) | ネットワーク接続型 Storage (Provisioned IOPS) |
+| ----------------------- | ------------------------------- | ------------------------------------------- |
+| **IOPS**                | 10万から実質無制限                      | 16,000 のプロビジョンド IOPS                        |
+| **Network hops**        | なし (ローカルデバイス)                   | すべてのディスク操作でネットワークの往復が必要                     |
+| **Performance scaling** | 同時実行性に応じて線形にスケール                | プロビジョンド IOPS によって制限される                      |
+
+NVMe ストレージ の性能上の利点の詳細については、[NVMe による高性能](/ja/products/managed-postgres/overview#nvme-performance)を参照してください。
+
+<div id="cost-effectiveness">
+  ## 費用対効果
+</div>
+
+純粋な性能だけでなく、ClickHouse が管理する Postgres はコストパフォーマンスにも優れています。
+
+* **1 ドルあたりのスループットが高い**: 16k のプロビジョンド IOPS を備えた RDS や Aurora IO Optimized と比べて、4～9 倍の TPS を実現
+* **予測しやすいコスト**: 追加の IOPS 容量をプロビジョニングする必要がなく、無制限のローカル IOPS が含まれます
+* **必要なコンピュートが少ない**: 効率的な I/O により、より小さいインスタンスサイズで目標性能を実現
+* **読み取りレプリカの必要性を低減**: 単一インスタンスあたりのスループットが高いため、水平スケーリングの必要性を抑えられます
+
+現在 IOPS 制限がボトルネックになっているワークロードでは、Managed Postgres に切り替えることで、高価なプロビジョンド IOPS や IO Optimized 構成が不要になり、大幅に優れた性能を実現できます。
+
+<div id="references">
+  ## 参考資料
+</div>
+
+ベンチマークの完全なデータ、構成、詳細なメトリクスは、[ベンチマーク結果のスプレッドシート](https://docs.google.com/spreadsheets/d/17TLWmwNKZb3Ie1vSQqvjtqByHskvoX6CF2eQ_FRx1cA/edit?gid=845104392#gid=845104392)で確認できます。
+
+<div id="references">
+  ## 参考資料
+</div>
+
+* [PeerDB: Postgresのマネージドサービス比較](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
+* [pgbenchのドキュメント](https://www.postgresql.org/docs/current/pgbench.html)
+* [Managed Postgres の概要](/ja/products/managed-postgres/overview)
+* [Postgres インスタンスのスケーリング](/ja/products/managed-postgres/scaling)

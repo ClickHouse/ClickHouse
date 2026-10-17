@@ -7,7 +7,9 @@ title: 'Tipos de dados'
 doc_type: 'referência'
 ---
 
-## Conversões de tipo {#type-conversions}
+<div id="type-conversions">
+  ## Conversões de tipo
+</div>
 
 O cliente busca ser o mais flexível possível quanto à aceitação de tipos de variáveis tanto para inserção quanto para o marshaling de respostas. Na maioria dos casos, existe um tipo equivalente em Golang para um tipo de coluna do ClickHouse, por exemplo, [UInt64](/pt-BR/reference/data-types/int-uint) para [uint64](https://pkg.go.dev/builtin#uint64). Esses mapeamentos lógicos devem ser sempre suportados. Você pode querer usar tipos de variáveis que possam ser inseridos em colunas ou usados para receber uma resposta, desde que a conversão da variável ou dos dados recebidos ocorra primeiro. O cliente busca suportar essas conversões de forma transparente, para que os usuários não precisem converter seus dados previamente para que correspondam exatamente aos tipos antes da inserção, além de oferecer marshaling flexível no momento da consulta. Essa conversão transparente não permite perda de precisão. Por exemplo, um uint32 não pode ser usado para receber dados de uma coluna UInt64. Por outro lado, uma string pode ser inserida em um campo datetime64, desde que atenda aos requisitos de formato.
 
@@ -17,9 +19,13 @@ Esse trabalho está em andamento e pode ser dividido entre inserção (`Append`/
 
 A interface padrão `database/sql` deve oferecer suporte aos mesmos tipos que a ClickHouse API. Há algumas exceções, principalmente para tipos complexos, documentadas nas seções abaixo. Assim como a ClickHouse API, o cliente busca ser o mais flexível possível quanto à aceitação de tipos de variáveis tanto para inserção quanto para o marshaling de respostas.
 
-## Tipos complexos {#complex-types}
+<div id="complex-types">
+  ## Tipos complexos
+</div>
 
-### Date/DateTime {#datedatetime}
+<div id="datedatetime">
+  ### Date/DateTime
+</div>
 
 O cliente Go do ClickHouse oferece suporte aos tipos de data/data e hora `Date`, `Date32`, `DateTime` e `DateTime64`. Datas podem ser inseridas como string no formato `2006-01-02` ou usando os tipos nativos do Go `time.Time{}` ou `sql.NullTime`. `DateTime` também oferece suporte a esses tipos, mas exige que as strings sejam passadas no formato `2006-01-02 15:04:05`, com um deslocamento de fuso horário opcional, por exemplo `2006-01-02 15:04:05 +08:00`. `time.Time{}` e `sql.NullTime` também têm suporte na leitura, assim como qualquer implementação da interface `sql.Scanner`.
 
@@ -32,7 +38,9 @@ O tratamento das informações de fuso horário depende do tipo do ClickHouse e 
   * No momento do **insert**, o fuso horário de qualquer data é considerado ao converter a data para um timestamp Unix; ou seja, ele será ajustado pelo fuso horário antes de ser armazenado como data, já que os tipos `Date` não têm localidade no ClickHouse. Se isso não for especificado em um valor de string, será usado o fuso horário local.
   * No momento do **select**, as datas lidas em instâncias `time.Time{}` ou `sql.NullTime{}` serão retornadas sem informações de fuso horário.
 
-### Tipos Time/Time64 {#timetime64-types}
+<div id="timetime64-types">
+  ### Tipos Time/Time64
+</div>
 
 Os tipos de coluna `Time` e `Time64` armazenam valores de hora do dia sem um componente de data. Ambos são mapeados para `time.Duration` do Go.
 
@@ -72,7 +80,9 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 fmt.Printf("col1=%v, col2=%v\n", col1, col2)
 ```
 
-### Array {#array}
+<div id="array">
+  ### Array
+</div>
 
 Arrays devem ser inseridos como slices. As regras de tipagem dos elementos são as mesmas do [tipo primitivo](#type-conversions), ou seja, os elementos serão convertidos quando possível.
 
@@ -123,7 +133,9 @@ rows.Close()
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
 
-### Map {#map}
+<div id="map">
+  ### Map
+</div>
 
 Maps devem ser inseridos como maps em Go, com chaves e valores em conformidade com as regras de tipo definidas [anteriormente](#type-conversions).
 
@@ -179,7 +191,9 @@ rows.Close()
   [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
 </Note>
 
-### Tuplas {#tuples}
+<div id="tuples">
+  ### Tuplas
+</div>
 
 As tuplas representam um grupo de colunas de tamanho arbitrário. As colunas podem ser explicitamente nomeadas ou ter apenas um tipo especificado, por exemplo.
 
@@ -240,7 +254,9 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
 
 Observação: slices tipados e maps são compatíveis, desde que as subcolunas na tupla nomeada sejam todas do mesmo tipo.
 
-### Nested {#nested}
+<div id="nested">
+  ### Nested
+</div>
 
 Um campo Nested é equivalente a um Array de Tuples nomeadas. O uso depende de o usuário ter definido [flatten&#95;nested](/pt-BR/reference/settings/session-settings#flatten_nested) como 1 ou 0.
 
@@ -422,7 +438,9 @@ Observação: as colunas Nested devem ter as mesmas dimensões. Por exemplo, no 
 
 Devido a uma interface mais direta e ao suporte oficial a aninhamento, recomendamos `flatten_nested=0`.
 
-### Tipos Geo {#geo-types}
+<div id="geo-types">
+  ### Tipos Geo
+</div>
 
 O cliente é compatível com os tipos Geo Point, Ring, LineString, Polygon, MultiPolygon e MultiLineString. Esses tipos são representados em Go usando o pacote [github.com/paulmach/orb](https://github.com/paulmach/orb).
 
@@ -525,7 +543,9 @@ fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineStri
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
 
-### UUID {#uuid}
+<div id="uuid">
+  ### UUID
+</div>
 
 O tipo UUID é compatível com o pacote [github.com/google/uuid](https://github.com/google/uuid). Você também pode enviar e serializar um UUID como string ou qualquer tipo que implemente `sql.Scanner` ou `Stringify`.
 
@@ -570,7 +590,9 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
 
-### Decimal {#decimal}
+<div id="decimal">
+  ### Decimal
+</div>
 
 Como o Go não tem um tipo Decimal nativo, recomendamos usar o pacote de terceiros [github.com/shopspring/decimal](https://github.com/shopspring/decimal) para trabalhar com tipos Decimal de forma nativa sem modificar suas consultas originais.
 
@@ -629,7 +651,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
 
-### Nullable {#nullable}
+<div id="nullable">
+  ### Nullable
+</div>
 
 O valor Nil em Go representa um NULL no ClickHouse. Isso pode ser usado se um campo for declarado como Nullable. No momento do insert, Nil pode ser passado tanto para a versão normal quanto para a versão Nullable de uma coluna. No primeiro caso, o valor padrão do tipo será persistido, por exemplo, uma string vazia para string. Já na versão Nullable, um valor NULL será armazenado no ClickHouse.
 
@@ -683,7 +707,9 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &
 
 O cliente também oferece suporte aos tipos `sql.Null*`, por exemplo, `sql.NullInt64`. Eles são compatíveis com os tipos equivalentes no ClickHouse.
 
-### Inteiros grandes {#big-ints}
+<div id="big-ints">
+  ### Inteiros grandes
+</div>
 
 Tipos numéricos com mais de 64 bits são representados com o pacote nativo [big](https://pkg.go.dev/math/big) do Go.
 
@@ -753,7 +779,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", co
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
 
-### BFloat16 {#bfloat16}
+<div id="bfloat16">
+  ### BFloat16
+</div>
 
 `BFloat16` é um tipo de ponto flutuante brain de 16 bits usado em cargas de trabalho de machine learning. Em Go, os valores `BFloat16` são inseridos e lidos como `float32`. As variantes Nullable usam `sql.NullFloat64`.
 
@@ -786,7 +814,9 @@ fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
 
-### QBit {#qbit}
+<div id="qbit">
+  ### QBit
+</div>
 
 `QBit` é um tipo de coluna experimental para armazenar embeddings vetoriais em formato bit-sliced, otimizado para busca por similaridade vetorial. Requer que a configuração `allow_experimental_qbit_type` esteja habilitada.
 

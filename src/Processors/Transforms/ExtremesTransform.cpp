@@ -55,7 +55,7 @@ void ExtremesTransform::work()
         ISimpleTransform::work();
 }
 
-void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
+void ExtremesTransform::transform(DB::Chunk & chunk)
 {
 
     if (chunk.getNumRows() == 0)
@@ -140,11 +140,6 @@ void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
             extremes_columns[i] = std::move(new_extremes);
         }
     }
-}
-
-void ExtremesTransform::transform(DB::Chunk & chunk)
-{
-    accumulateExtremes(extremes_columns, chunk);
 }
 
 }

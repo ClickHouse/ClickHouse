@@ -53,7 +53,9 @@ Cas d’usage pris en charge :
 </Warning>
 
 <Steps>
-  <Step title="Trouvez les adresses IP de sortie de votre service ClickHouse Cloud" id="find-egress-ips">
+  <Step>
+    ### Trouvez les adresses IP de sortie de votre service ClickHouse Cloud
+
     Pour configurer des règles de pare-feu basées sur les adresses IP, vous devez autoriser les adresses IP de sortie de votre région ClickHouse Cloud.
 
     Exécutez la commande suivante pour récupérer la liste des adresses IP de sortie et d’entrée par région.
@@ -89,7 +91,9 @@ Cas d’usage pris en charge :
     Consultez aussi [« Cloud IP addresses »](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) pour plus de détails.
   </Step>
 
-  <Step title="Configurer le pare-feu d’Azure Storage" id="configure-firewall">
+  <Step>
+    ### Configurer le pare-feu d’Azure Storage
+
     Accédez à votre Storage Account dans Azure Portal
 
     1. Accédez à **Networking** → **Firewalls and virtual networks**
@@ -117,10 +121,10 @@ Pour en savoir plus, consultez [&quot;Créer votre premier Azure ClickPipe&quot;
   ClickPipes utilise des adresses IP statiques distinctes pour les connexions sortantes.
   Ces adresses IP doivent être ajoutées à la liste blanche si vous utilisez des règles de pare-feu basées sur les adresses IP.
 
-  Consultez [&quot;Liste des IP statiques&quot;](/fr/integrations/clickpipes/networking/static-ips)
+  Consultez [&quot;Liste des IP statiques&quot;](/fr/integrations/clickpipes/home#list-of-static-ips)
 </Note>
 
 <Tip>
   La restriction concernant la mise en liste blanche des adresses IP dans une même région, mentionnée au début de ce document, s&#39;applique également à ClickPipes.
-  Si votre service ClickPipes et Azure Blob Storage se trouvent dans la même région, utilisez l&#39;authentification par jeton SAS plutôt que la mise en liste blanche des adresses IP.
+  Si votre service ClickPipes et Azure Blob Storage se trouvent dans la même région, utilisez l&#39;authentification par SAS token plutôt que la mise en liste blanche des adresses IP.
 </Tip>

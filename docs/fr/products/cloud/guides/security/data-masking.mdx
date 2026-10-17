@@ -483,7 +483,7 @@ ORDER BY user_id ASC
   ## Utiliser les règles de masquage des requêtes pour les données de journalisation
 </div>
 
-Pour les utilisateurs de ClickHouse OSS qui souhaitent masquer spécifiquement les données de journalisation, il est possible d’utiliser les [règles de masquage des requêtes](/fr/reference/settings/server-settings/settings/query#query_masking_rules) (masquage des logs) pour masquer les données.
+Pour les utilisateurs de ClickHouse OSS qui souhaitent masquer spécifiquement les données de journalisation, il est possible d’utiliser les [règles de masquage des requêtes](/fr/reference/settings/server-settings/settings#query_masking_rules) (masquage des logs) pour masquer les données.
 
 Pour ce faire, vous pouvez définir des règles de masquage basées sur des expressions régulières dans la configuration du serveur.
 Ces règles sont appliquées aux requêtes et à tous les messages de log avant d&#39;être stockés dans les logs du serveur ou les tables système (comme `system.query_log`, `system.text_log` et `system.processes`).
