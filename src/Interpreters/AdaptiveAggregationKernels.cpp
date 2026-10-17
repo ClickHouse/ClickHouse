@@ -1845,6 +1845,23 @@ size_t Aggregator::drainStagedBatch(
     return drained;
 }
 
+size_t Aggregator::drainStagedBatchIntoSharedTable(
+    AdaptiveAggregationSession & shared,
+    const std::vector<StagedChunkPtr> & chunks,
+    PaddedPODArray<AggregateDataPtr> & places_scratch) const
+{
+    try
+    {
+        return drainStagedBatch(*shared.early_drain_variants, chunks, shared.cancelled, places_scratch);
+    }
+    catch (...)
+    {
+        /// A key whose state creation threw stays in the table with a null state
+        shared.cancel();
+        throw;
+    }
+}
+
 void Aggregator::spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const
 {
     if (shared.cancelled.load(std::memory_order_relaxed))
@@ -1969,7 +1986,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         /// batch is released, so its bytes do not come off the reading - which is how the heap
         /// its states own outside the arenas reaches the part bound above.
         const Int64 tracked_before_drain = currentThreadTrackedMemory();
-        drained_records += drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+        drained_records += drainStagedBatchIntoSharedTable(shared, batch, places_scratch);
         const size_t tracked_bytes = shared.early_drain_tracked_bytes.load(std::memory_order_relaxed)
             + static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
         shared.early_drain_tracked_bytes.store(
@@ -2094,8 +2111,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
             /// before the batch is released so its bytes do not come off the reading: that is
             /// how the heap its states own outside the arenas counts toward the detachment below.
             const Int64 tracked_before_drain = currentThreadTrackedMemory();
-            const size_t drained_records
-                = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+            const size_t drained_records = drainStagedBatchIntoSharedTable(shared, batch, places_scratch);
             const size_t tracked_bytes = shared.early_drain_tracked_bytes.load(std::memory_order_relaxed)
                 + static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
             shared.early_drain_tracked_bytes.store(

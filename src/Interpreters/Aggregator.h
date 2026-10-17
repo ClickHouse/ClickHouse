@@ -409,6 +409,12 @@ public:
         std::atomic<bool> & is_cancelled,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
+    /// The drain into the session-shared table; a failed drain cancels the session.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
     /// A fresh drain destination of the session's method type, with one arena per bucket.
     AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
 
