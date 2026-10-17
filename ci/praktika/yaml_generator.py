@@ -83,7 +83,7 @@ on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
 
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}
+  group: ${{{{{{{{ github.workflow }}}}}}}}{CONCURRENCY_QUEUE}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -103,7 +103,7 @@ jobs:
 
 name: {NAME}
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}
+  group: {CONCURRENCY_GROUP}{CONCURRENCY_QUEUE}
 on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
@@ -563,6 +563,11 @@ class PullRequestPushYamlGen:
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
                 ),
+                # Four braces survive the second .format() pass as `${{ github.workflow }}`.
+                "CONCURRENCY_GROUP": (
+                    self.parser.config.concurrency_group
+                    or "${{{{ github.workflow }}}}"
+                ),
             }
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
@@ -593,6 +598,11 @@ class PullRequestPushYamlGen:
 
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
+            CONCURRENCY_QUEUE=(
+                "\n  queue: max"
+                if self.workflow_config.config.enable_concurrency_queue
+                else ""
+            ),
             JOBS="{}" * len(job_items),
             ENV_CHECKOUT_REFERENCE=ENV_CHECKOUT_REFERENCE,
             **format_kwargs,

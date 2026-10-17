@@ -58,7 +58,7 @@ public:
     void usedPerNormalizedHash(UInt64 normalized_query_hash) const;
 
     /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`,
-    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
+    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
     /// `NORMALIZED_QUERY_HASH` quotas the consumption is accounted against the intervals resolved
     /// for `normalized_query_hash`; for all other quotas it is accounted against the shared session
     /// intervals. For each quota the target intervals are resolved once, so passing several usages
@@ -66,12 +66,17 @@ public:
     void usedForQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
     /// The multi-counter overload takes `std::initializer_list` (stack-backed, no heap allocation): the
     /// hot read/result callbacks (`ReadProgressCallback`, `LimitsCheckingTransform`) pass a braced list
-    /// on every progress/result chunk.
+    /// on every progress/result chunk. All the counters are accounted before any of them is checked, so
+    /// an overflow of one counter does not leave the others underreported for the same chunk of work.
     void usedForQuery(UInt64 normalized_query_hash, std::initializer_list<std::pair<QuotaType, QuotaValue>> usages, bool check_exceeded = true) const;
 
     /// Checks if any of the governing quotas is exceeded. If so, throws an exception.
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
+
+    /// Throws if a governing quota is keyed by `client_key` and this context supplied none. Authentication
+    /// is metered before a client key can exist, so only the query path calls this.
+    void checkClientKeySupplied() const;
 
     /// Same as `checkExceeded(quota_type)`, but for `NORMALIZED_QUERY_HASH` quotas the check is
     /// performed against the intervals resolved for `normalized_query_hash`.
@@ -97,6 +102,9 @@ private:
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
+
+        /// Serializes the rollover to a new interval in `getEndOfInterval`.
+        mutable std::mutex rollover_mutex;
 
         /// Per-normalized-query-hash counters for `QUERIES_PER_NORMALIZED_HASH`.
         mutable std::mutex per_hash_mutex;
@@ -138,6 +146,11 @@ private:
 
         /// Non-null only for `NORMALIZED_QUERY_HASH` quotas: resolves intervals per query hash.
         IntervalResolver interval_resolver;
+
+        /// This quota is keyed by `client_key` and the context supplied none, so it cannot be metered.
+        /// Published with the set, so it is refreshed in place whenever quota definitions change;
+        /// see `checkClientKeySupplied`.
+        bool requires_client_key = false;
 
         /// Cache of resolved intervals per normalized query hash.
         mutable std::mutex resolved_intervals_mutex;

@@ -102,10 +102,6 @@ public:
 
     String getName() const override { return Data::name; }
 
-    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
-    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     /// The window size only affects finalization, not the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
     DataTypePtr getNormalizedStateType() const override
@@ -379,10 +375,10 @@ FROM t;
     FunctionDocumentation::Description description = R"(
 Calculates the moving average of input values.
 
-:::note
+<Note>
 The function uses rounding towards zero.
 It truncates the decimal places insignificant for the resulting data type.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupArrayMovingAvg(numbers_for_summing)

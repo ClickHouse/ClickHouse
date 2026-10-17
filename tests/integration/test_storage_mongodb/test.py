@@ -11,6 +11,7 @@ from helpers.database_disk import replace_text_in_metadata
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
+from helpers.test_tools import wait_condition
 
 
 @pytest.fixture(scope="module")
@@ -755,6 +756,88 @@ def test_dates_casting(started_cluster):
         == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
     )
 
+    # An `IN` list is pushed down as `$in`; the list's type has to reach each element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "0\n"
+    )
+    # A list is converted element by element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3), toDateTime64('2000-01-01 00:00:00', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('1999-02-28 00:00:00'), toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "0\n"
+    )
+    # A sub-second bound is not pushed down truncated: the query is refused like any other predicate MongoDB
+    # cannot take, and evaluated in ClickHouse when allowed to.
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+
+    # A member converts as `IN` converts it, and a sub-second member matches nothing. MongoDB compares the
+    # stored value, so a `Date` member with a time of day is refused, and a midnight one matches the
+    # document stored at midnight.
+    dates_mongo_table.insert_one({k: datetime.datetime(2000, 1, 1) for k in data})
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "1\n"
+    )
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00')) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('2000-01-01 12:00:00'))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "2\n"
+    )
+
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()
 
@@ -872,6 +955,7 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id IN ['11']") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', 100)") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat") == "11\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE keyInt IN (1.0, 2.0) ORDER BY id") == "11\n12\n21\n22\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat") == "11\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat") == "12\n21\n22\n"
@@ -1002,6 +1086,8 @@ def test_nulls(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM nulls_table") == "1\n"
+    # A date-family constant is pushed down against a `Nullable` column as against a plain one.
+    assert node.query("SELECT COUNT() FROM nulls_table WHERE k_datetime = toDate('2024-01-02')") == "0\n"
 
     assert (
         node.query(
@@ -1497,3 +1583,58 @@ def test_url_validation(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"
+
+
+def test_handshake_metadata(started_cluster):
+    # ClickHouse identifies itself in the MongoDB connection handshake as a wrapping library
+    # (https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries),
+    # so that MongoDB server operators can tell ClickHouse connections apart in mongod/mongos logs.
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "handshake_metadata_table")
+    handshake_metadata_table = db["handshake_metadata_table"]
+    handshake_metadata_table.insert_many([{"key": i} for i in range(0, 10)])
+
+    node = started_cluster.instances["node"]
+    clickhouse_version = node.query("SELECT version()").strip()
+
+    node.query(
+        f"CREATE OR REPLACE TABLE handshake_metadata_table(key UInt64) ENGINE = MongoDB('mongo1', 'test', 'handshake_metadata_table', 'root', '{mongo_pass}')"
+    )
+
+    # mongod logs the metadata received in the handshake of every new connection as a JSON line
+    # with `"msg": "client metadata"` and the handshake document under `attr.doc`.
+    # Earlier tests in this module have already opened ClickHouse connections to mongo1, so
+    # snapshot the container log first and only look at what gets appended by the SELECT below.
+    logs_before = started_cluster.get_container_logs("mongo1")
+
+    assert node.query("SELECT COUNT() FROM handshake_metadata_table") == "10\n"
+
+    def clickhouse_handshakes_since_snapshot():
+        new_logs = started_cluster.get_container_logs("mongo1")[len(logs_before) :]
+        drivers = []
+        for line in new_logs.splitlines():
+            if '"client metadata"' not in line:
+                continue
+            driver = json.loads(line)["attr"]["doc"]["driver"]
+            # Connections from other clients (e.g. pymongo) are logged too.
+            if driver["name"] == "mongoc / mongocxx / ClickHouse":
+                drivers.append(driver)
+        return drivers
+
+    # Container logs are observed eventually consistently, so retry until the handshake
+    # of the connection opened by the SELECT above shows up.
+    drivers = wait_condition(
+        clickhouse_handshakes_since_snapshot,
+        lambda drivers: len(drivers) > 0,
+        max_attempts=50,
+        delay=0.2,
+    )
+    assert all(
+        driver["version"].endswith(f" / {clickhouse_version}") for driver in drivers
+    ), drivers
+
+    node.query("DROP TABLE handshake_metadata_table")
+    handshake_metadata_table.drop()

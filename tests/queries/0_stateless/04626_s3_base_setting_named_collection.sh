@@ -25,14 +25,13 @@ NC="nc_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # of the test. Reuse a leftover collection instead of recreating it - its contents are deterministic -
 # and let the `DROP TABLE IF EXISTS` below remove a leftover table.
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION IF NOT EXISTS ${NC} AS url = '${FILE}', access_key_id = 'test', secret_access_key = 'testtest', format = 'TSV'"
-${CLICKHOUSE_CLIENT} -q "SET s3_base = '${BUCKET_URL}/'; DROP TABLE IF EXISTS test_s3_base_nc; CREATE TABLE test_s3_base_nc (n UInt32, s String) ENGINE = S3(${NC});"
+# ast_fuzzer_any_query = 0: the AST fuzzer replays table DDL as a DETACH, or as a `__fuzz_N` clone that
+# inherits the collection reference, either of which leaves metadata naming the collection dropped below.
+${CLICKHOUSE_CLIENT} -q "SET s3_base = '${BUCKET_URL}/', ast_fuzzer_any_query = 0; DROP TABLE IF EXISTS test_s3_base_nc; CREATE TABLE test_s3_base_nc (n UInt32, s String) ENGINE = S3(${NC});"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE test_s3_base_nc FORMAT TabSeparatedRaw" | grep -cF "url = '${BUCKET_URL}/${FILE}'"
 # The table must survive DETACH/ATTACH in a session where s3_base is not set.
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE test_s3_base_nc"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE test_s3_base_nc"
+${CLICKHOUSE_CLIENT} -q "SET ast_fuzzer_any_query = 0; DETACH TABLE test_s3_base_nc"
+${CLICKHOUSE_CLIENT} -q "SET ast_fuzzer_any_query = 0; ATTACH TABLE test_s3_base_nc"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_s3_base_nc"
-# Drop the named collection only after the table drop has succeeded. Under the stress test the
-# server can be killed mid-test; the failed `DROP TABLE` is then skipped while the `DROP NAMED
-# COLLECTION` succeeds against the restarted server, leaving a table whose `ATTACH` references a
-# missing named collection, and the next server restart fails to load metadata.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE test_s3_base_nc" && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${NC}"
+# Chained so the collection outlives the table: metadata must never reference a missing collection.
+${CLICKHOUSE_CLIENT} -q "SET ast_fuzzer_any_query = 0; DROP TABLE test_s3_base_nc" && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${NC}"

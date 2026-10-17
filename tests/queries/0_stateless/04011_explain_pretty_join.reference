@@ -3,11 +3,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -21,19 +24,25 @@ Output: id, value, id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100] ⋈ t3[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  Result rows: 100
+│  Cost: estimated 200.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, id, value, value
-│    Right: id, value
+│  Input (left): id, id, value, value
+│  Input (right): id, value
 ├──Join (JOIN FillRightFirst)
 │  │  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  │  Result rows: 100
+│  │  Cost: estimated 100.00
+│  │  Selectivity: estimated (NDV) 0.01
+│  │  Output rows: estimated 100.00
+│  │  Left: rows estimated 100.00
+│  │  Right: rows estimated 100.00
 │  │  Join conditions: id = id
-│  │  Output:
-│  │    Left:  id, value
-│  │    Right: id, value
+│  │  Input (left): id, value
+│  │  Input (right): id, value
 │  ├──ReadFromMergeTree (default.t1)
 │  │     Read type: Default
 │  │     Parts: 1 | Granules: 1

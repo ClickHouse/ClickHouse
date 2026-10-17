@@ -221,6 +221,15 @@ void materializeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions)
+{
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (const auto pos : column_positions)
+        columns[pos] = removeSpecialRepresentations(columns[pos]->convertToFullColumnIfConst());
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 void compactReplicatedColumns(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

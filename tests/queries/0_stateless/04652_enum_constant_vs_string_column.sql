@@ -269,16 +269,14 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
 
 -- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
 -- carries no granule counts, which is what happens with the pin removed, so assert the narrowing
--- separately. Every stage's denominator is the previous stage's numerator, so summing over sections lets
--- one stage's pruning stand in for another's. The two cells below therefore add use_skip_indexes = 0,
--- which leaves Min-Max inert at 5/5 with condition true and makes Partition the stage that prunes, and
--- they read that section by name: measured 1/5 for Partition where the default plan reports 1/1.
+-- separately. Min-Max and Partition both analyze the partition key, and each stage's denominator is the
+-- previous stage's numerator, so the cell below compares the granules left after Partition with the
+-- granules Min-Max started from: 1 of 5, and 5 of 5 if neither stage prunes.
 SELECT 'partition_key_prunes_something', (SELECT
     toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: (\\d+)/'))
-      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: \\d+/(\\d+)'))
+      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: \\d+/(\\d+)'))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
-                   use_skip_indexes = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 -- The condition text is strictly stronger than a granule count, because it names which value the key
 -- analysis used and so detects the name versus number substitution directly. It is read out of the
@@ -390,16 +388,17 @@ SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = 8;
 
 -- An Enum element inside a container is still converted to the number, because the Array/Tuple/Map
--- recursion of convertFieldToType passes no element type hint down, and so does
--- createColumnFromConstantArray in the bloom filter condition. The cells below assert the current
--- (wrong) values rather than the desired ones, so the limitation is documented instead of hidden.
+-- recursion of convertFieldToType passes no element type hint down. The cell below asserts the current
+-- (wrong) value rather than the desired one, so the limitation is documented instead of hidden.
 -- The hint propagation is added by https://github.com/ClickHouse/ClickHouse/pull/110084.
 SELECT 'known_limitation_array_element', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '33';
 
--- hasAny and hasAll go through createColumnFromConstantArray, so their bloom filter lookup still uses
--- the number and over prunes. Unlike has, which converts the element with the hint and is fixed above.
-SELECT 'known_limitation_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
-SELECT 'known_limitation_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
+-- hasAny and hasAll go through createColumnFromConstantArray, which converts the elements with their
+-- own type as well, so their bloom filter lookup agrees with the function - as it does for has above.
+SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
+SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE ref_str;
 DROP TABLE pk_str;

@@ -8,10 +8,20 @@ const Icon = () => {
         </div>
     )
 }
-export const CloudOnlyBadge = () => {
+export const CloudOnlyBadge = ({ supported = ['cloud', 'private', 'BYOC'] }) => {
+    const platforms = supported.map((platform) => ({
+        cloud: 'ClickHouse Cloud',
+        private: 'ClickHouse Private',
+        BYOC: 'BYOC',
+    })[platform] || platform)
+    const label = platforms.length === 1
+        ? platforms[0]
+        : platforms.length === 2
+            ? platforms.join(' and ')
+            : platforms.slice(0, -1).join(', ') + ', and ' + platforms[platforms.length - 1]
     return (
         <div className="cloudBadge">
-            <Icon />{'ClickHouse Cloud uniquement'}
+            <Icon />{'Available in ' + label}
         </div>
     )
 }
