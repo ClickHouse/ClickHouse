@@ -23,6 +23,7 @@ void registerCodecALP(CompressionCodecFactory & factory);
 void registerCodecQuantized(CompressionCodecFactory & factory);
 void registerCodecZXC(CompressionCodecFactory & factory);
 void registerCodecSZ3(CompressionCodecFactory & factory);
+void registerCodecPco(CompressionCodecFactory & factory);
 void registerCodecByteStreamSplit(CompressionCodecFactory & factory);
 
 CompressionCodecPtr getCompressionCodecLZ4(int level);

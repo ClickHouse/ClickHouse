@@ -18,6 +18,13 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
+    /// Documentation-only — removes consecutive duplicates (compared by the
+    /// lambda's value, or by the array's values when called without a
+    /// lambda); preserves the element type of the source array.
+    static constexpr auto signature =
+        "(Function((Any, ...), Any), Array(T : Any), ...) -> Array(T)"
+        " OR (Array(T : Any)) -> Array(T)";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

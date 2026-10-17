@@ -366,6 +366,9 @@ CompressionCodecFactory::CompressionCodecFactory()
 #endif
     registerCodecZXC(*this);
     registerCodecByteStreamSplit(*this);
+#if USE_PCO
+    registerCodecPco(*this);
+#endif
 
     default_codec = get("ZSTD", 3);
 }

@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -1156,6 +1157,9 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
+        /// The replicas read these CTEs by name, so their writer must be gated above both branches.
+        removeDelayedMaterializingCTEsStepFor(*local_plan, collectMaterializedCTEsFromQueryTree(query_tree));
+
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
@@ -1172,7 +1176,18 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
+        /// What of a condition pushed into the local copy of the fragment the replicas get as well is
+        /// decided by the splice into the query they are sent, on the context it answers to. A plan
+        /// sent instead carries nothing pushed into this copy.
+        ReadFromLocalParallelReplicaStep::LeftOutConjuncts left_out_conjuncts;
+        if (!remote_query_plan)
+            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, local_context](const ActionsDAG::Node & condition)
+            {
+                return conjunctsLeftOutOfRemoteQuery(condition, forwarded_query_ast, query_tree, planner_context, local_context);
+            };
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+            std::move(local_plan), local_context, std::move(left_out_conjuncts));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -1188,6 +1203,7 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
+            std::move(local_context),
             getThrottler(new_context),
             std::move(scalars),
             std::move(external_tables),
@@ -1227,6 +1243,8 @@ void executeQueryWithParallelReplicas(
             std::move(coordinator),
             header,
             processed_stage,
+            new_context,
+            /// No local copy of the fragment to agree with.
             new_context,
             getThrottler(new_context),
             std::move(scalars),
