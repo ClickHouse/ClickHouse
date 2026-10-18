@@ -303,6 +303,7 @@
     M(KeeperWatchTriggeredNodeDeleted) \
     M(KeeperWatchTriggeredNodeDataChanged) \
     M(KeeperWatchTriggeredNodeChildrenChanged) \
+    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperChangelogStartupReadMicroseconds) \
