@@ -548,33 +548,45 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
-/// `createBlockWithNestedColumns` keeps the values under the null map as they are (e.g. `nullIf(x, x)` keeps `x`).
-/// If the result is not wrapped in Nullable, replace them with the default value (an empty string),
-/// otherwise a null row would get the result for the stale value instead of the default of the return type.
-static void replaceNullSlotsWithDefaults(const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count)
+/// If the result cannot be wrapped in Nullable (e.g. Array), set the result of the null rows to the default value
+/// of the return type (e.g. an empty array). The parser still sees the values under the null map, which are not
+/// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
+static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const ColumnsWithTypeAndName & args, size_t input_rows_count)
 {
-    for (size_t i = 0; i < args.size(); ++i)
+    std::vector<const NullMap *> null_maps;
+    for (const auto & arg : args)
     {
-        const auto * nullable = typeid_cast<const ColumnNullable *>(args[i].column.get());
-        if (!nullable)
-            continue;
-
-        const auto & null_map = nullable->getNullMapData();
-        if (std::find(null_map.begin(), null_map.end(), 1) == null_map.end())
-            continue;
-
-        const auto & nested_column = *nested_args[i].column;
-        auto patched = nested_column.cloneEmpty();
-        patched->reserve(input_rows_count);
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            if (null_map[row])
-                patched->insertDefault();
-            else
-                patched->insertFrom(nested_column, row);
-        }
-        nested_args[i].column = std::move(patched);
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
+            null_maps.push_back(&nullable->getNullMapData());
     }
+
+    auto is_null_row = [&](size_t row)
+    {
+        for (const auto * null_map : null_maps)
+        {
+            if ((*null_map)[row])
+                return true;
+        }
+        return false;
+    };
+
+    size_t first_null_row = 0;
+    while (first_null_row < input_rows_count && !is_null_row(first_null_row))
+        ++first_null_row;
+    if (first_null_row == input_rows_count)
+        return result;
+
+    auto patched = result->cloneEmpty();
+    patched->reserve(input_rows_count);
+    patched->insertRangeFrom(*result, 0, first_null_row);
+    for (size_t row = first_null_row; row < input_rows_count; ++row)
+    {
+        if (is_null_row(row))
+            patched->insertDefault();
+        else
+            patched->insertFrom(*result, row);
+    }
+    return patched;
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
@@ -616,12 +628,15 @@ public:
             }
 
             ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(columns_without_low_cardinality) : columns_without_low_cardinality;
-            if (null_presence.has_nullable && !result_type->isNullable())
-                replaceNullSlotsWithDefaults(columns_without_low_cardinality, temporary_columns, input_rows_count);
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
-            if (null_presence.has_nullable && result_type->isNullable())
-                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+            if (null_presence.has_nullable)
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, columns_without_low_cardinality, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -631,12 +646,15 @@ public:
         else
         {
             ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-            if (null_presence.has_nullable && !result_type->isNullable())
-                replaceNullSlotsWithDefaults(arguments, temporary_columns, input_rows_count);
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
-            if (null_presence.has_nullable && result_type->isNullable())
-                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+            if (null_presence.has_nullable)
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, arguments, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -826,8 +844,7 @@ private:
         if (null_presence.has_null_constant)
             return makeNullable(std::make_shared<DataTypeNothing>());
         /// If the return type cannot be Nullable (e.g. Array), return it as-is.
-        /// For null input rows the nested column holds an empty string, which is not a valid JSON,
-        /// so the result is the default value of the return type (e.g. an empty array).
+        /// Null rows get the default value of the return type (e.g. an empty array), see `replaceNullRowsWithDefaults`.
         if (null_presence.has_nullable)
             return makeNullableSafe(json_return_type);
         return json_return_type;

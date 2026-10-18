@@ -44,6 +44,16 @@ SELECT JSONExtractKeys('{"a":{"b":1}}', x) FROM (SELECT arrayJoin([NULL, 'a']::A
 -- A NULL row whose nested value is not empty must still return an empty array
 SELECT JSONExtractKeys(nullIf(materialize('{"a":1}'), materialize('{"a":1}')));
 SELECT JSONExtractKeysAndValuesRaw(nullIf(materialize('{"a":1}'), materialize('{"a":1}')));
+SELECT JSONExtractKeysAndValues(nullIf(materialize('{"a":"b"}'), materialize('{"a":"b"}')), 'String');
+SELECT JSONExtract(nullIf(materialize('[1,2]'), materialize('[1,2]')), 'Array(Int64)');
+
+-- A NULL key must not be looked up as an empty string, which is a valid key
+SELECT JSONExtractKeys('{"":{"x":1}}', k) FROM values('k Nullable(String)', NULL, '');
+SELECT JSONExtractArrayRaw('{"":[1]}', k) FROM values('k Nullable(String)', NULL, '');
+
+-- Both the JSON and the key are Nullable
+SELECT j, k, JSONExtractKeys(j, k)
+FROM values('j Nullable(String), k Nullable(String)', ('{"a":{"b":1}}', 'a'), (NULL, 'a'), ('{"a":{"b":1}}', NULL), (NULL, NULL));
 
 -- LowCardinality cannot be inside Nullable either
 SELECT JSONExtract(j, 'LowCardinality(Nullable(String))') AS r, toTypeName(r) FROM values('j Nullable(String)', '"x"', NULL);
