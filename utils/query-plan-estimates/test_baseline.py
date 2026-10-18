@@ -54,6 +54,15 @@ class Eligibility(unittest.TestCase):
                  processor(3, 'LazyOutputFormat', '', [], 0, 0)]
         self.assertEqual(statuses(graph)['ReadFromMergeTree_0'], 'cut_short')
 
+    def test_one_empty_filter_stream_is_complete(self):
+        # One of two streams of a filter step passes no rows; the step as a whole produced rows.
+        graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [2], 10),
+                 processor(5, 'MergeTreeSelect', 'ReadFromMergeTree_0', [6], 10),
+                 processor(2, 'FilterTransform', 'Filter_1', [3], 0, 10),
+                 processor(6, 'FilterTransform', 'Filter_1', [3], 4, 10),
+                 processor(3, 'LazyOutputFormat', '', [], 0, 4)]
+        self.assertEqual(statuses(graph)['ReadFromMergeTree_0'], 'observed')
+
     def test_unknown_processor_is_unsupported(self):
         graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [2], 10),
                  processor(2, 'SomeNewTransform', 'Expression_1', [3], 10, 10),

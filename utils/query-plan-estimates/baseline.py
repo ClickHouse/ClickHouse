@@ -95,7 +95,8 @@ PASS_THROUGH = {
     'MergingAggregatedBucketTransform', 'JoiningTransform',
 }
 # Pass-through processors that stop reading on their own when they produce nothing: a filter that becomes constantly
-# false, a join that is provably empty or has an empty build side.
+# false, a join that is provably empty or has an empty build side. They then produce nothing on any stream of their
+# step, so the test is on the step's total: one stream without output is normal.
 STOP_WHEN_EMPTY = {'FilterTransform', 'JoiningTransform'}
 # Processors that can stop reading their input on their own.
 STOPPERS = {
@@ -217,10 +218,14 @@ class TaskGraph:
         self.complete = complete_tasks(processors)
         self.by_key = {(p['query_id'], p['id']): p for p in processors if p['query_id'] in self.complete}
         probe_rows = defaultdict(int)
+        output_rows = defaultdict(int)
         for processor in processors:
             if processor['name'] == 'JoiningTransform':
                 probe_rows[processor['step_uniq_id']] += processor['input_rows']
+            if processor['name'] in STOP_WHEN_EMPTY:
+                output_rows[(processor['step_uniq_id'], processor['name'])] += processor['output_rows']
         self.probing_steps = {step for step, rows in probe_rows.items() if rows > 0}
+        self.empty_steps = {key for key, rows in output_rows.items() if rows == 0}
 
     def read_to_end(self, consumer):
         """Whether a full consumer is known to have read all of its input: it produced output, or, for a join build,
@@ -243,7 +248,7 @@ class TaskGraph:
             name = consumer['name']
             if name in SINKS or (name in FULL_CONSUMERS and self.read_to_end(consumer)):
                 continue
-            if name in STOPPERS or (name in STOP_WHEN_EMPTY and consumer['output_rows'] == 0):
+            if name in STOPPERS or (consumer['step_uniq_id'], name) in self.empty_steps:
                 return 'cut_short'
             if name not in PASS_THROUGH and name not in FULL_CONSUMERS:
                 return 'unsupported_shape'
