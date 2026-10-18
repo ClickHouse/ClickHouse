@@ -47,6 +47,10 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
+    /// Empty when the part keeps the block's row order.
+    IColumn::Permutation sort_permutation;
+
     void cancel();
     void finalize();
     void prewarmCaches();
@@ -89,13 +93,16 @@ public:
       * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       * `defer_fsync`: do not fsync the part files even if `fsync_after_insert` is enabled,
       * because the caller will fsync them later, before acknowledging the insert.
+      * `txn`, when set, stamps the part's `creation_tid` instead of the context's transaction: an
+      * INSERT commits each partition under its own, and for `INSERT ... SELECT` the context's is the SELECT's.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
         bool may_have_leftover = true,
-        bool defer_fsync = false);
+        bool defer_fsync = false,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
@@ -151,7 +158,8 @@ private:
         ContextPtr context,
         UInt64 block_number,
         bool may_have_leftover,
-        bool defer_fsync);
+        bool defer_fsync,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
