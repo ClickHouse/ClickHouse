@@ -381,6 +381,8 @@ private:
         String mutation_id;
         String additional_info;
         std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+        /// The leadership epoch under which the mutation file was published (`leader_election`).
+        UInt64 admission_epoch = 0;
     };
 
     /// Allocate a block number, build the mutation entry, and commit it to disk.

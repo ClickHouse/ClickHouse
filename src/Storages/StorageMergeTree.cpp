@@ -1762,7 +1762,7 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
 
-    return {std::move(entry), version, std::move(mutation_id), std::move(additional_info), std::move(block_holder)};
+    return {std::move(entry), version, std::move(mutation_id), std::move(additional_info), std::move(block_holder), admission_epoch};
 }
 
 void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
@@ -1785,6 +1785,21 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
             return;
         }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", prepared.version);
+    }
+
+    /// The entry is not registered, but a leadership acquisition happened after the file was published.
+    /// The takeover reload (`loadMutations(true)`) of that acquisition adopts every `mutation_*.txt` on
+    /// shared storage, so the file has either been adopted and then removed in the new epoch (the mutation
+    /// was killed, or finished and cleaned up), or it is still to be adopted by a reload that has not
+    /// run yet. Either way the reload owns it: registering the old commands here would resurrect a
+    /// mutation whose cancellation already succeeded, and letting the destructor of the prepared entry
+    /// remove the file would lose a mutation the reload is about to adopt.
+    if (leader_election_ptr && currentLeadershipEpoch() != prepared.admission_epoch)
+    {
+        prepared.entry.is_registered = true;
+        LOG_WARNING(log, "Not registering mutation {}{}: the leadership was reacquired after its file was published, "
+            "and the takeover reload owns it", prepared.mutation_id, prepared.additional_info);
+        return;
     }
 
     auto it = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry)).first;
@@ -2643,6 +2658,7 @@ void StorageMergeTree::loadMutations(bool reloading)
     /// in-memory entry would keep feeding `selectPartsToMutate` after failover. Collect the
     /// versions actually present on disk and prune the rest after the scan.
     std::unordered_set<UInt64> mutation_versions_on_disk;
+    bool pruned = false;
 
     for (const auto & disk : getDisks())
     {
@@ -2736,7 +2752,6 @@ void StorageMergeTree::loadMutations(bool reloading)
         /// the new leader would resurrect a killed mutation from stale in-memory state.
         /// Background mutations are still gated at this point (writes are enabled only after
         /// the takeover completes), so no pruned entry can be mid-execution on this node.
-        bool pruned = false;
         for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end();)
         {
             if (!mutation_versions_on_disk.contains(it->first))
@@ -2751,14 +2766,6 @@ void StorageMergeTree::loadMutations(bool reloading)
             else
                 ++it;
         }
-
-        if (pruned)
-        {
-            /// Wake up `waitForMutation` waiters so they observe the entry's disappearance
-            /// (the same way `killMutation` notifies them after removing an entry).
-            std::lock_guard wait_lock(mutation_wait_mutex);
-            mutation_wait_event.notify_all();
-        }
     }
 
     if (!current_mutations_by_version.empty())
@@ -2767,6 +2774,19 @@ void StorageMergeTree::loadMutations(bool reloading)
     /// Mutations that were completed before the table was loaded are marked as done,
     /// but their actual completion time is unknown, so `finish_time` is left zero.
     markFinishedMutations();
+
+    if (pruned)
+    {
+        /// Wake up `waitForMutation` waiters so they observe the entry's disappearance
+        /// (the same way `killMutation` notifies them after removing an entry). Release
+        /// `currently_processing_in_background_mutex` first: a waiter holds `mutation_wait_mutex`
+        /// while its predicate takes `currently_processing_in_background_mutex`
+        /// (`getIncompleteMutationsStatus`), so taking them in the opposite order deadlocks.
+        if (lock.owns_lock())
+            lock.unlock();
+        std::lock_guard wait_lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
 }
 
 std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
@@ -5348,6 +5368,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
 
+    /// When the source lease is lost after both sides have published, the source can no longer retract
+    /// its empty covering parts (a successor may adopt them), so the destination copy must stay published
+    /// too, or the moved rows are lost. Only a `leader_election` destination journals its publish and can
+    /// leave it in place; a destination without it is rolled back by removing its parts.
+    if (leader_election_ptr && !dest_table_storage->leader_election_ptr)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "MOVE PARTITION TO TABLE from table {} with the leader_election setting to table {} without it is not supported",
+            getStorageID().getNameForLogs(), dest_table_storage->getStorageID().getNameForLogs());
+
     /// `MOVE PARTITION TO TABLE` mutates the destination too: below we delay/throttle inserts on it,
     /// clone parts into it, allocate destination block numbers, and rename/commit through the
     /// destination transaction. The source check above does not cover that, so fence the destination
@@ -5616,8 +5645,38 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 /// path.
                 if (!txn)
                 {
-                    dest_transaction.undoPublishedRenames();
-                    src_transaction.undoPublishedRenames();
+                    /// The two leases can expire independently, so the two undos must agree. The
+                    /// source is undone first: if it can no longer retract its published empty
+                    /// covering parts (the source lease was lost, and a successor may adopt them and
+                    /// remove the covered source parts), the moved rows survive only in the
+                    /// destination copy, so it must stay published too, even though the destination
+                    /// lease is still held. The same holds when the source undo fails. The
+                    /// destination copy then becomes visible when the destination table loads its
+                    /// parts again (a restart or a takeover); a duplicate is preferable to a loss.
+                    try
+                    {
+                        src_transaction.undoPublishedRenames();
+                    }
+                    catch (...)
+                    {
+                        dest_transaction.abandonPublishedRenames();
+                        throw;
+                    }
+
+                    if (src_transaction.hasAbandonedPublishedParts())
+                        dest_transaction.abandonPublishedRenames();
+                    else
+                        dest_transaction.undoPublishedRenames();
+
+                    /// The abandoned parts keep their persistent names: they must not get temporary
+                    /// ownership below, which is meant for the directories renamed back.
+                    const auto dest_abandoned_parts = dest_transaction.getAbandonedPublishedParts();
+                    const auto src_abandoned_parts = src_transaction.getAbandonedPublishedParts();
+                    auto is_abandoned = [](const MutableDataPartsVector & abandoned, const MutableDataPartPtr & part)
+                    {
+                        return std::find(abandoned.begin(), abandoned.end(), part) != abandoned.end();
+                    };
+
                     /// Only the renames of a `leader_election` side are journaled and undone above. A side
                     /// without it is left to the regular path: the destination to the regular rollback, the
                     /// source empty parts to `removeRolledBackEmptyPartsAndRethrow` in the handler below.
@@ -5628,13 +5687,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                         /// destructors remove the never-published directories instead of leaving
                         /// stale leftovers.
                         for (auto & part : dst_parts)
-                            part->is_temp = true;
+                            if (!is_abandoned(dest_abandoned_parts, part))
+                                part->is_temp = true;
                     }
                     if (leader_election_ptr)
                     {
                         src_transaction.rollbackPartsToTemporaryState(&src_data_parts_lock);
                         for (auto & part : new_empty_covering_src_parts)
-                            part->is_temp = true;
+                            if (!is_abandoned(src_abandoned_parts, part))
+                                part->is_temp = true;
                         src_empty_parts_renaming = false;
                     }
                 }

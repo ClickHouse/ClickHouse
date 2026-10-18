@@ -366,6 +366,13 @@ public:
     /// before the part can reach its destructor.
     mutable std::optional<UInt64> move_leadership_epoch;
 
+    /// Under `leader_election`, the identity of the part directory on shared storage at the time this
+    /// replica loaded or committed the part (see `MergeTreeData::getPartSharedStorageIncarnation`).
+    /// Block numbers are reconstructed from the remaining parts when a table restarts empty, so a part
+    /// name can be reused by another leader for different data; the name alone does not tell a replica
+    /// that its cached part was replaced. Written before the part becomes active.
+    std::optional<String> shared_storage_incarnation;
+
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.

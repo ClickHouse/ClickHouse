@@ -3065,6 +3065,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
+    /// Recorded before the metadata is read, so that the identity is never newer than the data.
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+        res.part->shared_storage_incarnation = getPartSharedStorageIncarnation(*res.part);
+
     try
     {
         res.part->loadColumnsChecksumsIndexes(require_part_metadata, !part_disk_ptr->isReadOnly());
@@ -3812,6 +3816,70 @@ size_t MergeTreeData::retirePartsRelocatedToAnotherDisk(
     return relocated_parts.size();
 }
 
+std::optional<String> MergeTreeData::getPartSharedStorageIncarnation(const IMergeTreeDataPart & part) const
+{
+    const auto & part_storage = part.getDataPartStorage();
+    if (!part_storage.isStoredOnRemoteDisk())
+        return std::nullopt;
+
+    auto disk = getStoragePolicy()->tryGetDiskByName(part_storage.getDiskName());
+    if (!disk)
+        return std::nullopt;
+
+    auto objects = disk->getStorageObjectsIfExist(fs::path(part_storage.getRelativePath()) / "checksums.txt");
+    if (!objects || objects->empty())
+        return std::nullopt;
+
+    return objects->front().remote_path;
+}
+
+size_t MergeTreeData::retirePartsReplacedOnStorage(
+    const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover)
+{
+    /// The block counter is reconstructed from the remaining parts when a table starts, so after a
+    /// leader truncated the table, cleaned up all of its parts and restarted, it reuses the same block
+    /// numbers, and with them the same part names, for different data. A replica that missed the empty
+    /// interval between two refreshes still sees the name it knows, so the other passes of the scan
+    /// keep its cached part (rows, checksums, indexes of the old data) and skip loading the
+    /// replacement, which has the same part info. The directory itself is new, though: on
+    /// `plain_rewritable` every directory has its own remote prefix, which ends up in the object key of
+    /// every file in it. Comparing that key with the one recorded when the part was loaded tells the
+    /// two apart. Forgetting the stale part BEFORE the newly appeared parts are seeded lets the same
+    /// scan load the replacement, as for a part relocated to another disk.
+    if (!mayRetirePartsFromMemory(strict_takeover))
+        return 0;
+
+    DataPartsVector replaced_parts;
+
+    {
+        auto parts_lock = lockParts();
+
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        {
+            if (!part->shared_storage_incarnation)
+                continue;
+
+            /// A part that vanished or moved to another disk is handled by the other passes.
+            auto directories_on_disk = part_directories_by_disk.find(part->getDataPartStorage().getDiskName());
+            if (directories_on_disk == part_directories_by_disk.end()
+                || !directories_on_disk->second.contains(part->getDataPartStorage().getPartDirectory()))
+                continue;
+
+            auto current_incarnation = getPartSharedStorageIncarnation(*part);
+            if (!current_incarnation || *current_incarnation == *part->shared_storage_incarnation)
+                continue;
+
+            LOG_INFO(log, "Retiring active part {}: its directory on the shared storage was replaced by another one with the same name",
+                part->name);
+            replaced_parts.push_back(part);
+        }
+
+        forgetRetiredParts(replaced_parts, parts_lock);
+    }
+
+    return replaced_parts.size();
+}
+
 size_t MergeTreeData::retirePartsVanishedFromStorage(
     const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover)
 {
@@ -3922,6 +3990,7 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     /// the copy on the new disk carries the same part info, so it only counts as new — and can only
     /// be loaded at all — once the stale one is gone.
     size_t relocated_parts = retirePartsRelocatedToAnotherDisk(part_directories_by_disk, strict_takeover);
+    size_t replaced_parts = retirePartsReplacedOnStorage(part_directories_by_disk, strict_takeover);
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
 
@@ -4097,8 +4166,8 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, relocated {} items, retired {} items, removed {} items) took {:.3f} seconds",
-        parts_to_add.size(), relocated_parts, retired_parts, old_parts.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, relocated {} items, replaced {} items, retired {} items, removed {} items) took {:.3f} seconds",
+        parts_to_add.size(), relocated_parts, replaced_parts, retired_parts, old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
@@ -8151,6 +8220,10 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
 
 void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock &, bool need_rename, bool rename_in_transaction)
 {
+    /// Record the identity of the directory of the part that becomes active (a rename does not change it).
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+        part->shared_storage_incarnation = getPartSharedStorageIncarnation(*part);
+
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
 
@@ -13374,23 +13447,40 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// which the new leader removed the covered source parts. Renaming it away would then lose the
     /// data. The parts are left in place instead, exactly as if this node had crashed right after
     /// the publish, which the next leader has to handle anyway.
-    if (publish_fence_epoch && !published_parts_pending_commit.empty()
-        && (!data.mayMutateSharedStorage() || data.currentLeadershipEpoch() != *publish_fence_epoch))
+    ///
+    /// Ownership is rechecked before every entry, not only once: each undo is a remote rename that
+    /// can stall long enough for the lease to expire, and a successor can then adopt the remaining
+    /// published parts. Once ownership is lost, the rest of the journal is abandoned.
+    auto owns_publish_epoch = [&]
     {
-        for (auto & entry : published_parts_pending_commit)
-        {
-            LOG_WARNING(data.log, "Leaving published part {} in place: this node no longer holds the leader lease in the epoch of the publish",
-                entry.first->name);
-            abandoned_published_parts.push_back(std::move(entry.first));
-        }
-        published_parts_pending_commit.clear();
-        return;
-    }
+        return !publish_fence_epoch
+            || (data.mayMutateSharedStorage() && data.currentLeadershipEpoch() == *publish_fence_epoch);
+    };
+
+    auto abandon_entry = [&](std::pair<MutableDataPartPtr, String> & entry)
+    {
+        LOG_WARNING(data.log, "Leaving published part {} in place: this node no longer holds the leader lease in the epoch of the publish",
+            entry.first->name);
+        abandoned_published_parts.push_back(std::move(entry.first));
+    };
 
     std::exception_ptr first_exception;
     std::vector<std::pair<MutableDataPartPtr, String>> failed_entries;
     while (!published_parts_pending_commit.empty())
     {
+        if (!owns_publish_epoch())
+        {
+            for (auto & remaining : published_parts_pending_commit)
+                abandon_entry(remaining);
+            published_parts_pending_commit.clear();
+            /// The entries whose undo failed earlier are not retried by anyone else either.
+            for (auto & failed : failed_entries)
+                abandon_entry(failed);
+            failed_entries.clear();
+            first_exception = nullptr;
+            break;
+        }
+
         auto entry = std::move(published_parts_pending_commit.back());
         published_parts_pending_commit.pop_back();
 
@@ -13422,6 +13512,17 @@ void MergeTreeData::Transaction::undoPublishedRenames()
 
     if (first_exception)
         std::rethrow_exception(first_exception);
+}
+
+void MergeTreeData::Transaction::abandonPublishedRenames()
+{
+    for (auto & entry : published_parts_pending_commit)
+    {
+        LOG_WARNING(data.log, "Leaving published part {} in place: the other side of the operation cannot retract its publish",
+            entry.first->name);
+        abandoned_published_parts.push_back(std::move(entry.first));
+    }
+    published_parts_pending_commit.clear();
 }
 
 bool MergeTreeData::Transaction::isAbandonedPublishedPart(const MutableDataPartPtr & part) const

@@ -467,6 +467,17 @@ public:
         /// failures are logged, not thrown, so the original rejection reaches the client.
         void undoPublishedRenames();
 
+        /// Leave every part still published by `renameParts` in place, as `undoPublishedRenames` does
+        /// when this node no longer owns the shared storage. Used by two-table operations when the
+        /// other side's publish can no longer be retracted, so that the data survives in at least one
+        /// of the tables.
+        void abandonPublishedRenames();
+
+        /// Whether `undoPublishedRenames` or `abandonPublishedRenames` left some published parts in
+        /// place. Valid until the transaction is cleared (by a rollback or commit).
+        bool hasAbandonedPublishedParts() const { return !abandoned_published_parts.empty(); }
+        const MutableDataPartsVector & getAbandonedPublishedParts() const { return abandoned_published_parts; }
+
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
         void rollback(DataPartsLock * acquired_lock = nullptr);
@@ -955,6 +966,18 @@ public:
     /// of retired parts.
     size_t retirePartsRelocatedToAnotherDisk(
         const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
+
+    /// Forget the active parts whose directory is still listed under the same name, but is no longer
+    /// the directory this replica loaded (see `IMergeTreeDataPart::shared_storage_incarnation`), so that
+    /// the replacement is loaded by the same scan. Same gating as `retirePartsVanishedFromStorage`.
+    /// Returns the number of parts forgotten.
+    size_t retirePartsReplacedOnStorage(
+        const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
+
+    /// The identity of the directory of a part on shared storage under `leader_election`: the object
+    /// storage key of its `checksums.txt`. Empty when it cannot be determined (not a remote disk, or no
+    /// separate `checksums.txt`).
+    std::optional<String> getPartSharedStorageIncarnation(const IMergeTreeDataPart & part) const;
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
