@@ -625,6 +625,9 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
         }
 
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(&event, sizeof(event));
+
         auto read_bytes = eventResult(event);
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
@@ -636,6 +639,9 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AIORead);
         ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
+
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(read_buffer_memory.data(), buffer_size_in_bytes);
 
         SSDCacheBlock block(block_size);
 
