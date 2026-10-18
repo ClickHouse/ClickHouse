@@ -90,6 +90,10 @@ protected:
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
 
+    /// Row total for callers already holding `mutex`. Database engines that implement a
+    /// row limit expose this through their own `getCurrentRowCount` override.
+    UInt64 getCurrentRowCountUnlocked() const TSA_REQUIRES(mutex);
+
 private:
     mutable std::atomic<bool> has_deferred_population{false};
     mutable std::mutex populate_mutex;

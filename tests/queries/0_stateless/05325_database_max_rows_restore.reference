@@ -1,0 +1,8 @@
+-- MergeTree: RESTORE of 50 rows into a database at 90/100 rows is rejected
+TOO_MANY_ROWS
+90
+-- ReplicatedMergeTree: the same RESTORE is rejected
+TOO_MANY_ROWS
+90
+-- with enough headroom, RESTORE succeeds
+80
