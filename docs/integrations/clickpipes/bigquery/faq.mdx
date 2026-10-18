@@ -1,0 +1,12 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Frequently asked questions about ClickPipes for BigQuery.'
+slug: /integrations/clickpipes/bigquery/faq
+title: 'ClickPipes for BigQuery FAQ'
+doc_type: 'reference'
+keywords: ['clickpipes', 'bigquery', 'cdc', 'time travel', 'data ingestion']
+---
+
+### My ClickPipe fails with "change history start time is before allowed time travel interval" {#time-travel-window-exceeded}
+
+[`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) and [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) can only read changes within the source table's [time travel window](https://docs.cloud.google.com/bigquery/docs/time-travel), seven days by default. If the ClickPipe falls behind by more than that window, BigQuery no longer has the changes it needs. Resync the ClickPipe to unblock it.

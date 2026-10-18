@@ -100,6 +100,9 @@ public:
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
     DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
+    /// The same, resolved against the given serialization of this type instead of the default one.
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
+
     ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
     ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
@@ -119,6 +122,8 @@ public:
     };
 
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
+    /// Resolved against the given serialization of this type.
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
@@ -613,6 +618,13 @@ inline bool isBool(const DataTypePtr & data_type)
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 {
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
+}
+
+/// A type that holds no value other than NULL. onlyNull() alone is not enough:
+/// it is true for Nullable(Nothing) but false for bare Nothing.
+inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
+{
+    return isNothing(data_type) || data_type->onlyNull();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
