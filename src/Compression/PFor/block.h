@@ -254,8 +254,8 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
     return static_cast<size_t>(p - in);
 }
 
-// Size of one block from its header, without decoding it. Returns 0 where blockDecode would reject the header or, with non-null `end`, overrun.
-// Exception positions are not validated: they only affect the values.
+// Returns the byte size of the block of `cnt` values at `in`, read from its header without decoding. Returns 0 where
+// `blockDecode` would, except that exception positions are not checked: they do not affect the size.
 template <typename T>
 inline size_t blockSkip(const uint8_t * in, unsigned cnt, const uint8_t * end = nullptr) noexcept
 {

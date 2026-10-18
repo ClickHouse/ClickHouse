@@ -262,7 +262,7 @@ PostingsSerialization::PostingsSerialization(
     chassert(posting_list_codec);
 }
 
-TextIndexScoringKind PostingsSerialization::getWeightsKind(UInt64 header, TextIndexScoringKind scoring)
+TextIndexScoringKind PostingsSerialization::getScoring(UInt64 header, TextIndexScoringKind scoring)
 {
     if (!(header & HasWeights))
         return TextIndexScoringKind::None;
@@ -394,7 +394,7 @@ static void deserializeRawPostings(
 PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx)
 {
     checkPostingListFlags(info.header);
-    const auto weights_kind = getWeightsKind(info.header, scoring);
+    const auto postings_scoring = getScoring(info.header, scoring);
     auto postings = std::make_shared<PostingList>();
 
     if (info.header & RawPostings)
@@ -405,7 +405,7 @@ PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, con
     }
     else
     {
-        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, weights_kind, raw_data_buffer);
+        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, postings_scoring, raw_data_buffer);
     }
 
     checkSegmentRowRange(info, segment_idx, postings->cardinality(), postings->minimum(), postings->maximum());
@@ -415,7 +415,7 @@ PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, con
 void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * weights)
 {
     checkPostingListFlags(info.header);
-    const auto weights_kind = getWeightsKind(info.header, scoring);
+    const auto postings_scoring = getScoring(info.header, scoring);
     size_t old_size = row_ids.size();
 
     if (info.header & RawPostings)
@@ -427,14 +427,14 @@ void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPos
         const auto & codec = resolveCodec(info.header);
         const UInt64 max_cardinality = getMaxSegmentCardinality(info, segment_idx);
 
-        if (weights && weights_kind != TextIndexScoringKind::None)
+        if (weights && postings_scoring != TextIndexScoringKind::None)
         {
             /// The codec decodes both the row ids and the exact per-row weights.
-            codec.decodeWithWeights(istr, max_cardinality, row_ids, *weights, weights_kind, raw_data_buffer);
+            codec.decodeWithWeights(istr, max_cardinality, row_ids, *weights, postings_scoring, raw_data_buffer);
         }
         else
         {
-            codec.decode(istr, max_cardinality, row_ids, weights_kind, raw_data_buffer);
+            codec.decode(istr, max_cardinality, row_ids, postings_scoring, raw_data_buffer);
 
             /// A posting list without stored weights implies `weight == 1` for every row.
             if (weights)
@@ -2035,7 +2035,7 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
 
     /// Created lazily: tokens whose posting lists end up raw or embedded never need an encoder.
     if (!encoder)
-        encoder = context.codec.createEncoder(context.segment_size);
+        encoder = context.codec.createEncoder(context.segment_size, context.scoring);
 
     /// The encoder gathers the doc lengths of the flushed rows itself.
     /// The weights are empty unless the token repeated within a row.

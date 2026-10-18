@@ -83,7 +83,7 @@ PostingListCursor::PostingListCursor(
     const String & index_id_for_cache_)
     : stream(&stream_)
     , info(&info_)
-    , weights_kind(PostingsSerialization::getWeightsKind(info_.header, scoring_))
+    , scoring(PostingsSerialization::getScoring(info_.header, scoring_))
     , postings_cache(postings_cache_)
     , index_id_for_cache(index_id_for_cache_)
     , total_segments(info_.offsets.size())
@@ -199,7 +199,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
     segment.first_row_id = requireUInt32(first_row_id, "first_row_id");
-    const bool has_weights = weights_kind != TextIndexScoringKind::None;
+    const bool has_weights = scoring != TextIndexScoringKind::None;
 
     if (has_weights)
     {
@@ -246,7 +246,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     /// The codec of the weights is not persisted: it is determined by the scoring kind and the codec of the row ids.
     if (has_weights && !weights_codec)
-        weights_codec = createWeightsCodec(weights_kind, segment.codec_type);
+        weights_codec = createWeightsCodec(scoring, segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
     /// When scoring is on, each block additionally carries a weights sub-payload compressed with the codec of the weights.
@@ -429,7 +429,7 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     /// Without scoring the deltas must consume the whole Index Section span;
     /// with scoring a weights sub-payload follows the deltas inside the same span.
-    const bool has_weights = weights_kind != TextIndexScoringKind::None;
+    const bool has_weights = scoring != TextIndexScoringKind::None;
 
     if (!has_weights && consumed_bytes != expected_bytes)
     {

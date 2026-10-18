@@ -1121,7 +1121,7 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     const auto * codec = postings_serialization.getPostingListCodec();
-    auto encoder = codec->createEncoder(params.posting_list_block_size);
+    auto encoder = codec->createEncoder(params.posting_list_block_size, params.scoring);
 
     const PostingListBuildContext context
     {

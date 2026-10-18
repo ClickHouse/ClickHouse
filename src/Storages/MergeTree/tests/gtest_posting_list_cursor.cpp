@@ -269,7 +269,7 @@ MultiBlockTestData makeMultiBlockData(
     WriteBufferFromOwnString out;
     for (const auto & block_docs : blocks)
     {
-        SegmentedPostingListCodec codec(block_codec_type, 1 << 20);
+        SegmentedPostingListCodec codec(block_codec_type, 1 << 20, TextIndexScoringKind::None);
         codec.append(block_docs, /*weights=*/{}, context);
         codec.serializeTo(out, info);
     }

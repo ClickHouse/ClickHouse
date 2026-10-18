@@ -39,11 +39,7 @@ public:
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
     /// Each time the open segment reaches the segment size, it is sealed and a new one is started.
     /// A non-empty `weights` (parallel to `row_ids`) carries the per-row weights on the scoring path.
-    /// An empty `weights` on the scoring path means that every weight is 1.
-    virtual void append(
-        std::span<const UInt32> row_ids,
-        std::span<const UInt32> weights,
-        const PostingListBuildContext & context) = 0;
+    virtual void append(std::span<const UInt32> row_ids, std::span<const UInt32> weights, const PostingListBuildContext & context) = 0;
 
     /// Seals the last segment and writes all accumulated segments to `out`.
     /// Fills per-segment metadata (offsets, ranges) and header flags in `info`.
@@ -76,22 +72,23 @@ public:
 
     /// Creates an accumulator that encodes segments of `segment_size` row ids into this codec's format.
     /// Codecs may round the requested size, e.g. up to a multiple of their physical block size.
-    virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const = 0;
+    /// `scoring` is the scoring kind of the index, which determines the weights stored with the row ids.
+    virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const = 0;
 
     /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
     /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.
     /// The sizes claimed by the segment are checked against it before any buffer grows to them.
-    /// `weights_kind` is the scoring kind of the weights stored in the posting list (`None` if it stores no weights),
+    /// `scoring` is the scoring kind of the weights stored in the posting list (`None` if it stores no weights),
     /// which determines their codec (see `createWeightsCodec`). The weights are skipped.
     /// `buffer` is a caller-owned scratch buffer, reused across calls.
-    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but appends the decoded row ids to a plain array.
-    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but also appends the exact per-row weights to `weights`, parallel to `row_ids`.
-    /// Only valid for posting lists written with weights (`weights_kind` is not `None`).
-    virtual void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const = 0;
+    /// Only valid for posting lists written with weights (`scoring` is not `None`).
+    virtual void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const = 0;
 
 private:
     Type type{};

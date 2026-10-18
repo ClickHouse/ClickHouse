@@ -286,7 +286,7 @@ struct PostingsSerialization
 
     /// Returns the scoring kind of the weights stored in a posting list with `header` in an index with the scoring kind `scoring`,
     /// `None` if the posting list stores no weights. Throws CORRUPTED_DATA if the posting list has weights while the index has no scoring.
-    static TextIndexScoringKind getWeightsKind(UInt64 header, TextIndexScoringKind scoring);
+    static TextIndexScoringKind getScoring(UInt64 header, TextIndexScoringKind scoring);
 
     /// Reads the `segment_idx`-th segment of the posting list described by `info` and checks it against the metadata:
     /// a segment cannot hold more row ids than the token or than its row range, and it starts and ends at the range bounds.

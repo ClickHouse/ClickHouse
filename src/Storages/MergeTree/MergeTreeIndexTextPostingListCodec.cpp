@@ -36,35 +36,39 @@ static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, Padde
     return buffer.data();
 }
 
-SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_)
+SegmentedPostingListCodec::SegmentedPostingListCodec(TextIndexScoringKind scoring_)
+    : scoring(scoring_)
+{
+}
+
+SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_, TextIndexScoringKind scoring_)
     : segment_size((segment_size_ + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE)
+    , scoring(scoring_)
     , block_codec(createPostingListBlockCodec(block_codec_type_))
+    , weights_codec(hasScoring() ? createWeightsCodec(scoring, block_codec_type_) : nullptr)
 {
     compressed_data.reserve(BLOCK_SIZE);
     block_values.reserve(BLOCK_SIZE);
 }
 
+bool SegmentedPostingListCodec::hasScoring() const
+{
+    return scoring != TextIndexScoringKind::None;
+}
+
 /// Previous appends must not have left a partial block in the open segment.
 /// (see the contract in `IPostingListEncoder::append_granularity`).
-void SegmentedPostingListCodec::append(
-    std::span<const UInt32> row_ids,
-    std::span<const UInt32> weights,
-    const PostingListBuildContext & context)
+void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, std::span<const UInt32> weights, const PostingListBuildContext & context)
 {
     chassert(!row_ids.empty());
     chassert(segment_size != 0);
     chassert(row_ids_in_current_segment % BLOCK_SIZE == 0);
-    chassert(weights.empty() || (context.scoring != TextIndexScoringKind::None && weights.size() == row_ids.size()));
+    chassert(context.scoring == scoring);
+    chassert(weights.empty() || (hasScoring() && weights.size() == row_ids.size()));
 
     std::span<const UInt8> doc_lengths;
-    if (context.scoring != TextIndexScoringKind::None)
+    if (hasScoring())
     {
-        if (!has_scoring)
-        {
-            has_scoring = true;
-            weights_codec = createWeightsCodec(context.scoring, block_codec->type());
-        }
-
         chassert(context.doc_lengths && !context.doc_lengths->empty());
         doc_lengths = *context.doc_lengths;
     }
@@ -106,17 +110,17 @@ void SegmentedPostingListCodec::append(
     }
 }
 
-SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, UInt64 max_cardinality, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer)
+SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer)
 {
     SegmentData segment_data;
     auto & header = segment_data.header;
-    const bool has_weights = weights_kind != TextIndexScoringKind::None;
+    const bool has_weights = hasScoring();
     header.read(in, has_weights);
 
     /// The segment header is self-describing: create the block codec it was written with.
     /// The codec of the weights is not persisted: it is determined by the scoring kind and the codec of the row ids.
     block_codec = createPostingListBlockCodec(header.codec_type);
-    weights_codec = has_weights ? createWeightsCodec(weights_kind, header.codec_type) : nullptr;
+    weights_codec = has_weights ? createWeightsCodec(scoring, header.codec_type) : nullptr;
     prev_row_id = header.first_row_id;
 
     /// The header comes from disk: bound the sizes it claims before growing any buffer to them.
@@ -144,10 +148,10 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
     return segment_data;
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer)
 {
-    auto segment_data = readSegmentData(in, max_cardinality, weights_kind, buffer);
-    const bool has_weights = weights_kind != TextIndexScoringKind::None;
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
+    const bool has_weights = hasScoring();
 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
@@ -170,10 +174,10 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, 
     }
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
 {
-    auto segment_data = readSegmentData(in, max_cardinality, weights_kind, buffer);
-    const bool has_weights = weights_kind != TextIndexScoringKind::None;
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
+    const bool has_weights = hasScoring();
 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
@@ -196,11 +200,11 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, 
     }
 }
 
-void SegmentedPostingListCodec::decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer)
+void SegmentedPostingListCodec::decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, PaddedPODArray<char> & buffer)
 {
     /// This entry point is used only when the posting list carries weights.
-    chassert(weights_kind != TextIndexScoringKind::None);
-    auto segment_data = readSegmentData(in, max_cardinality, weights_kind, buffer);
+    chassert(hasScoring());
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
@@ -235,7 +239,7 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
         const auto & block_metas = segment_block_metas[seg_idx].metas;
         Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin);
 
-        if (has_scoring)
+        if (hasScoring())
         {
             /// Reduce per-block UB inputs into the per-segment pair stored in the header.
             header.segment_min_dl_byte = 0xFF;
@@ -248,7 +252,7 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
             }
         }
 
-        header.write(out, block_codec->type(), has_scoring);
+        header.write(out, block_codec->type(), hasScoring());
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
 
         /// Index Section: append per-block metadata after segment payload.
@@ -264,7 +268,7 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
 
         /// When scoring is on, the per-block block-max UB arrays follow `block_offsets[]`
         /// as two raw `UInt8` arrays: `min_dl_byte[]` then `max_weight_minus_one[]`.
-        if (has_scoring)
+        if (hasScoring())
         {
             for (const auto & meta : block_metas)
                 writeBinaryLittleEndian(meta.min_dl_byte, out);
@@ -284,7 +288,7 @@ void SegmentedPostingListCodec::encodeBlock(
     chassert(block_codec);
     chassert(!block_row_ids.empty() && block_row_ids.size() <= BLOCK_SIZE);
     chassert(weights.empty() || weights.size() == block_row_ids.size());
-    chassert(has_scoring == !doc_lengths.empty());
+    chassert(hasScoring() == !doc_lengths.empty());
 
     /// Compute the deltas into the scratch buffer.
     /// The first element written by `adjacent_difference` is the value itself,
@@ -308,7 +312,7 @@ void SegmentedPostingListCodec::encodeBlock(
     /// The scoring extras. The block-max UB inputs:
     /// - a min over the block's `SmallFloat` doc-length bytes
     /// - a max `(weight - 1)` saturated to `255`, where `255` means "max weight >= 256"
-    if (has_scoring)
+    if (hasScoring())
     {
         UInt8 min_dl_byte = 0xFF;
 
@@ -391,27 +395,27 @@ void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo 
         info.header |= SingleBlock;
 }
 
-void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const
 {
-    SegmentedPostingListCodec impl;
-    impl.decode(in, max_cardinality, postings, weights_kind, buffer);
+    SegmentedPostingListCodec impl(scoring);
+    impl.decode(in, max_cardinality, postings, buffer);
 }
 
-void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const
 {
-    SegmentedPostingListCodec impl;
-    impl.decode(in, max_cardinality, row_ids, weights_kind, buffer);
+    SegmentedPostingListCodec impl(scoring);
+    impl.decode(in, max_cardinality, row_ids, buffer);
 }
 
-void SegmentedPostingListCodecBase::decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const
+void SegmentedPostingListCodecBase::decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const
 {
-    SegmentedPostingListCodec impl;
-    impl.decodeWithWeights(in, max_cardinality, row_ids, weights, weights_kind, buffer);
+    SegmentedPostingListCodec impl(scoring);
+    impl.decodeWithWeights(in, max_cardinality, row_ids, weights, buffer);
 }
 
-std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder(size_t segment_size) const
+std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder(size_t segment_size, TextIndexScoringKind scoring) const
 {
-    return std::make_unique<SegmentedPostingListEncoder>(getType(), segment_size);
+    return std::make_unique<SegmentedPostingListEncoder>(getType(), segment_size, scoring);
 }
 
 void PostingListEncoderNone::append(
@@ -420,9 +424,7 @@ void PostingListEncoderNone::append(
     const PostingListBuildContext & context)
 {
     chassert(!row_ids.empty());
-
-    if (context.scoring != TextIndexScoringKind::None || !weights.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Text index scoring is not supported with the 'none' posting list codec");
+    chassert(context.scoring == TextIndexScoringKind::None && weights.empty());
 
     total_row_ids += row_ids.size();
 
@@ -476,8 +478,11 @@ void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & inf
         info.header |= SingleBlock;
 }
 
-std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t segment_size) const
+std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t segment_size, TextIndexScoringKind scoring) const
 {
+    if (scoring != TextIndexScoringKind::None)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Text index scoring is not supported with the 'none' posting list codec");
+
     return std::make_unique<PostingListEncoderNone>(segment_size);
 }
 
@@ -490,9 +495,9 @@ static UInt64 getMaxPortableBitmapBytes(UInt64 max_cardinality)
     return 8 + 11 * max_cardinality;
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const
 {
-    if (weights_kind != TextIndexScoringKind::None)
+    if (scoring != TextIndexScoringKind::None)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Text index scoring is not supported with the 'none' posting list codec");
 
     size_t num_bytes = 0;
@@ -518,10 +523,10 @@ void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, Posti
     }
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const
 {
     PostingList postings;
-    decode(in, max_cardinality, postings, weights_kind, buffer);
+    decode(in, max_cardinality, postings, scoring, buffer);
 
     size_t old_size = row_ids.size();
     row_ids.resize(old_size + postings.cardinality());

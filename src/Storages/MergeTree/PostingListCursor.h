@@ -169,7 +169,7 @@ private:
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
     /// Scoring kind of the weights stored in the posting list, `None` if it stores no weights.
-    TextIndexScoringKind weights_kind{};
+    TextIndexScoringKind scoring{};
 
     /// Bounded cache used to memoize decoded segments across per-task cursors.
     TextIndexPostingsCache * postings_cache = nullptr;

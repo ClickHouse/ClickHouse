@@ -159,15 +159,17 @@ class SegmentedPostingListCodec
 
 public:
     /// Constructs a codec for decoding only: `append` requires the encoding constructor below.
-    SegmentedPostingListCodec() = default;
+    /// `scoring_` is the scoring kind of the weights stored in the posting list (`None` if it stores no weights).
+    explicit SegmentedPostingListCodec(TextIndexScoringKind scoring_);
 
-    /// Constructs a codec for encoding.
+    /// Constructs a codec for encoding the posting lists of an index with the scoring kind `scoring_`.
     /// The requested `segment_size_` is rounded up to a multiple of BLOCK_SIZE.
-    SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_);
+    SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_, TextIndexScoringKind scoring_);
 
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending
     /// to the open segment and starting a new one every `segment_size` row ids.
-    /// On the scoring path (`context.scoring`) a non-empty `weights`, parallel to `row_ids`, carries the per-row
+    /// `context.scoring` must be the scoring kind the codec was constructed with.
+    /// With scoring a non-empty `weights`, parallel to `row_ids`, carries the per-row
     /// weights (empty if every weight is 1), and the doc lengths of the rows come from `context.doc_lengths`.
     void append(
         std::span<const UInt32> row_ids,
@@ -182,8 +184,8 @@ public:
     /// Total number of row ids added so far.
     size_t cardinality() const { return total_row_ids; }
 
-    /// True once an `append` carried scoring (i.e. BM25 scoring is enabled for the index).
-    bool hasScoring() const { return has_scoring; }
+    /// True if the posting list stores weights for scoring.
+    bool hasScoring() const;
 
     /// Deserialize a postings list from input `in` into `out`.
     ///
@@ -194,18 +196,18 @@ public:
     /// to reconstruct absolute row ids.
     ///
     /// `max_cardinality` bounds the sizes claimed by the segment header (see `readSegmentData`).
-    /// Unless `weights_kind` is `None`, every block is followed by its weights, which are skipped.
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer);
+    /// With scoring every block is followed by its weights, which are skipped.
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer);
 
     /// The same, but appends the decoded row ids to the plain array,
     /// decoding blocks directly into the array without a roaring bitmap.
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer);
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
 
     /// Deserializes a postings list with the exact per-row weights.
     ///
     /// Works like the above, but the weights payload of each block is decoded.
     /// Every decoded weight is appended to `weights`, parallel to the decoded row ids.
-    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer);
+    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, PaddedPODArray<char> & buffer);
 
 private:
     /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
@@ -239,7 +241,7 @@ private:
 
     /// Reads a segment header and returns it together with the segment payload.
     /// Throws CORRUPTED_DATA if the header claims more than `max_cardinality` row ids or more payload bytes than they can take.
-    SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer);
+    SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer);
 
     /// Skips one block's weights.
     void skipWeights(std::span<const std::byte> & in, size_t count);
@@ -263,15 +265,15 @@ private:
     std::vector<SegmentBlockMetas> segment_block_metas;
     /// Total number of postings added across all segments.
     size_t total_row_ids = 0;
-    /// Set true once an `append` was made with scoring enabled; observed by `serializeTo`, which has no
-    /// build context, to emit the per-segment header block-max bytes and the per-block
+    /// Scoring kind of the weights stored with the row ids, `None` without weights.
+    /// With scoring `serializeTo` also emits the per-segment header block-max bytes and the per-block
     /// `min_dl_byte[]`/`max_weight_minus_one[]` arrays.
-    bool has_scoring = false;
+    TextIndexScoringKind scoring;
     /// Per-block payload codec (bitpacking). On encode it is fixed by the constructor; on decode it
     /// is created from the segment header. One instance is reused across all blocks of a single encode/decode call.
     std::unique_ptr<IPostingListBlockCodec> block_codec;
     /// Per-block codec of the weights, determined by the scoring kind and the codec of the row ids (see `createWeightsCodec`).
-    /// Null without weights. On encode it is created by the first `append` with scoring; on decode, per segment.
+    /// Null without weights. Like `block_codec`, on encode it is created by the constructor; on decode, from the segment header.
     std::unique_ptr<IPostingListWeightsCodec> weights_codec;
 };
 
@@ -281,8 +283,8 @@ private:
 class SegmentedPostingListEncoder final : public IPostingListEncoder
 {
 public:
-    SegmentedPostingListEncoder(IPostingListCodec::Type block_codec_type_, size_t segment_size)
-        : impl(block_codec_type_, segment_size)
+    SegmentedPostingListEncoder(IPostingListCodec::Type block_codec_type_, size_t segment_size, TextIndexScoringKind scoring)
+        : impl(block_codec_type_, segment_size, scoring)
     {
     }
 
@@ -316,11 +318,11 @@ public:
     explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
 
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
-    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
+    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
 };
 
 /// Each block is stored as [1 byte: bits-width][bit-packed payload], at the block's maximum delta width.
@@ -376,10 +378,10 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
-    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
+    void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
 };
 
 }
