@@ -98,8 +98,9 @@ MergeTreeSink::MergeTreeSink(
     /// thrown by an executing sink, not errors thrown while the insert chain is being built).
     ///
     /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
-    /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
-    /// retrying an INSERT which was already written stays a no-op even once the database is full.
+    /// verdict is carried to the commit (`commitPart` or `UniqueKeyTxnCommit::insert`) and thrown only
+    /// for a part that is not a duplicate, so that retrying an INSERT which was already written stays
+    /// a no-op even once the database is full.
     /// Lightweight updates are not checked against `max_rows`: their patch parts add no rows.
     try
     {
@@ -451,7 +452,8 @@ UniqueKeyInsertOutcome MergeTreeSink::commitUniqueKeyPart(
          .temp_part = *partition.temp_part,
          .block = partition.block_with_partition.block,
          .deduplication_hashes = deduplication_hashes,
-         .transaction = partition.uk_txn});
+         .transaction = partition.uk_txn,
+         .database_rows_limit_exception = database_rows_limit_exception});
 }
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)

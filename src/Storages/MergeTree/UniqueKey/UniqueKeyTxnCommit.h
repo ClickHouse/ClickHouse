@@ -9,6 +9,7 @@
 
 #include <base/scope_guard.h>
 
+#include <exception>
 #include <string>
 #include <functional>
 #include <vector>
@@ -43,6 +44,8 @@ public:
         std::shared_ptr<const Block> block;
         const std::vector<DeduplicationHash> & deduplication_hashes;
         MergeTreeTransactionHolder & transaction;
+        /// Set if the database had reached `max_rows` when the insert started: thrown for a block that is not a replay.
+        std::exception_ptr database_rows_limit_exception = nullptr;
     };
 
     /// INSERT:
