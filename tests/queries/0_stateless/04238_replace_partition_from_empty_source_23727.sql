@@ -97,6 +97,23 @@ ALTER TABLE t_replace_empty_dst REPLACE PARTITION 202301 FROM t_replace_lwd_src
     SETTINGS allow_replace_partition_from_empty_source = 1;
 SELECT 'opt-in still replaces from a lightweight-deleted source', count() FROM t_replace_empty_dst;
 
+-- The cached live-row count can be stale: with `exclude_deleted_rows_for_part_size_in_merge = 0` the second
+-- lightweight `DELETE` keeps the count of 1 left by the first one, although no row is live any more.
+DROP TABLE IF EXISTS t_replace_stale_src;
+CREATE TABLE t_replace_stale_src (dt Date, val UInt64)
+ENGINE = MergeTree PARTITION BY toYYYYMM(dt) ORDER BY dt
+SETTINGS min_bytes_for_wide_part = 0, exclude_deleted_rows_for_part_size_in_merge = 1;
+
+INSERT INTO t_replace_stale_src VALUES ('2023-01-10', 1), ('2023-01-11', 2);
+DELETE FROM t_replace_stale_src WHERE val = 1 SETTINGS lightweight_deletes_sync = 2;
+ALTER TABLE t_replace_stale_src MODIFY SETTING exclude_deleted_rows_for_part_size_in_merge = 0;
+DELETE FROM t_replace_stale_src WHERE 1 SETTINGS lightweight_deletes_sync = 2;
+
+INSERT INTO t_replace_empty_dst VALUES ('2023-01-15', 100);
+ALTER TABLE t_replace_empty_dst REPLACE PARTITION 202301 FROM t_replace_stale_src; -- { serverError BAD_ARGUMENTS }
+SELECT 'source with a stale live-row count is rejected, dst kept', count() FROM t_replace_empty_dst;
+
+DROP TABLE t_replace_stale_src;
 DROP TABLE t_replace_lwd_src;
 DROP TABLE t_replace_deleted_src;
 DROP TABLE t_replace_moved_to;

@@ -2781,13 +2781,15 @@ bool IMergeTreeDataPart::hasExistingRows() const
         return false;
     if (!hasLightweightDelete())
         return true;
-    /// `loadExistingRowsCount` may store `rows_count` without reading the mask, so only a smaller value is exact.
-    if (existing_rows_count.has_value() && *existing_rows_count < rows_count)
-        return *existing_rows_count > 0;
-    return readExistingRowsCount() > 0;
+    return countExistingRows(/*stop_at_first=*/ true) > 0;
 }
 
 UInt64 IMergeTreeDataPart::readExistingRowsCount() const
+{
+    return countExistingRows(/*stop_at_first=*/ false);
+}
+
+UInt64 IMergeTreeDataPart::countExistingRows(bool stop_at_first) const
 {
     const size_t total_mark = getMarksCount();
     if (!total_mark)
@@ -2850,6 +2852,9 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount() const
         for (UInt8 row_exists : row_exists_col->getData())
             if (row_exists)
                 existing_count++;
+
+        if (stop_at_first && existing_count)
+            return existing_count;
     }
 
     LOG_DEBUG(storage.log, "Part {} existing_rows_count = {}", name, existing_count);

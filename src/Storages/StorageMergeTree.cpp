@@ -4150,8 +4150,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// above with `SUPPORT_IS_DISABLED`.
     /// Parts whose rows are all gone count as no parts: `MOVE PARTITION`, a mutation that deletes every row
     /// and a lightweight `DELETE` of every row leave such a part active (#124118).
-    if (replace && !is_all && std::ranges::none_of(src_parts, [](const auto & part) { return part->hasExistingRows(); })
-        && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
+    if (replace && !is_all && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source]
+        && std::ranges::none_of(src_parts, [](const auto & part) { return part->hasExistingRows(); }))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Source table {} has no rows in partition {}: refusing `REPLACE PARTITION` because it would "

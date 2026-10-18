@@ -11,6 +11,7 @@ source emptied by ALTER DELETE is rejected, dst kept	999
 source with only lightweight-deleted rows	0
 source emptied by a lightweight DELETE is rejected, dst kept	999
 opt-in still replaces from a lightweight-deleted source	0
+source with a stale live-row count is rejected, dst kept	1
 replicated default: REPLACE PARTITION FROM empty source is rejected
 replicated destination data preserved	2
 replicated opt-in: legacy silent-drop still available
