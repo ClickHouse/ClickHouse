@@ -155,6 +155,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
+    result.read_context = context;
     return result;
 }
 

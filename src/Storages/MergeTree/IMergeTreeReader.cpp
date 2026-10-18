@@ -21,6 +21,7 @@
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -345,7 +346,25 @@ void IMergeTreeReader::fillMissingColumns(
 
 ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 {
-    auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
+    auto storage_context = data_part_info_for_read->getContext();
+    ContextMutablePtr context_copy;
+    if (settings.read_context)
+    {
+        /// A default may read other tables, as in `DEFAULT x IN table`. Do that on behalf of the query
+        /// that reads the part: with the privileges and the row policies of its user, and with its query
+        /// status, so that the nested reading is cancelled together with the query. Keep the settings of
+        /// the storage context the defaults are evaluated with, except for those that restrict the access.
+        context_copy = Context::createCopy(settings.read_context);
+        auto default_expressions_settings = storage_context->getSettingsCopy();
+        for (std::string_view name : {"readonly", "allow_ddl", "allow_introspection_functions"})
+            default_expressions_settings.set(name, settings.read_context->getSettingsRef().get(name));
+        context_copy->setSettings(default_expressions_settings);
+        context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
+    }
+    else
+    {
+        context_copy = Context::createCopy(storage_context);
+    }
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
