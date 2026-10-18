@@ -86,6 +86,14 @@ SELECT part_type, column, serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_rename' AND active AND column LIKE 'lc%';
 SELECT sum(length(lc2)), countIf(notEmpty(lc2)), uniqExact(lc2) FROM t_auto_lc_rename;
 
+-- Force a rewrite of the part to go through the mapping of the renamed column in `MutateTask`.
+ALTER TABLE t_auto_lc_rename REWRITE PARTS;
+
+SELECT 'after rewrite';
+SELECT part_type, column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_lc_rename' AND active AND column LIKE 'lc%';
+SELECT sum(length(lc2)), countIf(notEmpty(lc2)), uniqExact(lc2) FROM t_auto_lc_rename;
+
 DROP TABLE t_auto_lc_buffer;
 DROP TABLE t_auto_lc_buffer_destination;
 DROP TABLE t_auto_lc_mv;
