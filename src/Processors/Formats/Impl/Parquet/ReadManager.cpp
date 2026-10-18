@@ -847,7 +847,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 MemoryUsageToken ReadManager::reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(row_group.columns.at(column_idx), row_group, reader.primitive_columns.at(column_idx));
-    double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
+    return reserveOutputMemory(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass), diff);
+}
+
+MemoryUsageToken ReadManager::reserveOutputMemory(double estimate, MemoryUsageDiff & diff)
+{
     /// Keeps this batch's signed sum representable whatever the estimate.
     ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
     size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
@@ -930,18 +934,30 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
 
         /// The columns of this step served from the columns cache have no task, but forming them
         /// copies their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
-        /// the subgroup is delivered. Account for them as for the columns that are decoded.
+        /// the subgroup is delivered. The size of a copy is estimated from the cached column itself:
+        /// the estimate from the metadata can be far off, e.g. for strings without size statistics
+        /// it relies on the dictionary, which is not read for a cached column. The whole estimate of
+        /// an output column is attached to its first primitive column.
         if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
         {
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
             {
                 const ColumnChunk & column = row_group.columns.at(i);
-                if (!column.served_from_cache || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
+                const auto & primitive_info = reader.primitive_columns[i];
+                if (!column.served_from_cache || primitive_info.first_step_to_calculate != task.step_idx)
                     continue;
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
                 if (subchunk.column_and_offsets_memory)
                     continue;
-                subchunk.column_and_offsets_memory = reserveOutputColumnMemory(i, row_group, row_subgroup, diff);
+                const size_t idx_in_output_block = primitive_info.idx_in_output_block;
+                const auto & output_info = reader.output_columns.at(*reader.sample_block_to_output_columns_idx.at(idx_in_output_block));
+                if (i != output_info.primitive_start)
+                    continue;
+                const ColumnPtr & cached_column = row_group.cached_columns.at(idx_in_output_block);
+                chassert(cached_column && cached_column->size() == size_t(row_group.meta->num_rows));
+                double estimate = static_cast<double>(cached_column->byteSize()) * static_cast<double>(row_subgroup.filter.rows_pass)
+                    / static_cast<double>(cached_column->size());
+                subchunk.column_and_offsets_memory = reserveOutputMemory(estimate, diff);
             }
         }
     }
