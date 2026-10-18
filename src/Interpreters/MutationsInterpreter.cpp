@@ -83,12 +83,12 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode except_default_mode;
@@ -333,6 +333,23 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
+    executor.setCancelCallback(
+        [&executor, &check_operation_is_not_cancelled]
+        {
+            try
+            {
+                check_operation_is_not_cancelled(Progress{});
+            }
+            catch (...)
+            {
+                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
+                executor.cancel();
+                throw;
+            }
+            return false;
+        },
+        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -503,6 +520,11 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
+{
+    return part && part->hasUnloadedProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -644,6 +666,7 @@ static void validateUpdateColumns(
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
+    NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
@@ -660,7 +683,7 @@ static void validateUpdateColumns(
         {
             for (const auto & materialized : materialized_it->second)
             {
-                if (key_columns.contains(materialized))
+                if (key_columns.contains(materialized) || key_storage_columns.contains(materialized))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
@@ -992,7 +1015,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
+            return source.hasProjection(name) || source.hasUnloadedProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1326,8 +1349,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1382,8 +1409,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
@@ -1761,9 +1788,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
+                continue;
             }
 
-            continue;
+            if (!source.hasUnloadedProjection(projection.name))
+                continue;
         }
 
         /// Always rebuild broken projections.

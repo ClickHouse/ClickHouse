@@ -31,3 +31,9 @@ SELECT type, position(exception, 'SECRET_') > 0 AS leaked, extract(exception, 'D
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type != 'QueryStart' AND exception_code = 36
 ORDER BY event_time_microseconds;
+
+-- In a `Replicated` database (the `DBReplicated` CI configuration) the DDL worker executes the `CREATE` again and logs non-initial rows,
+-- which the listing above excludes because their number differs between configurations. They must not leak either.
+SELECT countIf(position(exception, 'SECRET_') > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type != 'QueryStart' AND exception_code = 36;

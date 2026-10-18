@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -212,12 +213,10 @@ bool isJSONPathFilterSafe(
     /// A `Variant` or `Dynamic` constant reaches index analysis as a bare `Field` that no longer names
     /// the alternative it came from, so its value cannot be put back into that type to be compared.
     const auto unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
-    const WhichDataType which_value(unwrapped_value_type);
-    bool alternative_not_recoverable = which_value.isVariant() || which_value.isDynamic();
-    unwrapped_value_type->forEachChild([&](const IDataType & nested)
+    const bool alternative_not_recoverable = anyInTypeTree(*unwrapped_value_type, [](const IDataType & type)
     {
-        const WhichDataType which_nested(nested);
-        alternative_not_recoverable |= which_nested.isVariant() || which_nested.isDynamic();
+        const WhichDataType which(type);
+        return which.isVariant() || which.isDynamic();
     });
     if (alternative_not_recoverable)
         return false;

@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse サーバーを構成するものであり、ClickHouseのソースから自動生成されています。
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
@@ -27,6 +25,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これは、すべての `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` 機能に readonly 制約を設定するのと同等です。
 
+ユーザー、ロール、または設定プロファイルに対するステートメントは、そのような設定を、そのステートメントを実行している session で有効な値とは異なる値に設定する場合に拒否されます。また、設定を明示的に指定していなくても、あるユーザーにおけるそのような設定の値が変わる場合にも拒否されます。具体的には、そのような設定を含むロールの付与または取り消し、設定プロファイルの割り当て、ロールまたはプロファイルの削除、および省略によるオーバーライドの削除が該当します。SQL で定義されたユーザーのうち、自身の設定またはそのロールの設定にそのような値が含まれるユーザーはログインできません。サーバー自体が設定ファイルを通じて適用する設定、および設定ファイルで定義されたユーザーが拒否されることはありません。`compatibility` 設定は、無効化されたティアの設定については以前のバージョンのデフォルト値を適用せず、デフォルト値のままにします。
+
 <Note>
   値が `0` の場合は、すべての設定を変更できます。
 </Note>
@@ -35,15 +35,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   `2` は以前、「本番設定のみ」を意味していました。現在はベータ設定も許可されるため、本番設定のみを許可するために `2` を固定していた構成では、`3` を使用する必要があります。
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />IMPERSONATE 機能 (EXECUTE AS target&#95;user) を有効または無効にします。この設定は非推奨です。
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 &#39;IDENTIFIED WITH no&#95;password&#39; が明示的に指定されている場合を除き、パスワードなしのユーザー作成を禁止します。
 
@@ -53,9 +49,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 安全性の低い `no&#95;password` タイプのパスワードを許可するかどうかを設定します。
 
@@ -65,9 +59,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 平文パスワード型 (安全ではない) の使用を許可するかどうかを設定します。
 
@@ -77,9 +69,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />jemallocメモリを使用できるようにします。
 

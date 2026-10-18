@@ -16,6 +16,7 @@ public:
     ~MergeTreeSource() override;
 
     std::string getName() const override;
+    std::span<ISpillable * const> getSpillables() override;
 
     Status prepare() override;
 
@@ -30,7 +31,8 @@ protected:
 
 private:
     MergeTreeSelectProcessorPtr processor;
-    const std::string log_name;
+    /// Formatted once: `tryGenerate` is called for every block, and the span is usually not recorded.
+    const std::string span_name;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

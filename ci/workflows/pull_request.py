@@ -8,7 +8,11 @@ from ci.defs.defs import (
     JobNames,
 )
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.filter_job import (
+    PR_SINGLE_ARCH_SKIPPED_BUILDS,
+    PR_SINGLE_ARCH_SKIPPED_JOBS,
+    should_skip_job,
+)
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 # PR sanitizer jobs repeat tests related to the change to find intermittent failures.
@@ -58,12 +62,12 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Pull requests run the integration tests only in targeted jobs (the changed tests, the
 # tests covering the changed lines and the tests that failed in the PR before, each run
-# once), except for the full `arm_binary` run below and, with the `ci-coverage` label, the full
-# LLVM coverage run and the tests excluded from it.
+# once), except for the full `arm_binary` run below and, with the `ci-coverage` or
+# `ci-llvm-coverage` label, the full LLVM coverage run and the tests excluded from it.
 INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
 
-# The LLVM coverage jobs run in pull requests only with the `ci-coverage` label (see
-# `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
+# The LLVM coverage jobs run in pull requests only with the `ci-coverage` or `ci-llvm-coverage`
+# label (see `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
 # Master runs the coverage jobs on every commit.
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = (
     JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
@@ -86,7 +90,6 @@ workflow = Workflow.Config(
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
-        *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
@@ -120,6 +123,10 @@ workflow = Workflow.Config(
                 CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
             )
             for job in INTEGRATION_TARGETED_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_contrib_tsan_pr_jobs
         ],
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
@@ -309,6 +316,29 @@ workflow = Workflow.Config(
         provider="bedrock",
         model="global.anthropic.claude-sonnet-5",
     ),
+)
+
+# `should_skip_job` skips these builds together with the stress tests that use them, so
+# no other job may require their binaries: it would find no artifact to download.
+_SINGLE_ARCH_SKIPPED_ARTIFACTS = {
+    artifact
+    for job in workflow.jobs
+    if job.name in PR_SINGLE_ARCH_SKIPPED_BUILDS
+    for artifact in job.provides
+}
+assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
+    "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
+)
+_SINGLE_ARCH_SKIPPED_ARTIFACT_USERS = [
+    job.name
+    for job in workflow.jobs
+    if job.name not in PR_SINGLE_ARCH_SKIPPED_JOBS
+    and _SINGLE_ARCH_SKIPPED_ARTIFACTS & set(job.requires or [])
+]
+assert not _SINGLE_ARCH_SKIPPED_ARTIFACT_USERS, (
+    f"jobs {_SINGLE_ARCH_SKIPPED_ARTIFACT_USERS} require binaries of "
+    f"{PR_SINGLE_ARCH_SKIPPED_BUILDS}, which pull requests skip: remove the build "
+    "from PR_SINGLE_ARCH_SKIPPED_BUILDS in ci/jobs/scripts/workflow_hooks/filter_job.py"
 )
 
 WORKFLOWS = [
