@@ -14,6 +14,7 @@ namespace Setting
     extern const SettingsBool optimize_if_chain_to_multiif;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace
@@ -33,6 +34,13 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_if_chain_to_multiif])
+            return;
+
+        /// With this setting `multiIf` removes the zero padding of a `FixedString` branch converted to `String`,
+        /// but `if` keeps it, so the rewrite would change the result. An internal `multiIf` that keeps the padding
+        /// is not an option: it would share the name and the arguments with a user-written `multiIf`, so the
+        /// planner could reuse one for the other, and a remote shard would rebuild it as an ordinary `multiIf`.
+        if (getSettings()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -97,9 +105,7 @@ void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr co
         settings[Setting::allow_execute_multiif_columnar],
         settings[Setting::use_variant_as_common_type],
         settings[Setting::allow_lossy_numeric_supertype],
-        /// `if` keeps the zero padding of a `FixedString` branch converted to `String` regardless of
-        /// `cast_fixed_string_to_string_strip_trailing_zeros`, so the rewritten `multiIf` must keep it too.
-        /* cast_fixed_string_to_string_strip_trailing_zeros = */ false);
+        settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }
