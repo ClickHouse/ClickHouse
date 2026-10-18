@@ -27,6 +27,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
@@ -355,11 +356,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #endif
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
-        in->setAsyncCallback(async_callback);
+        {
+            /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
+            /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
+            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+            in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
+            in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
-        out->setAsyncCallback(async_callback);
+            out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
+            out->setAsyncCallback(async_callback);
+        }
         connected = true;
         setDescription();
 
@@ -487,7 +493,11 @@ void Connection::cancel() noexcept
 void Connection::reset() noexcept
 {
     maybe_compressed_out.reset();
-    out.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        out.reset();
+    }
     socket.reset();
     nonce.reset();
 
@@ -497,7 +507,11 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    in.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        in.reset();
+    }
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
@@ -1165,14 +1179,7 @@ void Connection::sendQuery(
         /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
-    maybe_compressed_in.reset();
-    if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
-    maybe_compressed_out.reset();
-    block_in.reset();
-    block_logs_in.reset();
-    block_profile_events_in.reset();
-    block_out.reset();
+    resetQueryBuffers();
 
     out->finishChunk();
 
@@ -1184,6 +1191,28 @@ void Connection::sendQuery(
     }
 
     completed = true;
+}
+
+
+void Connection::resetQueryBuffers()
+{
+    maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->finalize();
+    maybe_compressed_out.reset();
+    block_in.reset();
+    block_logs_in.reset();
+    block_profile_events_in.reset();
+    block_out.reset();
+}
+
+
+void Connection::releaseQueryBuffers() noexcept
+{
+    /// Data still buffered is flushed by the next `sendQuery`.
+    if (maybe_compressed_out && maybe_compressed_out != out && maybe_compressed_out->offset())
+        return;
+    resetQueryBuffers();
 }
 
 
