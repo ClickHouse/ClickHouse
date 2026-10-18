@@ -1153,8 +1153,8 @@ private:
             for (auto & key_in_block : keys_in_block)
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
-                /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
+                /// The serialized columns are within the block, but we don't know their exact size.
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
                 ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
