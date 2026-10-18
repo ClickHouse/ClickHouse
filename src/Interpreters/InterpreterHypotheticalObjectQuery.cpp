@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -16,6 +18,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -110,12 +113,19 @@ BlockIO createHypotheticalIndex(
             return {};
     }
 
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
+    ASTPtr expanded_index_decl = query.index_decl->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
+    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
+
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
         metadata->getColumns(),
         /* is_implicitly_created = */ false,
         /* escape_filenames = */ true,
         context);
+    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
 
     /// Empirical estimation reads the index's columns, so require column-level
     /// SELECT — otherwise a user with table-level access could infer a restricted
