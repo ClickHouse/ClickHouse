@@ -319,6 +319,9 @@ Store each full-precision vector of a `Quantized` column in its own compressed b
 search rescoring reads one block per candidate instead of a whole granule. The vectors are then kept
 uncompressed, which costs disk space and makes a full scan of the column slower. Applies to parts
 written while it is enabled; disabling it also stops reads from using the layout on existing parts.
+It can only be enabled at `CREATE TABLE`: the layout is fixed when a part is written and is recorded
+nowhere, so a table that did not have it from the start may hold parts the reader could not address.
+`ALTER TABLE ... MODIFY SETTING quantized_vector_one_block_per_row = 0` is allowed.
 )", 0, \
         {"26.10", false, false, "New setting to store one full-precision vector per compressed block for `Quantized` columns"}) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
