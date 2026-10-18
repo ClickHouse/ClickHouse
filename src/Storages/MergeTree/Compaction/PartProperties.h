@@ -34,6 +34,12 @@ struct PartProperties
     /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
     const std::set<std::string> projections_missing_columns = {};
 
+    /// The projections of the current metadata whose projection part the part has on disk but not loaded, typically
+    /// a projection dropped and added again while the part was detached. A merge in which every source part has a
+    /// projection either loaded or unloaded, and at least one has it unloaded, rebuilds the projection from the
+    /// parent part, see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> unloaded_projection_names = {};
+
     /// The size of every projection part among `projection_names`. A merge that keeps a projection every source
     /// part has merges the projection parts in a child merge of its own, which runs after the parent merge and
     /// chooses its algorithm by these sizes, see `MergeTask::MergeProjectionsStage::prepareProjections`.

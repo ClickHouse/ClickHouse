@@ -485,7 +485,17 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
             merged_projections.push_back(&projection);
         }
         else
-            rebuild = projection.with_block_number || projection.with_block_offset || settings[MergeTreeSetting::materialize_projections_on_merge];
+        {
+            /// Every source part has the projection either loaded or on disk but not loaded, and at least one has
+            /// it unloaded: the merge rebuilds it from the parent part whatever `materialize_projections_on_merge` is.
+            const bool rebuilds_unloaded = std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.unloaded_projection_names.contains(projection.name); })
+                && std::all_of(range.begin(), range.end(), [&](const PartProperties & part)
+                {
+                    return part.projection_names.contains(projection.name) || part.unloaded_projection_names.contains(projection.name);
+                });
+            rebuild = projection.with_block_number || projection.with_block_offset || rebuilds_unloaded
+                || settings[MergeTreeSetting::materialize_projections_on_merge];
+        }
 
         if (rebuild)
             columns.insert_range(required_columns);

@@ -109,6 +109,17 @@ std::set<std::string> getProjectionsMissingColumns(const MergeTreeDataPartPtr & 
     return projection_names;
 }
 
+std::set<std::string> getUnloadedProjectionNames(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::set<std::string> projection_names;
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+        if (part->hasUnloadedProjection(projection.name))
+            projection_names.insert(projection.name);
+
+    return projection_names;
+}
+
 std::map<std::string, PartProperties::ProjectionPartSize> getProjectionSizes(const MergeTreeDataPartPtr & part)
 {
     std::map<std::string, PartProperties::ProjectionPartSize> projection_sizes;
@@ -155,6 +166,7 @@ PartProperties buildPartProperties(
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
         .projections_missing_columns = getProjectionsMissingColumns(part, metadata_snapshot),
+        .unloaded_projection_names = getUnloadedProjectionNames(part, metadata_snapshot),
         .projection_sizes = getProjectionSizes(part),
         .absent_columns = getAbsentColumns(part, metadata_snapshot),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
