@@ -3268,6 +3268,38 @@ def test_the_settings_of_a_profile_do_not_weaken_the_replies(started_cluster):
     node.query("DROP USER mongo_lenient_user", password="123")
 
 
+def test_the_intermediate_limits_of_a_profile_do_not_cut_a_reply_short(started_cluster):
+    """A `DISTINCT`, a `GROUP BY` or a sort that stops at a limit of the profile in the `break` mode
+    would answer with a part of the result under cursor id `0`: overflowing them is an error."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP USER IF EXISTS mongo_intermediate_limits_user", password="123")
+    node.query(
+        "CREATE USER mongo_intermediate_limits_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break', "
+        "max_rows_to_group_by = 1, group_by_overflow_mode = 'any', "
+        "max_rows_to_sort = 1, sort_overflow_mode = 'break', max_block_size = 1",
+        password="123",
+    )
+    node.query("GRANT ALL ON db.* TO mongo_intermediate_limits_user", password="123")
+    node.query("DROP TABLE IF EXISTS db.intermediate_limits", password="123")
+    node.query("CREATE TABLE db.intermediate_limits (id Int64, k Int64) ENGINE = MergeTree ORDER BY id", password="123")
+    node.query("INSERT INTO db.intermediate_limits SELECT number, number % 3 FROM numbers(6)", password="123")
+
+    collection = make_client(user="mongo_intermediate_limits_user", password="mongo_pass", database="db")["db"][
+        "intermediate_limits"
+    ]
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.distinct("k")
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$group": {"_id": "$k", "n": {"$sum": 1}}}]))
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.find({}, {"_id": 0}).sort("k", -1))
+
+    node.query("DROP TABLE db.intermediate_limits", password="123")
+    node.query("DROP USER mongo_intermediate_limits_user", password="123")
+
+
 def test_document_collection_reads(started_cluster):
     """A collection created by the endpoint: `null` equality matches a missing field and nothing
     else, a stage after a `$group` reads the documents the group built, an accumulator reads the
@@ -3298,6 +3330,31 @@ def test_document_collection_reads(started_cluster):
 
     [group] = list(collection.aggregate([{"$group": {"_id": None, "ids": {"$push": "$_id"}}}]))
     assert group["_id"] is None and sorted(group["ids"]) == ["x", "y", "z"]
+
+    # A `$match` on the object id fused with a `$group` that names its key `_id` reads the stored id.
+    assert list(collection.aggregate([{"$match": {"_id": "x"}}, {"$group": {"_id": None, "n": {"$sum": 1}}}])) == [
+        {"_id": None, "n": 1}
+    ]
+    assert list(
+        collection.aggregate([{"$match": {"_id": {"$in": ["x", "z"]}}}, {"$group": {"_id": None, "n": {"$sum": 1}}}])
+    ) == [{"_id": None, "n": 2}]
+
+    # A stage after an exclusion of `_id` reads documents that no longer have it.
+    assert list(collection.aggregate([{"$project": {"_id": 0}}, {"$match": {"k": 2}}])) == [{"id": 3, "a": 2, "k": 2}]
+
+    # `distinct` leaves out a document that has no value for the field.
+    assert collection.distinct("a") == [1, 2]
+    assert collection.distinct("no_such_field") == []
+
+    # `$set` and `$addFields` cannot change a field inside the stored document.
+    for stage in [{"$set": {"k": 3}}, {"$addFields": {"new_field": 1}}]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            list(collection.aggregate([stage]))
+
+    # `$toDate` reads a number held by a path of a document as milliseconds.
+    collection.insert_one({"_id": "ms", "id": 5, "ms": 1000})
+    [converted] = list(collection.aggregate([{"$match": {"id": 5}}, {"$project": {"_id": 0, "d": {"$toDate": "$ms"}}}]))
+    assert converted["d"] == datetime.datetime(1970, 1, 1, 0, 0, 1)
 
     collection.insert_one({"_id": "a\x00b", "id": 4})
     assert [document["_id"] for document in collection.find({"id": 4})] == ["a\x00b"]
