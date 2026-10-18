@@ -72,11 +72,15 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types);
 
+/// A one-row column with what a key expression of a type that cannot contain NULL reads where the JSON path
+/// is missing: the column's default, which is not always the type's default (an `Enum` reads 0, not its first member).
+ColumnPtr createMissingJSONPathColumn(const DataTypePtr & key_expression_type);
+
 /// Whether a `JSONAllPaths` index may skip a granule that lacks the path, for an `equals` comparison of
 /// a JSON subcolumn with a constant. The caller has already established that the function is `equals`.
 /// When a JSON path is absent in a granule, the expression evaluates to:
 ///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are false)
-///   - The type's default value if the type is non-Nullable (safe only if the comparison
+///   - The key column's default if the type is non-Nullable (safe only if the comparison
 ///     does not hold against that default)
 ///
 /// @param key_expression_type  the actual result type of the key expression from the DAG node

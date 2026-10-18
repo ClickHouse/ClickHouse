@@ -196,6 +196,13 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     return json_info;
 }
 
+ColumnPtr createMissingJSONPathColumn(const DataTypePtr & key_expression_type)
+{
+    auto column = key_expression_type->createColumn();
+    column->insertDefault();
+    return column;
+}
+
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
@@ -221,10 +228,9 @@ bool isJSONPathFilterSafe(
     if (alternative_not_recoverable)
         return false;
 
-    /// A missing path reads as the key type's default, so the granule may be skipped only when the comparison
-    /// does not hold on it. A `FixedString` default `Field` is empty, while its column reads the full width.
+    /// The granule may be skipped only when the comparison does not hold on what a missing path reads.
     ColumnsWithTypeAndName arguments{
-        {key_expression_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), key_expression_type, "key"},
+        {createMissingJSONPathColumn(key_expression_type), key_expression_type, "key"},
         {value_type->createColumnConst(1, value_field), value_type, "value"}};
 
     auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);

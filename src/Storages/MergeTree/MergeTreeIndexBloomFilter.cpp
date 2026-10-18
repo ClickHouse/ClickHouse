@@ -714,7 +714,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// we cannot skip granules where the path is absent.
         if (!canContainNull(*key_type))
         {
-            auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            auto default_column_to_check = createMissingJSONPathColumn(key_type);
             ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};
             ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
             auto result = prepared_set->execute(default_columns_with_type_to_check, false);

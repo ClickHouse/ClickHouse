@@ -8,9 +8,13 @@
 -- padding, and a `FixedString` reads its full width of zero bytes where the path is missing, so an
 -- all-zero constant is that value too.
 
+-- Keep the casts non-nullable: a `Nullable` cast reads NULL where the path is missing.
+SET cast_keep_nullable = 0;
+
 DROP TABLE IF EXISTS t_json_bf;
 DROP TABLE IF EXISTS t_json_tokenbf;
 DROP TABLE IF EXISTS t_json_tuple;
+DROP TABLE IF EXISTS t_json_default;
 
 CREATE TABLE t_json_bf (id UInt64, data JSON, INDEX idx JSONAllPaths(data) TYPE bloom_filter(0.001) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -74,6 +78,25 @@ SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(Fixed
 -- A nested non-empty `Enum` label differs from that value, so the index prunes here as well.
 SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple(CAST('7', 'Enum8(''7'' = 3)')) SETTINGS force_data_skipping_indices = 'idx';
 
+-- A missing path reads as the column default, which is 0 for an `Enum` whose first member is not 0 and
+-- 1970-01-01 for a `Date32`, so ids 2 and 4 match at the top level and nested.
+CREATE TABLE t_json_default (id UInt64, data JSON, INDEX idx JSONAllPaths(data) TYPE bloom_filter(0.001) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_default VALUES
+    (1, '{"alpha":"first","gamma":"(''first'')","delta":"2000-01-01"}'), (2, '{"beta":"y"}'),
+    (3, '{"alpha":"zero","gamma":"(''zero'')","delta":"1970-01-01"}'), (4, '{}');
+
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.alpha::Enum8('first' = -1, 'zero' = 0) = 'zero';
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.gamma::Tuple(Enum8('first' = -1, 'zero' = 0)) = tuple(CAST('zero', 'Enum8(''first'' = -1, ''zero'' = 0)'));
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.delta::Date32 = toDate32('1970-01-01');
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.alpha::Enum8('first' = -1, 'zero' = 0) IN ('zero');
+
+-- The first member is not that value, so the index stays usable and keeps pruning.
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.alpha::Enum8('first' = -1, 'zero' = 0) = 'first' SETTINGS force_data_skipping_indices = 'idx';
+SELECT arraySort(groupArray(id)) FROM t_json_default WHERE data.alpha::Enum8('first' = -1, 'zero' = 0) IN ('first') SETTINGS force_data_skipping_indices = 'idx';
+
 DROP TABLE t_json_bf;
 DROP TABLE t_json_tokenbf;
 DROP TABLE t_json_tuple;
+DROP TABLE t_json_default;
