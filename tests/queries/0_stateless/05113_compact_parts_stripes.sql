@@ -134,11 +134,11 @@ INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', number % 7
 SELECT 'multiple buffers';
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(a), sum(b), sum(length(s)), sum(json.k::UInt64), countDistinct(json.n.m), max(toString(json)) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, four columns';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 multiple buffers, four columns';
 
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(a), sum(length(s)) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, two columns';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 multiple buffers, two columns';
 
 DROP TABLE t_compact_stripes;
 
@@ -154,7 +154,7 @@ INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', number % 7
 SELECT 'single buffer';
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(a), sum(b), sum(length(s)), sum(json.k::UInt64) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 single buffer, four columns';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 single buffer, four columns';
 
 DROP TABLE t_compact_stripes;
 
@@ -171,7 +171,7 @@ INSERT INTO t_compact_stripes SELECT number, concat('{"k":', toString(number), '
 SELECT 'subcolumns of one column';
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(a), sum(json.k::UInt64), sum(json.l::UInt64), count(json.m), sum(json.n::UInt64) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, subcolumns of one column';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 multiple buffers, subcolumns of one column';
 
 DROP TABLE t_compact_stripes;
 
@@ -188,7 +188,7 @@ INSERT INTO t_compact_stripes SELECT range(number % 4), number, repeat('x', numb
 SELECT 'multi-substream first column';
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(length(arr)), sum(a), sum(length(s)) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, multi-substream first column';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 multiple buffers, multi-substream first column';
 
 DROP TABLE t_compact_stripes;
 
@@ -219,7 +219,7 @@ ORDER BY mark_number;
 
 SYSTEM CLEAR MARK CACHE;
 SELECT sum(a), sum(b), sum(length(s)) FROM t_compact_stripes
-SETTINGS max_threads = 1, log_comment = '05113 multiple buffers, first stripe of one granule';
+SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05113 multiple buffers, first stripe of one granule';
 
 SYSTEM FLUSH LOGS query_log;
 
