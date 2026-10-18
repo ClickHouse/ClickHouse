@@ -76,7 +76,8 @@ ASTPtr tryParseMongoQuery(
 
     auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, statement_end);
     metadata = extractMetadataFromRequest(_out_query_end, statement_end);
-    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
+    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(
+        parseData(data_begin, data_end, metadata->getAllocator(), /* wrap_into_array = */ true, max_parser_depth), metadata);
 
     /// The terminator belongs to the statement, so the next one starts after it.
     _out_query_end = statement_end == end ? end : statement_end + 1;
@@ -173,7 +174,8 @@ ASTPtr parseMongoQuery(
     metadata->add_data_to_query = false;
     auto [data_begin, data_end] = getSettingsSubstring(begin, end);
 
-    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
+    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(
+        parseData(data_begin, data_end, metadata->getAllocator(), /* wrap_into_array = */ true, max_parser_depth), metadata);
     IParser::Pos token_iterator(token_subquery, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
     const bool parse_res = parser.parse(token_iterator, res, expected);
     if (!parse_res || !res)

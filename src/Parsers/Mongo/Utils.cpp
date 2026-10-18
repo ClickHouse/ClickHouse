@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int TOO_DEEP_RECURSION;
 }
 
 namespace Mongo
@@ -317,14 +318,60 @@ std::string normalizeShellLiterals(const std::string & input)
     return result;
 }
 
+/** The deepest nesting of the arrays and documents of a JSON text, outside of its string literals.
+  * It is counted without recursion, so that a text nested deeper than the stack could hold is refused
+  * rather than parsed.
+  */
+size_t jsonNestingDepth(const std::string & input)
+{
+    size_t depth = 0;
+    size_t max_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (const char c : input)
+    {
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '"')
+                in_string = false;
+            continue;
+        }
+
+        if (c == '"')
+            in_string = true;
+        else if (c == '[' || c == '{')
+            max_depth = std::max(max_depth, ++depth);
+        else if ((c == ']' || c == '}') && depth > 0)
+            --depth;
+    }
+    return max_depth;
 }
 
-rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array)
+}
+
+rapidjson::Value
+parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array, size_t max_depth)
 {
     std::string input(begin, end);
     if (wrap_into_array)
         input = "[" + input + "]";
     input = normalizeShellLiterals(input);
+
+    /// The array the request is wrapped into is not a level of the request itself.
+    if (max_depth)
+    {
+        const size_t depth = jsonNestingDepth(input) - (wrap_into_array ? 1 : 0);
+        if (depth > max_depth)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "The documents of the Mongo query are nested {} levels deep, more than the maximum of {} (the setting 'max_parser_depth')",
+                depth,
+                max_depth);
+    }
 
     rapidjson::Document document;
 

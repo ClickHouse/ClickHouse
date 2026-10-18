@@ -85,8 +85,16 @@ rapidjson::Value copyValue(const T & value, rapidjson::Document::AllocatorType &
 std::optional<rapidjson::Value>
 findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator);
 
-rapidjson::Value
-parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array = true);
+/** Parses the JSON of a request. `max_depth` bounds how deeply its arrays and documents may nest - the
+  * parse and the translation that follows it both recurse once per level - and is checked before
+  * either of them runs; `0` means no bound, as `max_parser_depth` does.
+  */
+rapidjson::Value parseData(
+    const char * begin,
+    const char * end,
+    rapidjson::Document::AllocatorType & allocator,
+    bool wrap_into_array = true,
+    size_t max_depth = 0);
 
 
 /** The pattern of the matcher below: the column of the field `path` and the columns of every field
