@@ -8,7 +8,7 @@ Granules: 25/25
 Skip
 Name: idx_monotonic
 Description: minmax GRANULARITY 1
-Condition: (toInt64(multiIf(greater(v, 0), v, NULL)) in [97, +Inf))
+Condition: (toInt64(multiIf(greater(v, 0), v, NULL)) in [98, +Inf))
 Parts: 1/1
 Granules: 2/25
 Ranges: 2
