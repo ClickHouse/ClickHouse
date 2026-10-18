@@ -17,6 +17,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -910,9 +911,16 @@ void StorageMaterializedView::alter(
 
     const auto & new_select = new_metadata.select;
     bool modifies_query = std::ranges::any_of(params, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_QUERY; });
-    if (modifies_query && !new_select.select_table_id.empty()
-        && new_select.select_table_id.getQualifiedName() == table_id.getQualifiedName())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
+    /// A refreshable view is not triggered by inserts, so its query may read the view itself.
+    if (modifies_query && !new_metadata.refresh)
+    {
+        /// No `table_name`: it would be dropped from the result. No current database: `InterpreterAlterQuery`
+        /// has qualified every table name, and an unqualified one refers to a recursive CTE.
+        auto referenced_tables = getDependenciesFromCreateQuery(
+            local_context->getGlobalContext(), /*table_name=*/{}, new_select.select_query, /*current_database=*/"").dependencies;
+        if (referenced_tables.contains(table_id.getQualifiedName()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
+    }
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.
