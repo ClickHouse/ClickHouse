@@ -1,0 +1,5 @@
+d_list	toJSONString(arrayMap(a -> tuple(COLUMNS(a, b)), [100]))
+d_list_except	toJSONString(arrayMap(a -> tuple(COLUMNS(b, c, a) EXCEPT a), [100]))
+d_regexp_except	toJSONString(arrayMap(a -> tuple(a, COLUMNS(\'^(a|b|c|renamed)$\') EXCEPT renamed), [100]))
+1	2	3	[[100,2,3]]	[[100,2]]	[[2,3]]
+10	20	30	[[100,20,30]]	[[100,20]]	[[20,30]]

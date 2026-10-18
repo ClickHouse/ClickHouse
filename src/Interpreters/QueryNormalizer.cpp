@@ -3,7 +3,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -243,7 +242,7 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         Aliases extracted_aliases;
         if (func_node->name == "lambda")
         {
-            Names lambda_aliases = RequiredSourceColumnsMatcher::extractNamesFromLambda(*func_node);
+            Names lambda_aliases = getASTLambdaArgumentNames(*func_node);
             for (const auto & name : lambda_aliases)
             {
                 auto it = data.aliases.find(name);
@@ -251,6 +250,23 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
                 {
                     extracted_aliases.insert(data.aliases.extract(it));
                 }
+            }
+
+            /// Also hide dotted aliases rooted at a lambda parameter: inside `x -> x.id` the identifier
+            /// `x.id` is a field access of the parameter `x`, not a reference to an outer alias `x.id`.
+            for (auto it = data.aliases.begin(); it != data.aliases.end();)
+            {
+                const auto & alias_name = it->first;
+                auto dot_pos = alias_name.find('.');
+                if (dot_pos != String::npos
+                    && std::find(lambda_aliases.begin(), lambda_aliases.end(), alias_name.substr(0, dot_pos)) != lambda_aliases.end())
+                {
+                    auto next = std::next(it);
+                    extracted_aliases.insert(data.aliases.extract(it));
+                    it = next;
+                }
+                else
+                    ++it;
             }
         }
 

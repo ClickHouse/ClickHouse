@@ -14,6 +14,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -191,10 +192,11 @@ TTLTransform::TTLTransform(
         if (it == column_defaults.end())
             return Result{};
         const auto & column = storage_columns.get(name);
-        auto default_ast = it->second.expression->clone();
+        auto default_ast = cloneAndExpandColumnDefaultExpressionWithAliases(it->second, storage_columns, context);
+        validateNoCyclicAliasesAfterExpansion(name, default_ast, storage_columns);
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
-        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
+        auto syntax_result = TreeRewriter(context).analyze(default_ast, storage_columns.getAll());
+        auto actions = ExpressionAnalyzer{default_ast, syntax_result, context}.getActions(true);
         return Result{actions, default_ast->getColumnName()};
     };
 

@@ -5332,10 +5332,14 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
           */
         auto alias_column_resolver = [this, &data, &scope, captured_storage_snapshot = std::move(storage_snapshot)](const ColumnNodePtr & alias_column_to_resolve)
         {
-            const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
+            const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
+            const auto & column_default = columns_description.getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
-            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
+            auto alias_expression_ast = column_default->expression->clone();
+            expandColumnMatchersInExpression(alias_expression_ast, columns_description);
+            validateNoCyclicAliasesAfterExpansion(alias_column_to_resolve->getColumnName(), alias_expression_ast, columns_description);
+            alias_column_to_resolve->setExpression(buildQueryTree(alias_expression_ast, scope.context));
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;

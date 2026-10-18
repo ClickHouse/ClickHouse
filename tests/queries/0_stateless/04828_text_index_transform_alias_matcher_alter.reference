@@ -1,0 +1,8 @@
+-- preprocessor change rebuilds the index
+1
+1
+1
+1
+-- postprocessor change is rejected in throw mode
+0
+1

@@ -177,6 +177,8 @@ protected:
     DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
 public:
 
+    TableLockHolder lockForInsert(const String & query_id, const Poco::Timespan & acquire_timeout) override;
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool optimize(
@@ -441,6 +443,11 @@ private:
 
     ZooKeeperRetriesInfo create_query_zookeeper_retries_info TSA_GUARDED_BY(create_query_zookeeper_retries_info_mutex);
     mutable std::mutex create_query_zookeeper_retries_info_mutex;
+
+    /// `INSERT` pipelines hold it for reading, `alter` takes it for writing when it registers a
+    /// repair mutation, so writes that captured the old metadata cannot acquire a block number
+    /// above the mutation version and skip it (see the same lock in `StorageMergeTree`).
+    mutable RWLock insert_alter_lock = RWLockImpl::create();
 
     /** /replicas/me/is_active.
       */

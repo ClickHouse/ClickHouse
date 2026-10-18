@@ -1,0 +1,10 @@
+-- REBUILD mode rebuilds the implicit index and keeps pruning correct
+1
+1
+1
+0
+-- THROW mode rejects the ALTER
+1
+-- an implicit index over an ordinary column is not affected
+1
+1000

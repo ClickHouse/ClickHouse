@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTFunction.h>
@@ -10,7 +11,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
-
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
@@ -41,10 +41,36 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
         {
+            expandColumnMatchersInExpression(func->arguments->children[1], columns);
             ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
             ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
         }
     }
+}
+
+ASTPtr makePersistedIndexDefinitionAST(
+    const String & name,
+    const ASTPtr & expression_list_ast,
+    const ASTFunction & index_type,
+    UInt64 granularity)
+{
+    chassert(expression_list_ast != nullptr);
+
+    ASTPtr persisted_expression;
+    if (expression_list_ast->children.size() == 1)
+        persisted_expression = expression_list_ast->children.front()->clone();
+    else
+    {
+        auto tuple_function = makeASTOperator("tuple");
+        for (const auto & child : expression_list_ast->children)
+            tuple_function->arguments->children.push_back(child->clone());
+        persisted_expression = std::move(tuple_function);
+    }
+
+    auto persisted_definition = make_intrusive<ASTIndexDeclaration>(
+        std::move(persisted_expression), index_type.clone(), name);
+    persisted_definition->granularity = granularity;
+    return persisted_definition;
 }
 
 }
@@ -134,7 +160,6 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
-    result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
@@ -142,7 +167,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    auto persisted_expression_list = result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
     {
@@ -164,6 +189,9 @@ IndexDescription IndexDescription::getIndexFromAST(
             expandTextIndexTransformAliases(result.arguments, columns);
     }
 
+    result.definition_ast = makePersistedIndexDefinitionAST(
+        result.name, persisted_expression_list, *index_type, result.granularity);
+
     return result;
 }
 
@@ -172,18 +200,35 @@ void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_
     *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
 }
 
-void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
 {
     chassert(index_expression != nullptr);
-
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 
     ASTPtr expr_list = extractKeyExpressionList(index_expression);
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns, {}};
-    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+    /// Skip index expressions are analyzed with physical columns only. Matchers may
+    /// expand to ALIAS columns, and ALIAS expressions may contain matchers, so
+    /// normalize both recursively before passing the expression to TreeRewriter.
+    /// The matcher-expanded (but not alias-replaced) list is persisted in
+    /// `definition_ast`: matcher expansion is frozen at creation time, while alias
+    /// references stay live so that later `ALTER MODIFY COLUMN ... ALIAS` picks up
+    /// the new alias body on `recalculateWithNewColumns`.
+    /// The executable expression uses `IndexAnalysis` replacement: unlike `QueryAnalysis`,
+    /// it adds neither a synthetic result name nor a conversion to the declared alias type,
+    /// so an index over a typed alias (`b UInt8 ALIAS a`) is built over the alias body.
+    /// See the comment on `ColumnAliasReplacementMode::IndexAnalysis` for why converting
+    /// to the alias type here would misread the index files of already written parts.
+    expandColumnMatchersInExpressionList(expr_list, columns);
+    ASTPtr persisted_expression_list = expr_list->clone();
+    replaceAliasColumnsInQuery(
+        expr_list,
+        columns,
+        {},
+        context,
+        {},
+        ColumnAliasReplacementMode::IndexAnalysis);
 
     expression_list_ast = expr_list->clone();
 
@@ -195,6 +240,8 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
+
+    return persisted_expression_list;
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)

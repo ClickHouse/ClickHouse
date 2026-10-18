@@ -1,0 +1,3 @@
+1
+1
+CREATE TABLE default.t_index_alias_drop_same_alter\n(\n    `a` UInt64,\n    `x` UInt64 ALIAS a + 2\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS alter_column_secondary_index_mode = \'throw\', index_granularity = 8192
