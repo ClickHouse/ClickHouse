@@ -209,14 +209,14 @@ ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2, 3);
 " 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 
-# --- Sanity: a partitioned UPDATE spanning >1 partition (per-partition slicing) still works ----
+# --- Sanity: an UPDATE that splits one source partition into several (per-partition slicing) ---
 # Without per-partition slicing the mutated block would be written into every per-partition file.
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
-CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0);
-INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c');
-ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2);
-SELECT c0, c1 FROM ${TABLE} ORDER BY c0;
+CREATE TABLE ${TABLE} (c0 Int32, c1 Int32) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0);
+INSERT INTO ${TABLE} VALUES (0, 1), (0, 2), (0, 3);
+ALTER TABLE ${TABLE} UPDATE c0 = c1 WHERE c0 = 0;
+SELECT c0, c1 FROM ${TABLE} ORDER BY c0, c1;
 "
 
 # The server must still be alive after all scenarios (no abort).

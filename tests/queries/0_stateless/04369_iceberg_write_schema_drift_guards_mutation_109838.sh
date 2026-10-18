@@ -125,12 +125,10 @@ ALTER TABLE ${TABLE} UPDATE c1 = 'y' WHERE c0 = 1;
 SELECT c0, c1 FROM ${TABLE} ORDER BY c0;
 "
 
-# --- UPDATE across a same-layout partition-spec rebind: allowed ------------------------------
-# Another engine may republish the identical partition layout under a new spec-id. The mutation
-# guard must reject only a genuine layout change, not the id alone (Compaction.cpp compares the
-# layout field-by-field). Data files stay tagged spec-id 0; default becomes spec-id 1 with the
-# same fields, so position deletes still land in the right partitions. The UPDATE must succeed
-# and supersede the old row.
+# --- UPDATE across a same-layout partition-spec rebind: rejected -----------------------------
+# The identical layout is republished under spec-id 1 while the data files stay under spec-id 0.
+# Position deletes would carry spec-id 1, which Iceberg readers do not apply to spec-id 0 data
+# files, so the UPDATE must be rejected and the rows left unchanged.
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c1) SETTINGS iceberg_format_version=2;
@@ -154,8 +152,9 @@ next_n = int(re.search(r'v(\d+)', os.path.basename(latest)).group(1)) + 1
 tmp = os.path.join(md, '.tmp_next'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, f'v{next_n}.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 --query "
-ALTER TABLE ${TABLE} UPDATE c0 = 99 WHERE c1 = 'b';
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 \
+    --query "ALTER TABLE ${TABLE} UPDATE c0 = 99 WHERE c1 = 'b'" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --query "
 SYSTEM DROP ICEBERG METADATA CACHE;
 SELECT c0, c1 FROM ${TABLE} ORDER BY c1, c0;
 "

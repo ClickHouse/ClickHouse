@@ -69,41 +69,7 @@ static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
-/// Parse a partition-spec JSON object's fields into the (source-id, transform, name) layout, the same
-/// triple ManifestFileIterator reads. PartitionSpecsEntry has only a file-local operator<=>, so compare
-/// explicitly (mirrors Compaction.cpp::partitionSpecsEqual).
-static Iceberg::PartitionSpecification parsePartitionSpecLayout(Poco::JSON::Object::Ptr spec_object)
-{
-    Iceberg::PartitionSpecification layout;
-    if (!spec_object || !spec_object->has(Iceberg::f_fields))
-        return layout;
-    auto fields = spec_object->getArray(Iceberg::f_fields);
-    for (UInt32 i = 0; fields && i < fields->size(); ++i)
-    {
-        auto field = fields->getObject(i);
-        layout.emplace_back(
-            field->getValue<Int32>(Iceberg::f_source_id),
-            field->getValue<String>(Iceberg::f_partition_transform),
-            field->getValue<String>(Iceberg::f_partition_name));
-    }
-    return layout;
-}
-
-static bool partitionSpecLayoutsEqual(const Iceberg::PartitionSpecification & lhs, const Iceberg::PartitionSpecification & rhs)
-{
-    if (lhs.size() != rhs.size())
-        return false;
-    for (size_t i = 0; i < lhs.size(); ++i)
-    {
-        if (lhs[i].source_id != rhs[i].source_id || lhs[i].transform_name != rhs[i].transform_name
-            || lhs[i].partition_name != rhs[i].partition_name)
-            return false;
-    }
-    return true;
-}
-
-/// True if a manifest of the current snapshot uses a partition layout other than the default spec's.
-/// Position deletes follow the default layout, so an identical layout under another spec id is safe.
+/// True if a data manifest of the current snapshot was written under a spec id other than the default one.
 static bool existingDataUsesDifferentPartitionSpec(
     Poco::JSON::Object::Ptr metadata,
     Int64 default_spec_id,
@@ -118,33 +84,6 @@ static bool existingDataUsesDifferentPartitionSpec(
     if (current_snapshot_id < 0 || !metadata->has(Iceberg::f_snapshots))
         return false;
 
-    /// Index every spec by id and precompute the default layout so each manifest entry compares against it.
-    auto partition_specs = metadata->getArray(Iceberg::f_partition_specs);
-    std::unordered_map<Int32, Poco::JSON::Object::Ptr> spec_by_id;
-    for (size_t i = 0; partition_specs && i < partition_specs->size(); ++i)
-    {
-        auto spec = partition_specs->getObject(static_cast<UInt32>(i));
-        spec_by_id[spec->getValue<Int32>(Iceberg::f_spec_id)] = spec;
-    }
-    Iceberg::PartitionSpecification default_layout;
-    if (auto it = spec_by_id.find(static_cast<Int32>(default_spec_id)); it != spec_by_id.end())
-        default_layout = parsePartitionSpecLayout(it->second);
-
-    /// A different id whose layout we cannot resolve is treated as a real mismatch (conservative).
-    std::unordered_map<Int32, bool> layout_differs_by_id;
-    auto layoutDiffersFromDefault = [&](Int32 spec_id) -> bool
-    {
-        if (spec_id == default_spec_id)
-            return false;
-        if (auto it = layout_differs_by_id.find(spec_id); it != layout_differs_by_id.end())
-            return it->second;
-        auto spec_it = spec_by_id.find(spec_id);
-        bool differs = spec_it == spec_by_id.end()
-            || !partitionSpecLayoutsEqual(parsePartitionSpecLayout(spec_it->second), default_layout);
-        layout_differs_by_id[spec_id] = differs;
-        return differs;
-    };
-
     auto snapshots = metadata->getArray(Iceberg::f_snapshots);
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
@@ -156,7 +95,7 @@ static bool existingDataUsesDifferentPartitionSpec(
             snapshot->getValue<String>(Iceberg::f_manifest_list));
         for (const auto & manifest : getManifestList(object_storage, persistent_table_components, context, manifest_list, log))
         {
-            if (layoutDiffersFromDefault(manifest.partition_spec_id))
+            if (manifest.content_type == Iceberg::ManifestFileContentType::DATA && manifest.partition_spec_id != default_spec_id)
                 return true;
         }
         return false;
@@ -862,8 +801,8 @@ void mutate(
                 "Iceberg table metadata has no partition spec matching default-spec-id {}",
                 partition_spec_id);
 
-        /// Position deletes are partitioned by the current default spec, so data written under a
-        /// different spec cannot be superseded (silent row duplication).
+        /// Position deletes carry the default spec id, and readers apply them only to data files of the
+        /// same spec id, even when another spec id has an identical layout.
         if (existingDataUsesDifferentPartitionSpec(
                 metadata, partition_spec_id, object_storage, persistent_table_components, context, log))
             throw Exception(
