@@ -16,6 +16,10 @@
 -- smallest column of the part to it to carry the row count - and that column is what the cache
 -- has an entry for, which is what turns the second read into a hit.
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_cc_nested_offsets;
 
 CREATE TABLE t_cc_nested_offsets

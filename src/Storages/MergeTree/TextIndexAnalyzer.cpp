@@ -158,7 +158,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
         markFailed();
 }
 
-FlatPostingsPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
+PaddedPODArrayPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 {
     chassert(postings);
 
