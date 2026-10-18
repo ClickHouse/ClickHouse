@@ -1302,3 +1302,88 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVers
     EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
     EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
 }
+
+/// The per-value figure that unsampled blocks are extrapolated from must be kept for each aggregate-state leaf
+/// separately: states of different leaves can differ in size by orders of magnitude. Here the first, sampled
+/// block of a `Variant(AggregateFunction(count), AggregateFunction(groupArray, UInt64))` carries only one-byte
+/// `count` states, and the second, unsampled block only large `groupArray` states. Pooling the leaves would
+/// extrapolate the `groupArray` states from the `count` figure and charge a byte per state instead of
+/// several kilobytes; the leaf that no sample has covered yet must be serialized instead.
+TEST(RuntimeDataflowStatisticsStateSampling, UnsampledStateLeafIsNotExtrapolatedFromAnotherLeaf)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 100;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionProperties properties;
+    const auto count_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, DataTypes{}, Array{}, properties);
+    const auto count_type = std::make_shared<DataTypeAggregateFunction>(count_function, DataTypes{}, Array{});
+
+    AggregateFunctionPtr group_array_function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, group_array_function);
+    const auto group_array_type
+        = std::make_shared<DataTypeAggregateFunction>(group_array_function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{count_type, group_array_type});
+    const auto & variants = variant_type->getVariants();
+    ASSERT_EQ(variants.size(), 2);
+    const UInt8 count_discriminator = variants[0]->getName() == count_type->getName() ? 0 : 1;
+    const UInt8 group_array_discriminator = 1 - count_discriminator;
+    ASSERT_EQ(variants[group_array_discriminator]->getName(), group_array_type->getName());
+
+    /// A block whose values all belong to the alternative `discriminator`.
+    const auto make_variant = [&](UInt8 discriminator)
+    {
+        auto count_states = ColumnAggregateFunction::create(count_function);
+        auto group_array_states = ColumnAggregateFunction::create(group_array_function);
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < rows; ++row)
+        {
+            if (discriminator == count_discriminator)
+                count_states->insertDefault();
+            else
+                group_array_states->insertFrom(*source_state, 0);
+            discriminators->insertValue(discriminator);
+            offsets->insertValue(row);
+        }
+        Columns alternatives(2);
+        alternatives[count_discriminator] = std::move(count_states);
+        alternatives[group_array_discriminator] = std::move(group_array_states);
+        return ColumnPtr(ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives));
+    };
+
+    const auto first = make_variant(count_discriminator);
+    const auto second = make_variant(group_array_discriminator);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state"});
+
+    /// Without compression the estimate is the uncompressed size, so the ground truth is what `NativeWriter`
+    /// writes for both blocks to a peer of the current revision.
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(header.cloneEmpty()));
+    for (const auto & column : {first, second})
+    {
+        Block block = header.cloneEmpty();
+        block.getByPosition(0).column = column;
+        writer.write(block);
+    }
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size();
+    ASSERT_GT(wire_bytes, rows * elements_in_state * sizeof(UInt64));
+
+    const size_t cache_key = 0x111985 + 20;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, 2 * rows, none));
+        updater.recordOutputChunk(Chunk(Columns{first}, rows), header);
+        updater.recordOutputChunk(Chunk(Columns{second}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
+    EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
+}

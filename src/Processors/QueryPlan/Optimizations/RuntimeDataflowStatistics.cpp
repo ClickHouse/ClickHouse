@@ -584,6 +584,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         size_t repetitions;
         size_t skip_rows;
         bool below_dynamic;
+        /// Identifies the leaf across blocks, see `Statistics::serialized_states`.
+        String key;
+    };
+    /// The key of a leaf: the output column, the state type, and the position among the leaves of that type
+    /// in the column. `ordinals` counts the leaves of each state type already seen in the column.
+    auto leaf_key = [](size_t column_index, const ColumnAggregateFunction & leaf, std::unordered_map<String, size_t> & ordinals)
+    {
+        String state_type = leaf.getAggregateFunction()->getStateType()->getName();
+        const size_t ordinal = ordinals[state_type]++;
+        return fmt::format("{}\t{}\t{}", column_index, state_type, ordinal);
     };
     std::vector<StateLeaf> state_leaves;
     /// Whether cols[i] contains (or is) an aggregate-state leaf.
@@ -604,12 +614,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             column = const_column->getDataColumnPtr();
         }
         size_t state_leaves_byte_size = 0;
+        std::unordered_map<String, size_t> ordinals;
         forEachAggregateStateLeaf(
             *column,
             [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size, bool below_dynamic)
             {
                 col_has_states[i] = 1;
-                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows, below_dynamic);
+                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows, below_dynamic, leaf_key(i, leaf, ordinals));
                 state_leaves_byte_size += carrier_byte_size;
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
@@ -622,20 +633,34 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     /// Aggregate-state leaves can have a different number of values than the outer block has rows:
     /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
     /// Count the values that the Native serialization writes, not outer rows.
-    size_t block_state_values = 0;
-    for (const auto & [aggregate_column, owner, repetitions, skip_rows, below_dynamic] : state_leaves)
-    {
-        static_cast<void>(owner);
-        static_cast<void>(below_dynamic);
-        block_state_values += (aggregate_column->size() - skip_rows) * repetitions;
-    }
+    auto leaf_values = [](const StateLeaf & leaf) { return (leaf.column->size() - leaf.skip_rows) * leaf.repetitions; };
 
-    /// Until the first sampled block with aggregate-state values lands there is no per-value figure to extrapolate from, so blocks
-    /// racing with the first sampled one serialize their states too and count as extra samples. Only blocks that
-    /// do carry state values take that path: a `Variant`/`Dynamic` output whose blocks hold only plain alternatives
-    /// contributes no state bytes, and forcing every such block through it would sample the whole output.
-    const bool serialize_states = has_aggregate_states
-        && (sample_block || (block_state_values > 0 && statistics.serialized_state_values.load(std::memory_order_relaxed) == 0));
+    /// Until a sampled block with values of a leaf lands there is no per-value figure to extrapolate that leaf
+    /// from, so a block carrying values of a leaf that no sample has covered yet serializes its states too and
+    /// counts as an extra sample. This is tracked per leaf: the states of different leaves - e.g. the
+    /// `count` and `groupArray` alternatives of a `Variant` - can differ in size by orders of magnitude, so
+    /// one leaf's figure says nothing about another. Only leaves that do carry values take that path: a
+    /// `Variant`/`Dynamic` output whose blocks hold only plain alternatives contributes no state bytes, and
+    /// forcing every such block through it would sample the whole output.
+    bool has_unsampled_leaf = false;
+    if (has_aggregate_states && !sample_block)
+    {
+        std::lock_guard lock(statistics.mutex);
+        for (const auto & leaf : state_leaves)
+        {
+            if (leaf_values(leaf) == 0)
+                continue;
+            const auto it = statistics.serialized_states.find(leaf.key);
+            if (it == statistics.serialized_states.end() || it->second.values == 0)
+            {
+                has_unsampled_leaf = true;
+                break;
+            }
+        }
+    }
+    const bool serialize_states = has_aggregate_states && (sample_block || has_unsampled_leaf);
+    /// The serialized states of the block per leaf key, committed to `Statistics::serialized_states`.
+    std::unordered_map<String, Statistics::SerializedStates> block_serialized_states;
     size_t serialized_state_bytes = 0;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
@@ -672,6 +697,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             col.column = col.column->permute(permutation, 0);
         if (serialize_states)
         {
+            size_t column_index = 0;
             for (const auto & col : sorted_cols)
             {
                 ColumnPtr column = col.column;
@@ -681,10 +707,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
                     repetitions = column->size();
                     column = const_column->getDataColumnPtr();
                 }
+                std::unordered_map<String, size_t> ordinals;
                 forEachAggregateStateLeaf(
                     *column,
                     [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t, bool below_dynamic)
-                    { sorted_state_leaves.emplace_back(&leaf, owner ? owner : column, repetitions, skip_rows, below_dynamic); });
+                    {
+                        sorted_state_leaves.emplace_back(
+                            &leaf, owner ? owner : column, repetitions, skip_rows, below_dynamic, leaf_key(column_index, leaf, ordinals));
+                    });
+                ++column_index;
             }
         }
     }
@@ -697,8 +728,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// swings the extrapolation several-fold depending on whether the few giant states land on the
         /// sampled positions. Blocks of up to 1000 states are measured exactly.
         static constexpr size_t max_states_to_serialize = 1000;
-        for (const auto & [aggregate_column, owner, repetitions, skip_rows, below_dynamic] : sampled_state_leaves)
+        for (const auto & leaf : sampled_state_leaves)
         {
+            const auto & [aggregate_column, owner, repetitions, skip_rows, below_dynamic, key] = leaf;
             static_cast<void>(owner);
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
             /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
@@ -716,6 +748,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             const auto sizes = aggregate_column->sampledStateSizes(
                 max_states_to_serialize, repetitions, skip_rows, codecs.generic, /*keep_column_version=*/below_dynamic);
             serialized_state_bytes += sizes.bytes;
+            auto & block_leaf_states = block_serialized_states[key];
+            block_leaf_states.bytes += sizes.bytes;
+            block_leaf_states.values += leaf_values(leaf);
             add_component_sample(sizes.bytes, sizes.sample_bytes, sizes.compressed_bytes);
         }
     }
@@ -754,18 +789,29 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t block_bytes = full_bytes.value_or(plain_bytes);
     if (serialize_states)
     {
-        statistics.serialized_state_bytes += serialized_state_bytes;
-        statistics.serialized_state_values += block_state_values;
+        for (const auto & [key, block_leaf_states] : block_serialized_states)
+        {
+            auto & leaf_states = statistics.serialized_states[key];
+            leaf_states.bytes += block_leaf_states.bytes;
+            leaf_states.values += block_leaf_states.values;
+        }
         if (!full_bytes)
             block_bytes += serialized_state_bytes;
     }
-    else if (block_state_values > 0 && !full_bytes)
+    else if (!full_bytes)
     {
-        /// Extrapolate from the per-value figure of the serialized samples. A block with state values gets
-        /// here only after a sample has committed some, so `serialized_state_values` is not zero.
-        block_bytes += static_cast<size_t>(
-            static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(block_state_values)
-            / static_cast<double>(statistics.serialized_state_values.load(std::memory_order_relaxed)));
+        /// Extrapolate each leaf from the per-value figure of its own serialized samples. A leaf with values
+        /// gets here only after a sample has committed some of them (the committed counts only grow), so
+        /// its entry exists and is not zero.
+        for (const auto & leaf : state_leaves)
+        {
+            const size_t values = leaf_values(leaf);
+            if (values == 0)
+                continue;
+            const auto & leaf_states = statistics.serialized_states.at(leaf.key);
+            block_bytes += static_cast<size_t>(
+                static_cast<double>(leaf_states.bytes) * static_cast<double>(values) / static_cast<double>(leaf_states.values));
+        }
     }
     statistics.bytes += block_bytes;
     if (compressed_bytes)
