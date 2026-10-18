@@ -13,6 +13,7 @@ import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
+import importlib.util
 import io
 import ipaddress
 import itertools
@@ -275,9 +276,16 @@ TEST_PROTOCOLS = {
 PROTOCOL_CLIENT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "protocol_client.py")
 # The `ssh` protocol runs the tests as this user, authenticated by `config/ssh_user_ed25519_key`.
 SSH_TEST_USER = "clickhouse_test_ssh"
-# The `ssh` protocol passes the whole test on the command line; see `SSH_MAX_QUERY_SIZE` in
-# `protocol_client.py`. Larger tests go over the other protocols.
-SSH_TEST_MAX_SIZE = 90 * 1024
+
+
+@cache
+def protocol_client_module():
+    """`protocol_client.py`, imported to check which protocols can run a test."""
+    spec = importlib.util.spec_from_file_location("protocol_client", PROTOCOL_CLIENT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
@@ -2735,10 +2743,15 @@ class TestCase:
 
     def choose_protocol(self, args) -> str:
         """The protocol to run this `.sql` test over, at random from `--protocols`."""
-        protocols = args.protocols
-        if "ssh" in protocols and os.path.getsize(self.case_file) > SSH_TEST_MAX_SIZE:
-            protocols = [protocol for protocol in protocols if protocol != "ssh"] or ["native"]
-        return random.choice(protocols)
+        with open(self.case_file, "rb") as file:
+            data = file.read()
+        # The native protocols run every test with `clickhouse-client`.
+        protocols = [
+            protocol
+            for protocol in args.protocols
+            if protocol in ("native", "native_tls") or protocol_client_module().supports(protocol, data)
+        ]
+        return random.choice(protocols or ["native"])
 
     def protocol_client_command(self, protocol, database) -> str:
         """The command that runs this `.sql` test, read from stdin, over a protocol of

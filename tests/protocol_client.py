@@ -51,6 +51,13 @@ SOCKET_TIMEOUT = 600
 # `ssh` passes the whole test as the command of the channel, which travels in one `argv` element of
 # the `ssh` client; Linux limits one element to 128 KiB (`MAX_ARG_STRLEN`).
 SSH_MAX_QUERY_SIZE = 100 * 1024
+# A test of at most this size leaves enough room in `SSH_MAX_QUERY_SIZE` for the setup queries.
+SSH_MAX_TEST_SIZE = 90 * 1024
+
+# The protocols that carry arbitrary bytes of a query: a NUL byte or invalid UTF-8 in it. The others
+# need a valid string: gRPC and Arrow Flight send it in a protobuf `string`, PostgreSQL terminates it
+# with a NUL byte, SSH passes it in an `argv` element, and the web terminal pastes it into a line editor.
+BINARY_PROTOCOLS = {"http", "https", "mysql"}
 
 
 class QueryError(Exception):
@@ -821,6 +828,32 @@ class ArrowFlightClient(QueryClient):
 
     def close(self):
         self.client.close()
+
+
+def is_binary(data):
+    """Whether the test contains bytes that only `BINARY_PROTOCOLS` can carry."""
+    if b"\0" in data:
+        return True
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+def supports(protocol, data):
+    """Whether the test with the contents `data` can run over the protocol without changing its queries.
+    `clickhouse-test` chooses the protocol of a test among the ones that support it."""
+    if is_binary(data) and protocol not in BINARY_PROTOCOLS:
+        return False
+    if protocol == "ssh":
+        return len(data) <= SSH_MAX_TEST_SIZE
+    if protocol == "webterminal":
+        # The line editor removes the whitespace at the end of the pasted text, which can be a field
+        # separator or a part of a value at the end of the inline data of `INSERT ... FORMAT`.
+        text = data.decode("utf-8")
+        return all(query == query.rstrip() for query, _ in split_queries(text))
+    return True
 
 
 def prepend_setup(text, setup):
