@@ -22,6 +22,11 @@
 #include <Poco/JSON/Parser.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event ReadCompressedBytes;
+}
+
 namespace DB
 {
 
@@ -404,6 +409,15 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     auto & reader = state->reader;
     auto & row_group_state = reader.row_groups.at(row_group);
 
+    /// The column chunks are read when the first rows of the row group are read.
+    if (!state->row_group_started)
+    {
+        size_t compressed_bytes = 0;
+        for (const auto & column_info : reader.primitive_columns)
+            compressed_bytes += static_cast<size_t>(row_group_state.meta->columns.at(column_info.column_idx).meta_data.total_compressed_size);
+        ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, compressed_bytes);
+    }
+
     Parquet::Reader::RowSubgroup subgroup;
     subgroup.start_row_idx = start_row;
     subgroup.filter.rows_total = num_rows;
@@ -553,8 +567,8 @@ try
         }
 
         size_t rows_to_read = std::min(max_rows_to_read - read_rows, rows_in_row_group - state->row);
-        state->row_group_started = true;
         readRowsFromRowGroup(state->row_group, state->row, rows_to_read, res_columns);
+        state->row_group_started = true;
 
         state->row += rows_to_read;
         read_rows += rows_to_read;
