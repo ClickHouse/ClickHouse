@@ -1,0 +1,32 @@
+-- find keeps _id
+a	x
+b	y
+c	x
+-- find without _id
+x
+x
+y
+-- a table without _id
+1
+2
+-- $project keeps the key of $group
+x	4
+y	2
+-- $project without _id
+2
+4
+-- $firstN
+\N	[1]
+-- n = 0
+Code: 36. The 'n' of '$lastN' must be a positive whole number
+-- n = -1
+Code: 36. The 'n' of '$lastN' must be a positive whole number
+-- n = 1.5
+Code: 36. The 'n' of '$lastN' must be a positive whole number
+-- n = "$v"
+Code: 48. The 'n' of '$lastN' must be a constant number: an expression is not supported
+-- a constant read through a Distributed table
+x	2
+x	2
+y	4
+y	4

@@ -1,0 +1,11 @@
+-- the keys of the sort do not share one direction
+Code: 48. The accumulator '$first' after a '$sort' whose keys do not share one direction is not supported
+Code: 48. The accumulator '$push' after a '$sort' whose keys do not share one direction is not supported
+-- a stage in between builds documents that do not have the sort key
+Code: 48. The accumulator '$first' reads the documents of the group in the order of the stream, and the keys the preceding '$sort' established are not fields of the documents the '$group' reads: sort right before the '$group', or keep the sort keys
+-- an accumulator that does not depend on the order is unaffected
+a	3
+b	2
+-- and so is a group that no sort precedes
+a	3
+b	2

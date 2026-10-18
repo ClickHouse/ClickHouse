@@ -1,0 +1,40 @@
+1	click
+2	view
+3	click
+4	click
+1
+2
+3
+4
+click	3
+view	1
+2
+1	click	green
+1	click	red
+2	view	green
+4	click	blue
+1	click	green
+1	click	red
+2	view	green
+3	click	\N
+4	click	blue
+1	click	red	0
+1	click	green	1
+2	view	green	0
+4	click	blue	0
+1	click	green
+1	click	red
+4	click	blue
+1	click	green
+2	view	green
+green	2
+blue	1
+red	1
+1	CLICK
+2	VIEW
+3	CLICK
+4	CLICK
+1
+2
+3
+4
