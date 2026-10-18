@@ -45,6 +45,13 @@ LIMIT
 1	100
 1	100
 1	100
+LIMIT BY with a constant key
+1	10000
+arrayJoin below the window functions
+1	1
+a table that keeps its columns in memory
+cityHash64
+Window
 QUALIFY
 0	0	1
 1	0	2

@@ -113,6 +113,27 @@ LIMIT UNTIL number = 1 SETTINGS max_block_size = 10, max_threads = 1;
 SELECT * FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 10, '1', 'x') AS s FROM numbers(100)))
 LIMIT 1 SETTINGS max_block_size = 10, max_threads = 1;
 
+SELECT 'LIMIT BY with a constant key';
+SELECT toUInt64(s), count() OVER () FROM (SELECT if(number < 1000, '1', 'x') AS s FROM numbers(10000))
+LIMIT 1 BY 'group' SETTINGS max_block_size = 10, max_threads = 1;
+
+SELECT 'arrayJoin below the window functions';
+SELECT toUInt64(s), count() OVER ()
+FROM (SELECT if(number = 0, 'x', '1') AS s, arrayJoin(if(number = 0, [], [1])) AS a FROM numbers(2))
+SETTINGS query_plan_lower_array_join_function = 0, max_threads = 1;
+
+SELECT 'a table that keeps its columns in memory';
+DROP TABLE IF EXISTS t_window_push_down_memory;
+CREATE TABLE t_window_push_down_memory (s String) ENGINE = Memory;
+INSERT INTO t_window_push_down_memory SELECT toString(number) FROM numbers(10);
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(s), count() OVER () FROM t_window_push_down_memory
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_memory;
+
 SELECT 'QUALIFY';
 SELECT number, throwIf(length(s) = 3) AS t, row_number() OVER (ORDER BY number) AS rn
 FROM (SELECT number, if(number = 3, 'abc', 'a') AS s FROM numbers(5)) QUALIFY rn != 4 ORDER BY number;

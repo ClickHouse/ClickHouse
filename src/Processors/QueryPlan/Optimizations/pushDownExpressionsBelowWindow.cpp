@@ -6,16 +6,24 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Storages/StorageFile.h>
 
 #include <optional>
 #include <string_view>
@@ -237,8 +245,15 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
         return true;
     }
 
-    /// `typeid_cast` does not match derived classes.
-    if (dynamic_cast<const ISourceStep *>(step) || typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+    /// The reads that create new columns. Others may return columns that stay in memory anyway, like a `Memory`
+    /// table, a materialized CTE or a prepared source, so freeing them does not reduce the memory usage.
+    if (typeid_cast<const ReadFromMergeTree *>(step) || typeid_cast<const ReadFromSystemNumbersStep *>(step)
+        || typeid_cast<const ReadFromRemote *>(step) || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step)
+        || typeid_cast<const ReadFromParallelReplicasStep *>(step) || typeid_cast<const ReadFromLocalParallelReplicaStep *>(step)
+        || typeid_cast<const ReadFromObjectStorageStep *>(step) || typeid_cast<const ReadFromFile *>(step))
+        return true;
+
+    if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
         return true;
 
     if (typeid_cast<const UnionStep *>(step))
@@ -268,7 +283,8 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
 
 /// Whether a step above may stop reading the result before all rows are read, so that the projection after
 /// the window functions is computed only for some rows: `LIMIT`, `LIMIT ... WITH TIES`, `LIMIT AFTER / UNTIL`,
-/// `ORDER BY ... LIMIT` (`liftUpFunctions` computes the expressions after such a sorting).
+/// `LIMIT BY` (with constant keys it stops after the first rows), `DISTINCT ... LIMIT`, `ORDER BY ... LIMIT`
+/// (`liftUpFunctions` computes the expressions after such a sorting).
 /// An aggregation reads all rows, so the steps above it do not matter.
 bool mayStopBeforeReadingAllRows(const Stack & stack)
 {
@@ -278,10 +294,13 @@ bool mayStopBeforeReadingAllRows(const Stack & stack)
         if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
             return false;
 
-        if (typeid_cast<const LimitStep *>(step) || typeid_cast<const LimitRangeStep *>(step))
+        if (typeid_cast<const LimitStep *>(step) || typeid_cast<const LimitRangeStep *>(step) || typeid_cast<const LimitByStep *>(step))
             return true;
 
         if (const auto * sorting = typeid_cast<const SortingStep *>(step); sorting && sorting->getLimit())
+            return true;
+
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step); distinct && distinct->getLimitHint())
             return true;
     }
 
@@ -517,8 +536,10 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         (*it)->step->updateInputHeader((*it)->children.front()->step->getOutputHeader());
     parent_node->step->updateInputHeader(window_node->step->getOutputHeader());
 
-    /// Merging into a `Filter` below would compute the expressions for the rows it removes.
-    if (typeid_cast<const ExpressionStep *>(bottom_node->step.get()))
+    /// Merging into a `Filter` or into an `arrayJoin` below would compute the expressions for the rows they remove:
+    /// in one step an `arrayJoin` is executed after the actions that do not depend on it.
+    if (const auto * bottom_expression = typeid_cast<const ExpressionStep *>(bottom_node->step.get());
+        bottom_expression && !bottom_expression->getExpression().hasArrayJoin())
         tryMergeExpressions(&pushed_node, nodes, settings);
 }
 
