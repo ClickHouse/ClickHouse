@@ -1,0 +1,18 @@
+Caf=C3=A9 =3D 3 =E2=82=AC
+
+=00=7F=80=FF
+trailing space=20
+tab\tin the middle, tab at the end=09
+line ends with space=20\r\nnext
+a\r\nb=0Ac=0Dd
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=\r\naaaaaaaaaaaaaaaaaaaaaaaaa
+76
+Café = 3 €
+lowerécase
+softbreak and softbreak
+bad escapes =ZZ =4 = stay, trailing equals is dropped
+0
+0=3D
+1=3D
+2=3D
+AB
