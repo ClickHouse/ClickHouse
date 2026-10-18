@@ -122,16 +122,24 @@ std::string statementKeyword(const std::vector<Tok> & tokens)
             return {};
     }
 
+    const auto is_statement = [](const std::string & keyword)
+    {
+        return write_statement_keywords.contains(keyword) || parallelizable_keywords.contains(keyword);
+    };
     int depth = 0;
     int with_depth = -1;
-    /// A scalar CTE can contain a top-level EXISTS keyword: the statement starts after its alias.
+    bool expression_can_end = false;
     bool cte_complete = false;
     bool in_cte_subquery = false;
+    bool after_cte_comma = false;
+
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Tok & t = tokens[i];
         if (isOpeningBracket(t.type))
         {
+            if (depth == with_depth)
+                expression_can_end = false;
             ++depth;
             continue;
         }
@@ -139,20 +147,33 @@ std::string statementKeyword(const std::vector<Tok> & tokens)
         {
             if (depth > 0)
                 --depth;
-            if (in_cte_subquery && depth == with_depth)
+            if (depth == with_depth)
             {
-                in_cte_subquery = false;
-                cte_complete = true;
+                expression_can_end = true;
+                if (in_cte_subquery)
+                {
+                    in_cte_subquery = false;
+                    cte_complete = true;
+                }
             }
             continue;
         }
-        if (with_depth >= 0 && depth == with_depth && cte_complete && t.type == DB::TokenType::Comma)
+        if (with_depth >= 0 && depth == with_depth && t.type == DB::TokenType::Comma)
         {
+            after_cte_comma = cte_complete || expression_can_end;
             cte_complete = false;
+            expression_can_end = false;
             continue;
         }
-        if (t.type != DB::TokenType::BareWord)
+        if (with_depth >= 0 && depth != with_depth)
             continue;
+        if (t.type != DB::TokenType::BareWord)
+        {
+            if (with_depth >= 0)
+                expression_can_end = t.type == DB::TokenType::Number || t.type == DB::TokenType::StringLiteral
+                    || t.type == DB::TokenType::QuotedIdentifier;
+            continue;
+        }
         const std::string keyword = toUpper(t.text);
         if (with_depth < 0)
         {
@@ -161,21 +182,47 @@ std::string statementKeyword(const std::vector<Tok> & tokens)
             with_depth = depth;
             continue;
         }
-        if (depth != with_depth)
-            continue;
-        if (cte_complete)
-            return keyword;
-        if (keyword == "AS" && i + 1 < tokens.size())
+        const Tok * next = i + 1 < tokens.size() ? &tokens[i + 1] : nullptr;
+        const bool followed_by_as = next && next->type == DB::TokenType::BareWord && toUpper(next->text) == "AS";
+        const bool followed_by_bracket = next && isOpeningBracket(next->type);
+        if (after_cte_comma)
         {
-            const Tok & next = tokens[i + 1];
-            if (isOpeningBracket(next.type))
+            after_cte_comma = false;
+            if (is_statement(keyword) && !followed_by_as && !(keyword == "EXISTS" && followed_by_bracket))
+                return keyword;
+        }
+        if (cte_complete)
+            return is_statement(keyword) ? keyword : std::string{};
+        if (keyword == "AS" && next)
+        {
+            if (followed_by_bracket)
+            {
                 in_cte_subquery = true;
-            else if (next.type == DB::TokenType::BareWord || next.type == DB::TokenType::QuotedIdentifier)
+                expression_can_end = false;
+            }
+            else if (next->type == DB::TokenType::BareWord && toUpper(next->text) == "MATERIALIZED"
+                && i + 2 < tokens.size() && isOpeningBracket(tokens[i + 2].type))
+            {
+                in_cte_subquery = true;
+                expression_can_end = false;
+                ++i;
+            }
+            else if (next->type == DB::TokenType::BareWord || next->type == DB::TokenType::QuotedIdentifier)
             {
                 ++i;
                 cte_complete = true;
+                expression_can_end = true;
             }
+            else
+            {
+                expression_can_end = false;
+            }
+            continue;
         }
+        if (expression_can_end && is_statement(keyword) && !followed_by_as && !(keyword == "EXISTS" && followed_by_bracket))
+            return keyword;
+        expression_can_end = keyword != "AND" && keyword != "OR" && keyword != "IN" && keyword != "NOT"
+            && keyword != "IS" && keyword != "LIKE" && keyword != "ILIKE" && keyword != "BETWEEN";
     }
     return {};
 }
@@ -292,6 +339,11 @@ TEST(PlayQueryIsReadOnly, LeadingWithSelectIsReadOnly)
     EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, 2 AS b SELECT a + b"));
     EXPECT_TRUE(queryIsReadOnly("WITH toInt32(number) AS a SELECT a FROM numbers(3)"));
     EXPECT_TRUE(queryIsReadOnly("WITH 1 IN (1, 2) AS a SELECT a"));
+    /// A trailing comma closes the WITH list, not the whole statement.
+    EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, SELECT a"));
+    EXPECT_TRUE(queryIsReadOnly("WITH cte AS (SELECT 1 AS a), SELECT * FROM cte"));
+    EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, 2 AS b, SELECT a + b"));
+    EXPECT_TRUE(queryIsReadOnly("WITH cte AS MATERIALIZED (SELECT 1), SELECT * FROM cte"));
     /// EXISTS in a scalar CTE is an expression, not the statement keyword.
     EXPECT_TRUE(queryIsReadOnly("WITH EXISTS (SELECT 1) AS x SELECT x"));
     EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, EXISTS (SELECT 1) AS x SELECT x"));
@@ -311,6 +363,10 @@ TEST(PlayQueryIsReadOnly, LeadingWithWriteIsNotReadOnly)
     EXPECT_FALSE(queryIsReadOnly("with y as (select 1) insert into x select * from y"));
     /// A scalar CTE followed by an `INSERT`.
     EXPECT_FALSE(queryIsReadOnly("WITH 42 AS v INSERT INTO x SELECT v"));
+    /// Without AS aliases, expressions may still precede an INSERT. They are not SELECTs.
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 INSERT INTO t SELECT number AS x FROM numbers(1)"));
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 AS a, 2 INSERT INTO t SELECT number AS x FROM numbers(1)"));
+    EXPECT_FALSE(queryIsReadOnly("WITH EXISTS (SELECT 1) INSERT INTO t SELECT 1"));
     /// An EXISTS expression must never expose Download for the INSERT that follows it.
     EXPECT_FALSE(queryIsReadOnly("WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x"));
     EXPECT_FALSE(queryIsReadOnly("WITH 1 AS a, EXISTS (SELECT 1) AS x INSERT INTO t SELECT x"));
@@ -361,6 +417,12 @@ TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)
         splitAllQueriesIsSelect("WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y; SELECT count() FROM t"),
         (std::vector<bool>{false, true}));
     EXPECT_EQ(
+        splitAllQueriesIsSelect("WITH 1 INSERT INTO t SELECT number AS x FROM numbers(1); SELECT count() FROM t"),
+        (std::vector<bool>{false, true}));
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("WITH 1 AS a, SELECT a; WITH cte AS (SELECT 1), SELECT * FROM cte"),
+        (std::vector<bool>{true, true}));
+    EXPECT_EQ(
         splitAllQueriesIsSelect("WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x; SELECT count() FROM t"),
         (std::vector<bool>{false, true}));
     /// The statement kind is per statement, not inherited from neighbors; a trailing semicolon and
@@ -409,6 +471,9 @@ TEST(PlayQueryIsReadOnly, ShapeableIsNarrowerThanReadOnly)
     /// The real statement kind behind a CTE list decides, exactly as for the read-only walk.
     EXPECT_TRUE(queryIsShapeable("WITH y AS (SELECT 1) SELECT * FROM y"));
     EXPECT_TRUE(queryIsShapeable("WITH 1 AS select SELECT select"));
+    EXPECT_TRUE(queryIsShapeable("WITH 1 AS a, SELECT a"));
+    EXPECT_TRUE(queryIsShapeable("WITH cte AS (SELECT 1), SELECT * FROM cte"));
+    EXPECT_FALSE(queryIsShapeable("WITH 1 INSERT INTO t SELECT number AS x FROM numbers(1)"));
 
     /// Read-only but NOT wrappable by the `order` setting: the server would silently ignore it, so
     /// the arrows must not be offered (they would indicate a sort the rows do not have).

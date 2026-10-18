@@ -19136,57 +19136,97 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
 /// token-walking algorithm on top of the same `DB::Lexer`). Keep the two in sync.
 function statementKeyword(tokens)
 {
-    /// PARALLEL WITH can contain writes in later children, so never retry it.
+    /// PARALLEL WITH can contain writes in later children. Never retry the composite statement.
     for (let i = 0; i + 1 < tokens.length; ++i) {
         if (tokens[i].type === TT.BareWord && tokens[i].token.toUpperCase() === 'PARALLEL'
             && tokens[i + 1].type === TT.BareWord && tokens[i + 1].token.toUpperCase() === 'WITH')
             return null;
     }
 
+    const is_statement = keyword => WRITE_STATEMENT_KEYWORDS.has(keyword) || PARALLELIZABLE_KEYWORDS.has(keyword);
     let depth = 0;
     let with_depth = -1;
-    /// Only the keyword following a COMPLETE CTE is the statement kind. A scalar CTE can itself
-    /// contain statement-like keywords, e.g. WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x.
+    let expression_can_end = false;
     let cte_complete = false;
     let in_cte_subquery = false;
+    let after_cte_comma = false;
+
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
-        if (OPENING_BRACKETS.has(t.type)) { ++depth; continue; }
+        if (OPENING_BRACKETS.has(t.type)) {
+            if (depth === with_depth) expression_can_end = false;
+            ++depth;
+            continue;
+        }
         if (CLOSING_BRACKETS.has(t.type)) {
             if (depth > 0) --depth;
-            if (in_cte_subquery && depth === with_depth) {
-                in_cte_subquery = false;
-                cte_complete = true;
+            if (depth === with_depth) {
+                expression_can_end = true;
+                if (in_cte_subquery) {
+                    in_cte_subquery = false;
+                    cte_complete = true;
+                }
             }
             continue;
         }
-        if (with_depth >= 0 && depth === with_depth && cte_complete && t.type === TT.Comma) {
+        if (with_depth >= 0 && depth === with_depth && t.type === TT.Comma) {
+            /// ClickHouse accepts a trailing CTE comma before SELECT: WITH 1 AS a, SELECT a.
+            after_cte_comma = cte_complete || expression_can_end;
             cte_complete = false;
+            expression_can_end = false;
             continue;
         }
-        if (t.type !== TT.BareWord) continue;
+        if (with_depth >= 0 && depth !== with_depth) continue;
+        if (t.type !== TT.BareWord) {
+            if (with_depth >= 0) {
+                /// Without an AS alias, a scalar expression can end with a literal.
+                expression_can_end = t.type === TT.Number || t.type === TT.StringLiteral
+                    || t.type === TT.QuotedIdentifier;
+            }
+            continue;
+        }
         const keyword = t.token.toUpperCase();
         if (with_depth < 0) {
             if (keyword !== 'WITH') return keyword;
             with_depth = depth;
             continue;
         }
-        if (depth !== with_depth) continue;
-        if (cte_complete) return keyword;
-        if (keyword === 'AS') {
-            const next = tokens[i + 1];
-            if (next && OPENING_BRACKETS.has(next.type)) {
-                /// name AS (subquery): the CTE ends when this bracket closes.
+        const next = tokens[i + 1];
+        const followed_by_as = next && next.type === TT.BareWord && next.token.toUpperCase() === 'AS';
+        const followed_by_bracket = next && OPENING_BRACKETS.has(next.type);
+        if (after_cte_comma) {
+            after_cte_comma = false;
+            /// A keyword followed by AS can name a CTE. EXISTS(...) can start a scalar CTE.
+            if (is_statement(keyword) && !followed_by_as && !(keyword === 'EXISTS' && followed_by_bracket))
+                return keyword;
+        }
+        if (cte_complete) return is_statement(keyword) ? keyword : null;
+        if (keyword === 'AS' && next) {
+            if (followed_by_bracket) {
                 in_cte_subquery = true;
-            } else if (next && (next.type === TT.BareWord || next.type === TT.QuotedIdentifier)) {
-                /// expr AS alias: consume even keyword-shaped aliases before looking for a statement.
+                expression_can_end = false;
+            } else if (next.type === TT.BareWord && next.token.toUpperCase() === 'MATERIALIZED'
+                && tokens[i + 2] && OPENING_BRACKETS.has(tokens[i + 2].type)) {
+                in_cte_subquery = true;
+                expression_can_end = false;
+                ++i;
+            } else if (next.type === TT.BareWord || next.type === TT.QuotedIdentifier) {
+                /// Skip a scalar CTE alias, even when it is named SELECT or INSERT.
                 ++i;
                 cte_complete = true;
+                expression_can_end = true;
+            } else {
+                expression_can_end = false;
             }
+            continue;
         }
+        /// With no alias, a complete expression can be followed directly by INSERT / SELECT.
+        if (expression_can_end && is_statement(keyword) && !followed_by_as && !(keyword === 'EXISTS' && followed_by_bracket))
+            return keyword;
+        /// Operator keywords keep the preceding expression incomplete.
+        expression_can_end = !['AND', 'OR', 'IN', 'NOT', 'IS', 'LIKE', 'ILIKE', 'BETWEEN'].includes(keyword);
     }
-    /// An incomplete or unrecognized WITH is never safe to retry.
-    return null;
+    return null;  /// Unknown statement kind never permits a re-execution.
 }
 
 /// Whether one statement, given as its significant lexer tokens, is read-only. Used by

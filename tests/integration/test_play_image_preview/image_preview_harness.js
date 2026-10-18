@@ -290,6 +290,7 @@ function makeElement(tag) {
     /// they do not shadow the genuine `QueryResultElement` methods when one is constructed.
     Object.assign(el, {
         clear() {},
+        clearBar() {},
         update() { return true; },
         updateRaw() {},
         renderError() {},
@@ -1144,9 +1145,15 @@ async function main() {
             const cases = [
                 { query: 'WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x', safe: false },
                 { query: 'WITH 1 AS a, EXISTS (SELECT 1) AS x INSERT INTO t SELECT x', safe: false },
+                { query: 'WITH 1 INSERT INTO t SELECT number AS x FROM numbers(1)', safe: false },
+                { query: 'WITH 1 AS a, 2 INSERT INTO t SELECT number AS x FROM numbers(1)', safe: false },
+                { query: 'WITH EXISTS (SELECT 1) INSERT INTO t SELECT 1', safe: false },
                 { query: 'INSERT INTO t VALUES (1)', safe: false },
                 { query: 'SELECT 1', safe: true },
                 { query: 'WITH EXISTS (SELECT 1) AS x SELECT x', safe: true },
+                { query: 'WITH 1 AS a, SELECT a', safe: true },
+                { query: 'WITH cte AS (SELECT 1 AS a), SELECT * FROM cte', safe: true },
+                { query: 'WITH 1 AS a, 2 AS b, SELECT a + b', safe: true },
             ];
             const classified = [];
             const live = [];
