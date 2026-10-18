@@ -160,20 +160,23 @@ ALWAYS_INLINE bool countedContains(const T * data, const UInt8 * null_map, size_
     return false;
 }
 
-/// The constant array is searched in parts from a few vectors, and at least a block of 128 bytes of `sliceContains`, or from one element
-/// if it is compared one by one. A row is searched in larger parts, as a part is an extra call for each searched value, and the search
-/// of a row is usually not stopped early by a value at its start.
+/// The constant array is searched in parts from a block of 128 bytes of `sliceContains`, or from one element if it is compared one by
+/// one, so that a value near its start is counted as faster than a lookup, as it is. A row is searched in larger parts, as a part is an
+/// extra call for each searched value, and the search of a row is usually not stopped early by a value at its start.
 template <typename T>
-constexpr size_t const_first_part_size = is_vector_searched<T> ? std::max<size_t>(32, 128 / sizeof(T)) : 1;
+constexpr size_t const_first_part_size = is_vector_searched<T> ? 128 / sizeof(T) : 1;
 constexpr size_t row_first_part_size = 256;
 
-/// A value in the first vector of an array, or in its first 8 elements if it is compared one by one, is found faster than by a lookup.
-/// So the search of the head of the constant array is not counted in the work, as counting it would take about as long as the search.
-/// A constant size lets the compiler drop the checks of the size from the loop.
+/// A value in the first vector of a row, or in its first 8 elements if it is compared one by one, is found faster than by a lookup.
 template <typename T>
 constexpr size_t head_size = is_vector_searched<T> ? 32 / sizeof(T) : 8;
+
+/// So is a value in the first block of 128 bytes of the constant array, which `sliceContains` searches at once. So the search of this
+/// head is not counted in the work, as counting it would take about as long as the search. A constant size lets the compiler drop the
+/// checks of the size from the loop.
 template <typename T>
-constexpr size_t const_head_size = std::min(head_size<T>, minConstSize<T>(Operation::SearchElementsInConst));
+constexpr size_t const_head_size
+    = std::min(is_vector_searched<T> ? 128 / sizeof(T) : head_size<T>, minConstSize<T>(Operation::SearchElementsInConst));
 
 /// The set of the non-NULL values of the constant array.
 template <typename T>
