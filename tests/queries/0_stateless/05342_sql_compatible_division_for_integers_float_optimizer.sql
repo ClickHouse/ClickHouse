@@ -6,11 +6,11 @@ CREATE TABLE exact_division_float_optimizer (i Int64, f Float64, n Nullable(Floa
 INSERT INTO exact_division_float_optimizer VALUES (1, 1, 1, 1, 1), (1, 1, NULL, 1, 1), (5, 5, 5, 5, 5), (-4, -5, -5, -5, -4);
 
 -- Floating-point divisions keep the same aggregate rewrites with either setting value.
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 SELECT extract(explain, 'Aggregates: (.*)') FROM (EXPLAIN PLAN actions=1 SELECT sum(f / 3), avg(f / 3), min(f / -3), max(f / -3), sum(i / 3.0), sum(n / 3), sum(lc / 3) FROM exact_division_float_optimizer) WHERE position(explain, 'Aggregates:') > 0;
 SELECT sum(f / 3), avg(f / 3), min(f / -3), max(f / -3), sum(i / 3.0), sum(n / 3), sum(lc / 3) FROM exact_division_float_optimizer;
 
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SELECT extract(explain, 'Aggregates: (.*)') FROM (EXPLAIN PLAN actions=1 SELECT sum(f / 3), avg(f / 3), min(f / -3), max(f / -3), sum(i / 3.0), sum(n / 3), sum(lc / 3) FROM exact_division_float_optimizer) WHERE position(explain, 'Aggregates:') > 0;
 SELECT sum(f / 3), avg(f / 3), min(f / -3), max(f / -3), sum(i / 3.0), sum(n / 3), sum(lc / 3) FROM exact_division_float_optimizer;
 
