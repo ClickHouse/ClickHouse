@@ -987,6 +987,8 @@ Because entries are keyed by table UUID, the cache is only active for tables in 
 The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
+
+The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a whole column of one row group, keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A column of a row group is written to the cache only when all rows of the row group are read, before any filter is applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
@@ -4998,7 +5000,7 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
-    DECLARE(Bool, exact_division_for_integers, false, R"(
+    DECLARE(Bool, sql_compatible_division_for_integers, false, R"(
 Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
 The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
 Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
@@ -5009,6 +5011,7 @@ or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
 The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
 Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
 )", 0, \
+        {"26.11", false, false, "Use the SQL-compatible name for the integer division setting."}, \
         {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
@@ -10946,6 +10949,10 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
+    DECLARE(String, distributed_plan_worker_cluster, "", R"(
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+)", PRIVATE_PREVIEW, \
+        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", PRIVATE_PREVIEW, \
