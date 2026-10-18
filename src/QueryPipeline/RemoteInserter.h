@@ -66,6 +66,11 @@ private:
 
     Block header;
     bool finished = false;
+
+    /// What has been sent by `write` and not yet subtracted from the `InsertedRows` / `InsertedBytes`
+    /// reported by the remote server; see `processProfileEventsPacket`.
+    UInt64 sent_rows = 0;
+    UInt64 sent_bytes = 0;
     UInt64 server_revision;
 };
 

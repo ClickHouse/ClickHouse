@@ -9,9 +9,16 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event InsertedRows;
+    extern const Event InsertedBytes;
+}
 
 namespace DB
 {
@@ -134,6 +141,9 @@ void RemoteInserter::initialize()
 
 void RemoteInserter::write(Block block)
 {
+    sent_rows += block.rows();
+    sent_bytes += block.bytes();
+
     try
     {
         connection.sendData(block, /* name */"", /* scalar */false);
@@ -195,6 +205,14 @@ void RemoteInserter::onFinish()
 
 void RemoteInserter::processProfileEventsPacket(Block block)
 {
+    /// The rows and bytes sent to the remote server are counted locally (see `CountingTransform`) before they
+    /// are sent, and the remote server counts them again when it writes them. Only what it writes beyond them,
+    /// e.g. into the target tables of materialized views, is new. The reports of the servers further down
+    /// are forwarded verbatim in the same packets, but they are deduplicated by the same rule at their own hop,
+    /// so subtracting what this side has sent from the sum of the packet keeps the total exact.
+    ProfileEvents::subtractIncrements(block, ProfileEvents::InsertedRows, sent_rows);
+    ProfileEvents::subtractIncrements(block, ProfileEvents::InsertedBytes, sent_bytes);
+
     if (process_list_element)
         process_list_element->addRemoteProfileEvents(block, /* from_insert = */ true);
 

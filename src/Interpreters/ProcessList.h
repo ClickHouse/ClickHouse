@@ -274,8 +274,8 @@ public:
 
     /// Adds the increments of a `ProfileEvents` packet received from a remote server executing a part
     /// of this query. Gauges and events unknown to this server are skipped. `from_insert` is set for the
-    /// packets of the remote side of a distributed `INSERT`, whose inserted rows and bytes are already
-    /// counted by this server, which sends them.
+    /// packets of the remote side of a distributed `INSERT`, which does not report its read progress, so
+    /// what it reads is taken from its `SelectedRows` / `SelectedBytes`.
     void addRemoteProfileEvents(const Block & block, bool from_insert = false);
 
     /// Returns the sum of the profile events reported by the remote servers, if any were reported.

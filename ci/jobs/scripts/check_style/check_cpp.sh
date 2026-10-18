@@ -97,6 +97,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
+    ProfileEvents::subtractIncrements
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events
