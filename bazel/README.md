@@ -183,13 +183,16 @@ its link comparison does not equate mandatory objects with whole archives.
 The supplemental audit covers these cases without changing the upstream
 scripts or suppressing correctness flags. A passing result is separate
 from stock-diff convergence and from successful compilation or execution.
-For example, after extracting the C/C++ model and a separate NASM aquery:
+For example, after extracting the C/C++ model and capturing the native,
+archive-MRI and NASM aqueries:
 
 ```sh
 python3 bazel/audit_native_actions.py \
   --any2bazel /path/to/any2bazel \
   --cmake-model build_bazel_reference_x86_64/model.cmake.json \
   --bazel-model /path/to/model.bazel.x86_64.json \
+  --native-aquery /path/to/native.aquery.json \
+  --mri-aquery /path/to/mri.aquery.json \
   --assembly-aquery /path/to/graph-nasm-x86_64.aquery.json \
   --output /path/to/native-actions-x86_64.json
 ```

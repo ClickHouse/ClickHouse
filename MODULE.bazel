@@ -12,6 +12,32 @@ bazel_dep(name = "rules_rs", version = "0.1.0")
 
 include("//bazel:contrib.MODULE.bazel")
 
+# Same CMake release used by bazel/run_cmake_reference.sh.
+# SHA-256 values are from Kitware's cmake-3.28.3-SHA-256.txt.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "clickhouse_cmake_linux_x86_64",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz"],
+    sha256 = "804d231460ab3c8b556a42d2660af4ac7a0e21c98a7f8ee3318a74b4a9a187a6",
+    strip_prefix = "cmake-3.28.3-linux-x86_64",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/cmake"])
+filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
+""",
+)
+http_archive(
+    name = "clickhouse_cmake_linux_aarch64",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-aarch64.tar.gz"],
+    sha256 = "bbf023139f944cefe731d944f2864d8ea3ea0c4f9310b46ac72b3cb4e314b023",
+    strip_prefix = "cmake-3.28.3-linux-aarch64",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/cmake"])
+filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
+""",
+)
+
 # ClickHouse enables the fast decoder on Linux ARM64 as well as x86-64.
 single_version_override(
     module_name = "lz4",

@@ -23,4 +23,17 @@ build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$
 build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
 build:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
 
+# Use LLVM's Linux x86-64 execution platform for C++, Rust, and code generators.
+common:remote --extra_execution_platforms=//bazel:buildbuddy_linux_x86_64
+common:remote --remote_executor=grpcs://remote.buildbuddy.io
+common:remote --remote_cache=grpcs://remote.buildbuddy.io
+common:remote --bes_backend=grpcs://remote.buildbuddy.io
+common:remote --bes_results_url=https://app.buildbuddy.io/invocation/
+common:remote --remote_cache_compression
+common:remote --remote_download_outputs=toplevel
+common:remote --jobs=500
+common:remote --remote_timeout=3600
+common:remote --noremote_local_fallback
+common:remote --shell_executable=/bin/bash
+
 try-import %workspace%/.bazelrc.local

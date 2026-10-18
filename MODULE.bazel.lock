@@ -260,7 +260,7 @@
         "usagesDigest": "ZiiiA+jUM21FZ+9ZU37dYQvYEez1j9mdVL6JByjoVsk=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
-          "FILE:@@//bazel/contrib_repositories.json cc072a51d83f6d692179f2d1e7b01e3cc6c3ec6c2673f486b7a950a966072a57",
+          "FILE:@@//bazel/contrib_repositories.json e45712f56c98f754dbed914643acb50e7f241c91a02c1aa6c6f8fddb82432025",
           "REPO_MAPPING:,clickhouse_chdig +contrib+clickhouse_chdig",
           "REPO_MAPPING:,clickhouse_delta_kernel_rs +contrib+clickhouse_delta_kernel_rs",
           "REPO_MAPPING:,clickhouse_pcodec +contrib+clickhouse_pcodec",

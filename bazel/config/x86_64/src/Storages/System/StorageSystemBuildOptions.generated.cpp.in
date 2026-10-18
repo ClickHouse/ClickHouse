@@ -74,7 +74,7 @@ const char * auto_config_build[]
     "WITH_COVERAGE", "OFF",
     "WITH_COVERAGE_DEPTH", "OFF",
     "CLICKHOUSE_CLOUD", "0",
-    "GIT_HASH", "8b819009ee01311c3ec6767472a85b82a5f35b7c",
+    "GIT_HASH", "f61e9b32a64778e7949ae174be73b7950a52527f",
     "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(codex/bazel-port)IRjaNsZIL9Yh7FQ4",
     "GIT_DATE", "2026-10-17 18:09:48 +0000",
     "GIT_COMMIT_SUBJECT", R"Gi17KJMlbGCjErEN(Build ClickHouse with Bazel)Gi17KJMlbGCjErEN",

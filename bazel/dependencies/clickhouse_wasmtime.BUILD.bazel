@@ -182,3 +182,8 @@ expand_template(
         "\n": "\r\n",
     },
 )
+
+filegroup(
+    name = "cmake_cargo_sources",
+    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel", "target/**"]),
+)

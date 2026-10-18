@@ -1,10 +1,21 @@
 load(":codegen_rules.bzl", "CODEGEN_RULES")
 load(":build_options.bzl", "build_options")
 load(":build_options_data.bzl", "BUILD_OPTIONS")
+load(":cmake_toolchain.bzl", "cmake_toolchain")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 
 package(default_visibility = ["//visibility:public"])
+
+platform(
+    name = "buildbuddy_linux_x86_64",
+    parents = ["@llvm//:rbe_linux_x86_64"],
+    # BuildBuddy prewarms this image. Ubuntu 20.04 satisfies LLVM's gnu.2.28
+    # constraint, without requiring each executor to pull Ubuntu from Docker Hub.
+    exec_properties = {
+        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
+    },
+)
 
 exports_files(glob(["*.bzl", "*.MODULE.bazel", "config/**"]) + ["license_manifest.json", "contrib_repositories.json"])
 
@@ -16,6 +27,20 @@ bool_flag(
 config_setting(
     name = "use_cmake_metadata",
     flag_values = {":cmake_metadata": "true"},
+)
+
+[
+    config_setting(
+        name = "use_cmake_metadata_" + arch,
+        flag_values = {":cmake_metadata": "true"},
+        constraint_values = ["@platforms//cpu:" + arch],
+    )
+    for arch in ["x86_64", "aarch64"]
+]
+
+cmake_toolchain(
+    name = "cmake_toolchain_files",
+    features = ["-static_link_cpp_runtimes", "-fortify_source"],
 )
 
 [
@@ -51,6 +76,7 @@ config_setting(
         "generate_licenses",
         "embed_resources",
         "process_rust_archive",
+        "cmake_cargo",
         "generate_delta_headers",
         "generate_timezones",
     ]
@@ -62,7 +88,24 @@ config_setting(
         srcs = attrs["srcs"],
         outs = attrs["outs"],
         tools = attrs["tools"],
-        cmd = attrs["cmd"],
+        cmd = attrs["cmd"] + (
+            select({
+                ":use_cmake_metadata_x86_64": " --cmake-metadata $(execpath //bazel:config/x86_64/license_substitutions.json)",
+                "//conditions:default": "",
+            }) if name == "generate_x86_64_licenses" else ""
+        ) + (
+            select({
+                # Git checkout mtime in the CMake reference's 162 gzip headers.
+                ":use_cmake_metadata_x86_64": " --cmake-gzip-mtime=1792282266",
+                "//conditions:default": "",
+            }) if "gen/x86_64/contrib/clickstack-cmake/ClickStackResources.generated.h" in attrs["outs"] else ""
+        ) + (
+            select({
+                # Git checkout mtime in the CMake reference's 22 gzip headers.
+                ":use_cmake_metadata_x86_64": " --cmake-gzip-mtime=1792282470",
+                "//conditions:default": "",
+            }) if "gen/x86_64/contrib/sql-console-cmake/SQLConsoleResources.generated.h" in attrs["outs"] else ""
+        ),
     )
     for name, attrs in CODEGEN_RULES.items()
 ]

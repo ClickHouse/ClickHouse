@@ -20,6 +20,10 @@ def declare_inputs():
         ],
     )
     native.filegroup(
+        name = "cmake_cargo_config",
+        srcs = ["contrib/corrosion-cmake/config.toml.in"],
+    )
+    native.filegroup(
         name = "openssl_configured_headers",
         srcs = native.glob(["contrib/openssl-cmake/common/include/**"]),
     )

@@ -6,9 +6,11 @@ import gzip
 import json
 from pathlib import Path
 import re
+import struct
+import subprocess
 
 
-def generate(source, output, namespace, compressed):
+def generate(source, output, namespace, compressed, cmake_gzip_mtime=None):
     if namespace == 'SQLConsole':
         index = source / 'index.html'
         if index.exists() and b'/ui/' not in index.read_bytes()[:65536]:
@@ -38,10 +40,22 @@ def generate(source, output, namespace, compressed):
         name = path.relative_to(source).as_posix()
         packed = output.parent / compressed / (name + '.gz')
         packed.parent.mkdir(parents=True, exist_ok=True)
-        # Match gzip's default compression level, excluding filesystem metadata.
-        with packed.open('wb') as raw:
-            with gzip.GzipFile(filename='', mode='wb', fileobj=raw, compresslevel=6, mtime=0) as archive:
-                archive.write(path.read_bytes())
+        if cmake_gzip_mtime is None:
+            with packed.open('wb') as raw:
+                with gzip.GzipFile(filename='', mode='wb', fileobj=raw, compresslevel=6, mtime=0) as archive:
+                    archive.write(path.read_bytes())
+        else:
+            # The CMake scripts use GNU gzip -c on the Git checkout. gzip stores
+            # the checkout mtime and basename in its header. Bazel remote inputs
+            # have normalized mtimes, so record the CMake mtimes as build metadata.
+            with path.open('rb') as raw:
+                archive = subprocess.run(
+                    ['gzip', '-n', '-c'], stdin=raw, stdout=subprocess.PIPE, check=True
+                ).stdout
+            if archive[:10] != b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03':
+                raise ValueError('CMake resources require GNU gzip at default compression on Linux')
+            header = struct.pack('<4sIBB', b'\x1f\x8b\x08\x08', cmake_gzip_mtime, 0, 3)
+            packed.write_bytes(header + path.name.encode('utf-8') + b'\0' + archive[10:])
         variable = re.sub('_+', '_', re.sub('[^a-zA-Z0-9_]', '_', 'resource_' + name + '.gz'))
         if variable in variables:
             raise ValueError('Resource C++ identifier collision: ' + variable)
@@ -63,5 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--namespace', choices=['SQLConsole', 'ClickStack'], required=True)
     parser.add_argument('--compressed', required=True)
+    parser.add_argument('--cmake-gzip-mtime', type=int,
+                        help='Git checkout mtime recorded from the CMake reference; use GNU gzip.')
     args = parser.parse_args()
-    generate(args.source, args.output, args.namespace, args.compressed)
+    generate(args.source, args.output, args.namespace, args.compressed, args.cmake_gzip_mtime)

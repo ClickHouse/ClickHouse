@@ -7,6 +7,14 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["Cargo.toml", "Cargo.lock"] + glob(["*/include/*.h", "*/Cargo.toml"]))
 exports_files(["skim/src/lib.rs", "skim/src/check_abi.cpp"])
 
+filegroup(
+    name = "cmake_cargo_sources",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD", "BUILD.bazel", "**/BUILD", "**/BUILD.bazel", "target/**"],
+    ),
+)
+
 [
     rust_static_library(
         name = name,

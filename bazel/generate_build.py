@@ -18,7 +18,7 @@ from configuration import read_configurations
 import llvm_targets
 from build_file import BuildFile, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
 from repository_inputs import (
-    REPOSITORIES, comparison_root, configuration_owner, execution_path, header_group, repository,
+    REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, header_group, repository,
     source_label, source_path, write_overlays,
 )
 
@@ -52,6 +52,25 @@ def load_targets(build):
         target['name']: json.loads((reply / target['jsonFile']).read_text())
         for target in model['configurations'][0]['targets']
     }
+
+
+def cmake_build_options(text):
+    """Preserve CMake feature/version data and extract compiler metadata."""
+    substitutions = {
+        '@BAZEL_COMPILER_VERSION_DEFINES@': '',
+        '@BAZEL_BUILD_SYSTEM_ENTRY@': '',
+    }
+    for key in ['C_COMPILER', 'CXX_COMPILER', 'C_FLAGS', 'CXX_FLAGS', 'LINK_FLAGS',
+                'CMAKE_VERSION', 'C_COMPILER_VERSION', 'CXX_COMPILER_VERSION']:
+        pattern = r'(^    "' + key + r'", )(.*),$'
+        matches = list(re.finditer(pattern, text, re.MULTILINE))
+        if len(matches) != 1:
+            raise ValueError(f'Expected one CMake build metadata value for {key}, found {len(matches)}')
+        marker = '@BAZEL_' + key + '@'
+        substitutions[marker] = matches[0][2]
+        text = re.sub(pattern, lambda match: match[1] + marker + ',', text, flags=re.MULTILINE)
+    text = text.replace('    "CMAKE_VERSION",', '@BAZEL_BUILD_SYSTEM_ENTRY@    "CMAKE_VERSION",')
+    return '@BAZEL_COMPILER_VERSION_DEFINES@' + text, substitutions
 
 
 class Graph:
@@ -107,19 +126,8 @@ class Graph:
         for key in ['C_FLAGS', 'CXX_FLAGS']:
             value = re.search(r'^    "' + key + r'", (".*"),$', text, re.MULTILINE)
             self.build_options[key.lower()] = self.flags([{'fragment': json.loads(value[1])}])
-        self.build_options['cmake_substitutions'] = {
-            '@BAZEL_COMPILER_VERSION_DEFINES@': '',
-            '@BAZEL_BUILD_SYSTEM_ENTRY@': '',
-        }
-        for key in ['C_COMPILER', 'CXX_COMPILER', 'C_FLAGS', 'CXX_FLAGS', 'LINK_FLAGS',
-                    'CMAKE_VERSION', 'C_COMPILER_VERSION', 'CXX_COMPILER_VERSION']:
-            value = re.search(r'^    "' + key + r'", (.*),$', text, re.MULTILINE)
-            if not value:
-                raise ValueError('Missing CMake build metadata: ' + key)
-            self.build_options['cmake_substitutions']['@BAZEL_' + key + '@'] = value[1]
-            text = re.sub(r'(^    "' + key + r'", ).*,$', r'\1@BAZEL_' + key + '@,', text, flags=re.MULTILINE)
-        text = text.replace('    "CMAKE_VERSION",', '@BAZEL_BUILD_SYSTEM_ENTRY@    "CMAKE_VERSION",')
-        return '@BAZEL_COMPILER_VERSION_DEFINES@' + text
+        template, self.build_options['cmake_substitutions'] = cmake_build_options(text)
+        return template
 
     def snapshot_configuration(self):
         self.configuration_rules = read_configurations(ROOT, self.build)
@@ -135,7 +143,8 @@ class Graph:
                 if rel.as_posix() in self.custom_outputs:
                     dest.unlink(missing_ok=True)
                     continue
-                if rel.is_relative_to(llvm_targets.PREFIX):
+                if (rel.is_relative_to(llvm_targets.PREFIX)
+                        and not rel.is_relative_to(llvm_targets.PREFIX + '/llvm')):
                     continue
                 for installed, source in COPIED_INCLUDE_DIRS.items():
                     if rel.is_relative_to(installed):
@@ -194,9 +203,11 @@ class Graph:
 
     def headers(self, directory, visited=None):
         directory = os.path.normpath(directory)
-        if any(directory.startswith(str(base / llvm_targets.PREFIX) + '/')
-               for base in [ROOT, self.build]):
-            return []  # Public module targets own these headers and generators.
+        for base in (ROOT, self.build):
+            prefix = str(base / llvm_targets.PREFIX) + '/'
+            if (directory.startswith(prefix)
+                    and not directory.startswith((prefix + 'llvm/', prefix + 'third-party/siphash/'))):
+                return []  # The registered toolchain owns runtime headers.
         if directory.startswith(str(self.build)):
             rel = os.path.relpath(directory, self.build)
             prefix = '' if rel == '.' else rel + '/'
@@ -261,6 +272,10 @@ class Graph:
                             flag = '$(GENDIR)/bazel/gen/' + self.arch + '/' + relative
                     flag = flag.replace(str(ROOT) + '/', '')
                 result.append(flag)
+                if flag == '-Weverything':
+                    # cc_library emits both source and generated include dirs.
+                    # RBE creates a generated dir only if it has action inputs.
+                    result.append('-Wno-missing-include-dirs')
         return result
 
     def rust_cxx_configuration(self):
@@ -350,7 +365,7 @@ class Graph:
             if spec['kind'] == 'write':
                 build.rule('write_file', name, {'out': output, 'content': [spec['content']]})
                 continue
-            source = build.label(source_label(spec['source'].relative_to(ROOT).as_posix()))
+            source = build.label(source_label(spec['source'].resolve().relative_to(ROOT).as_posix()))
             if spec['kind'] == 'copy':
                 build.rule('copy_file', name, {'src': source, 'out': output})
             else:
@@ -369,11 +384,17 @@ class Graph:
             result = {'groups': [], 'deps': [], 'linkopts': [], 'kind': target['type'], 'alwayslink': False}
             if target['type'] == 'EXECUTABLE':
                 return result | {'alias': module_target}
-            # Consume the module's CcInfo libraries, retaining ClickHouse's
-            # dependency edges. Its .static packaging targets expose files only.
             dependencies = [self.id_names[d['id']] for d in target.get('dependencies', [])]
-            result['deps'] = [module_target] + [':' + d for d in sorted(dependencies)
-                                               if d in self.compiled and self.targets[d]['type'] != 'EXECUTABLE']
+            result['deps'] = [':' + d for d in sorted(dependencies)
+                              if d in self.compiled and self.targets[d]['type'] != 'EXECUTABLE']
+            if name in llvm_targets.RUNTIME_ARCHIVES:
+                result['static_library'] = llvm_targets.RUNTIME_ARCHIVES[name]
+                result['alwayslink'] = name in {'clang_rt_builtins', 'clang_rt_xray'}
+                # cc_static_library reports linkopts separately from its archive.
+                if name == 'unwind':
+                    result['linkopts'] = ['--unwindlib=none']
+            else:
+                result['deps'].insert(0, module_target)
             if name == '_fuzzer':
                 result['deps'].append('@llvm-project//compiler-rt:fuzzer')
             return result
@@ -413,6 +434,7 @@ class Graph:
             generated_paths.update(s.removeprefix('bazel/gen/' + self.arch + '/')
                                    for s in sources if s.startswith('bazel/gen/'))
             external_deps = set()
+            native_cxx_includes = []
             if name == '_vectorscan' and self.arch == 'aarch64':
                 # Preserve the reference sysroot's ARM feature constants for
                 # Vectorscan's runtime dispatch without replacing libc headers.
@@ -432,10 +454,15 @@ class Graph:
                 path = os.path.normpath(inc['path'])
                 relative = path.removeprefix(str(self.build) + '/').removeprefix(str(ROOT) + '/')
                 if relative in llvm_targets.TOOLCHAIN_INCLUDE_DIRECTORIES:
+                    if cg['language'] in {'C', 'ASM', 'ASM_NASM'}:
+                        native_cxx_includes.append([
+                            flag, 'generated' if path.startswith(str(self.build) + '/') else 'source',
+                            relative.removeprefix(llvm_targets.PREFIX + '/'),
+                        ])
                     continue
-                module_dependency = llvm_targets.include_dependency(relative)
-                if module_dependency:
-                    external_deps.add(module_dependency)
+                module_dependencies = llvm_targets.include_dependencies(relative)
+                if module_dependencies is not None:
+                    external_deps.update(module_dependencies)
                     continue
                 if path == str(self.build / 'contrib/librdkafka-cmake/auxdir'):
                     path = str(self.build / 'contrib/librdkafka-cmake')
@@ -469,12 +496,14 @@ class Graph:
             groups.append({
                 'srcs': [source_label(s) for s in sources],
                 'copts': flags,
+                'cmake_source_prefix_map': cmake_has_source_prefix_map(cg.get('compileCommandFragments', []), ROOT),
                 # cc_library tokenizes defines with Bourne-shell rules. Preserve
                 # literal quotes (e.g. Cyrus SASL's CONFIGDIR="") through that step.
                 'local_defines': [shlex.quote(d['define'].replace(str(ROOT) + '/', '')) for d in cg.get('defines', [])],
                 'hdrs': sorted(hdrs),
                 'textual_hdrs': textual_hdrs,
                 'additional_compiler_inputs': sorted(set(additional_inputs)),
+                'native_cxx_includes': native_cxx_includes,
                 'deps': sorted(external_deps),
                 'language': cg['language'],
             })
@@ -526,9 +555,16 @@ class Graph:
         self.snapshot_configuration()
         self.codegen.generate()
         license_manifest = json.loads((ROOT / 'bazel/license_manifest.json').read_text())
-        license_sources = sorted({row[2].lstrip('/') for row in license_manifest})
+        license_sources = {row[2].lstrip('/') for row in license_manifest}
+        license_metadata = self.config / 'license_substitutions.json'
+        license_inputs = ['//bazel:license_manifest.json']
+        if license_metadata.is_file():
+            substitutions = json.loads(license_metadata.read_text())
+            license_sources.update(row[1].lstrip('/') for row in substitutions.values() if row is not None)
+            license_inputs.append('//bazel:config/' + self.arch + '/license_substitutions.json')
+        license_sources = sorted(license_sources)
         self.codegen.rules['generate_' + self.arch + '_licenses'] = dict(
-            srcs=['//bazel:license_manifest.json'] + [source_label(path) for path in license_sources],
+            srcs=license_inputs + [source_label(path) for path in license_sources],
             outs=['gen/' + self.arch + '/' + LICENSES_OUTPUT],
             tools=['//bazel:generate_licenses'],
             cmd='$(execpath //bazel:generate_licenses) $(execpath //bazel:license_manifest.json) $@ '
@@ -580,7 +616,7 @@ class Graph:
                         self.parity_sources[bazel_path] = identity
         # Module-owned libraries no longer pass through translated compile
         # groups, but their actual source files remain in the parity audit.
-        module_root = comparison_root(llvm_targets.PREFIX)
+        module_root = llvm_targets.TOOLCHAIN_ROOT
         for name in self.compiled:
             if not llvm_targets.target(name):
                 continue
@@ -755,7 +791,7 @@ def main():
     parity_path = ROOT / 'any2bazel.json'
     parity = json.loads(parity_path.read_text())
     parity['target_map'] = {
-        name: (llvm_targets.target(name).replace('@llvm-project', '@@' + comparison_root(llvm_targets.PREFIX).removeprefix('external/'))
+        name: (llvm_targets.target(name).replace('@llvm-project', '@@' + llvm_targets.TOOLCHAIN_ROOT.removeprefix('external/'))
                if llvm_targets.target(name) else
                ('@@' + comparison_root(owner).removeprefix('external/') + '//:' if owner else ':') + name)
         for name, owner in sorted(owners.items())
@@ -772,7 +808,7 @@ def main():
         for arch, graph in graphs.items()
         for prefix in sorted({configuration_owner(path) for path in graph.configured if path.startswith('contrib/')})
     ]
-    generated_includes += llvm_targets.include_mappings(comparison_root(llvm_targets.PREFIX))
+    generated_includes += llvm_targets.include_mappings(llvm_targets.TOOLCHAIN_ROOT)
     for arch in ARCHES:
         generated_includes += [
             {'from': 'build_bazel_reference_' + arch + '/contrib/libcotp/include',
@@ -796,4 +832,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == '--llvm-references':
+        if len(sys.argv) != 5:
+            raise SystemExit('Usage: generate_build.py --llvm-references X86_64_REFERENCE AARCH64_REFERENCE LLVM_INVENTORY')
+        llvm_targets.generate_from_references(ROOT, dict(zip(ARCHES, sys.argv[2:4])), sys.argv[4])
+    else:
+        main()

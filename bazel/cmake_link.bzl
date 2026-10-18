@@ -1,0 +1,198 @@
+"""Link Bazel compilation outputs in the order recorded by CMake."""
+
+load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
+load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load(":cmake_link_data.bzl", "CMAKE_LINK")
+
+def _archive(library):
+    return library.pic_static_library or library.static_library
+
+def _own_library(target):
+    candidates = []
+    linking_inputs = target[CcInfo].linking_context.linker_inputs.to_list()
+    for linker_input in linking_inputs:
+        if linker_input.owner == target.label:
+            for library in linker_input.libraries:
+                if _archive(library):
+                    candidates.append(library)
+    if not candidates:
+        # An alias forwards the actual target's CcInfo and DefaultInfo. Accept
+        # only archives explicitly exported by DefaultInfo, never an arbitrary
+        # transitive library. Root cc_imports normally take the owner branch.
+        exported = {file: True for file in target[DefaultInfo].files.to_list()}
+        for linker_input in linking_inputs:
+            for library in linker_input.libraries:
+                if _archive(library) in exported:
+                    candidates.append(library)
+    if len(candidates) != 1:
+        fail("{}: expected exactly one owned archive, got {}".format(
+            target.label,
+            [_archive(library).path for library in candidates],
+        ))
+    return candidates[0]
+
+def _object(operand, libraries):
+    if operand[0] != "object":
+        fail("Expected object reference, got {}".format(operand))
+    library = libraries[operand[1]]
+    objects = library.pic_objects or library.objects
+    if objects == None or operand[2] >= len(objects):
+        fail("Missing Bazel object {} in {}".format(operand[2], _archive(library)))
+    return objects[operand[2]]
+
+def _cmake_link_impl(ctx):
+    plan = json.decode(ctx.attr.plan)
+    if len(ctx.attr.refs) != len(plan["expected_objects"]):
+        fail("cmake_link_data.bzl and refs do not describe the same link")
+    libraries = []
+    for i, target in enumerate(ctx.attr.refs):
+        library = _own_library(target)
+        expected = plan["expected_objects"][i]
+        if expected >= 0:
+            objects = library.pic_objects or library.objects
+            if objects == None or len(objects) != expected:
+                fail("{}: CMake requires {} objects; Bazel provides {}".format(
+                    target.label,
+                    expected,
+                    len(objects) if objects != None else "no objects",
+                ))
+        libraries.append(library)
+
+    toolchain = find_cc_toolchain(ctx)
+    features = cc_common.configure_features(
+        ctx = ctx,
+        cc_toolchain = toolchain,
+        requested_features = ctx.features,
+        unsupported_features = ctx.disabled_features,
+    )
+    clang = cc_common.get_tool_for_action(
+        feature_configuration = features,
+        action_name = ACTION_NAMES.cpp_link_executable,
+    )
+    ar = cc_common.get_tool_for_action(
+        feature_configuration = features,
+        action_name = ACTION_NAMES.cpp_link_static_library,
+    )
+    archives = []
+    for record in plan["archives"]:
+        if "objects" in record:
+            files = [_object(v, libraries) for v in record["objects"]]
+            output = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"])
+            args = ctx.actions.args()
+            args.use_param_file("@%s", use_always = True)
+            args.set_param_file_format("multiline")
+            args.add("rcsD")
+            args.add(output)
+            args.add_all(files)
+            ctx.actions.run(
+                executable = ar,
+                inputs = depset(files, transitive = [toolchain.all_files]),
+                arguments = [args],
+                outputs = [output],
+                mnemonic = "ClickHouseNativeArchive",
+                progress_message = "Archiving Bazel objects for " + record["name"],
+            )
+            archives.append(output)
+        else:
+            original = _archive(libraries[record["file"]])
+            if "append" in record and not ctx.attr.cargo_archives:
+                # The default rules_rs build compiles Skim's cxx sources
+                # separately. The native Cargo build already bundles them.
+                files = [_object(v, libraries) for v in record["append"]]
+                output = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"])
+                script = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"] + ".mri")
+                ctx.actions.write(
+                    script,
+                    "CREATE " + output.path + "\nADDLIB " + original.path + "\n" +
+                    "".join(["ADDMOD " + f.path + "\n" for f in files]) + "SAVE\nEND\n",
+                )
+                ctx.actions.run_shell(
+                    inputs = depset([script, original] + files, transitive = [toolchain.all_files]),
+                    arguments = [ar, script.path],
+                    outputs = [output],
+                    command = '"$1" -M < "$2"',
+                    mnemonic = "ClickHouseRustArchive",
+                    progress_message = "Bundling Bazel Rust and cxx objects for " + record["name"],
+                )
+                archives.append(output)
+            else:
+                archives.append(original)
+
+    output = ctx.actions.declare_file(ctx.label.name)
+    root = ctx.file._sysroot_marker.dirname
+
+    # Only relative Bazel artifact names are used for filesystem access.
+    gcc_root = root + "/linux-x86_64"
+    args = ctx.actions.args()
+    args.use_param_file("@%s", use_always = True)
+    args.set_param_file_format("multiline")
+    inputs = []
+    for operand in plan["sequence"]:
+        kind = operand[0]
+        if kind == "archive":
+            artifact = archives[operand[1]]
+            inputs.append(artifact)
+            args.add(artifact)
+        elif kind == "object":
+            artifact = _object(operand, libraries)
+            inputs.append(artifact)
+            args.add(artifact)
+        elif kind == "arg":
+            args.add(operand[1])
+        elif kind == "gcc":
+            args.add("--gcc-toolchain=" + gcc_root)
+        elif kind == "sysroot":
+            args.add("--sysroot=" + gcc_root + "/x86_64-linux-gnu/libc")
+        elif kind == "lld":
+            args.add("--ld-path=" + ctx.executable._lld.path)
+        else:
+            fail("Unknown CMake operand type: {}".format(operand))
+    args.add("-o")
+    args.add(output)
+    ctx.actions.run(
+        executable = clang,
+        inputs = depset(inputs + [ctx.file._sysroot_marker], transitive = [
+            toolchain.all_files,
+            ctx.attr._sysroot[DefaultInfo].files,
+        ]),
+        tools = [ctx.attr._lld[DefaultInfo].files_to_run],
+        outputs = [output],
+        arguments = [args],
+        mnemonic = "ClickHouseNativeLink",
+        progress_message = "Linking %{label} in CMake order from Bazel artifacts",
+    )
+    return [DefaultInfo(files = depset([output]), executable = output)]
+
+_cmake_link = rule(
+    implementation = _cmake_link_impl,
+    executable = True,
+    attrs = {
+        "cargo_archives": attr.bool(mandatory = True),
+        "plan": attr.string(mandatory = True),
+        "refs": attr.label_list(mandatory = True, providers = [CcInfo]),
+        "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_x86_64_link_files"),
+        "_sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
+        "_lld": attr.label(default = "@llvm//tools:ld.lld", executable = True, cfg = "exec"),
+    },
+    fragments = ["cpp"],
+    toolchains = use_cc_toolchain(),
+)
+
+def cmake_link(name, **kwargs):
+    """Link the Bazel-built ClickHouse objects with its captured CMake operands."""
+    _cmake_link(
+        name = name,
+        cargo_archives = select({
+            "//bazel:use_cmake_metadata": True,
+            "//conditions:default": False,
+        }),
+        refs = CMAKE_LINK["refs"],
+        plan = json.encode({
+            "expected_objects": CMAKE_LINK["expected_objects"],
+            "archives": CMAKE_LINK["archives"],
+            "sequence": CMAKE_LINK["sequence"],
+        }),
+        **kwargs
+    )

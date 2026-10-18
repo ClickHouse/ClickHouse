@@ -13,7 +13,7 @@ import tarfile
 import llvm_targets
 from repository_inputs import source_label, source_path
 
-TOOLS = {'protoc', 'grpc_cpp_plugin', 'flatc'}
+TOOLS = {'protoc', 'grpc_cpp_plugin', 'flatc', 'llvm-tblgen', 'llvm-min-tblgen'}
 GOOGLEAPIS_REVISION = 'e60db19f11f94175ac682c5898cce0f77cc508ea'
 GOOGLEAPIS_ARCHIVE = 'contrib/google-cloud-cpp-cmake/googleapis/' + GOOGLEAPIS_REVISION + '.tar.gz'
 GOOGLEAPIS_OUTPUT = 'external/googleapis/src/googleapis_download/'

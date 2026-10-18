@@ -2,6 +2,7 @@
 contrib = use_extension("//bazel:repositories.bzl", "contrib")
 use_repo(
     contrib,
+    "clickhouse_llvm_project",
     "clickhouse_abseil_cpp",
     "clickhouse_ai_sdk_cpp",
     "clickhouse_amqp_cpp",

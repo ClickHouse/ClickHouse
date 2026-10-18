@@ -2,6 +2,7 @@
 package(default_visibility = ["//visibility:public"])
 exports_files([
   "BUILD.bazel",
+  "contrib/natvis/LICENSE",
   "license.txt"
 ])
 filegroup(

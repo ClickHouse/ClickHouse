@@ -4,3 +4,15 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
+
+filegroup(
+    name = "cmake_cargo_sources",
+    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel", "target/**"]),
+)
+
+filegroup(
+    name = "cargo_manifest",
+    srcs = [
+        "Cargo.toml",
+    ],
+)

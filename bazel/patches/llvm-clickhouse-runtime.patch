@@ -253,16 +253,17 @@ diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_pa
 diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
 --- a/toolchain/features/BUILD.bazel
 +++ b/toolchain/features/BUILD.bazel
-@@ -5,6 +5,8 @@
+@@ -5,6 +5,9 @@
  load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
 
  package(default_visibility = ["//visibility:public"])
 +
 +cc_feature(name = "fortify_source", feature_name = "fortify_source")
++cc_feature(name = "llvm_system_c_headers", feature_name = "llvm_system_c_headers")
 
  _DEBUG_INFO_COMPILE_ACTIONS = [
      "@rules_cc//cc/toolchains/actions:c_compile",
-@@ -229,6 +231,7 @@
+@@ -229,6 +232,7 @@
 
  cc_args(
      name = "opt_fortify",
@@ -279,8 +280,8 @@ diff --git a/toolchain/cc_toolchain.bzl b/toolchain/cc_toolchain.bzl
          }),
 -        known_features = [name + "_selected_known_features"],
 -        enabled_features = [name + "_selected_enabled_features"],
-+        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source"],
-+        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source"],
++        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
++        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
          tool_map = tool_map,
          module_map = module_map,
          static_runtime_lib = name + "_static_runtime_lib",
@@ -623,3 +624,30 @@ diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/boot
 +        "@llvm-project//third-party:llvm_enable_zlib",
 +        "@llvm-project//third-party:llvm_enable_zstd",
      ] + SANITIZER_FLAGS,
+diff --git a/toolchain/args/BUILD.bazel b/toolchain/args/BUILD.bazel
+--- a/toolchain/args/BUILD.bazel
++++ b/toolchain/args/BUILD.bazel
+@@ -926,5 +926,6 @@
+ cc_args(
+     name = "hermetic_compile_flags",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "@rules_cc//cc/toolchains/actions:clif_match",
+         "@rules_cc//cc/toolchains/actions:cpp_compile",
+diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
+--- a/toolchain/args/linux/BUILD.bazel
++++ b/toolchain/args/linux/BUILD.bazel
+@@ -32,5 +32,6 @@
+ cc_args(
+     name = "kernel_headers_include_search_paths",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "//toolchain:source_compile_actions",
+     ],
+@@ -53,5 +54,6 @@
+ cc_args(
+     name = "glibc_headers_include_search_paths",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "//toolchain:source_compile_actions",
+     ],

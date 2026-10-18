@@ -7,7 +7,10 @@ def _nasm_objects_impl(ctx):
     outputs = []
     # NASM has one include-path class; CMake's isSystem bit only applies to
     # C/C++ compilers. Preserve every include directory for the assembler.
-    flags = ["-I" if flag == "-isystem" else flag for flag in ctx.attr.copts]
+    flags = [
+        "-I" if flag == "-isystem" else ctx.expand_make_variables("copts", flag, {})
+        for flag in ctx.attr.copts
+    ]
     flags += ["-D" + define for define in ctx.attr.local_defines]
     headers = cc_common.merge_compilation_contexts(
         compilation_contexts = [dep[CcInfo].compilation_context for dep in ctx.attr.deps],

@@ -46,6 +46,17 @@ def _contrib_impl(module_ctx):
         remove = [".bazelignore"] + [
             path for path in repository["remove_build_files"] if path != "BUILD.bazel"
         ]
+        if repository["name"] == "clickhouse_rust_vendor":
+            # Cargo checks every file listed in each vendored crate checksum.
+            # Keep original BUILD files without adding Bazel package boundaries.
+            # cmake_cargo.py restores these names in its declared-source checkout.
+            commands = ["rm -f -- .bazelignore"] + [
+                "mv -- " + _shell_quote(path) + " " + _shell_quote(path + ".clickhouse-cargo")
+                for path in repository["remove_build_files"]
+                if path != "BUILD.bazel"
+            ]
+        else:
+            commands = ["rm -f -- " + " ".join([_shell_quote(path) for path in remove])] if remove else []
         http_archive(
             name = repository["name"],
             urls = [repository["url"]],
@@ -57,7 +68,7 @@ def _contrib_impl(module_ctx):
             # Use the declared configuration include root in Bazel instead.
             patches = [Label("//bazel/patches:librdkafka-config-include.patch")] if repository["name"] == "clickhouse_librdkafka" else [],
             patch_args = ["-p1"],
-            patch_cmds = ["rm -f -- " + " ".join([_shell_quote(path) for path in remove])] if remove else [],
+            patch_cmds = commands,
         )
     _cargo_sources(
         name = "clickhouse_cargo_sources",

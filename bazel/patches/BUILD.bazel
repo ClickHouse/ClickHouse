@@ -1,5 +1,6 @@
 exports_files([
     "llvm-clickhouse-clang-tidy-multicall.patch",
+    "llvm-clickhouse-embed-dependency-paths.patch",
     "llvm-clickhouse-exception-abi.patch",
     "llvm-clickhouse-lld-coff-thinlto-lazy-index.patch",
     "llvm-clickhouse-llvm-driver-tool-order.patch",

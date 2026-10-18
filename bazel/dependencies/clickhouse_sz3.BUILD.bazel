@@ -2,7 +2,8 @@
 package(default_visibility = ["//visibility:public"])
 exports_files([
   "BUILD.bazel",
-  "copyright-and-BSD-license.txt"
+  "copyright-and-BSD-license.txt",
+  "tools/pysz/LICENSE"
 ])
 filegroup(
     name = "headers_efa90cc950a2b3c5",
