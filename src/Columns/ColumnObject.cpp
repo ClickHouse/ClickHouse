@@ -1703,9 +1703,16 @@ void ColumnObject::protect()
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
-    for (const auto & path : sorted_typed_paths)
-        callback(typed_paths.find(path)->second);
-    rebuildSortedTypedPathColumns();
+    /// The callback may replace a typed path column (e.g. `IColumn::mutate` clones a shared child).
+    /// Refresh its cached pointer right after each replacement, so the cache stays consistent with
+    /// `typed_paths` even if the callback throws for one of the subsequent paths.
+    chassert(sorted_typed_path_columns.size() == sorted_typed_paths.size());
+    for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
+    {
+        auto & column = typed_paths.find(sorted_typed_paths[i])->second;
+        callback(column);
+        sorted_typed_path_columns[i] = column.get();
+    }
     for (const auto & path : sorted_dynamic_paths)
     {
         auto it = dynamic_paths.find(path);
