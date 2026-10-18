@@ -229,34 +229,41 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     std::atomic_bool failed = false;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    for (size_t i = 0; i != backup_entries.size(); ++i)
-    {
-        if (failed)
-            break;
+    /// The runner keeps every task until the end, and a backup can have millions of entries, so a bounded number of
+    /// workers take the entries one by one from a shared index instead of a task per entry. One by one, because building
+    /// an info may read the whole file to calculate its checksum.
+    std::atomic<size_t> next_entry = 0;
+    const size_t num_workers = std::min<size_t>(backup_entries.size(), std::max<size_t>(thread_pool.getMaxThreads(), 1));
 
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
+    for (size_t worker = 0; worker != num_workers; ++worker)
+    {
         /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
         /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &next_entry, log, &failed, current_component = Coordination::getCurrentComponent()]()
         {
-            if (failed)
-                return;
-
             auto component_guard = Coordination::setCurrentComponent(current_component);
-            try
+            while (!failed)
             {
-                const auto & name = backup_entries[i].first;
-                const auto & entry = backup_entries[i].second;
+                const size_t i = next_entry.fetch_add(1);
+                if (i >= backup_entries.size())
+                    return;
 
-                if (process_list_element)
-                    process_list_element->checkTimeLimit();
+                try
+                {
+                    const auto & name = backup_entries[i].first;
+                    const auto & entry = backup_entries[i].second;
 
-                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-            }
-            catch (...)
-            {
-                failed = true;
-                throw;
+                    if (process_list_element)
+                        process_list_element->checkTimeLimit();
+
+                    infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                }
+                catch (...)
+                {
+                    failed = true;
+                    throw;
+                }
             }
         });
     }
