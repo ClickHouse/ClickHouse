@@ -9,6 +9,7 @@
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
@@ -44,6 +45,16 @@ UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & pa
     hash.update(column_name);
     hash.update(schema_identity);
     return hash.get128();
+}
+
+std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id)
+{
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id.uuid;
+    /// The database name of the storages created by table functions, see `ITableFunction::getDatabaseName`.
+    if (storage_id.database_name == "_table_function")
+        return UUIDHelpers::Nil;
+    return std::nullopt;
 }
 
 ColumnsCacheStripes::ColumnsCacheStripes(size_t avg_rows_per_mark)
@@ -671,7 +682,7 @@ std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
             /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
             /// by, so that the sum over `system.columns_cache` can be compared with
             /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
-            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
+            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.source, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
         }
     }
     return result;
