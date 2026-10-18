@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # when asked to, and must survive a query that walks away early.
 DATA_FILE=$CUR_DIR/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 
-# Enough rows for many splits - a split holds at most 100k - so several threads have work.
+# Enough rows for several splits, so several threads have work. Not more: writing the file
+# dominates the run time of the test in the sanitizer builds.
 $CLICKHOUSE_LOCAL -q "
     SELECT number AS n, toString(number) AS s, number % 100 AS k
-    FROM numbers(1000000)
+    FROM numbers(400000)
     FORMAT Vortex" > "$DATA_FILE"
 
 echo "Aggregates do not depend on the number of threads or on the order:"
@@ -49,10 +50,10 @@ $CLICKHOUSE_LOCAL -q "
 
 echo "Filter pushdown with several threads:"
 $CLICKHOUSE_LOCAL -q "
-    SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n >= 999990
+    SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n >= 399990
     SETTINGS max_parsing_threads = 8, input_format_vortex_filter_push_down = 1"
 $CLICKHOUSE_LOCAL -q "
-    SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n >= 999990
+    SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n >= 399990
     SETTINGS max_parsing_threads = 8, input_format_vortex_filter_push_down = 0"
 $CLICKHOUSE_LOCAL -q "
     SELECT count(), sum(n) FROM file('$DATA_FILE', 'Vortex') WHERE k = 7 AND s != '7'
