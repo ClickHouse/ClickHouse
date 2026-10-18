@@ -449,27 +449,39 @@ fi
 echo "Drop the row policies that cannot be applied to a table they cover"
 
 : > /tmp/drop_row_policies.sql
+: > /test_output/unchecked_row_policy_errors.txt
+row_policy_check_failed=0
 row_policy_drop_failed=0
 if timeout 1m clickhouse-client --query "
         SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
     while read -r row_policy_id
     do
-        # The planner applies row policies, so `EXPLAIN QUERY TREE` resolves this filter without the others.
-        if timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
-                SELECT format('EXPLAIN QUERY TREE SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3};', char(96),
+        # The planner applies row policies, so `EXPLAIN QUERY TREE` resolves this filter without the others. Unqualified
+        # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
+        if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+                SELECT format('USE {0}{1}{0}; EXPLAIN QUERY TREE SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3};', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
                     replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
                     p.select_filter)
                 FROM system.row_policies AS p
                 INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
                 WHERE p.id = {id:UUID}
-                FORMAT TSVRaw" > /tmp/row_policy_check.sql \
-            && timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null \
-                2>> /test_output/dropped_row_policies.txt
+                FORMAT TSVRaw" > /tmp/row_policy_check.sql 2>> /test_output/unchecked_row_policy_errors.txt
         then
+            row_policy_check_failed=1
             continue
         fi
+        timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
+            && continue
+        # Only the server refusing the filter shows that it cannot be applied, a timeout or a lost connection does not.
+        if ! grep -q '^Received exception from server' /tmp/row_policy_check_errors.txt
+        then
+            cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
+            row_policy_check_failed=1
+            continue
+        fi
+        cat /tmp/row_policy_check_errors.txt >> /test_output/dropped_row_policies.txt
         timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
             SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';' FROM system.row_policies WHERE id = {id:UUID}
             FORMAT TSVRaw" >> /tmp/drop_row_policies.sql || row_policy_drop_failed=1
@@ -484,12 +496,17 @@ then
     timeout 5m clickhouse-client --ignore-error --queries-file /tmp/drop_row_policies.sql \
         2> /test_output/undropped_row_policy_errors.txt || row_policy_drop_failed=1
 fi
+if [ "$row_policy_check_failed" != 0 ]
+then
+    echo -e "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
+fi
 if [ "$row_policy_drop_failed" != 0 ] || [ -s /test_output/undropped_row_policy_errors.txt ]
 then
     echo -e "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 
 [ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
+[ -s /test_output/unchecked_row_policy_errors.txt ] || rm -f /test_output/unchecked_row_policy_errors.txt
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
 
 # Use bigger timeout for previous version and disable additional hang check
