@@ -29,7 +29,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <DataTypes/Serializations/SerializationObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -47,9 +46,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -60,25 +57,15 @@ public:
     ElasticsearchSource(
         std::shared_ptr<ElasticsearchClient> client_,
         SharedHeader sample_block,
-        ContextPtr context,
-        const String & json_column_name,
-        bool fetch_source_)
+        const String & json_column_name)
         : ISource(sample_block)
-        , json_pos(sample_block->findPositionByName(json_column_name))
-        , id_pos(sample_block->findPositionByName("_id"))
-        , index_pos(sample_block->findPositionByName("_index"))
-        , fetch_source(fetch_source_)
-        , format_settings(getFormatSettings(context))
         , client(std::move(client_))
     {
-        if (!json_pos)
-            return;
-
-        const auto & json_column = sample_block->getByPosition(*json_pos);
-        json_serialization = json_column.type->getDefaultSerialization();
-        object_serialization = dynamic_cast<const SerializationObject *>(json_serialization.get());
-        if (!object_serialization)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of type {} has no object serialization", json_column.name, json_column.type->getName());
+        hit_columns.index_pos = sample_block->findPositionByName("_index");
+        hit_columns.id_pos = sample_block->findPositionByName("_id");
+        hit_columns.source_pos = sample_block->findPositionByName(json_column_name);
+        if (hit_columns.source_pos)
+            hit_columns.source_serialization = sample_block->getByPosition(*hit_columns.source_pos).type->getDefaultSerialization();
     }
 
     String getName() const override { return "Elasticsearch"; }
@@ -90,68 +77,26 @@ private:
         if (!has_data)
             return {};
 
-        auto response = client->searchIndex(fetch_source);
+        MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
 
-        const auto & header = getPort().getHeader();
-        MutableColumns columns = header.cloneEmptyColumns();
-        std::ostringstream source_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        auto response = client->searchIndex(hit_columns);
+        while (response->readHit(columns))
+        {
+        }
+        client->finishPage(*response);
 
-        size_t num_rows = response->size();
+        size_t num_rows = response->hitsRead();
+        if (num_rows < client->pageSize())
+            has_data = false;
 
         if (num_rows == 0)
             return {};
-
-        for (unsigned int i = 0; i < num_rows; ++i)
-        {
-            auto obj = response->getObject(i);
-            if (!obj)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} is not an object", i);
-
-            if (index_pos)
-            {
-                auto index_name = obj->optValue<String>("_index", "");
-                if (index_name.empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_index'", i);
-                columns[*index_pos]->insert(index_name);
-            }
-            if (id_pos)
-            {
-                auto document_id = obj->optValue<String>("_id", "");
-                if (document_id.empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_id'", i);
-                columns[*id_pos]->insert(document_id);
-            }
-
-            if (!json_pos)
-                continue;
-
-            auto source = obj->getObject("_source");
-            if (!source)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Hit #{} from index '{}' has no '_source', so the JSON column cannot be read. "
-                    "The index does not store the document source; read only the virtual columns '_id' and '_index', "
-                    "or enable '_source' in the index mapping",
-                    i, obj->optValue<String>("_index", ""));
-
-            source_stream.str({});
-            source->stringify(source_stream);
-            object_serialization->deserializeObject(*columns[*json_pos], source_stream.view(), format_settings);
-        }
-
-        if (num_rows < client->pageSize())
-            has_data = false;
 
         return Chunk(std::move(columns), num_rows);
     }
 
     bool has_data = true;
-    std::optional<size_t> json_pos;
-    std::optional<size_t> id_pos;
-    std::optional<size_t> index_pos;
-    bool fetch_source;
-    SerializationPtr json_serialization;
-    const SerializationObject * object_serialization = nullptr;
-    FormatSettings format_settings;
+    ElasticsearchHitColumns hit_columns;
     std::shared_ptr<ElasticsearchClient> client;
 };
 
@@ -195,16 +140,17 @@ Pipe StorageElasticsearch::read(
     Block sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
-    auto json_column_options = GetColumnsOptions(GetColumnsOptions::Ordinary).withSubcolumns();
-    bool fetch_source = std::ranges::any_of(column_names, [&](const auto & name)
-    {
-        return storage_snapshot->tryGetColumn(json_column_options, name).has_value();
-    });
 
     auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings.get());
     return Pipe(std::make_shared<ElasticsearchSource>(
         std::move(client),
-        std::make_shared<Block>(std::move(sample_block)), context, json_column_name, fetch_source));
+        std::make_shared<Block>(std::move(sample_block)), json_column_name));
+}
+
+std::optional<UInt64> StorageElasticsearch::totalRows(ContextPtr query_context) const
+{
+    ElasticsearchClient client(config, query_context, *storage_settings.get());
+    return client.countDocuments();
 }
 
 VirtualColumnsDescription StorageElasticsearch::createVirtuals()
@@ -278,7 +224,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
         "Elasticsearch",
         [](const StorageFactory::Arguments & args)
         {
-            if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::enable_elasticsearch])
+            if (!isLoadingFromExistingMetadata(args.mode) && !args.getLocalContext()->getSettingsRef()[Setting::enable_elasticsearch])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "The Elasticsearch table engine is experimental. Set `enable_elasticsearch` setting to enable it");
 
