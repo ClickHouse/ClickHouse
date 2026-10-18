@@ -1,0 +1,82 @@
+left
+0	0
+1	1
+2	0
+right
+0	0
+1	1
+0	2
+full
+0	0
+0	2
+1	1
+any left
+0	0
+1	1
+2	0
+join_use_nulls
+0	0
+1	1
+2	\N
+lambda
+0	0
+1	1
+2	0
+any left, matched rows
+0	0
+1	1
+2	1
+left, constant column
+0	1
+1	1
+2	0
+left, constant column and value
+0	1
+1	1
+left, Enum constant
+0	1
+1	1
+left, constant below GROUP BY
+0
+0
+joinGet
+1	1
+1
+joinGet in an OR of conjunctions
+1	1
+1
+or of conjunctions
+1
+transitive, WHERE above an enclosing join
+0	1	1
+1	1	1
+0
+transitive, enclosing ON
+0	1	1
+1	1	1
+0
+transitive, RIGHT JOIN projection
+0	0	1
+1	0	1
+transitive, nested LEFT JOIN side
+0	1	1
+1	1	1
+0
+transitive, constant below GROUP BY
+0	1	1
+1	1	1
+0
+transitive, read above a PASTE JOIN
+0	0
+0	1
+transitive, join_use_nulls
+0	0	0
+1	1	1
+transitive, non-constant column
+0	0	0
+1	1	1
+2
+transitive, joinGet
+0	1	1
+1	2	2
+2
