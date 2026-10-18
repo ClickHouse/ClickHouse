@@ -27,10 +27,12 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # Run the query as the restricted user; it must fail with the given error and must not detach the table.
+# Parallel replicas are disabled: with them, the `JOIN` against the `Join` table under a row policy is
+# not rejected, which is not what this check is about.
 function check_user_fails_without_detach()
 {
     local output status
-    output=$(${MY_CLICKHOUSE_CLIENT} --user "${USER_NAME}" --reattach_tables_before_query_execution=1 --query "$1" 2>&1)
+    output=$(${MY_CLICKHOUSE_CLIENT} --user "${USER_NAME}" --enable_parallel_replicas=0 --reattach_tables_before_query_execution=1 --query "$1" 2>&1)
     status=$?
     if [ "$status" -eq 0 ]; then
         echo "FAIL (query unexpectedly succeeded)"

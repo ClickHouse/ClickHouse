@@ -37,9 +37,11 @@ ${CLICKHOUSE_CLIENT} -q "
 
 # The user may read and reattach `t_reattach_fn_src`, but lacks the access the function checks on the
 # object it names: the query fails with `ACCESS_DENIED`, and `t_reattach_fn_src` must not be detached.
+# Parallel replicas are disabled: with them, the function may not be built under this user at all.
 function check_access_rejected()
 {
     REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+        --enable_parallel_replicas=0 \
         --reattach_tables_before_query_execution=1 \
         --query "$1" 2>&1)
     REATTACH_STATUS=$?
