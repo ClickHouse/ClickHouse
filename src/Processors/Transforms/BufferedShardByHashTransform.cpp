@@ -732,10 +732,11 @@ void BufferedShardByHashTransform::work()
             throwBufferBudgetExceeded();
     }
 
-    /// Push one queued chunk per shard (if the port can accept it). Under `budget->mutex`, so that a sibling
-    /// scatter reclaiming this scatter's port-resident charges never observes a chunk half-way between the queue
-    /// and the port - it would see an empty port for a chunk already recorded as parked and release a charge that
-    /// is about to become resident.
+    /// Push one queued chunk per shard (if the port can accept it). The queue and the port handles are touched
+    /// under `budget->mutex`, so that a sibling scatter reclaiming this scatter's port-resident charges never
+    /// observes a chunk half-way between the queue and the port - it would see an empty port for a chunk already
+    /// recorded as parked and drop the handle of a charge that is about to become resident. The push itself runs
+    /// without the mutex (see below).
     auto lock = lockBudget();
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -774,8 +775,18 @@ void BufferedShardByHashTransform::work()
             queue.front().chunk.getChunkInfos().add(std::move(info));
             QueuedChunk queued = dequeue(shard);
             charge->activate();
-            port_resident_charges[shard] = std::move(charge);
+
+            /// From here on the chunk owns an active charge, and destroying the chunk releases it under
+            /// `budget->mutex`. `OutputPort::push` can throw (growing the executor's update list can hit the
+            /// memory limit) and then destroys the unpublished chunk, so the mutex must not be held across it.
+            /// Without the lock a sibling cannot see the chunk at all: it is neither queued nor recorded as
+            /// parked, so nothing can release its charge except the chunk itself. The port handle is recorded
+            /// only once the push succeeded; if the downstream has already pulled and released the chunk in
+            /// between, the charge is inactive and releasing it through the handle is a no-op.
+            lock.unlock();
             output_it->push(std::move(queued.chunk));
+            lock.lock();
+            port_resident_charges[shard] = std::move(charge);
         }
         else
         {

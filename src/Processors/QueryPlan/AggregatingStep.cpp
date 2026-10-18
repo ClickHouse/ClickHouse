@@ -117,9 +117,21 @@ static bool aggregateStateMayOwnMemoryOutsideArenas(const IAggregateFunction & f
 }
 
 /// Whether some column of `header` (at any nesting level, e.g. `Array(AggregateFunction(...))`) carries
-/// aggregate states whose memory the shuffle buffer budget cannot measure.
+/// aggregate states whose memory the shuffle buffer budget cannot measure. `Dynamic` and `JSON` columns can
+/// hold aggregate states of any function in variants that appear only in the data chunks, not in the header,
+/// so they are treated as unaccountable too.
 static bool hasAggregateStatesWithMemoryOutsideArenas(const Block & header)
 {
+    for (const auto & column : header)
+    {
+        if (anyInTypeTree(*column.type, [](const IDataType & type)
+            {
+                WhichDataType which(type);
+                return which.isDynamic() || which.isObject();
+            }))
+            return true;
+    }
+
     bool result = false;
     auto check = [&](const IColumn & column)
     {
