@@ -171,6 +171,11 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
 
     /// Make a checkpoint before reading the first row.
     peekable_buf->setCheckpoint();
+
+    /// A BOM before the header is not a part of the first column name. It is skipped after the checkpoint,
+    /// so if the first row turns out to be data, the rollback below restores it.
+    skipBOMIfExists(*peekable_buf);
+
     auto first_row_values = format_reader->readRowForHeaderDetection();
 
     /// To understand if the first row is a header with column names, we check
@@ -508,6 +513,14 @@ namespace
                 return true;
         return false;
     }
+
+    /// A BOM before the header is not a part of the first column name.
+    std::vector<String> removeBOMFromFirstField(std::vector<String> fields)
+    {
+        if (!fields.empty() && fields[0].starts_with("\xEF\xBB\xBF"))
+            fields[0].erase(0, 3);
+        return fields;
+    }
 }
 
 void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
@@ -574,7 +587,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         if (haveNotStringAndNotNullType(data_types))
         {
             buffered_types = data_types;
-            column_names = readNamesFromFields(first_row_values);
+            column_names = readNamesFromFields(removeBOMFromFirstField(first_row_values));
             if (second_row_can_be_type_names)
                 type_names = readNamesFromFields(second_row_values);
             return;
