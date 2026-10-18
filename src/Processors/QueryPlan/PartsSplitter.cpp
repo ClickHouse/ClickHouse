@@ -1065,8 +1065,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         const size_t part_begin = candidate_ranges.front().begin;
         const size_t part_end = candidate_ranges.back().end;
 
-        /// Granules from `part_begin` on hold values >= value(part_begin), so an interval that ends below it
-        /// intersects none of them. The intervals are sorted and disjoint, so their upper bounds are sorted.
+        /// The intervals are sorted and disjoint, so their upper bounds are sorted.
         const Values part_begin_value = index_access.getValue(part_index, part_begin);
         const auto first_interval = std::ranges::partition_point(
             intervals, [&](const Interval & interval) { return compareValues(interval.upper, part_begin_value, false) < 0; });
