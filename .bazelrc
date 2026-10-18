@@ -2,6 +2,28 @@ common --check_direct_dependencies=error
 
 build --incompatible_strict_action_env
 build --compilation_mode=opt
+# Common CMake flags for ClickHouse's native libraries. Per-target copts
+# retain exceptions such as -ffp-contract=fast on the array functions.
+build --copt=--no-default-config
+build --copt=-pipe
+build --copt=-fasynchronous-unwind-tables
+build --copt=-fdebug-compilation-dir=.
+build --copt=-falign-functions=64
+build --copt=-falign-loops=32
+build --copt=-ffunction-sections
+build --copt=-fdata-sections
+build --copt=-faddrsig
+build --copt=-fstack-protector-strong
+build --copt=-fstack-clash-protection
+build --copt=-ffp-contract=off
+build --copt=-fno-math-errno
+build --conlyopt=-fPIE
+build --conlyopt=-fdiagnostics-absolute-paths
+build --conlyopt=-Werror
+build --cxxopt=-fPIE
+build --cxxopt=-fdiagnostics-absolute-paths
+build --cxxopt=-fstrict-vtable-pointers
+build --cxxopt=-Werror
 # Match cmake/cxx.cmake for libraries supplied by external Bazel modules too.
 build --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 build --verbose_failures
@@ -40,5 +62,11 @@ common:remote --shell_executable=/bin/bash
 common:cmake_match --config=remote
 build:cmake_match --config=x86_64
 build:cmake_match --//bazel:cmake_metadata
+
+# Compile and run the ARM64 comparison on native ARM64 workers.
+common:cmake_match_aarch64 --config=remote
+common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:buildbuddy_linux_aarch64_test
+build:cmake_match_aarch64 --config=aarch64
+build:cmake_match_aarch64 --//bazel:cmake_metadata
 
 try-import %workspace%/.bazelrc.local

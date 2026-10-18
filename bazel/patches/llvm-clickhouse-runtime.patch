@@ -651,3 +651,25 @@ diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
      actions = [
          "//toolchain:source_compile_actions",
      ],
+diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
+--- a/toolchain/runtimes/cc_stage0_object.bzl
++++ b/toolchain/runtimes/cc_stage0_object.bzl
+@@ -6,6 +6,9 @@
+ bootstrap_transition = transition(
+     implementation = lambda settings, attr: {
+         # we are compiling runtimes without any kind of other dependencies
++        # Compiler-rt startup objects must not inherit application C flags.
++        "//command_line_option:copt": [],
++        "//command_line_option:conlyopt": [],
+         "//toolchain:runtime_stage": "stage0",
+         # Stage0 objects must never be built with sanitizers enabled.
+         "//config:asan": False,
+@@ -36,6 +39,8 @@
+     },
+     inputs = [],
+     outputs = [
++        "//command_line_option:copt",
++        "//command_line_option:conlyopt",
+         "//toolchain:runtime_stage",
+         "//config:asan",
+         "//config:msan",

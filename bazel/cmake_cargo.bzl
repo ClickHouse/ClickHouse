@@ -75,6 +75,21 @@ def _cmake_cargo_impl(ctx):
             fail("cmake_cargo requires declared sources mounted at " + required)
     additional_inputs = []
     tools = []
+    if rust.target_flag_value == "aarch64-unknown-linux-gnu":
+        args.add("--native-linker", ctx.executable._native_linker)
+        tools.append(ctx.executable._native_linker)
+        # ClickHouse's pinned sysroot contains libgcc.a but no libgcc_s or
+        # libutil. Use the registered LLVM runtime's own libgcc_s convention
+        # and link its real libunwind archive.
+        unwind = [file for file in ctx.files._native_unwind if file.extension == "a"]
+        pic_unwind = [file for file in unwind if file.basename.endswith(".pic.a")]
+        unwind = pic_unwind or unwind
+        if len(unwind) != 1:
+            fail("Expected one LLVM libunwind archive, got " + str(unwind))
+        args.add("--native-unwind", unwind[0])
+        args.add("--native-gcc-s", ctx.file._native_gcc_s)
+        args.add("--native-glibc", ctx.file._native_glibc.path)
+        additional_inputs.extend([unwind[0], ctx.file._native_gcc_s, ctx.file._native_glibc])
     if ctx.attr.cargo_package == "_ch_rust_prql":
         args.add("--contrib-repositories", ctx.file._contrib_repositories)
         additional_inputs.append(ctx.file._contrib_repositories)
@@ -153,6 +168,10 @@ cmake_cargo = rule(
         # rust/workspace. Use the recorded CMake source root in an isolated RBE
         # action so the pinned Cargo recomputes those SourceIds itself.
         "native_source_root": attr.string(),
+        "_native_linker": attr.label(default = "@llvm//tools:ld.lld", executable = True, cfg = "exec"),
+        "_native_unwind": attr.label(default = "@llvm//runtimes/libunwind:libunwind.static", cfg = "exec"),
+        "_native_gcc_s": attr.label(default = "@llvm//runtimes/libunwind:gcc_s", allow_single_file = True, cfg = "exec"),
+        "_native_glibc": attr.label(default = "@llvm//runtimes/glibc:glibc_library_search_directory", allow_single_file = True, cfg = "exec"),
         "_native_headers": attr.label(default = "@clickhouse_llvm_project//:runtime_source_inputs"),
         "_driver": attr.label(default = "//bazel:cmake_cargo", executable = True, cfg = "exec"),
     },

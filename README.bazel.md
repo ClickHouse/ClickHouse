@@ -11,8 +11,9 @@ bazel build --config=x86_64 //...
 bazel test --config=x86_64 //:unit_tests_dbms
 ```
 
-The `aarch64` configuration supports cross-compilation. ARM64 execution is
-outside the current validation run.
+The `aarch64` configuration selects Linux ARM64. For native ARM64 compilers,
+generators, and Cargo build scripts on BuildBuddy, use
+`--config=cmake_match_aarch64`.
 
 ## BuildBuddy remote execution
 
@@ -60,6 +61,8 @@ Dependency ownership, generation, and action-audit details are in
 [`bazel/README.md`](bazel/README.md).
 
 ## Binary comparison
+
+### Linux x86-64
 
 On a Linux x86-64 host with BuildBuddy remote execution configured, build the
 CMake reference with the compiler selected by this repository:
@@ -121,8 +124,9 @@ completed 4,296 remote executions. The original CMake ELF and both selected
 compilers were rehashed and verified against the recorded reference before
 stripping. Results (SHA-256):
 
-| Executable | CMake | Bazel |
+| SHA-256 | CMake | Bazel |
 | --- | --- | --- |
+| Selected Clang and Clang++ | `52a7d0fdc59f6a0cd416844e55a70f67e689eeb1df0d98cc8c018444eb6262ce` | `52a7d0fdc59f6a0cd416844e55a70f67e689eeb1df0d98cc8c018444eb6262ce` |
 | Original | `cfbf99ef585fc2dbcf9f9ca413e13230ba2c9ab7dc8518df8bdeab06aa087cbc` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` |
 | `llvm-strip --strip-all` | `6cd5519a79a8bc67fd3e1277af216b2dc327b045ad36abcf7535c50af89ff6fe` | `2ca4dbdd6bfd4511189c0547ebc62cb505cb1b760aa5346c553175ded61e5c93` |
 | `llvm-strip --strip-all --remove-section=.note.gnu.build-id` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` |
@@ -130,13 +134,53 @@ stripping. Results (SHA-256):
 `cmp` of the last row returned 0, and `PARITY_STATUS=0`. This is stripped
 binary equality; the original binaries and ordinary stripped build IDs differ.
 
+After using the recorded CMake compiler version in Arrow, Mongo C and Mongo
+C++ generated headers, the same x86-64 hashes and `cmp=0` were verified in
+[BuildBuddy 49f16579](https://app.buildbuddy.io/invocation/49f16579-c602-4eb5-8570-111469b2417a).
+
 The simplified generated configuration was verified in
 [BuildBuddy invocation c972df98](https://app.buildbuddy.io/invocation/c972df98-7d2d-4b65-ac42-5ebf5117b5a3)
 ([Bazel build](https://app.buildbuddy.io/invocation/7bbae2ed-c019-4a04-b07f-746a6570c815)).
 The same compiler, full binary, plain-stripped and normalized hashes in the
 table above all matched; `PARITY_STRIPPED_CMP_STATUS=0`, `PARITY_STATUS=0`.
 
-On the same Linux host, run the complete comparison:
+The ARM64 execution and Cargo support preserved all x86-64 hashes in
+[BuildBuddy invocation 2cc0b2e2](https://app.buildbuddy.io/invocation/2cc0b2e2-a9f5-49ea-ab98-706597095b65)
+([Bazel build](https://app.buildbuddy.io/invocation/8a5fdc01-b656-4b65-8269-c064679fce4f)).
+Both normalized files still passed `cmp`.
+
+The common compile flags were moved to `.bazelrc` and removed from generated
+native `cc_library.copts`. Clang C/C++ flags use `--conlyopt` and
+`--cxxopt`, so PIE does not affect assembly. Cargo, NASM, and the recorded
+LLVM runtime rules keep their flags because their custom actions do not read
+`--copt`. ClickHouse's complete x86-64 and ARM64 Bazel binaries were unchanged
+by the flag cleanup. These ARM64 checks preceded the native CMake ClickStack
+and SQLConsole resource metadata update:
+[x86-64 13-flag build](https://app.buildbuddy.io/invocation/fae9a5a7-fb8e-411f-bfe9-e19b133e0b51)
+and [ARM64 13-flag build](https://app.buildbuddy.io/invocation/dceb77aa-cc78-42b9-8fd7-f3d8cf044972).
+The x86-64 build again passed `cmp` against normalized CMake, with every
+hash in the table above unchanged.
+
+After moving C/C++ `-Werror` to `.bazelrc` and sharing the repeated
+ClickHouse warning list,
+[x86-64](https://app.buildbuddy.io/invocation/92c74fe8-b381-45f1-b8bb-eed31254ee80)
+again preserved every compiler and binary hash in the table above and passed
+`cmp` against normalized CMake (`PARITY_STRIPPED_CMP_STATUS=0`).
+[ARM64](https://app.buildbuddy.io/invocation/f5560883-a6a5-40db-b2a8-2e7665b28859)
+preserved the then-current complete Bazel binary hash
+`da5a37c6f1f40b8026b577ba3fd36e8e26a7cc4bd3ba073e77f007077b02d52a`.
+The two glibc compatibility C compilations retain their CMake `-Wno-error`
+exception. Contrib `-w` stays on targets that already disable warnings.
+
+LLVM's stage0 startup objects clear application C flags in their existing
+transition. That restores the three ARM `crtbegin*.o` files to
+`d923570ce208352e2b654f2784c31ff8a7e3aa4ea9b039a9f86f977850028f03`
+without changing the complete ARM Bazel binary:
+[ARM64 compiler, CRT and binary checks](https://app.buildbuddy.io/invocation/e24a290d-9898-43b5-9d31-2e4df4a31067).
+The [x86-64 CMake comparison](https://app.buildbuddy.io/invocation/09b3baad-f52d-49c7-8332-bef11ddadeac)
+again preserved all hashes in the table and passed `cmp`.
+
+On the original Linux x86-64 reference host, run the complete audit with:
 
 ```sh
 bash bazel/run_bazel_parity.sh
@@ -157,6 +201,135 @@ EngFlow/any2bazel. It retains the reports in the CMake build directory and
 uploads the reports on a BuildBuddy hosted runner. Its status distinguishes a
 binary or command difference from a failed build or failed audit.
 
+### Linux ARM64 (native)
+
+For ARM64, run these commands on a BuildBuddy Linux hosted runner:
+
+```sh
+bash bazel/run_native_reference.sh --configure-only
+bash bazel/run_native_reference.sh
+python3 bazel/refresh_cmake_metadata.py --arch=aarch64 --full-reference \
+  --build-dir="$PWD/bazel-bin/bazel/cmake_reference_aarch64"
+bash bazel/run_native_reference.sh --compare
+```
+
+`run_native_reference.sh` prepares the current Git checkout, its pinned submodules, and Ubuntu ARM64
+tools as declared Bazel inputs. The checkout uses each Git commit's timestamp
+so ClickHouse's embedded gzip resources are reproducible on another worker.
+`//bazel:cmake_reference_aarch64` runs ClickHouse's original CMake on a native
+ARM64 Linux BuildBuddy executor with the same source-built compiler as Bazel.
+CMake builds its TableGen tools on ARM64 and the reference checks that the
+compiler, Rust tools, TableGen tools, and executable are all ARM64 ELF files.
+It records the original, plain-stripped, and normalized CMake hashes and the
+compiler hash in `cmake-reference-summary.json`.
+
+The native ARM64 reference inputs below were measured at source commit
+`9906f9142ae9b16d8d1da7354907dd9727758dd7`, on
+`refs/heads/bazel-buildbuddy`, with the Bazel changes under validation.
+The source archive includes the real Git metadata read by ClickHouse CMake.
+On later commits, refresh the CMake metadata before comparison as shown above;
+the newly embedded Git commit can change the binary hashes. These input hashes
+are recorded separately from binary validation:
+
+| Input | SHA-256 |
+| --- | --- |
+| Source archive at `9906f9142` | `45fc5be13cbb7a94e4e2c0a99cd8e11a6f088c1df057af4c0cdfee0700e56cf3` |
+| ARM64 tools archive | `be979691db973446e80c1ba08d4fa0843fcd64fe8a02b1bc377208b0cc69d3af` |
+| Source-built ARM64 compiler | `3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f` |
+| Ubuntu 22.04 OCI image index | `0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956` |
+| Ubuntu 22.04 Linux ARM64 OCI manifest | `88881eb36da489f9ff8746ece8048ca16cc94f80e8cd3ae7e8335d8822631591` |
+
+The archive hashes were checked by
+[BuildBuddy f91755ca](https://app.buildbuddy.io/invocation/f91755ca-f16c-4fc9-96ff-bf44cbe32ae5);
+the compiler hash was checked in
+[BuildBuddy e24a290d](https://app.buildbuddy.io/invocation/e24a290d-9898-43b5-9d31-2e4df4a31067).
+The ARM image pin preserves the entire native CMake input tree: old action
+`118da31bd42d0b12ca605d11c859ef8a29d6bc5f6c31651d76cb0790692afcd9`
+and new action
+`a8da5e91e8557207dd2a01e6ae3ea94b977d3c687d84d835a137647a91548bc0`
+both use input root
+`1017566ce6eaeff728f2f3a658124a66f647afdd3f4b58abfa5c0e282c48b8e7`.
+This includes the native Clang, Rust, source archive, and utility archive.
+These hashes do not establish binary parity.
+
+The full native CMake reference completed in
+[BuildBuddy 12df76fc](https://app.buildbuddy.io/invocation/12df76fc-3a68-46da-8af4-1e01c1dd4b4b);
+its status is `{"status":0,"phase":"built","configure_only":false}`. The ARM64
+comparison in [BuildBuddy 7a855e69](https://app.buildbuddy.io/invocation/7a855e69-ff30-4b33-92b0-7c61ed6b6517)
+([Bazel build 77a7cbb6](https://app.buildbuddy.io/invocation/77a7cbb6-6430-42fd-8f84-cef21677368e))
+measured the following hashes. Its `ClickHouseNativeLink` action
+`c3edb5788f2bebe5a5c5cb321126bef5ef14addf019a94abb19672eb004efdbb`
+also records the final Bazel executable's SHA-256 and size.
+
+| ARM64 SHA-256 | CMake | Bazel | Bytes |
+| --- | --- | --- | --- |
+| LLVM compiler / `llvm-strip` | `3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f` | `3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f` | Both 221,377,856 |
+| Original ELF | `cd204de2504bbe77c5e2b0babce701943133374e77490f36ad8b679d18b56646` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | Both 907,067,440 |
+| `llvm-strip --strip-all` | `5180f5d1ee2918cccf2e872ec9c92a2e8de8c1021e75972ad1ba2df53097b88a` | `5dbc0eee809acefa84bf3095453cbd684b5ce8803a8dee77ce19704887413c5a` | — |
+| `llvm-strip --strip-all --remove-section=.note.gnu.build-id` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | Both 637,316,696 |
+
+The normalized copies passed `cmp`: `PARITY_STRIPPED_CMP_STATUS=0` and
+`PARITY_STATUS=0`. Both are 637,316,696 bytes and match byte for byte.
+Clang, Clang++, Rust, Cargo and the reference TableGen tools are native ARM64
+ELFs. The original and plain-stripped binaries differ because their build IDs
+still include information from discarded sections.
+
+<details>
+<summary>Earlier ARM64 measurements and the compiler metadata fix</summary>
+
+Before refreshing the MongoDB compiler version, the Bazel executable in
+[BuildBuddy f91755ca](https://app.buildbuddy.io/invocation/f91755ca-f16c-4fc9-96ff-bf44cbe32ae5)
+had original SHA-256 `696185b7d3351b5e171cdc14917d39fa99bec07b4812445b67e01572a00d1c3b`
+(907,067,440 bytes), plain-stripped SHA-256
+`291a3ceb0cd0e93e8742f3a7ff8283b3475f6a0265469ac362b34e56073ca879`
+(637,316,784 bytes), and normalized SHA-256
+`469ba31fac67a8e3f4f5c3f48e974dcc6b09c557a1b37249a1d4a170818aed9f`
+(637,316,696 bytes). This first comparison returned `PARITY_STATUS=1`.
+The [ARM strip action](https://app.buildbuddy.io/invocation/f647cac4-6d5d-4feb-8ccb-41c3dc80ead5)
+independently verified that earlier binary and `llvm-strip` on ARM64. Its
+hosted runner retained the measured
+`bazel-arm64-stripped.json` in
+[BuildBuddy dbff081e](https://app.buildbuddy.io/invocation/dbff081e-ea3b-41fc-b9f6-9585da096dbd).
+
+That earlier Bazel executable also passed a native ARM64 runtime check in
+[BuildBuddy 326c1056](https://app.buildbuddy.io/invocation/326c1056-fdbd-4f24-abd2-d3a6767a7b26)
+([ARM64 action](https://app.buildbuddy.io/invocation/793dae40-7204-4329-876c-8aa3ca021ef3)).
+The ARM64 executor rechecked that earlier SHA-256 and byte count.
+`clickhouse local --version` printed `ClickHouse local version 26.11.1.1.`,
+and `clickhouse local --path=<scratch> --query='SELECT 1'` printed exactly
+`1\n`; both exited 0. This check predates the final compiler-metadata fix.
+
+The first mismatch started at byte 105,961 in `.rela.dyn`. The only
+`.rodata` content differences were two MongoDB strings recording Clang
+`21.1.8` instead of native CMake's `22.1.1`. All 161,684 differing
+relocations referenced the same strings at addresses shifted by those
+compiler strings. Mongo C, Mongo C++ and Arrow now obtain the C++ compiler
+version from `bazel/cmake_metadata.bzl`; `bazel/generate_build.py` preserves
+that behavior on regeneration.
+
+The first ARM64 Bazel build completed 17,334 remote actions in
+[BuildBuddy invocation 8952f682](https://app.buildbuddy.io/invocation/8952f682-f072-4073-b1e4-bb9c88abbfa2)
+([Bazel build](https://app.buildbuddy.io/invocation/9da0fe08-e021-4171-8c38-b840fa023626)).
+Its original executable SHA-256 was
+`ccef0e7abc7d89b76b5c9b5d8680c6fefc86edc3b19d2280503e96fdfacff173`.
+After refreshing the compiler, Git, and license metadata from native ARM64
+CMake, and before refreshing the ClickStack and SQLConsole resource timestamps,
+Bazel built the original executable
+`da5a37c6f1f40b8026b577ba3fd36e8e26a7cc4bd3ba073e77f007077b02d52a`
+in [BuildBuddy invocation 9124c824](https://app.buildbuddy.io/invocation/9124c824-09d1-4f34-b553-e77d79569197)
+([Bazel build](https://app.buildbuddy.io/invocation/42467401-4875-450b-b712-9bf686f51fdc)).
+Those two values record earlier Bazel binaries; they do not establish
+stripped equality with the completed native ARM64 CMake reference.
+</details>
+
+`--compare` uses `//bazel:stripped_hash_aarch64` to verify the recorded
+hashes and compare normalized copies of the actual CMake and Bazel binaries.
+The CMake executable is an input only to the comparison, never to
+`//:clickhouse`. The ARM64 configuration retains `common:remote` and
+`--jobs=500`; CMake's Ninja build uses 12 jobs on its ARM executor.
+
+### Embedded CMake metadata
+
 `--//bazel:cmake_metadata` uses the values recorded by
 `bazel/generate_build.py` or refreshed by `bazel/refresh_cmake_metadata.py`
 from the configured CMake reference. It also maps generated source filenames
@@ -166,6 +339,13 @@ build being compared. Without the flag, `system.build_options` reports the
 actual Bazel toolchain and flags, and generated filenames use Bazel directories.
 The metadata generation has been executed in both modes; with the flag, its
 output matches the configured CMake metadata source byte for byte.
+
+<details>
+<summary>Earlier Linux x86-64 reference and build history</summary>
+
+These results record the earlier builds that led to the verified x86-64
+normalized comparison above. Earlier unequal results are not the current
+comparison result.
 
 The Linux x86-64 CMake reference linked successfully in
 [BuildBuddy invocation 4ea26abf-d8ee-4634-9d07-458a3645f3bc](https://app.buildbuddy.io/invocation/4ea26abf-d8ee-4634-9d07-458a3645f3bc).
@@ -255,7 +435,7 @@ completed with 16,479 remote executions. Its full `bazel.sha256` is recorded in
 This is a distinct complete ELF hash from the CMake reference, so source-prefix
 and Release-flag parity still do not establish executable equality.
 
-The next step replaces six imported bootstrap archives with the exact CMake
+The next build replaced six imported bootstrap archives with the exact CMake
 `cxx`, `cxxabi`, `unwind`, `clang_rt_builtins`, `clang_rt_xray`, and
 `libllvmlibc` compile groups. The focused
 [Bazel runtime build](https://app.buildbuddy.io/invocation/48f1710d-578c-4a16-b7d9-074f65a06c9a)
@@ -264,8 +444,8 @@ succeeded with 364 remote compiles. Its
 verified all six CMake source counts, both selected compiler SHA-256 hashes,
 and absence of bootstrap libc++ include directories in those compile actions.
 The 125 AArch64 outline-atomic sources are generated from the `lse.S`
-symlinks verified against the saved Ninja commands. This validates runtime
-inputs; executable equality still requires the full link and `cmp`.
+symlinks verified against the saved Ninja commands. That check validated runtime
+inputs and did not compare the complete executable.
 
 The full Bazel build with all six native runtime libraries completed in
 [BuildBuddy invocation 865f8d87-e8df-47c2-904d-b2d7cc513cf7](https://app.buildbuddy.io/invocation/865f8d87-e8df-47c2-904d-b2d7cc513cf7).
@@ -280,8 +460,8 @@ references and produced:
 rechecked the original CMake SHA-256 as `cfbf99ef…087cbc`, both compiler
 SHA-256 values as `52a7d0fd…6262ce`, and all 59 generated LLVM headers.
 `cmp` returned 1. ELF capture found 46 native sections and 47 Bazel sections,
-with 45 differing table entries or contents; the CMake byte-for-byte target
-has not yet been reproduced.
+with 45 differing table entries or contents; that build did not reproduce the
+CMake binary.
 
 [BuildBuddy invocation 5d1cb4eb-a1f6-4ee7-ace6-f2e3a19d39b4](https://app.buildbuddy.io/invocation/5d1cb4eb-a1f6-4ee7-ace6-f2e3a19d39b4)
 subsequently verified 122 actual compile actions for PostgreSQL, ClickHouse
@@ -381,16 +561,7 @@ bytes smaller. Generated Cargo paths changed the full hash but did not change
 these section-size differences. Those differences concern code and read-only
 data, so stripping debug information alone cannot remove them.
 
-The requested completion criterion is now matching stripped executables.
-Run `bash bazel/run_bazel_parity.sh --stripped` on the reference host. It
-preserves the original file hashes and uses the same
-`llvm-strip --strip-all -o COPY ORIGINAL` from the saved LLVM installation
-for both files. `summary.txt`, `stripped.sha256`, `stripped-cmp.log`, and
-`stripped-elf-sections.json` contain the measured result. Full executable
-equality is not required in this mode. Action-graph parity alone does not
-establish equal stripped hashes.
-
-The first stripped comparison on that PR head is
+The first plain-stripped comparison on that PR head was
 [BuildBuddy invocation 82a328c8](https://app.buildbuddy.io/invocation/82a328c8-c943-4a0a-923e-21b63a3d07d6).
 The unstripped CMake and Bazel hashes remain the hashes above. After
 `llvm-strip --strip-all -o COPY ORIGINAL`:
@@ -419,7 +590,8 @@ completed with 5 remote executions and 24,754 remote cache hits. Its hashes are:
 | Bazel full executable | `c263799280b379235b90596b8005d0e8b799e62e88c805f52fa8454c6b4b2a3f` |
 | Bazel `llvm-strip --strip-all` executable | `73db3edaac7436ef7f07e06175d74ad33c37dd7219d12bd896610d79a7f51ad8` |
 
-The selected compiler still matched `52a7d0fd…6262ce`. The stripped hash
-does not yet equal the reference hash. Run `bash bazel/run_stripped_hash.sh`
-to reproduce the check on a Linux BuildBuddy worker even if that worker
-does not have the original CMake build directory.
+The selected compiler still matched `52a7d0fd…6262ce`. This earlier
+plain-stripped hash differed from the reference hash. The current normalized
+comparison and its reproduction commands are recorded above.
+
+</details>

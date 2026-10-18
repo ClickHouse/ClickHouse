@@ -236,12 +236,15 @@ class Codegen:
     def licenses(self, output):
         manifest = json.loads((self.root / 'bazel/license_manifest.json').read_text())
         sources = {row[2].lstrip('/') for row in manifest}
-        metadata_file = self.graph.config / 'license_substitutions.json'
+        metadata_name = read_metadata(self.root)[self.graph.arch].get(
+            'license_substitutions', 'config/' + self.graph.arch + '/license_substitutions.json',
+        )
+        metadata_file = self.root / 'bazel' / metadata_name
         attrs = {'kind': 'licenses', 'outs': ['gen/' + self.graph.arch + '/' + output]}
         if metadata_file.is_file():
             substitutions = json.loads(metadata_file.read_text())
             sources.update(row[1].lstrip('/') for row in substitutions.values() if row is not None)
-            attrs['cmake_metadata'] = '//bazel:config/' + self.graph.arch + '/license_substitutions.json'
+            attrs['cmake_metadata'] = '//bazel:' + metadata_name
             attrs['cmake_condition'] = '//bazel:use_cmake_metadata_' + self.graph.arch
         attrs['source_paths'] = sorted(sources)
         # The reference inventory reads the toolchain LLVM license, including

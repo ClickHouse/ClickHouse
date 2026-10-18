@@ -1,6 +1,7 @@
 """Render the configured native graph as BUILD rules in its owning repositories."""
 
 from dataclasses import dataclass
+import ast
 import json
 import re
 
@@ -10,6 +11,28 @@ from repository_inputs import REPOSITORIES, ROOT, execution_path, repository
 
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
+
+
+def global_compile_options():
+    """Read unconditional Bazel compiler options from the project's rc file."""
+    options = {'copt': set(), 'conlyopt': set(), 'cxxopt': set()}
+    for option, value in re.findall(
+            r'^build --(copt|conlyopt|cxxopt)=(\S+)$',
+            (ROOT / '.bazelrc').read_text(), re.MULTILINE):
+        options[option].add(value)
+    return {
+        'C': options['copt'] | options['conlyopt'],
+        'CXX': options['copt'] | options['cxxopt'],
+        'ASM': options['copt'],
+    }
+
+
+GLOBAL_COMPILE_OPTIONS = global_compile_options()
+CLICKHOUSE_WARNINGS = ast.literal_eval(next(
+    node.value for node in ast.parse((ROOT / 'bazel/repository_paths.bzl').read_text()).body
+    if isinstance(node, ast.Assign)
+    and any(isinstance(name, ast.Name) and name.id == 'CLICKHOUSE_WARNINGS' for name in node.targets)
+))
 
 
 @dataclass
@@ -34,6 +57,19 @@ class CMakeCopts:
 class CMakeNativeCopts:
     flags: object
     groups: dict
+
+
+@dataclass
+class CMakeWarnings:
+    before: list
+    after: list
+
+
+@dataclass
+class CMakeCxxCompilerVersion:
+    arch: str
+    prefix: str = ''
+    suffix: str = ''
 
 
 def select(values):
@@ -81,6 +117,15 @@ def starlark(value, indent=0, paths=False, step=2):
     if isinstance(value, CMakeNativeCopts):
         return (starlark(value.flags, indent, paths, step) + ' + cmake_native_compile_flags('
                 + starlark(value.groups, indent, False, step) + ')')
+    if isinstance(value, CMakeWarnings):
+        return (starlark(value.before, indent, paths, step) + ' + CLICKHOUSE_WARNINGS + '
+                + starlark(value.after, indent, paths, step))
+    if isinstance(value, CMakeCxxCompilerVersion):
+        parts = [json.dumps(value.prefix)] if value.prefix else []
+        parts.append('cmake_cxx_compiler_version(' + json.dumps(value.arch) + ')')
+        if value.suffix:
+            parts.append(json.dumps(value.suffix))
+        return ' + '.join(parts)
     if isinstance(value, Select):
         return 'select(' + starlark(value.values, indent, paths, step) + ')'
     if isinstance(value, Glob):
@@ -265,6 +310,18 @@ class BuildFile:
                         value = compile_dependencies(value, variants[arch]['deps'])
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
+                        language = group.get('language')
+                        native_library = kind != 'EXECUTABLE' or index != 0 or name == 'clickhouse'
+                        if native_library and language in GLOBAL_COMPILE_OPTIONS:
+                            # These original CMake C groups have no -Werror.
+                            if language == 'C' and name in {'glibc-compatibility', 'harmful'}:
+                                value = value + ['-Wno-error']
+                            value = [flag for flag in value if flag not in GLOBAL_COMPILE_OPTIONS[language]]
+                            if language in {'C', 'CXX'} and '-Weverything' in value:
+                                start = value.index('-Weverything')
+                                end = start + len(CLICKHOUSE_WARNINGS)
+                                if value[start:end] == CLICKHOUSE_WARNINGS:
+                                    value = CMakeWarnings(value[:start], value[end:])
                     if group.get('language') in {'C', 'CXX', 'ASM'}:
                         if field == 'hdrs':
                             value = value + ['@clickhouse_sysroot//:linux_native_headers']
@@ -356,7 +413,7 @@ class BuildFile:
                 })
                 self.rule('cmake_link', 'clickhouse', {
                     'features': ['-static_link_cpp_runtimes', '-fortify_source'],
-                    'target_compatible_with': ['@platforms//cpu:x86_64', '@platforms//os:linux'],
+                    'target_compatible_with': ['@platforms//os:linux'],
                 })
                 return
             self.rule('cc_test' if name == 'unit_tests_dbms' else 'cc_binary', name, {
@@ -374,8 +431,10 @@ class BuildFile:
     def load_statements(self):
         loads = dict(self.loads)
         paths = {function for function in ('repository_path', 'llvm_toolchain_path', 'cmake_prefix_maps',
-                                           'cmake_native_compile_flags')
+                                           'cmake_native_compile_flags', 'cmake_cxx_compiler_version')
                  if any(function + '(' in rule for rule in self.rules)}
+        if any('CLICKHOUSE_WARNINGS' in rule for rule in self.rules):
+            paths.add('CLICKHOUSE_WARNINGS')
         if paths:
             loads['@clickhouse//bazel:repository_paths.bzl'] = paths
         return ''.join('load(' + json.dumps(path) + ', ' + ', '.join(map(json.dumps, sorted(names))) + ')\n'
@@ -408,12 +467,11 @@ def dependency_inputs(builds, owners):
         'strip_include_prefix': 'linux-aarch64/aarch64-linux-gnu/libc/usr/include',
         'target_compatible_with': ['@platforms//cpu:aarch64'],
     })
-    build('contrib/sysroot').rule('filegroup', 'linux_x86_64_link_files', {
-        'srcs': Glob(['linux-x86_64/**'],
-                     ('linux-x86_64/**/include/**', 'linux-x86_64/**/share/**')),
-    })
     for arch in ARCHES:
         directory = 'linux-' + arch
+        build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_link_files', {
+            'srcs': Glob([directory + '/**'], (directory + '/**/include/**', directory + '/**/share/**')),
+        })
         build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_compile_files', {
             'srcs': Glob([directory + '/**'], (directory + '/**/share/**',)),
         })
@@ -422,6 +480,9 @@ def dependency_inputs(builds, owners):
         })
     build('contrib/sysroot').rule('filegroup', 'linux_compile_files', {
         'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_compile_files'] for arch in ARCHES}),
+    })
+    build('contrib/sysroot').rule('filegroup', 'linux_link_files', {
+        'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_link_files'] for arch in ARCHES}),
     })
     build('contrib/sysroot').rule('filegroup', 'linux_native_headers', {
         'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_native_headers'] for arch in ARCHES}),

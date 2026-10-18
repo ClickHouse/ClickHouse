@@ -10868,6 +10868,8 @@ CODEGEN_RULES = {
       "//bazel:embed_resources",
     ],
     "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/sql-console") + "/dist-standalone\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/sql-console-cmake/SQLConsoleResources.generated.h --namespace=SQLConsole --compressed=sql_console_compressed",
+    "cmake_condition": "//bazel:use_cmake_metadata_aarch64",
+    "cmake_cmd": " --cmake-gzip-mtime=1790945103",
   },
   "generate_aarch64_ClickStack": {
     "srcs": [
@@ -11203,6 +11205,8 @@ CODEGEN_RULES = {
       "//bazel:embed_resources",
     ],
     "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/clickstack") + "/out\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/clickstack-cmake/ClickStackResources.generated.h --namespace=ClickStack --compressed=clickstack_compressed",
+    "cmake_condition": "//bazel:use_cmake_metadata_aarch64",
+    "cmake_cmd": " --cmake-gzip-mtime=1780518042",
   },
   "generate_aarch64_a11a7a9f459c326c": {
     "srcs": [
@@ -11301,6 +11305,8 @@ CODEGEN_RULES = {
     "outs": [
       "gen/aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp",
     ],
+    "cmake_metadata": "//bazel:config/x86_64/license_substitutions.json",
+    "cmake_condition": "//bazel:use_cmake_metadata_aarch64",
     "source_paths": [
       "base/poco/LICENSE",
       "contrib/AMQP-CPP/LICENSE",
@@ -11406,6 +11412,7 @@ CODEGEN_RULES = {
       "contrib/liburing/LICENSE",
       "contrib/libuv/LICENSE-extra",
       "contrib/libxml2/Copyright",
+      "contrib/libxml2/test/html-tokenizer/NOTICE",
       "contrib/llvm-project/LICENSE.TXT",
       "contrib/lz4/LICENSE",
       "contrib/magic_enum/LICENSE",
@@ -11433,6 +11440,7 @@ CODEGEN_RULES = {
       "contrib/postgres/COPYRIGHT",
       "contrib/prometheus-protobufs-gogo/LICENSE",
       "contrib/prometheus-protobufs/LICENSE",
+      "contrib/rapidjson/contrib/natvis/LICENSE",
       "contrib/rapidjson/license.txt",
       "contrib/rapids-logger/LICENSE",
       "contrib/re2/LICENSE",
@@ -12696,6 +12704,7 @@ CODEGEN_RULES = {
       "contrib/sqlite-amalgamation/LICENSE",
       "contrib/substrait/LICENSE",
       "contrib/sz3/copyright-and-BSD-license.txt",
+      "contrib/sz3/tools/pysz/LICENSE",
       "contrib/thrift/LICENSE",
       "contrib/usearch/LICENSE",
       "contrib/vectorscan/LICENSE",
@@ -12823,6 +12832,7 @@ CODEGEN_RULES = {
       "@clickhouse_liburing//:LICENSE",
       "@clickhouse_libuv//:LICENSE-extra",
       "@clickhouse_libxml2//:Copyright",
+      "@clickhouse_libxml2//:test/html-tokenizer/NOTICE",
       "@llvm-project//:LICENSE.TXT",
       "@clickhouse_lz4//:LICENSE",
       "@clickhouse_magic_enum//:LICENSE",
@@ -12850,6 +12860,7 @@ CODEGEN_RULES = {
       "@clickhouse_postgres//:COPYRIGHT",
       "//:contrib/prometheus-protobufs-gogo/LICENSE",
       "//:contrib/prometheus-protobufs/LICENSE",
+      "@clickhouse_rapidjson//:contrib/natvis/LICENSE",
       "@clickhouse_rapidjson//:license.txt",
       "@clickhouse_rapids_logger//:LICENSE",
       "@clickhouse_re2//:LICENSE",
@@ -14113,6 +14124,7 @@ CODEGEN_RULES = {
       "@clickhouse_sqlite_amalgamation//:LICENSE",
       "@clickhouse_substrait//:LICENSE",
       "@clickhouse_sz3//:copyright-and-BSD-license.txt",
+      "@clickhouse_sz3//:tools/pysz/LICENSE",
       "@clickhouse_thrift//:LICENSE",
       "@clickhouse_usearch//:LICENSE",
       "@clickhouse_vectorscan//:LICENSE",

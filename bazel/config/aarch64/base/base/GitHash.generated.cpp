@@ -1,3 +1,3 @@
 /// Only edit the `.in` file, as it is the source for autogeneration by CMake
 
-const char * GIT_HASH = "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da";
+const char * GIT_HASH = "9906f9142ae9b16d8d1da7354907dd9727758dd7";

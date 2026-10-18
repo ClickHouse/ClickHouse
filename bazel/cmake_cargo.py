@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -35,6 +36,10 @@ def parse_args():
     parser.add_argument("--rust-flag", action="append", default=[])
     parser.add_argument("--native-source-root", type=Path)
     parser.add_argument("--native-compilation", action="store_true")
+    parser.add_argument("--native-linker", type=Path)
+    parser.add_argument("--native-unwind", type=Path)
+    parser.add_argument("--native-gcc-s", type=Path)
+    parser.add_argument("--native-glibc", type=Path)
     parser.add_argument("--native-c-flag", action="append", default=[])
     parser.add_argument("--native-cxx-flag", action="append", default=[])
     parser.add_argument("--openssl-headers", type=Path)
@@ -152,6 +157,34 @@ def native_flags(args, checkout, gcc_root, libc_sysroot):
     return cflags, cxxflags
 
 
+def cargo_linker(destination, clang, linker, gcc_root, libc_sysroot, unwind, gcc_s, glibc):
+    """Supply Clang's host link dependencies from the same declared toolchain."""
+    libraries = destination.parent / "cargo-native-libraries"
+    libraries.mkdir()
+    # Expose only libutil from LLVM's ABI-list based glibc link interface.
+    # All other glibc libraries continue to come from ClickHouse's sysroot.
+    for name, source in {
+        "libgcc_s.a": gcc_s,
+        "libutil.so": glibc / "libutil.so",
+        "libutil.so.1": glibc / "libutil.so.1",
+    }.items():
+        if not source.is_file():
+            raise FileNotFoundError("Missing declared LLVM runtime " + str(source))
+        (libraries / name).symlink_to(source)
+    command = [
+        str(clang),
+        "--ld-path=" + str(linker),
+        "--gcc-toolchain=" + str(gcc_root),
+        "--sysroot=" + str(libc_sysroot),
+        "-L" + str(libraries),
+    ]
+    # LLVM's pinned libgcc_s archive accompanies libunwind, which provides
+    # the actual _Unwind symbols required by Rust's host programs.
+    destination.write_text("#!/bin/sh\nexec " + shlex.join(command) + ' "$@" ' + shlex.quote(str(unwind)) + "\n")
+    destination.chmod(0o755)
+    return destination
+
+
 def cargo_config(template, vendor):
     content = template.read_text()
     substitutions = {
@@ -232,6 +265,9 @@ def main():
         args.openssl_headers = args.openssl_headers.absolute()
     if args.cmake:
         args.cmake = args.cmake.absolute()
+    if args.native_linker:
+        for key in ("native_linker", "native_unwind", "native_gcc_s", "native_glibc"):
+            setattr(args, key, getattr(args, key).absolute())
     arch = args.target.partition("-")[0]
     native_target = arch + "-linux-gnu"
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +334,16 @@ def main():
             "CXXSTDLIB": "cxx",
             "SOURCE_DATE_EPOCH": "1",
         }
+        if args.native_linker:
+            # Cargo does not give target RUSTFLAGS to host build scripts,
+            # even with a native --target. Ubuntu ARM runners lack host ld
+            # and GCC development files. Supply those through the linker
+            # driver, leaving Cargo's target RUSTFLAGS byte-for-byte intact.
+            env["CARGO_TARGET_" + target_env.upper() + "_LINKER"] = str(cargo_linker(
+                temporary / "clang-cargo-linker",
+                args.cc, args.native_linker, gcc_root, libc_sysroot,
+                args.native_unwind, args.native_gcc_s, args.native_glibc,
+            ))
         if args.contrib_repositories is not None:
             if args.cargo_package != "_ch_rust_prql":
                 raise ValueError("Only PRQL requests vendor git-describe metadata")
@@ -313,7 +359,6 @@ def main():
             # accepts VERGEN_GIT_DESCRIBE as its no-Git override.
             env["VERGEN_GIT_DESCRIBE"] = revision[:9]
         if args.native_compilation:
-            import shlex
             cflags, cxxflags = native_flags(args, checkout, gcc_root, libc_sysroot)
             env.pop("ARFLAGS", None)
             if args.openssl_headers:

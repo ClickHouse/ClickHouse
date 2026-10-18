@@ -22,6 +22,19 @@ filegroup(
 )
 
 filegroup(
+    name = "linux_aarch64_link_files",
+    srcs = glob(["linux-aarch64/**"], exclude = ["linux-aarch64/**/include/**", "linux-aarch64/**/share/**"]),
+)
+
+filegroup(
+    name = "linux_link_files",
+    srcs = select({
+        "@platforms//cpu:x86_64": [":linux_x86_64_link_files"],
+        "@platforms//cpu:aarch64": [":linux_aarch64_link_files"],
+    }),
+)
+
+filegroup(
     name = "linux_x86_64_compile_files",
     srcs = glob(["linux-x86_64/**"], exclude = ["linux-x86_64/**/share/**"]),
 )

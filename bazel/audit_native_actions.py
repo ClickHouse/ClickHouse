@@ -408,6 +408,10 @@ class ArchiveEvidence:
                 if operand is None:
                     raise ValueError('CMakeCache.txt contains an incomplete Rust ' + flag)
                 flag += operand
+            # Compare CMake's Rust spelling to MODULE.bazel's toolchain
+            # caller spelling. native_rust_flags restores the CMake spelling.
+            if flag.startswith('-Ctarget_feature='):
+                flag = '-Ctarget-feature=' + flag.removeprefix('-Ctarget_feature=')
             if flag.startswith(('-Ctarget-cpu=', '-Ctarget-feature=', '-Csymbol-mangling-version=')):
                 reference_rust.append(flag)
             elif flag.startswith('-Cmetadata='):

@@ -19,7 +19,7 @@ from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from reference_readers import read_file_api
 from configuration import read_configurations
 import llvm_targets
-from build_file import BuildFile, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
+from build_file import BuildFile, CMakeCxxCompilerVersion, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
 from repository_inputs import (
     REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, header_group, repository,
     source_label, source_path, write_overlays,
@@ -359,6 +359,13 @@ class Graph:
                     key: value.replace(str(self.build), 'bazel/gen/' + self.arch).replace(str(ROOT) + '/', '')
                     for key, value in spec['substitutions'].items()
                 }
+                for key in ('@CMAKE_CXX_COMPILER_VERSION@', '@MONGOC_CXX_COMPILER_VERSION@'):
+                    if key in substitutions:
+                        substitutions[key] = CMakeCxxCompilerVersion(self.arch)
+                mongo_cxx_version = '#cmakedefine MONGOCXX_COMPILER_VERSION "${MONGOCXX_COMPILER_VERSION}"'
+                if mongo_cxx_version in substitutions:
+                    substitutions[mongo_cxx_version] = CMakeCxxCompilerVersion(
+                        self.arch, '#define MONGOCXX_COMPILER_VERSION "', '"')
                 build.rule('expand_template', name, {'template': source, 'out': output, 'substitutions': substitutions})
         # These were generated snapshots, never authoritative source inputs.
         if (self.config / 'contrib').exists():

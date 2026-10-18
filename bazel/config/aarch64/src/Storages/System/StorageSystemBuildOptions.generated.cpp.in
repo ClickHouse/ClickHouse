@@ -74,10 +74,10 @@ const char * auto_config_build[]
     "WITH_COVERAGE", "OFF",
     "WITH_COVERAGE_DEPTH", "OFF",
     "CLICKHOUSE_CLOUD", "0",
-    "GIT_HASH", "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
-    "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(codex/bazel-port)IRjaNsZIL9Yh7FQ4",
-    "GIT_DATE", "2026-10-15 21:41:59 +0000",
-    "GIT_COMMIT_SUBJECT", R"Gi17KJMlbGCjErEN(Merge pull request #125467 from groeneai/bool-literal-equality-selectivity)Gi17KJMlbGCjErEN",
+    "GIT_HASH", "9906f9142ae9b16d8d1da7354907dd9727758dd7",
+    "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(bazel-buildbuddy)IRjaNsZIL9Yh7FQ4",
+    "GIT_DATE", "2026-10-18 15:56:25 +0000",
+    "GIT_COMMIT_SUBJECT", R"Gi17KJMlbGCjErEN(Simplify ClickHouse Bazel configuration while preserving the x86-64 binary)Gi17KJMlbGCjErEN",
 
     nullptr, nullptr
 };

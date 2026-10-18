@@ -402,7 +402,9 @@ def declare_from_references(root, references):
                             build.rule('copy_file', 'runtime_outline_' + Path(source).name.replace('.', '_'), {
                                 'src': original, 'out': output,
                             })
-                            outline_generated[source] = ':' + output
+                            # BuildFile.target resolves unqualified labels in
+                            # ClickHouse before assigning their repository.
+                            outline_generated[source] = '@' + RAW_REPOSITORY + '//:' + output
                         source_labels.append(outline_generated[source])
                     elif (source.startswith(PREFIX + '/llvm/') or
                           (name in NATIVE_RUNTIMES and

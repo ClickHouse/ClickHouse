@@ -5,6 +5,12 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolcha
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(":cmake_link_data.bzl", "CMAKE_LINK")
+load(":cmake_link_data_aarch64.bzl", CMAKE_LINK_AARCH64 = "CMAKE_LINK")
+
+_CMAKE_LINKS = {
+    "x86_64": CMAKE_LINK,
+    "aarch64": CMAKE_LINK_AARCH64,
+}
 
 def _archive(library):
     return library.pic_static_library or library.static_library
@@ -50,9 +56,9 @@ def _objects(ranges, libraries):
     ]
 
 def _cmake_link_impl(ctx):
-    plan = CMAKE_LINK
+    plan = _CMAKE_LINKS[ctx.attr.arch]
     if len(ctx.attr.refs) != len(plan["expected_objects"]):
-        fail("cmake_link_data.bzl and refs do not describe the same link")
+        fail("CMake {} link plan and refs do not describe the same link".format(ctx.attr.arch))
     libraries = []
     for i, target in enumerate(ctx.attr.refs):
         library = _own_library(target)
@@ -131,7 +137,7 @@ def _cmake_link_impl(ctx):
     root = ctx.file._sysroot_marker.dirname
 
     # Only relative Bazel artifact names are used for filesystem access.
-    gcc_root = root + "/linux-x86_64"
+    gcc_root = root + "/linux-" + ctx.attr.arch
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
@@ -151,7 +157,7 @@ def _cmake_link_impl(ctx):
         elif kind == "gcc":
             args.add("--gcc-toolchain=" + gcc_root)
         elif kind == "sysroot":
-            args.add("--sysroot=" + gcc_root + "/x86_64-linux-gnu/libc")
+            args.add("--sysroot=" + gcc_root + "/" + ctx.attr.arch + "-linux-gnu/libc")
         elif kind == "lld":
             args.add("--ld-path=" + ctx.executable._lld.path)
         else:
@@ -176,9 +182,10 @@ _cmake_link = rule(
     implementation = _cmake_link_impl,
     executable = True,
     attrs = {
+        "arch": attr.string(values = ["x86_64", "aarch64"], mandatory = True),
         "cargo_archives": attr.bool(mandatory = True),
         "refs": attr.label_list(mandatory = True, providers = [CcInfo]),
-        "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_x86_64_link_files"),
+        "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_link_files"),
         "_sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
         "_lld": attr.label(default = "@llvm//tools:ld.lld", executable = True, cfg = "exec"),
     },
@@ -190,10 +197,17 @@ def cmake_link(name, **kwargs):
     """Link the Bazel-built ClickHouse objects with its captured CMake operands."""
     _cmake_link(
         name = name,
+        arch = select({
+            "@platforms//cpu:" + arch: arch
+            for arch in _CMAKE_LINKS
+        }),
         cargo_archives = select({
             "//bazel:use_cmake_metadata": True,
             "//conditions:default": False,
         }),
-        refs = CMAKE_LINK["refs"],
+        refs = select({
+            "@platforms//cpu:" + arch: plan["refs"]
+            for arch, plan in _CMAKE_LINKS.items()
+        }),
         **kwargs
     )

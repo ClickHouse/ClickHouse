@@ -32,14 +32,14 @@ def sha256(path):
     return result.hexdigest()
 
 
-def compare(reference, original, strip, output, record):
+def compare(reference, original, strip, output, record, expected_hash=EXPECTED_STRIPPED):
     """Retain full, plain-stripped, and normalized hashes; cmp the normalized files."""
     cmake_stripped = output / 'cmake.stripped'
     bazel_stripped = output / 'bazel.stripped'
     record['CMAKE_REFERENCE_SHA256'] = sha256(reference)
     record['BAZEL_CLICKHOUSE_SHA256'] = sha256(original)
     record['STRIP_FLAGS'] = ' '.join(STRIP_FLAGS)
-    record['EXPECTED_STRIPPED_SHA256'] = EXPECTED_STRIPPED
+    record['EXPECTED_STRIPPED_SHA256'] = expected_hash
 
     for source, dest in ((reference, cmake_stripped), (original, bazel_stripped)):
         subprocess.run([str(strip), '--strip-all', '-o', str(dest), str(source)], check=True)
@@ -64,8 +64,8 @@ def compare(reference, original, strip, output, record):
     else:
         record['PARITY_STATUS'] = int(
             comparison.returncode != 0
-            or record['CMAKE_STRIPPED_SHA256'] != EXPECTED_STRIPPED
-            or record['BAZEL_STRIPPED_SHA256'] != EXPECTED_STRIPPED
+            or record['CMAKE_STRIPPED_SHA256'] != expected_hash
+            or record['BAZEL_STRIPPED_SHA256'] != expected_hash
         )
     return record
 
@@ -76,17 +76,17 @@ def write_summary(record, directory):
     (directory / 'stripped-summary.txt').write_text(content)
 
 
-def recorded(root, output):
+def recorded(root, output, expected, invocation_id):
     execroot = (root / 'bazel-out').resolve().parent
     manifest = json.loads((root / 'bazel-bin/bazel/cmake_toolchain_files.json').read_text())
-    record = {'CMAKE_COMPILER_SHA256': EXPECTED_COMPILER}
+    record = {'PARITY_ARCH': expected['arch'], 'CMAKE_COMPILER_SHA256': expected['compiler_sha256']}
     # The reference installed llvm-strip as a hard link of the LLVM multicall
     # executable. Reproduce that installation from Bazel's selected toolchain.
     compiler = (execroot / manifest['cxx']).resolve(strict=True)
     record['BAZEL_COMPILER_SHA256'] = sha256(compiler)
-    if record['BAZEL_COMPILER_SHA256'] != EXPECTED_COMPILER:
+    if record['BAZEL_COMPILER_SHA256'] != expected['compiler_sha256']:
         raise ValueError('Bazel compiler differs from the recorded reference')
-    if sha256(execroot / manifest['cc']) != EXPECTED_COMPILER:
+    if sha256(execroot / manifest['cc']) != expected['compiler_sha256']:
         raise ValueError('Bazel C compiler differs from the recorded reference')
     strip = output / 'llvm-strip'
     try:
@@ -94,13 +94,15 @@ def recorded(root, output):
     except OSError:
         shutil.copy2(compiler, strip)
     original = root / 'bazel-bin/clickhouse'
-    reference = root / 'build_bazel_reference_x86_64/programs/clickhouse'
-    if not reference.is_file() or sha256(reference) != EXPECTED_CMAKE:
+    reference = root / ('build_bazel_reference_' + expected['arch']) / 'programs/clickhouse'
+    if not reference.is_file() or sha256(reference) != expected['cmake_sha256']:
         # This download is strictly a comparison input after Bazel finishes.
         # Keep it outside the checkout and Bazel's execroot.
         reference = output / 'clickhouse.cmake'
         if shutil.disk_usage(output).free < 4 * 1024**3:
             raise OSError('Not enough scratch disk for the two stripped copies and reference')
+        if not invocation_id:
+            raise ValueError('The CMake reference is absent; provide its BuildBuddy --reference-invocation')
         key = os.environ.get('BUILDBUDDY_API_KEY')
         if not key:
             rc = root.parent / 'buildbuddy.bazelrc'
@@ -111,8 +113,9 @@ def recorded(root, output):
                 raise ValueError('Missing BuildBuddy remote header in runner configuration')
             key = match.group(1)
         params = urllib.parse.urlencode({
-            'bytestream_url': f'bytestream://remote.buildbuddy.io/bb-snapshot/blobs/{EXPECTED_CMAKE}/929619736',
-            'invocation_id': '4ea26abf-d8ee-4634-9d07-458a3645f3bc',
+            'bytestream_url': (
+                f"bytestream://remote.buildbuddy.io/bb-snapshot/blobs/{expected['cmake_sha256']}/{expected['bytes']}"),
+            'invocation_id': invocation_id,
         })
         request = urllib.request.Request(
             'https://app.buildbuddy.io/file/download?' + params,
@@ -121,11 +124,15 @@ def recorded(root, output):
         with urllib.request.urlopen(request, timeout=120) as response, reference.open('xb') as destination:
             shutil.copyfileobj(response, destination, 4 * 1024 * 1024)
         del key
-    if sha256(reference) != EXPECTED_CMAKE:
+    if sha256(reference) != expected['cmake_sha256']:
         raise ValueError('CMake original does not match the recorded SHA256')
-    print('CMAKE_REFERENCE_VERIFIED=' + EXPECTED_CMAKE, flush=True)
-    compare(reference, original, strip, output, record)
-    if record['CMAKE_PLAIN_STRIPPED_SHA256'] != EXPECTED_PLAIN_STRIPPED:
+    print('CMAKE_REFERENCE_VERIFIED=' + expected['cmake_sha256'], flush=True)
+    if elf_machine(reference) != expected['elf_machine']:
+        raise ValueError('CMake reference ELF machine differs from the recorded architecture')
+    if elf_machine(original) != expected['elf_machine']:
+        raise ValueError('Bazel executable ELF machine differs from the recorded CMake reference')
+    compare(reference, original, strip, output, record, expected['stripped_sha256'])
+    if record['CMAKE_PLAIN_STRIPPED_SHA256'] != expected['plain_stripped_sha256']:
         print('PARITY_PREREQUISITE_FAILED=Plain llvm-strip output differs from the recorded comparison',
               file=sys.stderr)
         record['PARITY_STATUS'] = 2
@@ -145,21 +152,75 @@ def recorded(root, output):
     return record['PARITY_STATUS']
 
 
+def elf_machine(path):
+    with path.open('rb') as stream:
+        header = stream.read(20)
+    if len(header) != 20 or header[:5] != b'\x7fELF\x02' or header[5] not in (1, 2):
+        raise ValueError(f'Expected ELF64 executable: {path}')
+    return int.from_bytes(header[18:20], 'little' if header[5] == 1 else 'big')
+
+
+def recorded_reference(args):
+    if args.arch == 'x86_64':
+        if args.reference_summary or args.reference_invocation:
+            raise ValueError('The x86-64 reference is fixed; its summary and invocation cannot be overridden')
+        return {
+            'arch': 'x86_64',
+            'compiler_sha256': EXPECTED_COMPILER,
+            'cmake_sha256': EXPECTED_CMAKE,
+            'plain_stripped_sha256': EXPECTED_PLAIN_STRIPPED,
+            'stripped_sha256': EXPECTED_STRIPPED,
+            'bytes': 929619736,
+            'elf_machine': 62,
+        }, '4ea26abf-d8ee-4634-9d07-458a3645f3bc'
+    if not args.reference_summary:
+        raise ValueError('--arch=aarch64 requires --reference-summary from the completed CMake build')
+    expected = json.loads(args.reference_summary.read_text())
+    if expected.get('arch') != 'aarch64' or expected.get('elf_machine') != 183:
+        raise ValueError('CMake --reference-summary must record an AArch64 ELF')
+    for key in ('compiler_sha256', 'cmake_sha256', 'plain_stripped_sha256', 'stripped_sha256'):
+        if not re.fullmatch(r'[0-9a-f]{64}', expected.get(key, '')):
+            raise ValueError('Invalid CMake reference ' + key)
+    if not isinstance(expected.get('bytes'), int) or expected['bytes'] < 20:
+        raise ValueError('Invalid CMake reference original byte count')
+    if expected.get('strip_flags') != list(STRIP_FLAGS):
+        raise ValueError('CMake reference used different llvm-strip flags')
+    return expected, args.reference_invocation
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('recorded', help='Compare against the recorded CMake reference, downloading it if needed')
+    snapshot = commands.add_parser('recorded', help='Compare against the recorded CMake reference, downloading if needed')
+    snapshot.add_argument('--arch', choices=('x86_64', 'aarch64'), default='x86_64')
+    snapshot.add_argument('--reference-summary', type=Path,
+                          help='AArch64 cmake-reference-summary.json from bazel/run_cmake_reference.sh')
+    snapshot.add_argument('--reference-invocation',
+                          help='AArch64 BuildBuddy invocation containing the recorded clickhouse.cmake artifact')
     saved = commands.add_parser('compare', help='Compare the preserved CMake and Bazel executables')
     saved.add_argument('--cmake', type=Path, required=True)
     saved.add_argument('--bazel', type=Path, required=True)
     saved.add_argument('--strip', type=Path, required=True)
     saved.add_argument('--output', type=Path, required=True)
+    saved.add_argument('--arch', choices=('x86_64', 'aarch64'), default='x86_64')
+    saved.add_argument('--expected-sha256',
+                       help='Required for AArch64: normalized SHA256 recorded after the full CMake build')
     args = parser.parse_args()
     try:
         if args.command == 'recorded':
+            expected, invocation_id = recorded_reference(args)
             with tempfile.TemporaryDirectory(prefix='clickhouse-stripped-') as temporary:
-                return recorded(Path.cwd(), Path(temporary))
-        record = compare(args.cmake, args.bazel, args.strip, args.output, {})
+                return recorded(Path.cwd(), Path(temporary), expected, invocation_id)
+        if args.arch == 'x86_64':
+            if args.expected_sha256 and args.expected_sha256 != EXPECTED_STRIPPED:
+                raise ValueError('The x86-64 normalized SHA256 is fixed and cannot be overridden')
+            expected_hash = EXPECTED_STRIPPED
+        else:
+            if not args.expected_sha256 or not re.fullmatch(r'[0-9a-f]{64}', args.expected_sha256):
+                raise ValueError('--arch=aarch64 requires the recorded --expected-sha256')
+            expected_hash = args.expected_sha256
+        record = compare(args.cmake, args.bazel, args.strip, args.output,
+                         {'PARITY_ARCH': args.arch}, expected_hash)
         write_summary(record, args.output)
         return record['PARITY_STATUS']
     except (OSError, ValueError, subprocess.CalledProcessError) as error:

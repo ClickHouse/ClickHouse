@@ -4,8 +4,11 @@ load(":build_options.bzl", "build_options")
 load(":build_options_data.bzl", "BUILD_OPTIONS")
 load(":cmake_metadata.bzl", "CMAKE_METADATA")
 load(":cmake_toolchain.bzl", "cmake_toolchain")
+load(":native_cmake_reference.bzl", "native_cmake_reference")
+load(":native_stripped_hash.bzl", "native_stripped_hash")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,6 +20,24 @@ platform(
     exec_properties = {
         "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
     },
+)
+
+platform(
+    name = "buildbuddy_linux_aarch64",
+    parents = ["@llvm//:rbe_linux_aarch64"],
+    # LLVM's Ubuntu 22.04 image, pinned through the mirror so ARM actions
+    # do not depend on Docker Hub authentication at executor startup.
+    exec_properties = {
+        "container-image": "docker://mirror.gcr.io/library/ubuntu@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956",
+    },
+)
+
+platform(
+    name = "buildbuddy_linux_aarch64_test",
+    # Bazel tests require the target's full constraint set. Keep LLVM's
+    # gnu.2.28 compiler platform separate from rules_rs's unconstrained libc.
+    parents = [":buildbuddy_linux_aarch64"],
+    constraint_values = triple_to_constraint_set("aarch64-unknown-linux-gnu"),
 )
 
 exports_files(glob(["*.bzl", "*.MODULE.bazel", "config/**"]) + ["license_manifest.json", "contrib_repositories.json"])
@@ -44,6 +65,60 @@ cmake_toolchain(
     name = "cmake_toolchain_files",
     features = ["-static_link_cpp_runtimes", "-fortify_source"],
 )
+
+# prepare_native_reference.py creates the source and utility archives on the
+# hosted coordinator. Only these manual CMake targets consume the archives.
+py_binary(
+    name = "native_cmake_reference_driver",
+    srcs = ["native_cmake_reference.py"],
+    main = "native_cmake_reference.py",
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)
+
+py_binary(
+    name = "native_stripped_hash_driver",
+    srcs = ["native_stripped_hash.py", "verify_stripped_hash.py", "compare_elf_sections.py"],
+    main = "native_stripped_hash.py",
+    imports = ["."],
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)
+
+native_stripped_hash(
+    name = "stripped_hash_aarch64",
+    reference = ":cmake_reference_aarch64",
+    clickhouse = "//:clickhouse",
+    tags = ["manual"],
+    features = ["-static_link_cpp_runtimes", "-fortify_source"],
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux"],
+    exec_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux"],
+)
+
+[
+    native_cmake_reference(
+        name = name,
+        source_archive = "//bazel/native_reference_inputs:source.tar",
+        tools_archive = "//bazel/native_reference_inputs:tools.tar",
+        configure_only = configure_only,
+        tags = ["manual"],
+        features = ["-static_link_cpp_runtimes", "-fortify_source"],
+        target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux"],
+        exec_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux"],
+        exec_properties = {
+            # BuildBuddy uses learned sizes in preference to CPU/memory alone.
+            # Compute units disable learned sizing; keep 64 GB for Ninja/link.
+            "EstimatedComputeUnits": "16",
+            "EstimatedMemory": "64GB",
+            "EstimatedFreeDiskBytes": "180GB",
+            "default-timeout": "23h",
+        },
+    )
+    for name, configure_only in [
+        ("cmake_reference_aarch64", False),
+        ("cmake_configure_aarch64", True),
+    ]
+]
 
 [
     build_options(

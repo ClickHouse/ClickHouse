@@ -1,8 +1,7 @@
 # Native Bazel build
 
 The port has Linux x86-64 and ARM64 configurations. Bazel fetches third-party
-sources through BCR modules and pinned repository rules. The current LLVM
-and generated-header changes are still being validated on x86-64. See
+sources through BCR modules and pinned repository rules. See
 [`README.bazel.md`](../README.bazel.md) for the current binary comparison and
 the validation status below for earlier execution coverage.
 
@@ -20,12 +19,14 @@ ClickHouse's nightly/2026-03-22 toolchain.
 
 ```sh
 bazel build --config=x86_64 //:clickhouse
-bazel build --config=aarch64 //:clickhouse
+bazel build --config=cmake_match_aarch64 //:clickhouse
 bazel test --config=x86_64 //:unit_tests_dbms
 ```
 
-The second command cross-compiles on x86-64. Cross-compilation does not prove
-that ARM64 tests execute successfully.
+The second command runs compilers, code generators, and Cargo on BuildBuddy
+ARM64 Linux executors. `cmake_match_aarch64` includes the ARM64 execution
+platform required for tests; see `README.bazel.md` for the commands and
+recorded build results.
 The unit test target runs the complete GoogleTest suite with the same
 `OPENSSL_CONF=/dev/null` setting as ClickHouse's CI.
 
@@ -131,8 +132,10 @@ Cargo and ExternalProject steps, or manual contributor-list generation.
 CMake installation commands are inventoried; Bazel packaging is not implemented.
 `codegen.py` invokes
 native Bazel-built TableGen, Protobuf, and FlatBuffers tools. NASM comes from
-its BCR module and executes as a declared Bazel tool. No C/C++ compilation or
-linking runs through CMake or Ninja inside a Bazel action.
+its BCR module and executes as a declared Bazel tool. Building `//:clickhouse`
+does not run C/C++ compilation or linking through CMake or Ninja.
+`//bazel:cmake_reference_aarch64` separately builds the original native CMake
+reference on an ARM64 executor for the stripped binary comparison.
 
 Python generators use the pinned Python 3.11 toolchain. Their shell launchers
 start that interpreter directly, without requiring a host Python installation.

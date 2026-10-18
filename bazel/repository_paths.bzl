@@ -1,14 +1,50 @@
 """Resolve external repository names and CMake source filenames."""
 
 load(":repository_labels.bzl", _REPOSITORIES = "REPOSITORIES")
+load(":cmake_metadata.bzl", _CMAKE_METADATA = "CMAKE_METADATA")
 
 _LLVM_TOOLCHAIN_PATH = Label("@llvm-project//:BUILD.bazel").workspace_root
+
+# ClickHouse's native C and C++ warnings, followed by each library's exceptions.
+CLICKHOUSE_WARNINGS = [
+    "-Weverything",
+    "-Wno-missing-include-dirs",
+    "-Wpedantic",
+    "-Wno-return-type-c-linkage",
+    "-Wno-zero-length-array",
+    "-Wno-c++98-compat-pedantic",
+    "-Wno-c++20-compat",
+    "-Wno-sign-conversion",
+    "-Wno-deprecated-declarations",
+    "-Wno-documentation-unknown-command",
+    "-Wno-exit-time-destructors",
+    "-Wno-float-equal",
+    "-Wno-global-constructors",
+    "-Wno-missing-variable-declarations",
+    "-Wno-padded",
+    "-Wno-switch-enum",
+    "-Wno-undefined-func-template",
+    "-Wno-unused-template",
+    "-Wno-weak-template-vtables",
+    "-Wno-weak-vtables",
+    "-Wno-thread-safety-negative",
+    "-Wno-unsafe-buffer-usage",
+    "-Wno-switch-default",
+    "-Wno-nrvo",
+    "-Wno-missing-noreturn",
+    "-Wno-c2y-extensions",
+    "-Wno-c23-extensions",
+]
 
 def repository_path(path):
     return _REPOSITORIES[path].workspace_root
 
 def llvm_toolchain_path():
     return _LLVM_TOOLCHAIN_PATH
+
+def cmake_cxx_compiler_version(arch):
+    # build_options stores C++ string literals, including their quotes.
+    return _CMAKE_METADATA[arch]["build_options"]["@BAZEL_CXX_COMPILER_VERSION@"][1:-1]
 
 _SOURCE_PREFIX_MAPS = [
     "-ffile-prefix-map=" + label.workspace_root + "/=" + path + "/"

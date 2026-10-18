@@ -1461,40 +1461,19 @@ cc_library(
 )
 
 _GENERATED_COPTS_0 = [
-        "--no-default-config",
         "-fdiagnostics-color=always",
-        "-pipe",
     ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=c++17",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
@@ -1509,32 +1488,13 @@ _GENERATED_COPTS_0 = [
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=c++17",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
@@ -4273,38 +4233,19 @@ cc_library(
         ":llvm/lib/Support/BLAKE3/blake3_neon.c",
     ],
     copts = [
-        "--no-default-config",
         "-fdiagnostics-color=always",
-        "-pipe",
     ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=gnu11",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
             "-I",
@@ -4318,30 +4259,13 @@ cc_library(
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=gnu11",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
             "-I",
@@ -4467,23 +4391,9 @@ cc_library(
     }),
     copts = select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdebug-compilation-dir=.",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
             "-O3",
             "-DNDEBUG",
             "-D",
@@ -4537,23 +4447,9 @@ cc_library(
     }),
     copts = select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdebug-compilation-dir=.",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
             "-O3",
             "-DNDEBUG",
             "-D",
@@ -4944,38 +4840,17 @@ cc_library(
 
 _GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
             "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=c++17",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
@@ -6640,7 +6515,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6682,7 +6557,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6724,7 +6599,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6766,7 +6641,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6808,7 +6683,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6850,7 +6725,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6892,7 +6767,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6934,7 +6809,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -6976,7 +6851,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7018,7 +6893,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7060,7 +6935,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7102,7 +6977,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7144,7 +7019,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7186,7 +7061,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7228,7 +7103,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7270,7 +7145,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7312,7 +7187,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7354,7 +7229,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7396,7 +7271,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7438,7 +7313,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7480,7 +7355,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas16_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas16_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7522,7 +7397,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas16_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas16_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7564,7 +7439,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas16_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas16_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7606,7 +7481,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas16_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas16_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7648,7 +7523,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_cas16_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_cas16_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7690,7 +7565,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7732,7 +7607,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7774,7 +7649,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7816,7 +7691,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7858,7 +7733,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7900,7 +7775,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7942,7 +7817,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -7984,7 +7859,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8026,7 +7901,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8068,7 +7943,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8110,7 +7985,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8152,7 +8027,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8194,7 +8069,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8236,7 +8111,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8278,7 +8153,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8320,7 +8195,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8362,7 +8237,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8404,7 +8279,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8446,7 +8321,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8488,7 +8363,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_swp8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_swp8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8530,7 +8405,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8572,7 +8447,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8614,7 +8489,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8656,7 +8531,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8698,7 +8573,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8740,7 +8615,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8782,7 +8657,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8824,7 +8699,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8866,7 +8741,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8908,7 +8783,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8950,7 +8825,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -8992,7 +8867,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9034,7 +8909,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9076,7 +8951,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9118,7 +8993,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9160,7 +9035,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9202,7 +9077,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9244,7 +9119,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9286,7 +9161,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9328,7 +9203,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9370,7 +9245,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9412,7 +9287,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9454,7 +9329,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9496,7 +9371,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9538,7 +9413,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9580,7 +9455,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9622,7 +9497,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9664,7 +9539,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9706,7 +9581,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9748,7 +9623,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9790,7 +9665,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9832,7 +9707,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9874,7 +9749,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9916,7 +9791,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -9958,7 +9833,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10000,7 +9875,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10042,7 +9917,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10084,7 +9959,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10126,7 +10001,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10168,7 +10043,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10210,7 +10085,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10252,7 +10127,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10294,7 +10169,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10336,7 +10211,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10378,7 +10253,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10420,7 +10295,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10462,7 +10337,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10504,7 +10379,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10546,7 +10421,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10588,7 +10463,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10630,7 +10505,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10672,7 +10547,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10714,7 +10589,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10756,7 +10631,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10798,7 +10673,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10840,7 +10715,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10882,7 +10757,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10924,7 +10799,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -10966,7 +10841,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11008,7 +10883,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11050,7 +10925,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11092,7 +10967,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11134,7 +11009,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11176,7 +11051,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11218,7 +11093,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11260,7 +11135,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11302,7 +11177,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11344,7 +11219,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11386,7 +11261,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11428,7 +11303,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11470,7 +11345,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11512,7 +11387,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11554,7 +11429,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11596,7 +11471,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11638,7 +11513,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11680,7 +11555,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_1.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_1.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11722,7 +11597,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_2.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_2.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11764,7 +11639,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_3.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_3.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11806,7 +11681,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_4.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_4.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -11848,7 +11723,7 @@ cmake_runtime_objects(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_5.S",
+            ":gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_5.S",
         ],
     }),
     hdrs = _GENERATED_HDRS_3,
@@ -13011,36 +12886,15 @@ cc_library(
 _GENERATED_COPTS_3 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
             "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
             "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
             "-O3",
             "-DNDEBUG",
             "-std=c++17",
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
