@@ -24,7 +24,6 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 
     Chunk chunk;
     {
-        /// The executor thread may need this thread's CPU slot to produce the next chunk.
         std::optional<CPULeaseParkGuard> park;
         if (queue.empty())
             park.emplace();
@@ -49,7 +48,7 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 
 void LazyOutputFormat::consume(Chunk chunk)
 {
-    /// The consumer may need this thread's CPU slot to take a chunk. This is the only producer, so a free place stays free.
+    /// This is the only producer, so a free place stays free.
     std::optional<CPULeaseParkGuard> park;
     if (queue.size() >= queue.maxFill())
         park.emplace();

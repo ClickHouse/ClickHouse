@@ -322,7 +322,6 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         };
 
         {
-            /// The flush is another query that may need this thread's CPU slot.
             CPULeaseParkGuard park;
 
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);

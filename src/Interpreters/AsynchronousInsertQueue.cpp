@@ -863,7 +863,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     /// producer, but allow other inserts to append to their buffers in the same queue shard.
     if (data_to_process)
     {
-        /// The flush that frees the pool may need this thread's CPU slot.
         CPULeaseParkGuard park;
         scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
     }

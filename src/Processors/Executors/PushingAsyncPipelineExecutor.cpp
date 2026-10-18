@@ -72,7 +72,6 @@ protected:
     }
 
 private:
-    /// Parks the CPU lease only if the wait blocks: the other side may be a pipeline that needs this thread's slot.
     /// The caller declares `park` before `lock`, so the lease is never parked or unparked under `mutex`.
     template <typename Predicate>
     void waitParked(std::unique_lock<std::mutex> & lock, std::optional<CPULeaseParkGuard> & park, Predicate predicate)
@@ -227,7 +226,6 @@ void PushingAsyncPipelineExecutor::finish()
     /// Join thread here to wait for possible exception.
     if (data && data->thread.joinable())
     {
-        /// The executor thread may need this thread's CPU slot to finish.
         CPULeaseParkGuard park;
         data->thread.join();
     }

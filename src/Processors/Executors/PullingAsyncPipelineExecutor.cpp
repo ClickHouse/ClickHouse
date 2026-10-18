@@ -228,7 +228,6 @@ void PullingAsyncPipelineExecutor::cancel()
     /// Join thread here to wait for possible exception.
     if (data->thread.joinable())
     {
-        /// The executor thread may need this thread's CPU slot to finish.
         CPULeaseParkGuard park;
         data->thread.join();
     }
