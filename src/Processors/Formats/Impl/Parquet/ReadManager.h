@@ -149,6 +149,8 @@ private:
     std::atomic<size_t> column_data_read_ahead_count {0};
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
+    /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
+    MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
     /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
     /// reader's memory high watermark minus what the `Dictionary` stage already holds (the decoded
