@@ -7,6 +7,7 @@
 #   4. skip index: the scan drops granules by the table's skip index, like a plain read
 #   5. read limit: under break-mode `max_rows_to_read`, every matching row still dies
 #   6. time limit: a soft timeout fails the DELETE instead of committing part of it
+#   7. database: an unqualified table in the predicate is read from the deleted table's database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -147,3 +148,22 @@ $CLICKHOUSE_CLIENT --max_threads 1 --max_execution_time 1 --timeout_overflow_mod
 $CLICKHOUSE_CLIENT --query "SELECT 'time_after_timeout', count() FROM uk_del_timelimit"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_timelimit"
+
+# 7. database: red if an unqualified table in the predicate is read from the session's database instead
+# of the deleted table's, so id 1 dies (`db_survivors 2`).
+OTHER_DB="${CLICKHOUSE_DATABASE}_other"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${OTHER_DB}"
+$CLICKHOUSE_CLIENT --query "CREATE DATABASE ${OTHER_DB}"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE ${OTHER_DB}.uk_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_db (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO ${OTHER_DB}.uk_keys VALUES (1)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_keys VALUES (2)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_db VALUES (1), (2)"
+
+$CLICKHOUSE_CLIENT --query "USE ${OTHER_DB}; DELETE FROM ${CLICKHOUSE_DATABASE}.uk_del_db WHERE id IN (SELECT id FROM uk_keys)"
+$CLICKHOUSE_CLIENT --query "SELECT 'db_survivors', id FROM uk_del_db ORDER BY id"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_db"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_keys"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE ${OTHER_DB}"

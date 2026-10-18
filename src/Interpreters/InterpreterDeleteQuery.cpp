@@ -136,6 +136,10 @@ BlockIO InterpreterDeleteQuery::execute()
         if (!delete_query.cluster.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
 
+        /// Otherwise the scan reads an unqualified table in the predicate from the session's database, not the deleted table's.
+        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        visitor.visit(query_ptr->as<ASTDeleteQuery &>().predicate);
+
         table->deleteByUniqueKey(query_ptr, getContext());
         return {};
     }
