@@ -1795,6 +1795,8 @@ public:
 
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
+    /// the join evaluates an input-less conjunct of ON with its left side
+    bool join_left_side_preserved = false;
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
     /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
@@ -1834,13 +1836,30 @@ public:
         return !reads_other_table;
     }
 
+    void visitWithPreservedJoinSides(QueryTreeNodePtr & node, TableExpressionNodes tables, bool left_side_preserved)
+    {
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+        visit(node);
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+    }
+
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        /// a subquery is a separate query, the sides of a join around it do not apply
+        if (isQueryOrUnionNode(child))
+        {
+            visitWithPreservedJoinSides(child, {}, false);
+            return false;
+        }
+
         const auto * join_node = parent->as<JoinNode>();
         if (!join_node || child != join_node->getJoinExpression())
             return true;
 
         TableExpressionNodes tables;
+        bool left_side_preserved = false;
         /// semi join keeps only matched rows
         if (join_node->getStrictness() != JoinStrictness::Semi)
         {
@@ -1848,11 +1867,12 @@ public:
                 tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
             if (isRightOrFull(join_node->getKind()))
                 tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+            /// the planner may swap the sides of a GLOBAL RIGHT JOIN, see tryRewriteGlobalRightJoinAsLeftJoin
+            left_side_preserved = isLeftOrFull(join_node->getKind())
+                || (join_node->getKind() == JoinKind::Right && isGlobalJoin(*join_node, getSettings()));
         }
 
-        std::swap(preserved_join_tables, tables);
-        visit(child);
-        std::swap(preserved_join_tables, tables);
+        visitWithPreservedJoinSides(child, std::move(tables), left_side_preserved);
         return false;
     }
 
@@ -2544,11 +2564,11 @@ private:
                                     existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (preserved_join_tables.empty() && existing_hint_conjuncts.emplace(and_node).second)
+                                else if (!join_left_side_preserved && existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
-                                    /// Not in an outer join ON: the join evaluates the input-less `indexHint` with its left side.
+                                    /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(
