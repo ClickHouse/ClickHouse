@@ -130,6 +130,14 @@ public:
         if (stringFamilyPairIsNotEqualityEquivalent(nested_type, constant_type))
             return;
 
+        /// A plain float is compared numerically by both `equals` and `has`, but a composite carrier
+        /// of floats (`Tuple(Float64)`, `Variant(Float64)`, ...) is compared by `has` with the generic
+        /// column comparison, which treats two NaNs as equal, while `equals` compares the nested
+        /// values numerically: `arrayExists(x -> x = tuple(nan), [tuple(nan)])` is false, but
+        /// `has([tuple(nan)], tuple(nan))` is true.
+        if ((!isFloat(nested_type) && containsFloat(nested_type)) || (!isFloat(constant_type) && containsFloat(constant_type)))
+            return;
+
         bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
         if (!types_compatible)
             types_compatible = tryGetLeastSupertype(DataTypes{nested_type, constant_type}) != nullptr;
