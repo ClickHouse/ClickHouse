@@ -1,0 +1,9 @@
+100
+buffer_stays	1	2	1
+544
+repeats_across_runs	1	17	1
+513
+touching_runs	1	18	1
+UInt64	[1,1,0,0,1]
+UInt256	[1,1,0,0,1]
+largest_key	2	8	2
