@@ -39,4 +39,13 @@ SELECT count(), sum(cityHash64(s)) FROM t_string_filter_position PREWHERE positi
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_position PREWHERE 0 < position(s, 'needle') SETTINGS apply_string_filters_during_scan = 1;
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_position PREWHERE 1 <= position(s, 'needle') SETTINGS apply_string_filters_during_scan = 1;
 
+SELECT 'the optimization is applied';
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
+SELECT count() FROM t_string_filter_position PREWHERE position(s, 'needle') != 0 SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05338_string_filter_applied';
+SYSTEM FLUSH LOGS query_log;
+SELECT sum(ProfileEvents['StringValueFilterValuesChecked']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05338_string_filter_applied';
+
 DROP TABLE t_string_filter_position;
