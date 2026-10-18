@@ -2,6 +2,7 @@
 -- UNIQUE KEY DELETE:
 --   1. explicit transaction: a DELETE inside a transaction is refused and changes nothing
 --   2. Alias: a DELETE through an Alias table deletes from the table it points to
+--   3. shadowed row locator: a table column named `_part_offset` or `_part` refuses the DELETE
 
 SET enable_unique_key = 1;
 SET allow_experimental_alias_table_engine = 1;
@@ -55,3 +56,23 @@ SELECT 'alias_delete' AS step, id FROM uk_alias_target ORDER BY id;  -- 1,3
 
 DROP TABLE uk_alias;
 DROP TABLE uk_alias_target;
+
+-- 3. shadowed row locator: red if the DELETE runs, taking the stored `_part_offset` as the row address
+-- (deleting id 2 then kills id 1), or crashes on a stored `_part`.
+DROP TABLE IF EXISTS uk_shadow_offset;
+DROP TABLE IF EXISTS uk_shadow_part;
+
+CREATE TABLE uk_shadow_offset (id UInt64, _part_offset UInt64) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
+CREATE TABLE uk_shadow_part (id UInt64, _part String) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
+
+INSERT INTO uk_shadow_offset VALUES (1, 0), (2, 0);
+INSERT INTO uk_shadow_part VALUES (1, 'x'), (2, 'x');
+
+DELETE FROM uk_shadow_offset WHERE id = 2; -- { serverError ILLEGAL_COLUMN }
+DELETE FROM uk_shadow_part WHERE id = 2; -- { serverError ILLEGAL_COLUMN }
+
+SELECT 'shadow_offset' AS step, id FROM uk_shadow_offset ORDER BY id;  -- 1,2
+SELECT 'shadow_part' AS step, id FROM uk_shadow_part ORDER BY id;  -- 1,2
+
+DROP TABLE uk_shadow_offset;
+DROP TABLE uk_shadow_part;
