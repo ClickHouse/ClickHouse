@@ -12761,12 +12761,11 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
         else el._pendingChangeLayout = true;
     }
 
-    /// Download re-executes the SQL, so offering it for a successful write would repeat its effects.
-    const download_is_read_only = await queryIsReadOnly(query);
+    const download_is_known_write = await queryIsKnownWrite(query);
     if (posted_request_num != tab.reqNum) return;
     cell.progressPhase = 'done';
     cell.failed = false;
-    cell.downloadVisible = download_is_read_only;
+    cell.downloadVisible = !download_is_known_write;
     cell.copyVisible = result.is_raw;
     cell.downloadQuery = query;
     cell.downloadParams = paramValuesSnapshot;
@@ -13997,14 +13996,13 @@ async function materializeResult(cell) {
     /// database/server/user are recorded on the cell so `paintDownloadCopy` targets the download at
     /// the connection that produced the result (see the download handler / `last_url_for_download`).
     const download_reproducible = result.url !== undefined && result.user !== undefined;
-    /// A saved INSERT/DDL result must not regain Download when its tab or history entry is restored.
-    const download_is_read_only = download_reproducible && await queryIsReadOnly(result.query || '');
+    const download_is_known_write = download_reproducible && await queryIsKnownWrite(result.query || '');
     if (matToken !== tab.reqNum) return;
     cell.downloadDatabase = result.database || '';
     cell.downloadUrl = result.url ?? '';
     cell.downloadUser = result.user ?? '';
     cell.progressPhase = 'done';
-    cell.downloadVisible = download_is_read_only;
+    cell.downloadVisible = download_reproducible && !download_is_known_write;
     cell.copyVisible = is_raw;
     if (is_raw) {
         el.elapsedNs = result.elapsed_ns;
@@ -19136,97 +19134,54 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
 /// token-walking algorithm on top of the same `DB::Lexer`). Keep the two in sync.
 function statementKeyword(tokens)
 {
-    /// PARALLEL WITH can contain writes in later children. Never retry the composite statement.
+    /// `PARALLEL WITH` combines full statements, so it has no single statement kind: its children can
+    /// carry writes even when the first child begins with `SELECT`, and it is not a `SELECT` the
+    /// server can wrap for sorting either. Report every occurrence as unresolved, which is the
+    /// conservative answer for both callers (a barrier that is never retried or parallelized, and no
+    /// sorting).
     for (let i = 0; i + 1 < tokens.length; ++i) {
-        if (tokens[i].type === TT.BareWord && tokens[i].token.toUpperCase() === 'PARALLEL'
-            && tokens[i + 1].type === TT.BareWord && tokens[i + 1].token.toUpperCase() === 'WITH')
+        if (tokens[i].type === TT.BareWord
+            && tokens[i].token.toUpperCase() === 'PARALLEL'
+            && tokens[i + 1].type === TT.BareWord
+            && tokens[i + 1].token.toUpperCase() === 'WITH') {
             return null;
+        }
     }
-
-    const is_statement = keyword => WRITE_STATEMENT_KEYWORDS.has(keyword) || PARALLELIZABLE_KEYWORDS.has(keyword);
     let depth = 0;
+    /// Bracket depth at which the leading `WITH` sits (so the CTE list is scanned at the same level
+    /// even when the whole statement is wrapped in parentheses); -1 until the leading keyword is seen.
     let with_depth = -1;
-    let expression_can_end = false;
-    let cte_complete = false;
-    let in_cte_subquery = false;
-    let after_cte_comma = false;
-
+    /// Whether the previous same-level token was `AS`, making the current bare word a CTE alias.
+    /// Cleared by any non-bare-word token: after `AS (subquery)` there is no bare-word alias.
+    let alias_follows = false;
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
-        if (OPENING_BRACKETS.has(t.type)) {
-            if (depth === with_depth) expression_can_end = false;
-            ++depth;
-            continue;
-        }
-        if (CLOSING_BRACKETS.has(t.type)) {
-            if (depth > 0) --depth;
-            if (depth === with_depth) {
-                expression_can_end = true;
-                if (in_cte_subquery) {
-                    in_cte_subquery = false;
-                    cte_complete = true;
-                }
-            }
-            continue;
-        }
-        if (with_depth >= 0 && depth === with_depth && t.type === TT.Comma) {
-            /// ClickHouse accepts a trailing CTE comma before SELECT: WITH 1 AS a, SELECT a.
-            after_cte_comma = cte_complete || expression_can_end;
-            cte_complete = false;
-            expression_can_end = false;
-            continue;
-        }
-        if (with_depth >= 0 && depth !== with_depth) continue;
-        if (t.type !== TT.BareWord) {
-            if (with_depth >= 0) {
-                /// Without an AS alias, a scalar expression can end with a literal.
-                expression_can_end = t.type === TT.Number || t.type === TT.StringLiteral
-                    || t.type === TT.QuotedIdentifier;
-            }
-            continue;
-        }
+        if (OPENING_BRACKETS.has(t.type)) { alias_follows = false; ++depth; continue; }
+        if (CLOSING_BRACKETS.has(t.type)) { alias_follows = false; if (depth > 0) --depth; continue; }
+        if (t.type !== TT.BareWord) { alias_follows = false; continue; }
         const keyword = t.token.toUpperCase();
         if (with_depth < 0) {
+            /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
+            /// leading `WITH`, it is the statement kind - whatever it is, including a keyword neither
+            /// caller recognizes (`USE`, `SET`, `CHECK`, ...), which they both reject.
             if (keyword !== 'WITH') return keyword;
             with_depth = depth;
             continue;
         }
+        /// After the leading `WITH`: the real statement keyword sits at the CTE-list level; CTE
+        /// subqueries are nested deeper and are skipped.
+        if (depth !== with_depth) continue;
+        /// A bare word right after `AS` is the CTE alias of the `expr AS alias` form - skip it even
+        /// when it is keyword-shaped.
+        if (alias_follows) { alias_follows = false; continue; }
+        if (keyword === 'AS') { alias_follows = true; continue; }
+        /// A bare word immediately followed by `AS` is the CTE name of the `name AS (subquery)`
+        /// form - skip it too; a real statement keyword is never followed by `AS`.
         const next = tokens[i + 1];
-        const followed_by_as = next && next.type === TT.BareWord && next.token.toUpperCase() === 'AS';
-        const followed_by_bracket = next && OPENING_BRACKETS.has(next.type);
-        if (after_cte_comma) {
-            after_cte_comma = false;
-            /// A keyword followed by AS can name a CTE. EXISTS(...) can start a scalar CTE.
-            if (is_statement(keyword) && !followed_by_as && !(keyword === 'EXISTS' && followed_by_bracket))
-                return keyword;
-        }
-        if (cte_complete) return is_statement(keyword) ? keyword : null;
-        if (keyword === 'AS' && next) {
-            if (followed_by_bracket) {
-                in_cte_subquery = true;
-                expression_can_end = false;
-            } else if (next.type === TT.BareWord && next.token.toUpperCase() === 'MATERIALIZED'
-                && tokens[i + 2] && OPENING_BRACKETS.has(tokens[i + 2].type)) {
-                in_cte_subquery = true;
-                expression_can_end = false;
-                ++i;
-            } else if (next.type === TT.BareWord || next.type === TT.QuotedIdentifier) {
-                /// Skip a scalar CTE alias, even when it is named SELECT or INSERT.
-                ++i;
-                cte_complete = true;
-                expression_can_end = true;
-            } else {
-                expression_can_end = false;
-            }
-            continue;
-        }
-        /// With no alias, a complete expression can be followed directly by INSERT / SELECT.
-        if (expression_can_end && is_statement(keyword) && !followed_by_as && !(keyword === 'EXISTS' && followed_by_bracket))
-            return keyword;
-        /// Operator keywords keep the preceding expression incomplete.
-        expression_can_end = !['AND', 'OR', 'IN', 'NOT', 'IS', 'LIKE', 'ILIKE', 'BETWEEN'].includes(keyword);
+        if (next && next.type === TT.BareWord && next.token.toUpperCase() === 'AS') continue;
+        if (WRITE_STATEMENT_KEYWORDS.has(keyword) || PARALLELIZABLE_KEYWORDS.has(keyword)) return keyword;
     }
-    return null;  /// Unknown statement kind never permits a re-execution.
+    return null;
 }
 
 /// Whether one statement, given as its significant lexer tokens, is read-only. Used by
@@ -19309,6 +19264,13 @@ async function queryIsReadOnly(query)
     if (tokens === null)
         return leadingKeywordIsReadOnly(query);
     return statementIsReadOnly(tokens.filter(t => t.significant));
+}
+
+/// Download resubmits SQL. Refuse writes we can identify; leave unknown statements downloadable.
+async function queryIsKnownWrite(query)
+{
+    const tokens = await tokenizeWithFallback(query);
+    return WRITE_STATEMENT_KEYWORDS.has(statementKeyword(tokens.filter(t => t.significant)));
 }
 
 /// Split the textarea content into individual queries using the lexer.
@@ -22296,9 +22258,8 @@ document.getElementById('download-button').addEventListener('click', async funct
         alert('No query to download results for');
         return;
     }
-    /// Recheck at the action boundary: this form submits the SQL again as a new HTTP query.
-    if (!await queryIsReadOnly(query)) {
-        alert('Download is only available for read-only queries because it re-executes the SQL.');
+    if (await queryIsKnownWrite(query)) {
+        alert('Download is not available for statements that modify the database.');
         return;
     }
 
