@@ -30,9 +30,11 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <algorithm>
@@ -1225,17 +1227,23 @@ bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization
 /// name resolves to the same substreams and type as the structured extraction.
 bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, const String & prefix, const String & suffix)
 {
-    /// The nested JSON-array subcolumn (`:`Array(JSON)`.@`b``) of a `Dynamic` value exists only as a
-    /// subcolumn of the JSON column owning the path, so it can only be read through the composed name.
-    /// The type hint cannot be claimed by a sibling path, and the subcolumn resolved by the storage
-    /// is validated to descend from the column when the projection is built.
-    if (suffix.starts_with(JSON_ARRAY_SUBCOLUMN))
-        return true;
-
     auto prefix_info = argument_type->tryGetSubcolumnInfo(prefix);
     auto composed_info = argument_type->tryGetSubcolumnInfo(prefix + "." + suffix);
     if (!prefix_info || !composed_info || !prefix_info->data.type)
         return false;
+
+    /// The nested JSON-array subcolumn (`:`Array(JSON)`.@`b``) of a `Dynamic` value exists only as a
+    /// subcolumn of the JSON column owning the path, so it can only be read through the composed name
+    /// and cannot be resolved against the type of the prefix. Then require the composed name to resolve
+    /// below the prefix: in ``Tuple(j JSON, `j.a.:`Array(JSON)`.@`b`` Array(Dynamic))`` the flat name
+    /// is the sibling element rather than the subcolumn of the path `j.a`.
+    if (suffix.starts_with(JSON_ARRAY_SUBCOLUMN))
+    {
+        const auto & prefix_path = prefix_info->substreams_path;
+        const auto & composed_path = composed_info->substreams_path;
+        return composed_path.size() > prefix_path.size()
+            && std::equal(prefix_path.begin(), prefix_path.end(), composed_path.begin(), isSameSubstream);
+    }
 
     auto suffix_info = prefix_info->data.type->tryGetSubcolumnInfo(suffix);
     if (!suffix_info || !suffix_info->data.type || !composed_info->data.type
@@ -1384,6 +1392,30 @@ bool resolvedSubcolumnMatchesPath(
     return std::ranges::equal(resolved_path, expected_path, isSameSubstream);
 }
 
+/// Whether the column `column_name` (or the column it is a subcolumn of) is required by the primary
+/// key, the partition key or a secondary index of the storage.
+bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+{
+    auto get_name_in_storage = [&](const String & name)
+    {
+        auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
+        return column ? column->getNameInStorage() : name;
+    };
+
+    const String name_in_storage = get_name_in_storage(column_name);
+    auto is_used = [&](const Names & key_columns)
+    {
+        return std::ranges::any_of(key_columns, [&](const String & key_column) { return get_name_in_storage(key_column) == name_in_storage; });
+    };
+
+    const auto & metadata = storage_snapshot->metadata;
+    if (is_used(metadata->getColumnsRequiredForPrimaryKey()) || is_used(metadata->getColumnsRequiredForPartitionKey()))
+        return true;
+
+    return std::ranges::any_of(
+        metadata->getSecondaryIndices(), [&](const auto & index) { return is_used(index.expression->getRequiredColumns()); });
+}
+
 QueryTreeNodePtr buildSubcolumnProjectionNode(
     const PushdownGroup & group,
     const QueryTreeNodePtr & inner_node,
@@ -1449,6 +1481,13 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
             if (has_final)
                 return nullptr;
         }
+
+        /// Index analysis matches the key expressions (`ORDER BY length(s)`) against the filter
+        /// literally and does not recognize the equivalent subcolumn (`s.size`), so a function-form
+        /// carrier over a column used by the primary key, the partition key or a secondary index is
+        /// kept, as `FunctionToSubcolumnsPass` does for the equivalent direct query.
+        if (via_function_carrier && isColumnUsedByIndexes(storage_snapshot, inner_column->getColumnName()))
+            return nullptr;
 
         /// Some storages expose subcolumns syntactically but opt out of rewriting reads of a column
         /// into direct reads of its subcolumns (e.g. StorageFile, StorageURL, StorageDistributed).
