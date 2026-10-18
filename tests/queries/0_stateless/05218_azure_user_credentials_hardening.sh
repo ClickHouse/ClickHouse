@@ -20,6 +20,8 @@ OPT_IN_TABLE="azure_hardening_opt_in_${DB}"
 
 # The Azure SDK attaches a bearer token only to an `https` endpoint.
 URL="https://localhost:11111/${DB}"
+# A disk endpoint allows only lowercase letters and digits in the path.
+DISK_URL="https://localhost:11111/$(echo "${DB}" | tr -d _)"
 
 # Azurite, for the permitted cases that can actually read and write.
 AZURITE_URL="http://localhost:10000/devstoreaccount1"
@@ -89,15 +91,15 @@ $CLICKHOUSE_CLIENT -m -q "
 # A dynamic disk from user SQL is checked as well, unlike a disk from the server configuration.
 $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${URL}', container_name = 'cont'); -- { serverError ACCESS_DENIED }
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont'); -- { serverError ACCESS_DENIED }
     CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${URL}', container_name = 'cont',
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont',
             use_workload_identity = 1); -- { serverError ACCESS_DENIED }
 "
 
 # A disk created by a session with the opt-in is reused, not built again, by a later identical definition.
 # `readonly`, `container_already_exists` and `skip_access_check` keep it from contacting the endpoint.
-OPT_IN_DISK="disk(type = azure_blob_storage, storage_account_url = '${URL}', container_name = 'cont',
+OPT_IN_DISK="disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont',
     readonly = 1, container_already_exists = 1, skip_access_check = 1)"
 $CLICKHOUSE_CLIENT --azure_allow_server_credentials_in_user_queries=1 -q "
     CREATE TABLE ${OPT_IN_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = ${OPT_IN_DISK}"

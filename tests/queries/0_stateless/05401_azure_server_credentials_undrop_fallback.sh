@@ -17,7 +17,8 @@ TABLE="azure_undrop_${DB}"
 AZURITE_URL="http://localhost:10000/devstoreaccount1"
 AZURITE_KEY="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 CONN_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=${AZURITE_KEY};BlobEndpoint=${AZURITE_URL};"
-CONTAINER="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
+# A container name has at most 63 characters.
+CONTAINER="cont-05401-$(echo "${DB}" | tr _ -)"
 
 cleanup() {
     $CLICKHOUSE_CLIENT -m -q "
