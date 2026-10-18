@@ -8,6 +8,11 @@
 #include <Common/TimerDescriptor.h>
 #include <Common/AsyncTaskExecutor.h>
 
+/// Grants the unit test access to checkTimeout() and to the receive-timeout state,
+/// which are otherwise internal. Keep in sync with the struct name in
+/// src/Client/tests/gtest_packet_receiver_timeout_latch.cpp.
+struct PacketReceiverTestAccess;
+
 namespace DB
 {
 
@@ -35,6 +40,9 @@ public:
     {
         timeout_descriptor.setRelative(timeout_);
         timeout = timeout_;
+        /// Re-arming the timer starts a new receive interval, so any previously declared
+        /// timeout no longer applies.
+        is_timeout_expired = false;
     }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
@@ -68,6 +76,8 @@ private:
     /// We use timer descriptor for checking socket timeouts.
     TimerDescriptor timeout_descriptor;
     Poco::Timespan timeout;
+    /// Whether a receive timeout was DECLARED (timer fd ready while the socket was not),
+    /// not merely whether the timer fd was ever observed ready. Cleared by setTimeout().
     bool is_timeout_expired = false;
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
@@ -78,6 +88,8 @@ private:
     std::exception_ptr exception;
 
     bool is_read_in_process = false;
+
+    friend struct ::PacketReceiverTestAccess;
 };
 
 }
