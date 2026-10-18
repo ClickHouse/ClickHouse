@@ -98,6 +98,58 @@ bool producesDocuments(const ASTPtr & query)
     return select && readsDocuments(*select) && selectsEveryColumn(*select);
 }
 
+/** Whether the rows a select reads still have the object id of the stored documents. An exclusion of
+  * `_id` in a stage below - `[{$project: {_id: 0}}, {$match: ...}]` - hands the documents on without
+  * it, and a select over that stage must not ask for it again.
+  */
+bool inputKeepsObjectId(const ASTSelectQuery & select)
+{
+    const auto tables = select.tables();
+    if (!tables || tables->children.empty())
+        return false;
+
+    const auto * element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        return false;
+
+    const auto * table_expression = element->table_expression->as<ASTTableExpression>();
+    if (!table_expression)
+        return false;
+    if (table_expression->database_and_table_name)
+        return true;
+
+    const auto * subquery = table_expression->subquery ? table_expression->subquery->as<ASTSubquery>() : nullptr;
+    if (!subquery || subquery->children.empty())
+        return false;
+
+    auto keeps_object_id = [](const ASTPtr & query)
+    {
+        const auto * inner = query->as<ASTSelectQuery>();
+        if (!inner)
+            return false;
+        const auto select_list = inner->select();
+        if (!select_list || select_list->children.size() != 1)
+            return false;
+        const auto * asterisk = select_list->children.front()->as<ASTAsterisk>();
+        if (!asterisk)
+            return false;
+        const auto excluded = excludedFieldsOfAsterisk(*asterisk);
+        return excluded && excluded->empty() && inputKeepsObjectId(*inner);
+    };
+
+    const auto & query = subquery->children.front();
+    if (const auto * union_query = query->as<ASTSelectWithUnionQuery>())
+    {
+        if (!union_query->list_of_selects || union_query->list_of_selects->children.empty())
+            return false;
+        for (const auto & child : union_query->list_of_selects->children)
+            if (!keeps_object_id(child))
+                return false;
+        return true;
+    }
+    return keeps_object_id(query);
+}
+
 /** Whether the select reads the stored documents rather than the ones another select builds. Only
   * such a select reads the collection, and only there does a field name a path of a stored document:
   * the fields of the documents a stage builds are the aliases of that stage.
@@ -208,7 +260,7 @@ const ASTIdentifier * elementWiseField(const ASTPtr & node)
   * holds, which is the one thing of Mongo's equality it cannot express - and it is a narrower
   * answer, never a wrong one.
   */
-ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
+ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & input_table)
 {
     /** Mongo's `null` equals both a `null` and a missing field, and the path of a missing field is
       * `NULL` as well. `equals` with `NULL` is `NULL` for every document rather than true, which
@@ -229,11 +281,16 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
     const auto & right = function.arguments->children[1];
 
     /// The object id is a column of the table rather than a path of the document, and it holds one
-    /// value, so the condition over its elements is the condition over it.
-    auto field_or_path = [](const ASTIdentifier & field) -> ASTPtr
+    /// value, so the condition over its elements is the condition over it. It is qualified with the
+    /// table it is read from the same way as everywhere else - see `rewriteField`.
+    auto field_or_path = [&](const ASTIdentifier & field) -> ASTPtr
     {
         if (field.name() == OBJECT_ID_COLUMN)
-            return make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+        {
+            if (input_table.empty())
+                return make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+            return make_intrusive<ASTIdentifier>(std::vector<String>{input_table, String(OBJECT_ID_COLUMN)});
+        }
         return makeDocumentPath(field);
     };
 
@@ -357,7 +414,7 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
 
     if (const auto * function = node->as<ASTFunction>())
     {
-        if (auto rewritten = rewriteElementWiseCondition(*function))
+        if (auto rewritten = rewriteElementWiseCondition(*function, input_table))
         {
             rewritten->setAlias(node->tryGetAlias());
             node = std::move(rewritten);
@@ -411,6 +468,25 @@ void rewriteSelect(ASTSelectQuery & select)
     std::unordered_set<String> aliases;
     collectAliases(select.select(), aliases);
     const std::unordered_set<String> input_scope;
+
+    /** An asterisk next to fields of its own - what `$set` and `$addFields` are lowered into - keeps
+      * every column of the input and adds the fields as columns beside it. The stored document is one
+      * column, so the result would be that column and the new fields next to it rather than one
+      * document with the fields replaced or added in it, which is refused rather than answered.
+      */
+    if (const auto select_list = select.select(); select_list && select_list->children.size() > 1)
+    {
+        for (const auto & child : select_list->children)
+        {
+            if (child->as<ASTAsterisk>())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A collection created by this endpoint keeps whole documents in one column, and a stage that adds fields to the "
+                    "documents it reads, such as '$set' or '$addFields', cannot change a field of a stored document: name the fields to "
+                    "return in a '$project' instead, or keep the collection in a table created in ClickHouse, whose fields are columns "
+                    "of their own");
+        }
+    }
 
     /** The fields of a document are paths of the `json` column, which no alias of the select list
       * captures, but the object id is a column of its own, and an alias wins over a column of the
@@ -593,7 +669,8 @@ bool selectDocumentsOfCollection(const ASTPtr & query)
             "out of it: ask for the fields to keep instead of the ones to remove, or keep the collection in a table created in "
             "ClickHouse, whose fields are columns of their own");
 
-    const bool keeps_object_id = excluded->empty();
+    /// The object id is also gone when a stage below has excluded it already.
+    const bool keeps_object_id = excluded->empty() && inputKeepsObjectId(*select);
 
     ASTPtr document = make_intrusive<ASTIdentifier>(String(DOCUMENT_COLUMN));
 
