@@ -36,8 +36,12 @@ source_owned_doc_files = embedded_doc_files + [
 source_owned_doc_paths = inline_doc_paths + [
     "src/Databases/",
     "src/DataTypes/",
+    "src/Dictionaries/",
+    "src/Interpreters/",
+    "src/Parsers/",
     "src/Processors/Formats/",
     "src/Storages/",
+    "src/WindowFunctions/",
 ]
 
 source_owned_doc_markers = (
