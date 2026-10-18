@@ -121,67 +121,61 @@ std::string statementKeyword(const std::vector<Tok> & tokens)
             && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "WITH")
             return {};
     }
+
     int depth = 0;
-    /// Bracket depth at which the leading `WITH` sits; -1 until the leading keyword is seen.
     int with_depth = -1;
-    /// Whether the previous same-level token was `AS`, making the current bare word a CTE alias.
-    /// Cleared by any non-bare-word token: after `AS (subquery)` there is no bare-word alias.
-    bool alias_follows = false;
+    /// A scalar CTE can contain a top-level EXISTS keyword: the statement starts after its alias.
+    bool cte_complete = false;
+    bool in_cte_subquery = false;
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Tok & t = tokens[i];
         if (isOpeningBracket(t.type))
         {
-            alias_follows = false;
             ++depth;
             continue;
         }
         if (isClosingBracket(t.type))
         {
-            alias_follows = false;
             if (depth > 0)
                 --depth;
+            if (in_cte_subquery && depth == with_depth)
+            {
+                in_cte_subquery = false;
+                cte_complete = true;
+            }
+            continue;
+        }
+        if (with_depth >= 0 && depth == with_depth && cte_complete && t.type == DB::TokenType::Comma)
+        {
+            cte_complete = false;
             continue;
         }
         if (t.type != DB::TokenType::BareWord)
-        {
-            alias_follows = false;
             continue;
-        }
         const std::string keyword = toUpper(t.text);
         if (with_depth < 0)
         {
-            /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
-            /// leading `WITH`, it is the statement kind - whatever it is, including a keyword no
-            /// caller recognizes (`USE`, `SET`, `CHECK`, ...), which they all reject.
             if (keyword != "WITH")
                 return keyword;
             with_depth = depth;
             continue;
         }
-        /// After the leading `WITH`: the real statement keyword sits at the CTE-list level; CTE
-        /// subqueries are nested deeper and are skipped.
         if (depth != with_depth)
             continue;
-        /// A bare word right after `AS` is the CTE alias of the `expr AS alias` form - skip it even
-        /// when it is keyword-shaped (with an explicit `AS`, the parser accepts any bare word as
-        /// the alias; only alias-without-`AS` rejects keywords).
-        if (alias_follows)
-        {
-            alias_follows = false;
-            continue;
-        }
-        if (keyword == "AS")
-        {
-            alias_follows = true;
-            continue;
-        }
-        /// A bare word immediately followed by `AS` is the CTE name of the `name AS (subquery)`
-        /// form - skip it too; a real statement keyword is never followed by `AS`.
-        if (i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "AS")
-            continue;
-        if (write_statement_keywords.contains(keyword) || parallelizable_keywords.contains(keyword))
+        if (cte_complete)
             return keyword;
+        if (keyword == "AS" && i + 1 < tokens.size())
+        {
+            const Tok & next = tokens[i + 1];
+            if (isOpeningBracket(next.type))
+                in_cte_subquery = true;
+            else if (next.type == DB::TokenType::BareWord || next.type == DB::TokenType::QuotedIdentifier)
+            {
+                ++i;
+                cte_complete = true;
+            }
+        }
     }
     return {};
 }
@@ -298,6 +292,9 @@ TEST(PlayQueryIsReadOnly, LeadingWithSelectIsReadOnly)
     EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, 2 AS b SELECT a + b"));
     EXPECT_TRUE(queryIsReadOnly("WITH toInt32(number) AS a SELECT a FROM numbers(3)"));
     EXPECT_TRUE(queryIsReadOnly("WITH 1 IN (1, 2) AS a SELECT a"));
+    /// EXISTS in a scalar CTE is an expression, not the statement keyword.
+    EXPECT_TRUE(queryIsReadOnly("WITH EXISTS (SELECT 1) AS x SELECT x"));
+    EXPECT_TRUE(queryIsReadOnly("WITH 1 AS a, EXISTS (SELECT 1) AS x SELECT x"));
     /// A subquery CTE that itself contains an `INSERT`-like string must not flip the decision.
     EXPECT_TRUE(queryIsReadOnly("WITH x AS (SELECT 'INSERT INTO t' AS s) SELECT * FROM x"));
     /// `WITH RECURSIVE`.
@@ -314,6 +311,9 @@ TEST(PlayQueryIsReadOnly, LeadingWithWriteIsNotReadOnly)
     EXPECT_FALSE(queryIsReadOnly("with y as (select 1) insert into x select * from y"));
     /// A scalar CTE followed by an `INSERT`.
     EXPECT_FALSE(queryIsReadOnly("WITH 42 AS v INSERT INTO x SELECT v"));
+    /// An EXISTS expression must never expose Download for the INSERT that follows it.
+    EXPECT_FALSE(queryIsReadOnly("WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x"));
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 AS a, EXISTS (SELECT 1) AS x INSERT INTO t SELECT x"));
     /// Whitespace and comments before the `WITH` do not matter.
     EXPECT_FALSE(queryIsReadOnly("  /* c */ WITH y AS (SELECT 1) INSERT INTO x SELECT * FROM y"));
 }
@@ -359,6 +359,9 @@ TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)
     /// (false), the dependent read is parallelizable (true).
     EXPECT_EQ(
         splitAllQueriesIsSelect("WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y; SELECT count() FROM t"),
+        (std::vector<bool>{false, true}));
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x; SELECT count() FROM t"),
         (std::vector<bool>{false, true}));
     /// The statement kind is per statement, not inherited from neighbors; a trailing semicolon and
     /// plain writes behave as before.

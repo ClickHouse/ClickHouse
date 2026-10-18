@@ -1131,6 +1131,111 @@ async function main() {
             res.failed && res.phase === 'error', res);
     }
 
+ 
+    /// Contract 8: Download resubmits the query. Drive the page's real query classifier,
+    /// live-result state, saved-result restore, and click handler with a working lexer token stream.
+    /// A WITH expression containing EXISTS must not turn a subsequent INSERT into a read-only query.
+    {
+        const page = await bootPage(js);
+        const result = JSON.parse(await page.run(`(async () => {
+            /// The harness blocks the WASM fetch, so supply the production JS tokenizer's token
+            /// stream to exercise the SAME statementKeyword path as the WASM-backed browser.
+            tokenizeOrNull = async (query) => fallbackTokenize(query);
+            const cases = [
+                { query: 'WITH EXISTS (SELECT 1) AS x INSERT INTO t SELECT x', safe: false },
+                { query: 'WITH 1 AS a, EXISTS (SELECT 1) AS x INSERT INTO t SELECT x', safe: false },
+                { query: 'INSERT INTO t VALUES (1)', safe: false },
+                { query: 'SELECT 1', safe: true },
+                { query: 'WITH EXISTS (SELECT 1) AS x SELECT x', safe: true },
+            ];
+            const classified = [];
+            const live = [];
+            const restored = [];
+
+            function safetyCell(query) {
+                const tab = makeTab('Download guard', query);
+                tab.reqNum = 1;
+                tab.panel = document.createElement('div');
+                const cell = activeCell(tab);
+                cell.resultEl = new QueryResultElement();
+                cell.resultSlot = document.createElement('div');
+                cell.resultSlot.appendChild(cell.resultEl);
+                tab.panel.appendChild(cell.resultSlot);
+                tabs.push(tab);
+                activeTabId = tab.id;
+                return cell;
+            }
+
+            const savedPostImpl = postImpl;
+            postImpl = async () => ({
+                response_ok: true, is_error: false, is_table: false, is_raw: true,
+                is_image: false, is_chart: false, is_base64: false,
+                is_truncated: false, framing_kind: '', format: 'CSV', reply: '1\\n',
+            });
+            for (const c of cases) {
+                classified.push(await queryIsReadOnly(c.query));
+                const cell = safetyCell(c.query);
+                await postSingle(cell, 1, c.query, undefined, {}, 0,
+                    { url: 'http://example.test', user: 'play', password: '' }, '');
+                live.push({ visible: cell.downloadVisible, done: cell.progressPhase === 'done' });
+            }
+            postImpl = savedPostImpl;
+
+            for (const c of cases) {
+                const cell = safetyCell(c.query);
+                cell.result = {
+                    query: c.query, ok: true, error: false, data: '1\\n',
+                    framing_kind: '', format: 'CSV', url: 'http://example.test',
+                    user: 'play', database: '', elapsed_ns: 1000000, params: {},
+                };
+                await materializeResult(cell);
+                restored.push({ visible: cell.downloadVisible, done: cell.progressPhase === 'done' });
+            }
+
+            const submitted = [];
+            const alerts = [];
+            globalThis.alert = message => alerts.push(message);
+            const savedCreate = document.createElement;
+            document.createElement = function (tag) {
+                const el = savedCreate(tag);
+                if (tag === 'form')
+                    el.submit = () => submitted.push(el.children.find(child => child.name === 'query')?.value);
+                return el;
+            };
+            document.getElementById('download-format').value = 'CSV';
+            const clicked = [];
+            for (const c of cases) {
+                last_query_for_download = c.query;
+                last_url_for_download = 'http://example.test';
+                last_user_for_download = 'play';
+                last_database_for_download = '';
+                last_shape_for_download = '';
+                last_params_for_download = {};
+                const submissionsBefore = submitted.length;
+                const alertsBefore = alerts.length;
+                document.getElementById('download-button').dispatchEvent({ type: 'click' });
+                await new Promise(resolve => setTimeout(resolve, 5));
+                clicked.push({
+                    count: submitted.length - submissionsBefore,
+                    alerts: alerts.length - alertsBefore,
+                    query: submitted.length > submissionsBefore ? submitted[submitted.length - 1] : null,
+                });
+            }
+            document.createElement = savedCreate;
+            return JSON.stringify({ cases, classified, live, restored, clicked });
+        })()`));
+        for (let i = 0; i < result.cases.length; ++i) {
+            const c = result.cases[i];
+            const name = 'download-safety ' + c.query;
+            check(name, 'statement kind classified safely', result.classified[i] === c.safe, result.classified[i]);
+            check(name, 'live result gates Download', result.live[i].done && result.live[i].visible === c.safe, result.live[i]);
+            check(name, 'restored result gates Download', result.restored[i].done && result.restored[i].visible === c.safe, result.restored[i]);
+            const click = result.clicked[i];
+            check(name, 'download handler never submits writes', click.count === (c.safe ? 1 : 0)
+                && (c.safe ? click.query === c.query && click.alerts === 0 : click.alerts === 1), click);
+        }
+    }
+
     if (failures === 0) {
         console.log('All scenarios passed');
         process.exit(0);
