@@ -406,8 +406,12 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         /// potentially S3/GCS, which is right for refusing a create but would hand a durable grant to a disk
         /// whose backend is not S3 or GCS at all. The caller confirms the candidate against the resolved
         /// configuration with `resolvedDiskConfigReliesOnServerCredentials` before writing the marker.
+        /// An `include` or an indirect backend type is always a candidate, even when the literal root is
+        /// anonymous: the substituted configuration can add a `locations.<name>` child (or replace the root
+        /// backend) that relies on server credentials, and the post-resolution checks re-apply the restriction
+        /// to it on reload. Only the resolved configuration can tell whether the disk needs the marker.
         info->may_persist_server_credentials_allowance = !is_loading_from_existing_metadata
-            && (relies_on_server_credentials || gcs_relies_on_server_credentials)
+            && (relies_on_server_credentials || gcs_relies_on_server_credentials || has_include || type_is_indirect)
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
     }
 

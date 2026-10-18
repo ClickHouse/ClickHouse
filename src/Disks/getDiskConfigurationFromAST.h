@@ -47,7 +47,9 @@ struct DynamicS3DiskCredentialInfo
     /// The marker is honored (only) on later metadata loads, so the disk keeps working across restart without
     /// re-opting in. Before writing it the caller must confirm the candidate against the resolved configuration
     /// with `resolvedDiskConfigReliesOnServerCredentials`: this flag is derived from a conservative guess that
-    /// treats an `include` or an indirect backend type as potentially S3/GCS.
+    /// treats an `include` or an indirect backend type as potentially S3/GCS. Such a disk is always a candidate,
+    /// even with an anonymous literal root, because the substitution can add a `locations.<name>` child that
+    /// relies on server credentials.
     bool may_persist_server_credentials_allowance = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
