@@ -1,0 +1,6 @@
+gbl_stop_distributed	5	-
+gbl_stop_merge_tree	5	1
+gbl_stop_merge_tree_aggregate	5	0
+gbl_stop_single_thread	5	-
+gbl_stop_stream_with_single_key	5	-
+gbl_stop_user_overflow_mode_any	1000	-

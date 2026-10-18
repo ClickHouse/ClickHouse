@@ -1369,6 +1369,9 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::PortFull;
     }
 
+    if (!is_consume_finished && many_data->stop_consuming.load(std::memory_order_relaxed))
+        is_consume_finished = true;
+
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized.test())
     {
@@ -1510,6 +1513,9 @@ void AggregatingTransform::consume(Chunk chunk)
         else
             capturePerStreamKeptKeysSeed();
     }
+
+    if (is_consume_finished && no_more_keys && params->params.stop_all_streams_on_overflow_any)
+        many_data->stop_consuming.store(true, std::memory_order_relaxed);
 }
 
 void AggregatingTransform::capturePerStreamKeptKeysSeed()

@@ -3471,6 +3471,9 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::ANY:
                 ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
+                /// Without aggregate functions, the rest of the input cannot change the result.
+                if (params.aggregates_size == 0)
+                    return false;
                 break;
         }
     }

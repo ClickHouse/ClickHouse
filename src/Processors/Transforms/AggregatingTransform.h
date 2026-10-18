@@ -110,6 +110,8 @@ struct ManyAggregatedData
     std::atomic<UInt32> num_finished = 0;
     std::shared_ptr<SharedKeptKeys> shared_kept_keys;
 
+    std::atomic<bool> stop_consuming = false;
+
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
     /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
