@@ -119,7 +119,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     }
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(
-        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
+        args, context, &postgresql_settings, globCaller(fmt::format("Table function '{}'", name)),
+        /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
     /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
