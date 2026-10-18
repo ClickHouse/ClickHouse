@@ -1,4 +1,5 @@
 #include <Functions/array/arrayResize.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
@@ -132,10 +133,13 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
 
     auto sink = GatherUtils::createArraySink(result_array, size);
 
+    const auto check_cancellation = makeCancellationCheck(name);
+    CancellationBudget budget(check_cancellation);
+
     if (isColumnConst(*size_column))
-        GatherUtils::resizeConstantSize(*array_source, *value_source, *sink, size_column->getInt(0));
+        GatherUtils::resizeConstantSize(*array_source, *value_source, *sink, size_column->getInt(0), budget);
     else
-        GatherUtils::resizeDynamicSize(*array_source, *value_source, *sink, *size_column);
+        GatherUtils::resizeDynamicSize(*array_source, *value_source, *sink, *size_column, budget);
 
     return result_column;
 }

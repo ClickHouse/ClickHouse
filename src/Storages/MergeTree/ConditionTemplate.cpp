@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Functions/CancellationBudget.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -222,10 +223,11 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
         Cond produced = generate(&specialized, specialized.getOutputs().front());
         return setSubstituted(partition_id, std::move(produced));
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
+        rethrowIfQueryCancelled(e);
         return generateUnsubstituted();
     }
 }

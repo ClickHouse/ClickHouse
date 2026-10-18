@@ -32,6 +32,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/TypeTree.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
 
@@ -412,6 +413,7 @@ bool isRewriteSemanticallySafe(
     /// As a result, given the current rewrite, if `const <op> DEFAULT` is false, only then the
     /// transformation is semantically correct.
     Field comparison_result;
+    CurrentThread::checkIfNotCancelled();
     try
     {
         auto function_resolver = FunctionFactory::instance().get(attr_comparison_function_name, context);
