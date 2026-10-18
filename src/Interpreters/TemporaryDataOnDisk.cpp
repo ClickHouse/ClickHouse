@@ -84,7 +84,7 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
 
 size_t getTemporaryFileReserveSize(size_t data_size, size_t min_free_disk_space)
 {
-    size_t reserve_size;
+    size_t reserve_size = 0;
     if (common::addOverflow(data_size, min_free_disk_space, reserve_size))
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
             "Cannot reserve {} bytes for temporary data with {} bytes of free disk space to keep",
