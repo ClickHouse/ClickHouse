@@ -8419,11 +8419,20 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     /// it was active when the snapshot was taken, and the snapshot has all the commands that are not yet
     /// applied to it. Otherwise the part was replaced in the meantime, and its column identity cannot be
     /// established, so the optimization is declined.
+    /// Inside a transaction, the snapshot of the transaction also contains `Outdated` parts that are removed
+    /// by a transaction that is not committed yet, or committed after the snapshot of this one, the same as
+    /// a regular read does. A part replaced by a background merge or mutation gets a non-transactional removal,
+    /// which is visible to any snapshot, so such a part is no longer visible and is declined the same way.
+    const auto txn = query_context->getCurrentTransaction();
     for (const auto & part : parts)
     {
-        if (part->getState() != DataPartState::Active)
+        bool still_visible = txn
+            ? part->version->isVisible(txn->getSnapshot(), txn->tid)
+            : part->getState() == DataPartState::Active;
+
+        if (!still_visible)
         {
-            LOG_DEBUG(log, "No defaultness stats for column {}: part {} is no longer active", column_name, part->name);
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} is no longer visible", column_name, part->name);
             return std::nullopt;
         }
     }
