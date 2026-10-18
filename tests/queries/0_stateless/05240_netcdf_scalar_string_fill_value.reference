@@ -7,9 +7,13 @@
 0	02
 0	03
 1	\N
---- a longer string of the candidate byte does not take the candidate
-01
+--- a byte inside a longer string takes the candidate, because the netCDF library masks single characters
+02
 0101
+1	\N
+0	0101
+--- every byte occurs inside longer strings: nothing is left
+1
 --- 254 one-byte strings and a NULL: the one left over is the sentinel
 C9
 1	254

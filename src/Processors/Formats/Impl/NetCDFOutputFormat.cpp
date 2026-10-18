@@ -381,12 +381,13 @@ String chooseFillValue(const IColumn & column, const UInt8 * null_map, const Str
 /// column. The `_FillValue` attribute of a variable must be scalar - the netCDF library refuses to
 /// fill a variable whose attribute has more than one element - so the candidates are the strings of
 /// one byte. The zero byte is not one of them, because it is the padding of the shorter strings.
-/// A column that contains all of the 255 other one-byte strings has nothing left, and then the
-/// result is empty.
-String chooseStringFillValue(const std::bitset<256> & taken_one_byte_values)
+/// The netCDF library masks every element equal to the attribute, so a byte that occurs anywhere
+/// in the data is taken, not only a whole string of one byte. A column that contains all of the
+/// 255 other bytes has nothing left, and then the result is empty.
+String chooseStringFillValue(const std::bitset<256> & taken_bytes)
 {
     for (size_t byte = 1; byte < 256; ++byte)
-        if (!taken_one_byte_values.test(byte))
+        if (!taken_bytes.test(byte))
             return String(1, static_cast<char>(byte));
     return {};
 }
@@ -532,9 +533,11 @@ void NetCDFOutputFormat::finalizeImpl()
                 ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
                 : nullptr;
             bool has_nulls = false;
-            /// The one-byte strings of the column, which are the candidates for the `_FillValue`
-            /// that is chosen below only when the column has a NULL in it.
-            std::bitset<256> taken_one_byte_values;
+            /// The bytes that occur anywhere in the values of the column. The `_FillValue` that is
+            /// chosen below, only when the column has a NULL in it, must be none of them: it is a
+            /// scalar of the type `char`, and the netCDF library masks every single character that
+            /// is equal to it, not only a whole string that consists of it.
+            std::bitset<256> taken_bytes;
             for (size_t i = 0; i < variable.data->size(); ++i)
             {
                 if (null_map && null_map[i])
@@ -545,8 +548,9 @@ void NetCDFOutputFormat::finalizeImpl()
 
                 std::string_view value = variable.data->getDataAt(i);
 
-                if (value.size() == 1)
-                    taken_one_byte_values.set(static_cast<UInt8>(value[0]));
+                if (null_map)
+                    for (char c : value)
+                        taken_bytes.set(static_cast<UInt8>(c));
 
                 /// A string shorter than the dimension of the variable is padded with zero bytes,
                 /// so a value that itself ends in a zero byte cannot be read back intact: every
@@ -561,19 +565,19 @@ void NetCDFOutputFormat::finalizeImpl()
                     variable.string_length = std::max<UInt64>(variable.string_length, value.size());
             }
 
-            /// A NULL of a string column is written as a one-byte string that the data of the column
-            /// does not contain, published as the `_FillValue` attribute, so that a NULL and an
-            /// empty string are not both stored as the same empty payload. A column with no NULLs
-            /// in it gets no attribute and is read back as not `Nullable`.
+            /// A NULL of a string column is written as a one-byte string of a character that does not
+            /// occur anywhere in the data of the column, published as the `_FillValue` attribute, so
+            /// that a NULL and an empty string are not both stored as the same empty payload. A column
+            /// with no NULLs in it gets no attribute and is read back as not `Nullable`.
             if (has_nulls)
             {
-                variable.fill_value = chooseStringFillValue(taken_one_byte_values);
+                variable.fill_value = chooseStringFillValue(taken_bytes);
 
-                /// The 255 candidates can all be present in the data, and then there is nothing to
+                /// The 255 candidates can all occur in the data, and then there is nothing to
                 /// write a NULL as, the same as for a small numeric type below.
                 if (variable.fill_value.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The column {} is Nullable and its values contain every one-byte string other than the zero byte, "
+                        "The column {} is Nullable and its values contain every byte other than the zero byte, "
                         "so the NetCDF format has no character left to write the NULLs as", variable.name);
 
                 variable.string_length = std::max<UInt64>(variable.string_length, variable.fill_value.size());

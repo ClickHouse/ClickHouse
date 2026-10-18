@@ -8,8 +8,8 @@ FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.nc
 
 # The `_FillValue` attribute of a variable must be scalar - the netCDF library refuses to fill a
 # variable whose `_FillValue` has more than one element - so the NULLs of a String column are
-# written as a single character other than the zero byte that the data of the column does not
-# contain as a one-byte string, and the reader rejects a `_FillValue` of several characters on a
+# written as a single character other than the zero byte that does not occur anywhere in the data
+# of the column, and the reader rejects a `_FillValue` of several characters on a
 # `char` variable that is not exposed as strings.
 
 echo "--- the sentinel is the next free one-byte string"
@@ -17,9 +17,13 @@ $CLICKHOUSE_LOCAL -q "SELECT if(number = 3, NULL, char(number + 1)) AS s FROM nu
 $CLICKHOUSE_LOCAL -q "SELECT hex(s) FROM file('$FILE', NetCDF)"
 $CLICKHOUSE_LOCAL -q "SELECT s IS NULL, hex(s) FROM file('$FILE', NetCDF) SETTINGS input_format_netcdf_fill_value_as_null = 1"
 
-echo "--- a longer string of the candidate byte does not take the candidate"
+echo "--- a byte inside a longer string takes the candidate, because the netCDF library masks single characters"
 $CLICKHOUSE_LOCAL -q "SELECT if(number = 0, NULL, char(1, 1)) AS s FROM numbers(2) INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
 $CLICKHOUSE_LOCAL -q "SELECT hex(s) FROM file('$FILE', NetCDF)"
+$CLICKHOUSE_LOCAL -q "SELECT s IS NULL, hex(s) FROM file('$FILE', NetCDF) SETTINGS input_format_netcdf_fill_value_as_null = 1"
+
+echo "--- every byte occurs inside longer strings: nothing is left"
+$CLICKHOUSE_LOCAL -q "SELECT if(number = 0, NULL, char(number, number % 255 + 1)) AS s FROM numbers(256) INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
 
 echo "--- 254 one-byte strings and a NULL: the one left over is the sentinel"
 $CLICKHOUSE_LOCAL -q "SELECT if(number = 200, NULL, char(number + 1)) AS s FROM numbers(255) INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
