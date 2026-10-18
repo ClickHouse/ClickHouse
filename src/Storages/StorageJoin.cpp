@@ -61,6 +61,7 @@ namespace FailPoints
     extern const char storage_join_mutate_fail_putting_backup_back[];
     extern const char storage_join_mutate_fail_removing_superseded_backups[];
     extern const char storage_join_publish_fail_during_rollback[];
+    extern const char storage_join_publish_fail_before_replay[];
 }
 
 namespace ErrorCodes
@@ -646,6 +647,11 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
 
     rebuildLiveStateIfLost(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
 
+    fiu_do_on(FailPoints::storage_join_publish_fail_before_replay,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before replaying the backup of an INSERT into a Join");
+    });
+
     try
     {
         forEachBlockInBackupFile(backup_file_path, [this](const Block & block)
@@ -658,10 +664,8 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
     catch (...)
     {
         /// The write lock is still held, so the partially updated state is replaced before any
-        /// reader can see it. The backup of the failed insert is discarded first, within the same
-        /// publish critical section, so neither this rebuild nor any later publish, rollback, or
-        /// rebuild of a lost state can replay it.
-        discardPromotedBackup(fs::path(backup_file_path).filename());
+        /// reader can see it. The rebuild skips the backup of the failed insert, which the caller
+        /// discards before leaving the publish critical section.
 
         /// The rollback builds a second copy of the table, so it can fail as well (for example,
         /// on memory limits). The partially updated state must not stay visible then: mark it as

@@ -89,9 +89,10 @@ protected:
     void forEachBlockInBackupFile(const String & file_path, const std::function<void(const Block &)> & callback) const;
 
     /// Apply the just-promoted backup file of an `INSERT` to the live state, with the strong
-    /// exception guarantee: on failure the live state has been restored to what it was before and
-    /// the backup file has been discarded (`discardPromotedBackup`) before the exception leaves the
-    /// critical section, so a failed `INSERT` never publishes any rows. Called under `mutate_mutex`.
+    /// exception guarantee: on failure the live state has been restored to what it was before.
+    /// Called under `mutate_mutex`; on failure the caller discards the backup file
+    /// (`discardPromotedBackup`) before leaving the critical section, so a failed `INSERT` never
+    /// publishes any rows.
     virtual void publishBackup(const String & backup_file_path, ContextPtr context) = 0;
 
     void restoreFromFile(const String & file_path, ContextPtr context = nullptr);

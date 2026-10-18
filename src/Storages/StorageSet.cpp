@@ -150,7 +150,7 @@ void SetOrJoinSink::discardStagedBackup() noexcept
     {
         /// A promoted file left in the table directory would be replayed by the next publish and
         /// restored on restart, bringing back the rows of this failed `INSERT`. Usually it is
-        /// already gone: `publishBackup` discards it before leaving the publish critical section.
+        /// already gone: `onFinish` discards it before leaving the publish critical section.
         table.discardPromotedBackup(backup_file_name);
     }
     else
@@ -178,9 +178,9 @@ void SetOrJoinSink::discardStagedBackup() noexcept
 
 void SetOrJoinSink::onException(std::exception_ptr)
 {
-    /// If the failure happened while `publishBackup` was replaying the promoted backup, the live
-    /// state has already been restored and the promoted file discarded (`publishBackup` gives the
-    /// strong exception guarantee), so only the file of an earlier failure remains to clean up.
+    /// If the failure happened after the backup was promoted, the live state has already been
+    /// restored (`publishBackup` gives the strong exception guarantee) and the promoted file
+    /// discarded by `onFinish`, so only the file of an earlier failure remains to clean up.
     FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_discard);
 
     /// The same critical section as the publish phase in `onFinish`: the rollback of a concurrently
@@ -242,12 +242,23 @@ void SetOrJoinSink::onFinish()
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
         backup_promoted = true;
 
-        FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_replay);
+        /// From here on, any exception (a lock timeout, a failed rebuild of a lost state, a failed
+        /// replay) must discard the promoted file before it leaves the publish critical section:
+        /// otherwise a concurrent publish or rollback could replay the rows of this failed insert
+        /// before `onException` reacquires `mutate_mutex`.
+        try
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_replay);
 
-        /// Replays the promoted backup into the live state with the strong exception guarantee:
-        /// if the replay fails, the state is restored and the promoted file removed before the
-        /// exception leaves the publish critical section.
-        table.publishBackup(fs::path(backup_path) / backup_file_name, getContext());
+            /// Replays the promoted backup into the live state with the strong exception guarantee:
+            /// if the replay fails, the state is restored before the exception leaves this call.
+            table.publishBackup(fs::path(backup_path) / backup_file_name, getContext());
+        }
+        catch (...)
+        {
+            table.discardPromotedBackup(backup_file_name);
+            throw;
+        }
     }
     else
     {
@@ -363,7 +374,7 @@ void StorageSet::finishInsert()
     current_set->finishInsert();
 }
 
-void StorageSet::publishBackup(const String & backup_file_path, ContextPtr context)
+void StorageSet::publishBackup(const String & /*backup_file_path*/, ContextPtr context)
 {
     /// Replay the promoted backup into a private `Set` and publish it with a single swap, instead
     /// of inserting into the live one. `getSet` hands out a bare `SetPtr` and `Set::insertFromBlock`
@@ -374,37 +385,26 @@ void StorageSet::publishBackup(const String & backup_file_path, ContextPtr conte
     /// pointer for future `getSet` calls. The private state has to be built from all committed
     /// backups (a `Set` cannot be built aside and then merged into another one), which is the cost
     /// of publishing an update to it atomically.
-    try
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-        auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
-        new_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
+    /// The live state is not touched until the final swap, so a failure leaves nothing to restore.
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    new_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
 
-        forEachBackupBlock([&](const Block & block)
+    forEachBackupBlock([&](const Block & block)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::storage_set_pause_during_backup_replay);
+        fiu_do_on(FailPoints::storage_set_fail_during_backup_replay,
         {
-            FailPointInjection::pauseFailPoint(FailPoints::storage_set_pause_during_backup_replay);
-            fiu_do_on(FailPoints::storage_set_fail_during_backup_replay,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while replaying the backup of an INSERT into a Set");
-            });
-            new_set->insertFromBlock(block.getColumnsWithTypeAndName());
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while replaying the backup of an INSERT into a Set");
         });
-        new_set->finishInsert();
+        new_set->insertFromBlock(block.getColumnsWithTypeAndName());
+    });
+    new_set->finishInsert();
 
-        /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        std::lock_guard lock(mutex);
-        set = std::move(new_set);
-    }
-    catch (...)
-    {
-        /// The live state was never touched, so there is nothing to restore: only the backup of
-        /// this failed insert has to go, or a restart would restore its rows. It is discarded while
-        /// still inside the publish critical section, so no concurrent publish or rollback can
-        /// replay it either.
-        discardPromotedBackup(fs::path(backup_file_path).filename());
-        throw;
-    }
+    /// Table data belongs to the server, not to the query releasing it.
+    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+    std::lock_guard lock(mutex);
+    set = std::move(new_set);
 }
 
 size_t StorageSet::getSize(ContextPtr) const
