@@ -91,7 +91,10 @@ def test_add_new_table_to_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )  # Check without ip
-    assert result[-51:] == "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
+    assert "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\\nSETTINGS " in result
+    assert result.endswith(
+        "materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true\n"
+    )
 
     result = instance.query_and_get_error(
         "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_tables_list='tabl1'"
@@ -131,9 +134,9 @@ def test_add_new_table_to_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-180:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4,postgresql_replica_5\\'\n"
+    assert result.endswith(
+        ")\\nSETTINGS materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true, "
+        "materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4,postgresql_replica_5\\'\n"
     )
 
     table_name = "postgresql_replica_6"
@@ -161,9 +164,9 @@ def test_add_new_table_to_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-222:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4,postgresql_replica_5,postgresql_replica_6,postgresql_replica_7\\'\n"
+    assert result.endswith(
+        ")\\nSETTINGS materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true, "
+        "materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4,postgresql_replica_5,postgresql_replica_6,postgresql_replica_7\\'\n"
     )
 
     instance.query(
@@ -197,7 +200,10 @@ def test_remove_table_from_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert result[-51:] == "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
+    assert "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\\nSETTINGS " in result
+    assert result.endswith(
+        "materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true\n"
+    )
 
     table_name = "postgresql_replica_4"
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
@@ -215,9 +221,9 @@ def test_remove_table_from_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-138:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3\\'\n"
+    assert result.endswith(
+        ")\\nSETTINGS materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true, "
+        "materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3\\'\n"
     )
 
     instance.query(f"ATTACH TABLE test_database.{table_name}")
@@ -233,9 +239,9 @@ def test_remove_table_from_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-159:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
+    assert result.endswith(
+        ")\\nSETTINGS materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true, "
+        "materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
     )
 
     table_name = "postgresql_replica_1"
@@ -245,9 +251,9 @@ def test_remove_table_from_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-138:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
+    assert result.endswith(
+        ")\\nSETTINGS materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true, "
+        "materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
     )
 
     pg_manager.execute("drop table if exists postgresql_replica_0;")

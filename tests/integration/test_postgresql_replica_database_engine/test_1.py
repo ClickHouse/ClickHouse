@@ -885,13 +885,15 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
     # makes the replication slot the ClickHouse UUID. Otherwise the slot name embeds the remote table
     # name and `checkReplicationSlot` rejects anything outside [a-z0-9_] before the publication is
     # created, which is what both hides the injection and makes a legitimately odd name unusable.
+    # The server UUID is not mixed in, so that the publication name still embeds the remote table name.
     def create_materialized_table(ch_table, remote_name_literal):
         instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
         ddl = f"""
             CREATE TABLE {ch_table} (key Int32, value Int32)
             ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', '{remote_name_literal}', 'postgres', '{pg_pass}')
             ORDER BY key
-            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1
+            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1,
+                     materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = 0
             """
         return instance.query_and_get_answer_with_error(ddl)
 
