@@ -1,0 +1,4 @@
+merge pool full: yes
+merge assignment ran while the pool is full: yes
+rows while the pool is full	2
+rows after the pool frees	1	2
