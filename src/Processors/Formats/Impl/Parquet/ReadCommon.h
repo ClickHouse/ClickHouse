@@ -51,6 +51,10 @@ struct ColumnsCacheOptions
 
     /// Shared by all readers of the query, so that the budgets above apply to the query as a whole.
     std::shared_ptr<ColumnsCacheWriteBudget> write_budget;
+
+    /// Whether the reader charges the estimate budget of `write_budget` with the size of the columns it is
+    /// going to write. False if the caller has already charged it (as `MergeTree` read pools do).
+    bool charge_estimated_bytes = true;
 };
 
 struct ReadOptions

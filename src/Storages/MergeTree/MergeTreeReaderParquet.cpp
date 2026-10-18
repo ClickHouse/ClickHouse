@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartParquet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Formats/FormatFilterInfo.h>
@@ -16,6 +17,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/Context.h>
 #include <Common/Hex.h>
+#include <Common/SipHash.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -255,6 +257,48 @@ std::vector<bool> getBinaryColumns(const Parquet::parq::FileMetaData & file_meta
 
 }
 
+std::shared_ptr<const Parquet::ColumnsCacheOptions> MergeTreeReaderParquet::getColumnsCacheOptions() const
+{
+    /// The entries of a part are keyed by the UUID of the table and the name of the part, like the entries of Wide parts,
+    /// so they are removed with the part. The names of projection parts are not unique.
+    if (!columns_cache
+        || (!settings.enable_columns_cache_reads && !settings.enable_columns_cache_writes)
+        || data_part_info_for_read->getTableUUID() == UUIDHelpers::Nil
+        || data_part_info_for_read->isProjectionPart())
+        return nullptr;
+
+    auto cache = data_part_info_for_read->getContext()->getColumnsCache();
+    if (!cache || cache.get() != columns_cache || cache->maxSizeInBytes() == 0)
+        return nullptr;
+
+    auto options = std::make_shared<Parquet::ColumnsCacheOptions>();
+    options->cache = std::move(cache);
+    options->file_path = data_part_info_for_read->getPartName();
+    options->table_uuid = data_part_info_for_read->getTableUUID();
+    options->enable_reads = settings.enable_columns_cache_reads;
+    options->enable_writes = settings.enable_columns_cache_writes
+        && !(settings.columns_cache_writes_disabled && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed));
+    options->max_bytes_to_write = settings.columns_cache_max_bytes_to_write_to_cache;
+    /// The read pool has charged the estimate budget for this part, see `MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate`.
+    options->charge_estimated_bytes = false;
+    options->write_budget = settings.columns_cache_write_budget;
+    if (!options->write_budget)
+        options->write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+
+    /// The schema of the query and the content of the data file. The name of the part already identifies its content,
+    /// the checksum makes it explicit.
+    SipHash hash;
+    hash.update(settings.columns_cache_schema_identity);
+    const auto & checksums = data_part_info_for_read->getChecksums();
+    if (auto it = checksums.files.find(MergeTreeDataPartParquet::DATA_FILE_NAME_WITH_EXTENSION); it != checksums.files.end())
+    {
+        hash.update(it->second.file_hash.low64);
+        hash.update(it->second.file_hash.high64);
+    }
+    options->file_identity = hash.get64();
+    return options;
+}
+
 void MergeTreeReaderParquet::initState()
 {
     state = std::make_unique<State>();
@@ -290,6 +334,7 @@ void MergeTreeReaderParquet::initState()
     options.format.parquet.verify_checksums = true;
     options.format.defaults_for_omitted_fields = false;
     options.dictionary_filter_limit_bytes = 0;
+    options.columns_cache = getColumnsCacheOptions();
 
     auto & reader = state->reader;
     reader.prefetcher.init(state->data_buffer.get(), options, /*parser_shared_resources_=*/ nullptr);
@@ -332,7 +377,14 @@ void MergeTreeReaderParquet::initState()
     }
 
     reader.init(options, sample_block, std::make_shared<FormatFilterInfo>());
-    reader.prefilterAndInitRowGroups(/*row_groups_to_read=*/ std::nullopt);
+
+    /// All row groups are initialized (they correspond to the marks one to one), but only the ones
+    /// of the mark ranges of this reader are looked up in the columns cache.
+    std::unordered_set<UInt64> row_groups_to_read;
+    for (const auto & range : all_mark_ranges)
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+            row_groups_to_read.insert(mark);
+    reader.prefilterAndInitRowGroups(row_groups_to_read);
 
     /// All row groups are read (there are no filters), so they correspond to the marks one to one.
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -430,7 +482,9 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
         if (output_idx.has_value())
         {
             const auto & info = reader.output_columns.at(*output_idx);
-            subgroup.output[idx].primitive_columns_remaining.store(info.primitive_end - info.primitive_start);
+            /// A column served from the columns cache is formed from the cached column, not from primitive columns.
+            const bool from_cache = !row_group_state.cached_columns.empty() && row_group_state.cached_columns[idx];
+            subgroup.output[idx].primitive_columns_remaining.store(from_cache ? 0 : info.primitive_end - info.primitive_start);
         }
     }
 
@@ -441,6 +495,10 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
         {
             auto & column = row_group_state.columns.at(i);
             const auto & column_info = reader.primitive_columns.at(i);
+
+            /// The data of the column is neither read nor decoded.
+            if (column.served_from_cache)
+                continue;
 
             std::vector<Parquet::PrefetchHandle *> prefetches;
             if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
@@ -461,7 +519,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
         Columns columns_from_file(sample_block.columns());
         for (size_t i = 0; i < columns_from_file.size(); ++i)
         {
-            ColumnPtr column = std::move(reader.getOrFormOutputColumn(subgroup, i));
+            ColumnPtr column = std::move(reader.getOrFormOutputColumn(row_group_state, subgroup, i));
             if (column->size() != num_rows)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Read {} rows of column {} from Parquet file, expected {}", column->size(), sample_block.getByPosition(i).name, num_rows);
@@ -572,6 +630,10 @@ try
 
         state->row += rows_to_read;
         read_rows += rows_to_read;
+
+        /// The whole row group is read, so its columns can be written to the columns cache.
+        if (state->row == rows_in_row_group && !columns_in_file.empty())
+            state->reader.flushColumnsCacheWrites(state->reader.row_groups.at(state->row_group));
     }
 
     return read_rows;

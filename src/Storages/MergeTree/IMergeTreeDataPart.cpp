@@ -1136,7 +1136,7 @@ bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
     /// keyed by the UUID of the table and the name of the part.
-    return getType() == MergeTreeDataPartType::Wide
+    return (getType() == MergeTreeDataPartType::Wide || getType() == MergeTreeDataPartType::Parquet)
         && !isProjectionPart()
         && storage.getStorageID().uuid != UUIDHelpers::Nil;
 }

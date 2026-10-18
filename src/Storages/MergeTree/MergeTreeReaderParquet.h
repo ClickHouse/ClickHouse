@@ -13,6 +13,7 @@ namespace DB
 namespace Parquet
 {
 struct Reader;
+struct ColumnsCacheOptions;
 }
 
 /// Reads data parts in Parquet format. See `MergeTreeDataPartParquet`.
@@ -72,6 +73,9 @@ private:
     void fillColumns();
     void findColumnForOffsetsOfMissingNested(size_t pos, std::optional<size_t> & position_in_part);
     size_t addColumnInFile(const NameAndTypePair & column_in_part, size_t position_in_part);
+
+    /// Null if the columns cache is not used.
+    std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions() const;
 
     void initState();
     void seek(size_t row_group);
