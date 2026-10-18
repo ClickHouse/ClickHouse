@@ -300,7 +300,7 @@ Chunk PromQLRangeSumByTransform::generate()
         const Group group = generated_groups[next_generated_group];
         group_column->insertValue(group);
         auto * group_state = group_states.find(group);
-        const auto group_place = group_state->getMapped();
+        auto * const group_place = group_state->getMapped();
         if (emit_partial_state)
         {
             auto & state_column = assert_cast<ColumnAggregateFunction &>(*values_column);

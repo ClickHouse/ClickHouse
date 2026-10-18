@@ -139,7 +139,7 @@ private:
         return ::Memory::alignUp(nested_function->sizeOfData(), nested_function->alignOfData());
     }
 
-    static void addStateSpan(const AggregateFunctionPtr & function, size_t nested_stride_bytes, AggregateDataPtr state_ptr, StateColumnCensus & census)
+    static void addStateSpan(const AggregateFunctionPtr & function, size_t nested_stride_bytes, ConstAggregateDataPtr state_ptr, StateColumnCensus & census)
     {
         if (!state_ptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL lifetime census found a null aggregate state");
@@ -193,7 +193,7 @@ private:
         census.state_count = column->size();
         census.nested_stride_bytes = nestedStride(function);
         census.state_addresses.reserve(census.state_count);
-        for (const auto state_ptr : column->getData())
+        for (auto * const state_ptr : column->getData())
         {
             census.state_addresses.push_back(reinterpret_cast<std::uintptr_t>(state_ptr));
             addStateSpan(function, census.nested_stride_bytes, state_ptr, census);
@@ -336,7 +336,7 @@ Chunk makeInputChunk(const DataTypePtr & samples_type, size_t group_count = 4, U
         Array values;
         values.reserve(last_sample + 1);
         for (UInt32 timestamp = 0; timestamp <= last_sample; ++timestamp)
-            values.emplace_back(Tuple{UInt32{timestamp}, static_cast<Float64>(id * timestamp)});
+            values.emplace_back(Tuple{timestamp, static_cast<Float64>(id * timestamp)});
         samples_column->insert(values);
     }
     return Chunk(Columns{std::move(ids), std::move(samples_column)}, group_count);
@@ -389,7 +389,7 @@ void assertRetainedConstantRates(
     ASSERT_FALSE(groups.empty());
     ASSERT_EQ(states.size(), groups.size());
     auto values = sum_function->getResultType()->createColumn();
-    for (const auto state_ptr : states.getData())
+    for (auto * const state_ptr : states.getData())
         sum_function->insertResultInto(state_ptr, *values, nullptr);
     ASSERT_EQ(values->size(), groups.size());
 
@@ -811,7 +811,7 @@ TEST_P(PromQLStateLifetimeTest, TransfersSingleBlockStatesAndArenaToRetainedView
     {
         const auto & states = assert_cast<const ColumnAggregateFunction &>(*retained_view);
         auto values = sum_function->getResultType()->createColumn();
-        for (const auto state_ptr : states.getData())
+        for (auto * const state_ptr : states.getData())
             sum_function->insertResultInto(state_ptr, *values, nullptr);
         ASSERT_EQ(values->size(), group_count);
         std::set<UInt64> observed_slopes;

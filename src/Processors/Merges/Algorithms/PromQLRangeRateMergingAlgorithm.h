@@ -10,9 +10,9 @@
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <optional>
-#include <vector>
 
 
 namespace DB
@@ -86,7 +86,7 @@ private:
     ITimeSeriesRateToGridStreaming::StatePtr streaming_rate_state;
 
     Inputs current_inputs;
-    std::vector<SourceState> source_states;
+    VectorWithMemoryTracking<SourceState> source_states;
     SortCursorImpls cursors;
     SortQueueVariants queue_variants;
     SortDescription description;

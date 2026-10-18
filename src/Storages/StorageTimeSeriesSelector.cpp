@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -1499,7 +1500,12 @@ bool StorageTimeSeriesSelector::hasSamplesIdBucketOrder(const StorageMetadataPtr
 
 bool StorageTimeSeriesSelector::canReadSamplesInOrder(const StoragePtr & samples_table, const StorageMetadataPtr & samples_table_metadata)
 {
-    return samples_table && dynamic_cast<const MergeTreeData *>(samples_table.get()) && hasSamplesIdBucketOrder(samples_table_metadata);
+    if (!samples_table)
+        return false;
+
+    const auto merge_tree = castStorage<MergeTreeData>(samples_table, DeferredTable::Skip);
+    /// Keep proxy-backed targets ineligible until their metadata identity can be validated.
+    return merge_tree && merge_tree.get() == samples_table.get() && hasSamplesIdBucketOrder(samples_table_metadata);
 }
 
 
