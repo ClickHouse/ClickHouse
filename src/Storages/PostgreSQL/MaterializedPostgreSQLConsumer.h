@@ -114,6 +114,15 @@ public:
 
     void setSetting(const SettingChange & setting);
 
+    /// lsn - log sequence number, like wal offset (64 bit).
+    static Int64 getLSNValue(const std::string & lsn)
+    {
+        UInt32 upper_half = 0;
+        UInt32 lower_half = 0;
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
+        return (static_cast<Int64>(upper_half) << 32) + lower_half;
+    }
+
 private:
     void syncTables();
 
@@ -158,15 +167,6 @@ private:
         Int32 relation_id,
         const String & relation_name,
         const String & skip_reason = "because its structure has changes");
-
-    /// lsn - log sequence number, like wal offset (64 bit).
-    static Int64 getLSNValue(const std::string & lsn)
-    {
-        UInt32 upper_half = 0;
-        UInt32 lower_half = 0;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
-        return (static_cast<Int64>(upper_half) << 32) + lower_half;
-    }
 
     LoggerPtr log;
     ContextPtr context;
@@ -214,6 +214,13 @@ private:
     /// while the process of adding a table to replication is not finished,
     /// because we might go beyond this start lsn position before consumer knows that a new table was added.
     std::unordered_map<String, String> waiting_list;
+
+    /// `postgres_table_name` -> the latest `Relation` message received for a table of `waiting_list` before its start lsn.
+    /// It is not checked against the nested table on arrival: the snapshot may have been taken after a schema change, so an
+    /// earlier column layout is expected to differ. `pgoutput` sends a `Relation` message only before the first change after
+    /// a schema change, so the changes after the start lsn may come without one and need this layout. It is processed when
+    /// the table reaches its start lsn, unless a newer `Relation` message arrives by then.
+    std::unordered_map<String, String> pending_relation_messages;
 
     /// Since replication may be some time behind, we need to ensure that replication messages for deleted tables are ignored.
     std::unordered_set<String> deleted_tables;

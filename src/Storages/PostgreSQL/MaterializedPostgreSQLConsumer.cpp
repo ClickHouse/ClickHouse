@@ -944,6 +944,15 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
+            /// See `pending_relation_messages`.
+            if (auto waiting_it = waiting_list.find(table_name);
+                waiting_it != waiting_list.end() && getLSNValue(current_lsn) < getLSNValue(waiting_it->second))
+            {
+                pending_relation_messages[table_name] = String(replication_message, size);
+                return;
+            }
+            pending_relation_messages.erase(table_name);
+
             if (!isSyncAllowed(relation_id, table_name, /* is_relation_message */ true))
                 return;
 
@@ -1237,15 +1246,28 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
         {
             LOG_TRACE(log, "Synchronization is started for table: {} (start_lsn: {})", relation_name, table_start_lsn);
             waiting_list.erase(new_table_with_lsn);
-            return true;
+
+            /// A `Relation` message at or after the start position supersedes the pending one, and the processing
+            /// of the message itself checks the storage.
+            if (is_relation_message)
+                return true;
+
+            /// Install the column layout of the changes after the start position, validating it against the nested
+            /// table. It may mark the table as skipped, which removes its storage.
+            if (auto pending_it = pending_relation_messages.find(relation_name); pending_it != pending_relation_messages.end())
+            {
+                const String relation_message = std::move(pending_it->second);
+                pending_relation_messages.erase(pending_it);
+                processReplicationMessage(relation_message.data(), relation_message.size());
+            }
+            return storages.contains(relation_name);
         }
 
         /// The snapshot of the table already contains the changes before its start position. Applying them again
         /// would be wrong: for example, an update of a row deleted later cannot restore its unchanged TOAST values
-        /// from the snapshot, and the table would be skipped. A `Relation` message is still processed, because
-        /// it is not repeated before the changes after the start position, and they need its column layout.
-        if (!is_relation_message)
-            return false;
+        /// from the snapshot, and the table would be skipped. (A `Relation` message before the start position
+        /// does not reach here, see `pending_relation_messages`.)
+        return false;
     }
 
     auto skipped_table_with_lsn = skip_list.find(relation_id);
@@ -1303,6 +1325,9 @@ void MaterializedPostgreSQLConsumer::addNested(
     if (it != deleted_tables.end())
         deleted_tables.erase(it);
 
+    /// A layout received before an earlier snapshot of this table is superseded by the new snapshot.
+    pending_relation_messages.erase(postgres_table_name);
+
     /// The table might already be in the skip list - for example, it was skipped at startup because
     /// its structure did not match the nested table and then received WAL (the `Relation` message
     /// stored an empty `skip_list` entry for it), or its structure changed in the replication stream.
@@ -1341,6 +1366,7 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
     /// this table must be dropped so `syncTables` does not look up (and dereference) a missing storage
     /// (https://github.com/ClickHouse/ClickHouse/issues/68032).
     tables_to_sync.erase(postgres_table_name);
+    pending_relation_messages.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
 }
 
