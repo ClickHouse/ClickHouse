@@ -16,8 +16,10 @@ MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_setti
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 16 / 2 ))
 
-# A background merge may still be running when `OPTIMIZE` finds nothing left to take, and its `part_log`
-# entry appears only when it finishes.
+# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
+# appears in `system.merges` only once an executor thread starts it, so the wait below could miss a merge that
+# was selected but not started yet. The wait stays for a background merge that still gets through.
 function wait_for_merges()
 {
     local table=$1
@@ -44,6 +46,8 @@ function run()
     SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
         min_parts_to_merge_at_once = 2,
         merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+        merge_selector_algorithm = 'Simple',
+        merge_selector_base = 1000,
         min_bytes_for_wide_part = 0,
         min_rows_for_wide_part = 0,
         min_bytes_for_full_part_storage = 0,

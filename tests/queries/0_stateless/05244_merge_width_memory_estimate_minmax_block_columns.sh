@@ -15,15 +15,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (8 / 3, rounded down). A horizontal merge of all 16 columns affords two parts too. Every candidate range
 # is eligible for the vertical algorithm, see `05218_merge_width_memory_estimate_vertical`.
 #
-# Background merges may take some of the parts before `OPTIMIZE` does, so the test checks what every merge
+# A background merge may still take some of the parts before `OPTIMIZE` does (see below), so the test checks what every merge
 # of the table did rather than how many parts are left: each of them has to be a vertical merge of two parts.
 
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 1 / 8 ))
 
-# A background merge may still be running when `OPTIMIZE` finds nothing left to take, and its `part_log`
-# entry appears only when it finishes.
+# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
+# appears in `system.merges` only once an executor thread starts it, so the wait below could miss a merge that
+# was selected but not started yet. The wait stays for a background merge that still gets through.
 function wait_for_merges()
 {
     local table=$1
@@ -47,6 +49,8 @@ SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
     part_minmax_index_columns = 'with_block_number_offset',
     min_parts_to_merge_at_once = 2,
     merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+    merge_selector_algorithm = 'Simple',
+    merge_selector_base = 1000,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
