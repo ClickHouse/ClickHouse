@@ -1076,11 +1076,20 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
 
     /// The URL can carry credentials (`user:password@`) or a signature in its query parameters. The cache
     /// exposes the part name of an entry in `system.query_condition_cache` and in its logs, so the entry is
-    /// keyed by a hash of the URL instead of the URL itself. The URL is the one the file was read from after
-    /// following the redirects: the same URL can redirect to different files, which can have the same
-    /// modification time and size.
+    /// keyed by a hash of the URL instead of the URL itself. Both the URL the file was requested by and the one
+    /// it was read from after following the redirects are hashed: the same URL can redirect to different files,
+    /// which can have the same modification time and size, and the requests keep the credentials of the original
+    /// URL after a redirect, so different credentials redirected to the same URL can get different files.
+    /// The credentials the requests were sent with are hashed as well: they persist from a previous URL with
+    /// `user:password@` to the next ones without it, see `setCredentialsFromURL`.
+    SipHash hash;
+    for (const auto & component : {curr_uri.toString(), current_file_resolved_uri.toString(), credentials.getUsername(), credentials.getPassword()})
+    {
+        hash.update(component.size());
+        hash.update(component);
+    }
     return QueryConditionCache::makeFilePartName(
-        sipHash128String(current_file_resolved_uri.toString()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
+        getHexUIntLowercase(hash.get128()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
 }
 
 void StorageURLSource::writeQueryConditionCacheEntry() const

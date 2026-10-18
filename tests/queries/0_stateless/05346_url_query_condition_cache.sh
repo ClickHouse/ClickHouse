@@ -19,7 +19,9 @@ trap 'rm -rf "${DIR}"; kill ${HTTP_PID} 2>/dev/null; wait ${HTTP_PID} 2>/dev/nul
 # A static file server with `Last-Modified` (from the modification time of the file), `HEAD` and
 # `Range` requests, like a typical web server. The file `date_skew` shifts the `Date` of its responses
 # by the given number of seconds, as if the clock of the server was off, or with `none` omits it.
-# The path `latest.parquet` redirects to the file named in the file `redirect`.
+# The path `latest.parquet` redirects to the file named in the file `redirect`. The path `auth.parquet`
+# redirects to the absolute URL of `export.parquet`, which serves `d.parquet` to the user `alice` and
+# `e.parquet` to the user `bob`.
 HTTP_PORT=$(python3 -c "
 import socket
 s = socket.socket()
@@ -29,7 +31,7 @@ s.close()
 ")
 
 python3 -c "
-import os, re, time
+import base64, os, re, time
 from email.utils import formatdate
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -53,6 +55,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '0')
             self.end_headers()
             return
+        if name == 'auth.parquet':
+            self.send_response(302)
+            self.send_header('Location', 'http://127.0.0.1:${HTTP_PORT}/export.parquet')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        if name == 'export.parquet':
+            auth = self.headers.get('Authorization', '')
+            user = base64.b64decode(auth[len('Basic '):]).decode().split(':')[0] if auth.startswith('Basic ') else ''
+            name = {'alice': 'd.parquet', 'bob': 'e.parquet'}.get(user, '')
         path = os.path.join(ROOT, name)
         if not os.path.isfile(path):
             self.send_response(404)
@@ -242,6 +254,15 @@ echo e.parquet > "${DIR}/redirect"
 run redirect_2 "SELECT count(), min(k) FROM t_05346_latest WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
 run redirect_3 "SELECT count(), min(k) FROM t_05346_latest WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
 
+echo "--- credentials redirected to the same URL"
+# Both URLs of the glob redirect to the same `export.parquet`, which serves different files with the same
+# size and modification time depending on the credentials: the requests keep the credentials of the original
+# URL after the redirect. The entries recorded for the file of one user must not apply to the file of the other.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05346_auth"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_auth (k Int64, s String) ENGINE = URL('http://{alice,bob}:pw@127.0.0.1:${HTTP_PORT}/auth.parquet', 'Parquet')"
+run auth_1 "SELECT count(), min(k) FROM t_05346_auth WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
+run auth_2 "SELECT count(), min(k) FROM t_05346_auth WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
+
 echo "--- an origin without a date"
 # Without the `Date` of the response the age of the modification is unknown: the cache is not used.
 echo none > "${DIR}/date_skew"
@@ -257,9 +278,10 @@ run function_1 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 run function_2 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 
 echo "--- query condition cache lookups"
-events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 skew_1 skew_2 redirect_1 redirect_2 redirect_3 no_date_1 no_date_2 function_1 function_2
+events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 skew_1 skew_2 redirect_1 redirect_2 redirect_3 auth_1 auth_2 no_date_1 no_date_2 function_1 function_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_b"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_c"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_latest"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_auth"
