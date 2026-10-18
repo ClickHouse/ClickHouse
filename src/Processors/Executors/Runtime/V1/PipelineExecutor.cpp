@@ -73,7 +73,7 @@ struct WorkloadResources
     ISlotLease * prev_cpu_lease = nullptr;
     bool publishes_lease = false; // moved to the new instance by the move constructor
 
-    WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
+    WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status, bool keep_outer_lease)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
         , tracker(status ? status->getMemoryTracker() : nullptr)
@@ -85,14 +85,14 @@ struct WorkloadResources
         }
 
         // Publish own lease, or hide the outer executor's lease from a nested executor
-        // that does not park (it may have no lease at all)
+        // that does not park (it may have no lease at all), unless it runs on the outer lease
         prev_cpu_lease = getCurrentCPULease();
         if (lease && lease->isParkingEnabled())
         {
             setCurrentCPULease(lease);
             publishes_lease = true;
         }
-        else if (prev_cpu_lease)
+        else if (prev_cpu_lease && !keep_outer_lease)
         {
             setCurrentCPULease(nullptr);
             publishes_lease = true;
@@ -188,6 +188,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
 
 PipelineExecutor::~PipelineExecutor()
 {
+    /// A parked lease must not be released.
+    unparkSingleThreadCPUSlot();
     detachSpillables();
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
@@ -265,7 +267,9 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     });
     if (!is_execution_initialized)
     {
-        initializeExecution(1, true);
+        /// Nested in another executor's step on this thread: run on its lease instead of taking a second slot.
+        runs_on_caller_lease = getCurrentCPULease() != nullptr;
+        initializeExecution(1, /* concurrency_control = */ !runs_on_caller_lease);
 
         // Acquire slot until we are done
         single_thread_cpu_slot = cpu_slots->acquire();
@@ -276,7 +280,8 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
             return true;
     }
 
-    executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
+    unparkSingleThreadCPUSlot();
+    executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element, runs_on_caller_lease), yield_flag);
 
     if (!tasks.isFinished())
         return true;
@@ -287,6 +292,36 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     finalizeExecution();
 
     return false;
+}
+
+void PipelineExecutor::parkCPUUntilNextCall()
+{
+    parkSingleThreadCPUSlot();
+}
+
+void PipelineExecutor::unparkCPU()
+{
+    unparkSingleThreadCPUSlot();
+}
+
+ISlotLease * PipelineExecutor::getCPULease() const
+{
+    auto * lease = dynamic_cast<ISlotLease *>(single_thread_cpu_slot.get());
+    return lease && lease->isParkingEnabled() ? lease : nullptr;
+}
+
+void PipelineExecutor::parkSingleThreadCPUSlot()
+{
+    if (single_thread_cpu_slot_parked)
+        return;
+    if (auto * lease = dynamic_cast<ISlotLease *>(single_thread_cpu_slot.get()))
+        single_thread_cpu_slot_parked = lease->park();
+}
+
+void PipelineExecutor::unparkSingleThreadCPUSlot()
+{
+    if (std::exchange(single_thread_cpu_slot_parked, false))
+        dynamic_cast<ISlotLease &>(*single_thread_cpu_slot).unpark();
 }
 
 void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
@@ -366,7 +401,7 @@ void PipelineExecutor::finalizeExecution()
     /// as a failure; the time limit was checked above. The allocations of the epilogues themselves are still
     /// limited by the memory tracker of the query, which throws from within the format, before it is marked
     /// as finalized.
-    WorkloadResources resources(nullptr, process_list_element);
+    WorkloadResources resources(nullptr, process_list_element, /* keep_outer_lease = */ false);
     if (resources.isMemorySyncNeeded())
         resources.syncMemory();
 
@@ -761,7 +796,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
-                executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
+                executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element, /* keep_outer_lease = */ false));
             }
             catch (...)
             {
@@ -798,7 +833,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
-            executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
+            executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element, /* keep_outer_lease = */ false));
         }
     }
     catch (...)

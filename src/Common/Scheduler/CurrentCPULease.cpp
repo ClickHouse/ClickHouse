@@ -44,4 +44,15 @@ CPULeaseParkGuard::~CPULeaseParkGuard()
     }
 }
 
+ScopedCPULease::ScopedCPULease(ISlotLease * lease)
+    : previous(current_cpu_lease)
+{
+    current_cpu_lease = lease;
+}
+
+ScopedCPULease::~ScopedCPULease()
+{
+    current_cpu_lease = previous;
+}
+
 }

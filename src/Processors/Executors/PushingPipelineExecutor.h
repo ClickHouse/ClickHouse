@@ -15,6 +15,8 @@ class PushingSource;
 class IExecutor;
 using ExecutorPtr = std::shared_ptr<IExecutor>;
 
+class ISlotLease;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -45,6 +47,11 @@ public:
 
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
+
+    /// See `IExecutor::parkCPUUntilNextCall`, `unparkCPU` and `getCPULease`.
+    void parkCPUUntilNextPush();
+    void unparkCPU();
+    ISlotLease * getCPULease() const;
 
 private:
     QueryPipeline & pipeline;

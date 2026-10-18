@@ -133,6 +133,23 @@ void PushingPipelineExecutor::finish()
     }
 }
 
+void PushingPipelineExecutor::parkCPUUntilNextPush()
+{
+    if (executor)
+        executor->parkCPUUntilNextCall();
+}
+
+void PushingPipelineExecutor::unparkCPU()
+{
+    if (executor)
+        executor->unparkCPU();
+}
+
+ISlotLease * PushingPipelineExecutor::getCPULease() const
+{
+    return executor ? executor->getCPULease() : nullptr;
+}
+
 void PushingPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
