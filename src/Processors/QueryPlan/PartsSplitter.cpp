@@ -1274,11 +1274,12 @@ static void applyLayerRangeFilter(
     /// is what keeps the two shapes of caller working: `readByLayers` and `MergeTreeFinalMerge` run the
     /// sorting expression on the pipe first, but the join-by-shards layers of
     /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
-    /// Either way the key expression needs the same source columns the filter needed before.
+    /// Those may lack the source columns of a key suffix the filter does not compare, so its computation is removed.
     auto filter_actions = buildLayerFilter(primary_key, borders, layer, in_reverse_order, context);
     String filter_column = filter_actions.getOutputs().front()->result_name;
     auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
     reorderColumns(actions, pipe.getHeader(), filter_column);
+    actions.removeUnusedActions();
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(
         [&](const SharedHeader & header)

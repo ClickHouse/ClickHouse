@@ -11,6 +11,7 @@ enum	read	1
 int128_bool	final	1
 ipv6_interval	final	1
 lowcardinality	final	1
+prefix_hash	join	1
 repeated_key	final	1
 repeated_key	join	1
 repeated_key	read	1
