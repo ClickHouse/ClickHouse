@@ -4,7 +4,6 @@
 #include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -87,9 +86,10 @@ bool canEvaluateOnPaddedRows(const ActionsDAG::Node * node)
     for (const auto * child : node->children)
         arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
 
-    /// Only a function implemented by `IFunction` says whether it can throw; any other one is assumed to.
-    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get());
-    return adaptor && !adaptor->getFunction()->canThrow(arguments);
+    /// `IFunctionBase::canThrow` is conservative: a function that does not say whether it can throw is assumed to. The one
+    /// of `IFunction` falls back to whether the function is worth evaluating lazily, which `toBool` is not although it
+    /// throws for an empty string.
+    return !node->function_base->canThrow(arguments);
 }
 
 class FrontierChooser
