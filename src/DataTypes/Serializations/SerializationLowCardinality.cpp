@@ -859,6 +859,15 @@ void SerializationLowCardinality::serializeTextCSV(const IColumn & column, size_
     serializeImpl(column, row_num, &ISerialization::serializeTextCSV, ostr, settings);
 }
 
+bool SerializationLowCardinality::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto & low_cardinality_column = getColumnLowCardinality(column);
+    const size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
+    return nested_serialization->textCSVNeedsQuotes(
+        *low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, settings);
+}
+
 void SerializationLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextCSV, istr, settings);

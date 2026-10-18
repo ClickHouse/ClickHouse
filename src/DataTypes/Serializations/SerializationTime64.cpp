@@ -245,9 +245,37 @@ bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 void SerializationTime64::serializeTextCSV(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('"', ostr);
+    const bool quote = textCSVNeedsQuotes(column, row_num, settings);
+
+    if (quote)
+        writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    writeChar('"', ostr);
+    if (quote)
+        writeChar('"', ostr);
+}
+
+bool SerializationTime64::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == ':'
+        || delimiter == '-'
+        || (scale > 0 && delimiter == '.')
+        || isNumericASCII(delimiter);
+}
+
+bool SerializationTime64::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == ':'
+        || (value.value < 0 && delimiter == '-')
+        || (scale > 0 && delimiter == '.')
+        || isNumericASCII(delimiter);
 }
 
 void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

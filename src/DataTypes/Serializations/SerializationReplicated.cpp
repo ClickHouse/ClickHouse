@@ -370,6 +370,14 @@ void SerializationReplicated::serializeTextCSV(const IColumn & column, size_t ro
     nested->serializeTextCSV(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
 }
 
+bool SerializationReplicated::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto & replicated_column = assert_cast<const ColumnReplicated &>(column);
+    return nested->textCSVNeedsQuotes(
+        *replicated_column.getNestedColumn(), replicated_column.getIndexes().getIndexAt(row_num), settings);
+}
+
 void SerializationReplicated::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserialize(column, [&](auto & nested_column)
