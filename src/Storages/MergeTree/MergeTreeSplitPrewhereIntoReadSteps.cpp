@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
 namespace DB
@@ -25,26 +26,69 @@ struct NodeInfo
     /// Column names resolved to their physical storage names (subcolumn suffix stripped).
     /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
     NameSet required_storage_columns;
+    /// Names of the indexes whose readers fill the virtual columns required to compute this node.
+    /// Used for grouping like `required_storage_columns`: one reader fills all virtual columns of an index.
+    NameSet required_indexes;
+    /// True if computing this node may throw an exception, so it must not be evaluated on rows
+    /// that a preceding condition rejects.
+    bool may_throw = false;
+
+    /// True if both nodes read the same storage columns and indexes, so their conditions may share a step.
+    bool readsSameColumns(const NodeInfo & other) const
+    {
+        return required_storage_columns == other.required_storage_columns && required_indexes == other.required_indexes;
+    }
 };
 
-/// Resolves a column name to its storage (physical) name.
-/// For subcolumns like `map.key_k0`, returns `map`.
-/// For regular columns, returns the name unchanged.
-String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
+/// Returns the argument types of a function node, as expected by
+/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
+/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
+DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+        types.push_back({child->result_type, child->column != nullptr});
+    return types;
+}
+
+/// Fills the info of an input column.
+/// A virtual column of an index is resolved to the name of the index whose reader fills it.
+/// A subcolumn like `map.key_k0` is resolved to its storage (physical) column `map`, a regular column to itself.
+void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const ColumnsDescription * columns, const IndexReadTasks * index_read_tasks)
+{
+    node_info.required_columns.insert(column_name);
+
+    if (index_read_tasks)
+    {
+        for (const auto & [index_name, index_task] : *index_read_tasks)
+        {
+            if (std::ranges::any_of(index_task.columns, [&](const auto & column) { return column.name == column_name; }))
+            {
+                node_info.required_indexes.insert(index_name);
+                return;
+            }
+        }
+    }
+
     if (columns)
     {
         if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            return col->getNameInStorage();
+        {
+            node_info.required_storage_columns.insert(col->getNameInStorage());
+            return;
+        }
     }
-    return column_name;
+
+    node_info.required_storage_columns.insert(column_name);
 }
 
 /// Fills the list of required columns for a node in the DAG.
 void fillRequiredColumns(
     const ActionsDAG::Node * node,
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const ColumnsDescription * columns)
+    const ColumnsDescription * columns,
+    const IndexReadTasks * index_read_tasks)
 {
     if (nodes_info.contains(node))
         return;
@@ -53,18 +97,66 @@ void fillRequiredColumns(
 
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        node_info.required_columns.insert(node->result_name);
-        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns));
+        resolveNodeInfo(node_info, node->result_name, columns, index_read_tasks);
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, columns);
+        fillRequiredColumns(child, nodes_info, columns, index_read_tasks);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
         node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
+        node_info.required_indexes.insert(child_info.required_indexes.begin(), child_info.required_indexes.end());
+        node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
+
+    /// Reuse the predicate that the short-circuit machinery uses to decide which nodes must be
+    /// guarded (findLazyExecutedNodes in ExpressionActions.cpp). IExecutableFunction::canThrow
+    /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
+    /// both directions: it reports true for merely expensive functions, and false for some
+    /// functions that do throw while parsing row values (for example addDays(String, ...) via
+    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
+    /// see the TODO on canThrow in IFunctionAdaptors.h.
+    if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
+        node_info.may_throw = true;
+}
+
+/// Appends the conditions combined with AND into `atoms`, descending into nested AND nodes.
+/// The order of the original conditions is preserved: `and(A, and(B, C))` yields `A, B, C`.
+/// ActionsDAG::extractConjunctionAtoms is not reused here because it walks with a stack and thus
+/// reverses sibling order, while the step boundaries below and the evaluation order promised for a
+/// user written PREWHERE both depend on the original order.
+void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            flattenConjunction(child, atoms);
+        return;
+    }
+
+    atoms.push_back(node);
+}
+
+/// Appends the INPUT nodes of the sub-DAG rooted at `node` to `inputs`, each at most once.
+void collectInputNodes(
+    const ActionsDAG::Node * node,
+    std::unordered_set<const ActionsDAG::Node *> & visited,
+    ActionsDAG::NodeRawConstPtrs & inputs)
+{
+    if (!visited.insert(node).second)
+        return;
+
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        inputs.push_back(node);
+        return;
+    }
+
+    for (const auto * child : node->children)
+        collectInputNodes(child, visited, inputs);
 }
 
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
@@ -192,31 +284,59 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns)
+    const ColumnsDescription * columns,
+    bool read_ahead_columns,
+    const IndexReadTasks * index_read_tasks)
 {
     if (!prewhere_info)
         return true;
+
+    /// Steps pass columns to each other by name, which cannot tell an input from a computed node
+    /// that reuses its name (e.g. a `Buffer` converting its destination's column).
+    if (prewhere_info->prewhere_actions.hasInputNameShadowedByComputedNode())
+        return false;
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
-    auto condition_nodes = condition_root.children;
+    /// Nested conjunctions are flattened, so that a condition list like
+    /// `and(existing_prewhere, and(guard, throwing))` (built by optimizePrewhere when a moved WHERE
+    /// is merged into an existing PREWHERE) is grouped condition by condition below instead of
+    /// treating the inner AND as one atomic condition.
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
+    flattenConjunction(&condition_root, condition_nodes);
+
+    /// Conditions covered by the query condition cache attribution get their own steps, unless PREWHERE was rewritten since.
+    size_t num_attributed_conditions = 0;
+    if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
+    {
+        const auto & hashes = attribution->conjunct_hashes;
+        bool matches = !hashes.empty() && hashes.size() < condition_nodes.size();
+        for (size_t i = 0; matches && i < hashes.size(); ++i)
+            matches = condition_nodes[i]->getHash() == hashes[i];
+        if (matches)
+            num_attributed_conditions = hashes.size();
+    }
 
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, columns);
+        fillRequiredColumns(node, nodes_info, columns, index_read_tasks);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
-    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
-    /// when they appear next to each other in the condition list.
+    /// 4. Group adjacent conditions that read from the same set of physical storage columns and indexes into a single step.
+    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`), or on virtual columns of the same
+    /// index, are placed into one group when they appear next to each other in the condition list.
+    ///
+    /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
+    /// rather than a single opaque one. The flattening keeps the original left to right order, for the
+    /// same evaluation order reason spelled out below.
     ///
     /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
     /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
@@ -224,20 +344,60 @@ bool tryBuildPrewhereSteps(
     /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
-    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
-    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
+    /// Adjacency alone is not enough: all conditions of one step are evaluated on the same unfiltered
+    /// block, so a condition that may throw must never share a step with a preceding condition.
+    /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
+    /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
+    /// what keeps the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
-    for (const auto & node : condition_nodes)
+    /// Indices of groups whose first condition may throw. Steps are not required to materialize their
+    /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
+    /// on the rows that step rejects. Recorded for every such group regardless of which columns the
+    /// two steps read, because a step never filters the block it hands over on its own.
+    std::unordered_set<size_t> groups_requiring_filtered_input;
+    /// For every group, the index of the group whose step reads its columns. A group that was split
+    /// from the previous one only because it may throw reads the same storage columns, so with
+    /// `read_ahead_columns` its columns are read by the first step of that run and only the evaluation
+    /// waits for the filter. Otherwise every such step would deserialize the same storage column again
+    /// (for example a whole `Map` for each of its keys). Reading is safe only when the reader does not
+    /// convert the column or fill it from a default expression, because that runs on the whole block
+    /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
+    std::vector<size_t> group_read_step;
+    size_t num_attributed_steps = 0;
+    for (size_t i = 0; i < condition_nodes.size(); ++i)
     {
+        const auto * node = condition_nodes[i];
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
+        const bool is_first_unattributed = num_attributed_conditions != 0 && i == num_attributed_conditions;
+        if (is_first_unattributed)
+            num_attributed_steps = condition_groups.size();
+
+        const bool same_storage_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
+
+        if (same_storage_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
+            continue;
         }
-        else
+
+        if (!condition_groups.empty() && node_info.may_throw)
+            groups_requiring_filtered_input.insert(condition_groups.size());
+
+        group_read_step.push_back(same_storage_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
+        condition_groups.push_back({node});
+    }
+
+    /// Inputs of the later groups that are read by each step, see group_read_step.
+    std::vector<ActionsDAG::NodeRawConstPtrs> inputs_read_ahead(condition_groups.size());
+    {
+        std::vector<std::unordered_set<const ActionsDAG::Node *>> visited(condition_groups.size());
+        for (size_t group_index = 0; group_index < condition_groups.size(); ++group_index)
         {
-            condition_groups.push_back({node});
+            const size_t read_step = group_read_step[group_index];
+            if (read_step == group_index)
+                continue;
+            for (const auto * node : condition_groups[group_index])
+                collectInputNodes(node, visited[read_step], inputs_read_ahead[read_step]);
         }
     }
 
@@ -268,6 +428,10 @@ bool tryBuildPrewhereSteps(
             const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step);
             new_condition_nodes.push_back(&node_in_new_dag);
         }
+
+        /// Only added as inputs here: the later step that uses such a column adds it to the outputs of this one.
+        for (const auto * input : inputs_read_ahead[step_index])
+            addClonedDAGToDAG(step_index, input, step_dag, node_remap, node_to_step);
 
         if (new_condition_nodes.size() > 1)
         {
@@ -334,10 +498,13 @@ bool tryBuildPrewhereSteps(
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
-                .need_filter = force_short_circuit_execution,
+                /// A step that precedes a may_throw condition must materialize its filter, so that
+                /// the throwing condition is not evaluated on the rows this step rejects.
+                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
+                .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
