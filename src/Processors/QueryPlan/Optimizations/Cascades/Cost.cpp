@@ -505,7 +505,9 @@ PhysicalCopies derivePhysicalCopies(const GroupExpression & expression, const Co
         /// depending on where the rows of a group are placed, which is not known: a read of a table sorted by a column
         /// correlated with the keys keeps a group on few producers. As in other optimizers, the search value is one copy,
         /// the old assumption, and the physical output is unknown; a run-time switch to pass-through is the remedy for
-        /// groups spread over all producers.
+        /// groups spread over all producers. Without keys a producer emits one state, so the count is known, but the search
+        /// value stays one copy: with one state per producer, gathering the input to one node looks cheaper whenever the
+        /// input estimate is below the node count, and an underestimated input then is aggregated on one node.
         const bool together = input_distribution && (input_distribution->is_replicated || splitByKeys(*input_distribution, params.keys));
         const bool ordinary = !params.keys.empty() && !aggregating_step->isGroupingSets() && !params.overflow_row;
         return {.copies = 1.0, .unknown = !(together && ordinary) || input_copies_unknown};
