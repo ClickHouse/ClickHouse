@@ -85,7 +85,7 @@ private:
     const ITimeSeriesRateToGridStreaming * streaming_rate = nullptr;
     ITimeSeriesRateToGridStreaming::StatePtr streaming_rate_state;
 
-    std::vector<IMergingAlgorithm::Input> current_inputs;
+    Inputs current_inputs;
     std::vector<SourceState> source_states;
     SortCursorImpls cursors;
     SortQueueVariants queue_variants;
