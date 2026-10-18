@@ -975,7 +975,7 @@ void addAggregationStep(QueryPlan & query_plan,
     if (aggregator_params.aggregates_size == 0 && aggregator_params.group_by_overflow_mode == OverflowMode::ANY)
     {
         if (const auto limit = getTrivialGroupByLimit(query_node, settings))
-            aggregator_params.stop_all_streams_on_overflow_any = aggregator_params.max_rows_to_group_by >= *limit;
+            aggregator_params.stop_all_streams_at_max_rows_to_group_by = aggregator_params.max_rows_to_group_by >= *limit;
     }
 
     SortDescription sort_description_for_merging;

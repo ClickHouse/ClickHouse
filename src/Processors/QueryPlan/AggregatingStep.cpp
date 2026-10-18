@@ -72,6 +72,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
+    extern const QueryPlanSerializationSettingsBool aggregation_stop_all_streams_at_max_rows_to_group_by;
 }
 
 namespace Setting
@@ -1164,6 +1165,11 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
         settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
 
+    /// An older peer would reject the name; without it, only the streams over the cap stop.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_STOP_ALL_STREAMS)
+        settings[QueryPlanSerializationSetting::aggregation_stop_all_streams_at_max_rows_to_group_by]
+            = params.stop_all_streams_at_max_rows_to_group_by;
+
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1468,6 +1474,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
+    params.stop_all_streams_at_max_rows_to_group_by
+        = ctx.settings[QueryPlanSerializationSetting::aggregation_stop_all_streams_at_max_rows_to_group_by];
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

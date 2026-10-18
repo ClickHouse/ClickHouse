@@ -1514,8 +1514,12 @@ void AggregatingTransform::consume(Chunk chunk)
             capturePerStreamKeptKeysSeed();
     }
 
-    if (is_consume_finished && no_more_keys && params->params.stop_all_streams_on_overflow_any)
+    if (params->params.stop_all_streams_at_max_rows_to_group_by
+        && (is_consume_finished || variants.sizeWithoutOverflowRow() >= params->params.max_rows_to_group_by))
+    {
+        is_consume_finished = true;
         many_data->stop_consuming.store(true, std::memory_order_relaxed);
+    }
 }
 
 void AggregatingTransform::capturePerStreamKeptKeysSeed()

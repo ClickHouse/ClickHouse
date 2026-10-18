@@ -11,8 +11,16 @@ SETTINGS max_threads = 1, log_comment = 'gbl_stop_single_thread' FORMAT Null;
 SELECT k FROM (SELECT number AS k FROM system.numbers UNION ALL SELECT 1 AS k FROM system.numbers) GROUP BY k LIMIT 5
 SETTINGS max_threads = 2, log_comment = 'gbl_stop_stream_with_single_key' FORMAT Null;
 
+-- Exactly `LIMIT` distinct keys.
+SELECT number % 5 FROM system.numbers GROUP BY number % 5 LIMIT 5
+SETTINGS max_threads = 1, log_comment = 'gbl_stop_exact_key_count' FORMAT Null;
+
 SELECT number FROM remote('127.0.0.{1,2}', system.numbers) GROUP BY number LIMIT 5
 SETTINGS log_comment = 'gbl_stop_distributed' FORMAT Null;
+
+SELECT k FROM remote('127.0.0.2', view(SELECT number AS k FROM system.numbers UNION ALL SELECT 1 AS k FROM system.numbers))
+GROUP BY k LIMIT 5
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, max_threads = 2, log_comment = 'gbl_stop_serialized_plan' FORMAT Null;
 
 -- User-set `any` mode without `LIMIT`.
 SELECT number % 1000 FROM system.numbers GROUP BY number % 1000
