@@ -87,7 +87,8 @@ struct QueryConsumedObjectSets
     /// of the full listing the pre-read hash was built from, so the pre/post hashes could never
     /// compare equal for an unchanged table. `getModificationHash` fails closed for such a table
     /// instead of comparing incomparable sets. Sticky for the whole query, even if another read of the
-    /// same table does not prune.
+    /// same table does not prune. Also called for a read that is not pinned to the generations the
+    /// capture records (S3 or Azure with the `ETag` validation of reads turned off).
     void markPruned(const UUID & table_uuid);
 
     /// Whether any read of `table_uuid` in this query pruned the object set.

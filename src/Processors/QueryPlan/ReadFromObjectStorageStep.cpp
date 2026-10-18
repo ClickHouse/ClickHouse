@@ -102,6 +102,23 @@ private:
     size_t read_index;
 };
 
+/// Whether a read of an object is pinned to the generation captured from its listed metadata: S3 with
+/// `s3_validate_etag_on_read` and Azure with `azure_validate_etag_on_read` issue the `GET` with an
+/// `If-Match` on the captured `ETag` and reject a response whose `ETag` drifted from it. A `GCS`-provider
+/// client is not pinned even with the setting on, because `GCS` accessed through the S3 API may return
+/// objects without an `ETag`.
+bool readIsGenerationPinned(IObjectStorage & object_storage, const ContextPtr & context)
+{
+#if USE_AWS_S3
+    if (object_storage.getType() == ObjectStorageType::S3 && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage.tryGetS3StorageClient();
+        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    return object_storage.getType() == ObjectStorageType::Azure && context->getSettingsRef()[Setting::azure_validate_etag_on_read];
+}
+
 }
 
 
@@ -302,7 +319,17 @@ void ReadFromObjectStorageStep::createIterator()
                 && VirtualColumnUtils::createPathAndFileFilterDAG(
                        predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
                        .has_value();
-            if (may_prune_object_set)
+            /// The capture records the generation the listing reported, before the object is read. On S3 or
+            /// Azure with the `ETag` validation of reads turned off, an overwrite between the listing and the
+            /// `GET` makes the read return a newer generation than the captured one, and the finalization
+            /// would certify the result with the old generation. Fail closed for such a read as well.
+            /// Data lake files are never overwritten in place, and the other backends are not covered by
+            /// the capture's generation guarantee in the first place.
+            const auto object_storage_type = object_storage->getType();
+            const bool read_may_drift_from_capture = !configuration->dataFilesAreImmutable()
+                && (object_storage_type == ObjectStorageType::S3 || object_storage_type == ObjectStorageType::Azure)
+                && !readIsGenerationPinned(*object_storage, context);
+            if (may_prune_object_set || read_may_drift_from_capture)
             {
                 consumed_object_sets->markPruned(storage_id.uuid);
             }
@@ -373,19 +400,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
     /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    bool reread_is_generation_pinned = false;
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    if (object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
-        reread_is_generation_pinned = true;
-    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+    if (!configuration->dataFilesAreImmutable() && !readIsGenerationPinned(*object_storage, getContext()))
         return false;
 
 #if CLICKHOUSE_CLOUD
