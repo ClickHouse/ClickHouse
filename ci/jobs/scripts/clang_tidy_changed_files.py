@@ -30,6 +30,7 @@ import functools
 import json
 import os
 import re
+import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
@@ -1174,14 +1175,11 @@ def max_workers(count):
     return max(1, min(count, Utils.cpu_count(), by_memory))
 
 
-def generated_prerequisites(entries, build_dir):
-    """The ninja targets that produce the sources `entries` are built against.
+def order_depends_targets(entries, build_dir):
+    """The `cmake_object_order_depends_target_<target>` phonies of `entries`.
 
-    cmake gives every target a `cmake_object_order_depends_target_<target>`
-    phony that its object files order-depend on, which is exactly the "generate
-    everything this target compiles against" target. The tidy build compiles and
-    links through `cmake/dummy_compiler_linker.sh`, so building these generates
-    the sources without compiling the tree.
+    cmake gives every target such a phony, which its object files order-depend
+    on: it stands for everything the target compiles against.
     """
     targets = set()
     for entry in entries:
@@ -1202,6 +1200,107 @@ def generated_prerequisites(entries, build_dir):
     if missing:
         raise RuntimeError(f"ninja has no such targets: {', '.join(missing)}")
     return sorted(targets)
+
+
+# The rules cmake gives the edges that compile or link a target. Every other
+# non-phony edge is a custom command: a code generator, or a utility target.
+_COMPILE_OR_LINK_RULE_RE = re.compile(
+    r"^[A-Za-z0-9]+_(?:COMPILER|STATIC_LIBRARY_LINKER|SHARED_LIBRARY_LINKER"
+    r"|MODULE_LINKER|EXECUTABLE_LINKER)__"
+)
+
+
+def ninja_query(targets, build_dir):
+    """The rule and the direct inputs of each of `targets`, from `ninja -t query`.
+
+    Returns `{target: (rule, inputs)}`, with `rule` None for a source file.
+    """
+    output = subprocess.run(
+        ["ninja", "-C", build_dir, "-t", "query", *targets],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    nodes = {}
+    target = None
+    section = None
+    for line in output.splitlines():
+        if not line.startswith(" "):
+            target = line[: -len(":")]
+            nodes[target] = (None, [])
+            section = None
+        elif line.startswith("  input: "):
+            nodes[target] = (line[len("  input: ") :], [])
+            section = "input"
+        elif not line.startswith("    "):
+            # `outputs:`, `validations:` and whatever else follows the inputs.
+            section = None
+        elif section == "input":
+            path = line.strip()
+            for marker in ("|| ", "| "):
+                if path.startswith(marker):
+                    path = path[len(marker) :]
+                    break
+            nodes[target][1].append(path)
+    missing = sorted(set(targets) - set(nodes))
+    if missing:
+        raise RuntimeError(f"ninja did not describe: {', '.join(missing)}")
+    return nodes
+
+
+def generated_prerequisites(entries, build_dir):
+    """The ninja targets that produce the sources `entries` are built against.
+
+    The `cmake_object_order_depends_target_*` phonies of the targets owning
+    `entries` cannot be built as they are: through `add_dependencies` they can
+    reach the object files of other targets - `unit_tests_dbms` depends on the
+    objects of every microbenchmark - and compiling an object in the tidy build
+    runs clang-tidy on it, with no changed-file filter and with
+    `WarningsAsErrors`. So this walks the graph below those phonies, does not
+    descend into the edges that compile or link, and returns the custom commands
+    it reaches: the code generators, which is what the translation units need.
+    A generator built from the tree (`protoc`, `llvm-tblgen`) is still compiled,
+    because it has to run; `assert_no_clang_tidy` checks that it is not analyzed.
+    """
+    seen = {}
+    frontier = order_depends_targets(entries, build_dir)
+    while frontier:
+        nodes = ninja_query(frontier, build_dir)
+        seen.update(nodes)
+        following = set()
+        for rule, inputs in nodes.values():
+            if rule is None or _COMPILE_OR_LINK_RULE_RE.match(rule):
+                continue
+            following.update(path for path in inputs if path not in seen)
+        frontier = sorted(following)
+    return sorted(
+        target
+        for target, (rule, _) in seen.items()
+        if rule is not None
+        and rule != "phony"
+        and not _COMPILE_OR_LINK_RULE_RE.match(rule)
+    )
+
+
+def assert_no_clang_tidy(targets, build_dir):
+    """Raise if building `targets` would run clang-tidy.
+
+    cmake runs clang-tidy through `cmake -E __run_co_compile --tidy=...`. Such a
+    run would analyze a file the change did not touch, with no diagnostic filter,
+    so it must not happen while generating sources.
+    """
+    commands = subprocess.run(
+        ["ninja", "-C", build_dir, "-t", "commands", *targets],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    analyzed = [command for command in commands.splitlines() if "--tidy=" in command]
+    if analyzed:
+        raise RuntimeError(
+            f"Generating the sources would run clang-tidy {len(analyzed)} time(s), "
+            f"the first: {analyzed[0]}"
+        )
 
 
 def changed_files_from_ci(info):
@@ -1616,19 +1715,26 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     log_dir = f"{temp_dir}/clang_tidy_logs"
     os.makedirs(log_dir, exist_ok=True)
 
-    generate = Result.from_commands_run(
-        name="Generate sources",
-        command=f"ninja {' '.join(generated_prerequisites(entries, build_dir))}",
-        workdir=build_dir,
-        with_log=True,
-    )
-    if not generate.is_ok():
-        return Result.create_from(
-            name=RESULT_NAME,
-            results=self_results + [generate],
-            stopwatch=stop_watch,
-            info=notes,
+    prerequisites = generated_prerequisites(entries, build_dir)
+    generate_results = []
+    # `ninja` without targets builds everything, so it is not run when the units
+    # need nothing generated.
+    if prerequisites:
+        assert_no_clang_tidy(prerequisites, build_dir)
+        generate = Result.from_commands_run(
+            name="Generate sources",
+            command="ninja " + " ".join(shlex.quote(target) for target in prerequisites),
+            workdir=build_dir,
+            with_log=True,
         )
+        generate_results.append(generate)
+        if not generate.is_ok():
+            return Result.create_from(
+                name=RESULT_NAME,
+                results=self_results + generate_results,
+                stopwatch=stop_watch,
+                info=notes,
+            )
 
     tidy = clang_tidy_binary(build_dir)
     # The headers regenerated from the changed inputs are filtered in by name,
@@ -1686,7 +1792,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
 
     return Result.create_from(
         name=RESULT_NAME,
-        results=self_results + [generate] + results,
+        results=self_results + generate_results + results,
         stopwatch=stop_watch,
         info=notes,
     )
