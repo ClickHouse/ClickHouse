@@ -18,6 +18,7 @@
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -1614,6 +1615,43 @@ NameSet MergeTask::getColumnsFullyExpiredByTTL(const GlobalRuntimeContext & glob
         if (has_expired_values && is_fully_expired)
             result.insert(column);
     }
+
+    if (result.empty())
+        return result;
+
+    /// What is computed from an expired column has to be recomputed from the default the column takes:
+    /// a `MATERIALIZED` column and the TTL infos of the other TTLs that read it. Only `TTLTransform` does
+    /// that, by reading the column. Dropping the column without reading it would keep the values computed
+    /// before the expiry.
+    const auto & metadata_snapshot = global_ctx.metadata_snapshot;
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    MaterializedColumnDependencies materialized_dependencies(storage_columns, global_ctx.context);
+    std::erase_if(result, [&](const String & column)
+    {
+        const NameSet changed_columns{column};
+
+        auto ttl_reads_column = [&](const TTLDescription & ttl)
+        {
+            return dependsOnAnyColumn(ttl.expression_columns.getNames(), changed_columns)
+                || dependsOnAnyColumn(ttl.where_expression_columns.getNames(), changed_columns);
+        };
+
+        auto any_ttl_reads_column = [&](const TTLDescriptions & ttls) { return std::ranges::any_of(ttls, ttl_reads_column); };
+
+        if ((metadata_snapshot->hasRowsTTL() && ttl_reads_column(metadata_snapshot->getRowsTTL()))
+            || any_ttl_reads_column(metadata_snapshot->getRowsWhereTTLs()) || any_ttl_reads_column(metadata_snapshot->getGroupByTTLs())
+            || any_ttl_reads_column(metadata_snapshot->getMoveTTLs()) || any_ttl_reads_column(metadata_snapshot->getRecompressionTTLs()))
+            return true;
+
+        for (const auto & [other_column, ttl] : metadata_snapshot->getColumnTTLs())
+            if (other_column != column && ttl_reads_column(ttl))
+                return true;
+
+        return std::ranges::any_of(storage_columns, [&](const auto & storage_column)
+        {
+            return !materialized_dependencies.findColumnsToRecalculate(storage_column.name, changed_columns).empty();
+        });
+    });
 
     return result;
 }
