@@ -15,6 +15,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -2583,7 +2584,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
-            nested_type_hint = removeNullable(type_hint);
+            nested_type_hint = removeSimpleAggregateFunction(removeNullable(type_hint));
 
         auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint);
 

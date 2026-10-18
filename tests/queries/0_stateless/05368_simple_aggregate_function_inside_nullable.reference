@@ -1,0 +1,17 @@
+1	40	40	c	SimpleAggregateFunction(sum, UInt64)
+1
+0	1
+1
+40	Nullable(UInt64)
+\N	Nullable(UInt64)
+40	Nullable(UInt64)
+40	SimpleAggregateFunction(sum, Nullable(UInt64))	40	SimpleAggregateFunction(sum, Nullable(UInt64))
+3	SimpleAggregateFunction(sum, UInt64)	010300000000000000
+0	SimpleAggregateFunction(sum, UInt64)	010000000000000000
+40	SimpleAggregateFunction(sum, UInt64)	0	SimpleAggregateFunction(sum, UInt64)
+1	Nullable(UInt64)
+1
+1	SimpleAggregateFunction(max, Int128)
+1	SimpleAggregateFunction(max, Int128)
+[1,2]	(1,'a')	{'a':1}
+3432	SimpleAggregateFunction(any, Dynamic)

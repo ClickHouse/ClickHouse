@@ -14,6 +14,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -556,7 +557,7 @@ namespace
         if (!to_type_no_lc->canBeInsideNullable())
             return {};
 
-        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_no_lc));
+        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(removeSimpleAggregateFunction(to_type_no_lc)));
         if (res->onlyNull())
             return nullptr;
 

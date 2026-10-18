@@ -10,6 +10,7 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -167,7 +168,8 @@ DataTypePtr QueryNode::getResultType() const
             /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
             /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
             /// To avoid this, we return Null value here and the condition will evaluate to false.
-            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
+            const auto & type = projection_columns[0].type;
+            return makeNullableOrLowCardinalityNullableSafe(isNullableOrLowCardinalityNullable(type) ? type : removeSimpleAggregateFunction(type));
         }
         else
             /// Reachable from plain SQL: dropping `EXISTS` from `NOT EXISTS (SELECT * FROM t WHERE t.a = o.b)`

@@ -3,6 +3,7 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -2635,16 +2636,17 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
+    const DataTypePtr hint = type_hint ? removeSimpleAggregateFunction(type_hint) : nullptr;
     /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
-    bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    bool type_hint_not_nullable_capable = hint && !hint->isLowCardinalityNullable() && !removeNullable(hint)->canBeInsideNullable();
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (hint && (hint->isNullable() || hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
     /// enable_nullable_tuple_type (otherwise schema inference would return a type
     /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
     /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
     /// before Nullable(Tuple) was supported.
     bool allow_nullable_struct = settings.format_settings.schema_inference_allow_nullable_tuple_type
-        || (type_hint && isNullableOrLowCardinalityNullable(type_hint));
+        || (hint && isNullableOrLowCardinalityNullable(hint));
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -2654,8 +2656,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;
-        if (type_hint)
-            nested_type_hint = removeNullable(type_hint);
+        if (hint)
+            nested_type_hint = removeNullable(hint);
 
         auto nested_column = readNonNullableColumnFromArrowColumn(arrow_column,
             column_name,
