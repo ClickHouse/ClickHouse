@@ -14,12 +14,11 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#if CLICKHOUSE_CLOUD
-#include <Server/StatelessWorker/StatelessWorkersProvider.h>
+#include <Server/StatelessWorker/IStatelessWorkersProvider.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
-#endif
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -33,6 +32,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -47,6 +47,8 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -81,16 +83,22 @@ namespace ProfileEvents
     extern const Event DistributedPlanRemoteTasks;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
+    extern const Event RuntimeFilterReceiveBranchFailures;
 }
 
 
 namespace DB
 {
 
+/// The comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES` explains why the two limits are equal.
+static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
+
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsString distributed_plan_worker_cluster;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsBool use_concurrency_control;
@@ -104,6 +112,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
@@ -111,6 +120,7 @@ namespace FailPoints
 {
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -186,7 +196,9 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    /// `advisory` is ignored: a persisted stream has no peer, and its reader starts only after this
+    /// stage finishes. A write failure is a failure of the object storage, so it stays an error.
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -197,7 +209,10 @@ public:
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: a persisted stream is read only after its producer finished, and a
+    /// missing file means a failed producer, which already fails the query.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -398,14 +413,18 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    /// `advisory` is ignored: this sink already drops chunks when its reader detaches.
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: an in-memory source has no peer to lose and fails only when the
+    /// query is cancelled.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (output_is_serialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
@@ -568,14 +587,16 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, advisory);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
+        return lookupFor(exchange_stream_id.exchange_id)
+            .createSource(std::move(output_header), exchange_stream_id, output_is_serialized, advisory);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
@@ -793,6 +814,86 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
+/// Runs each runtime filter receive branch of a task in its own thread, beside the data pipeline.
+/// A branch starts reading at once, without waiting for the data pipeline. `finish` cancels the
+/// branches that still wait. A branch error is logged and the filter is skipped, so rows pass
+/// unfiltered.
+class RuntimeFilterReceiveBranches
+{
+public:
+    explicit RuntimeFilterReceiveBranches(LoggerPtr logger_) : logger(std::move(logger_)) {}
+
+    void start(QueryPipeline pipeline, const String & filter_name)
+    {
+        auto branch = std::make_shared<Branch>(std::move(pipeline));
+        branches.push_back(branch);
+        try
+        {
+            branch->thread = ThreadFromGlobalPool(
+                [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                    try
+                    {
+                        fiu_do_on(FailPoints::distributed_plan_runtime_filter_receive_branch_fails_before_connect,
+                        {
+                            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED, "Injected receive branch failure before it connects");
+                        });
+                        CompletedPipelineExecutor executor(branch->pipeline);
+                        executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
+                        executor.execute();
+                    }
+                    catch (...)
+                    {
+                        ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+                        tryLogCurrentException(
+                            log,
+                            fmt::format(
+                                "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
+                                filter_name));
+                    }
+                });
+        }
+        catch (...)
+        {
+            /// The thread did not start: skip the filter.
+            branches.pop_back();
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+            tryLogCurrentException(
+                logger,
+                fmt::format(
+                    "Cannot start the receive branch for runtime filter '{}'; the filter is skipped and rows pass unfiltered",
+                    filter_name));
+        }
+    }
+
+    /// Cancel the branches that are still waiting and join their threads. Idempotent.
+    void finish() noexcept
+    {
+        for (const auto & branch : branches)
+            branch->cancelled = true;
+        for (const auto & branch : branches)
+            if (branch->thread.joinable())
+                branch->thread.join();
+        branches.clear();
+    }
+
+    ~RuntimeFilterReceiveBranches() { finish(); }
+
+private:
+    struct Branch
+    {
+        explicit Branch(QueryPipeline pipeline_) : pipeline(std::move(pipeline_)) {}
+
+        QueryPipeline pipeline;
+        std::atomic<bool> cancelled{false};
+        ThreadFromGlobalPool thread;
+    };
+
+    LoggerPtr logger;
+    VectorWithMemoryTracking<std::shared_ptr<Branch>> branches;
+};
+
 /// The identity of the task on its `DistributedPlanTask::execute` span. No-op when tracing is off.
 static void addTaskSpanAttributes(
     OpenTelemetry::Span & span,
@@ -907,6 +1008,34 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
+    RuntimeFilterReceiveBranches receive_branches(logger);
+    for (const auto & descriptor : task.runtime_filter_descriptors)
+    {
+        const auto partials_header = runtimeFilterPartialsHeader();
+        auto partials = receiveExchangeStreams(
+            partials_header,
+            descriptor.stream.exchange_id,
+            {descriptor.stream},
+            pipeline_settings,
+            /*spread_over_max_threads*/ false,
+            /*advisory*/ true);
+        auto merge = std::make_shared<MergeRuntimeFiltersTransform>(
+            partials_header,
+            /*num_inputs=*/1,
+            MergeRuntimeFiltersTransform::Mode::RegisterUnion,
+            descriptor.filter_name,
+            descriptor.filter_key,
+            descriptor.key_column_type,
+            descriptor.geometry,
+            context->getRuntimeFilterLookup());
+        if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+            merge->enableIndexAnalysis();
+        partials.addTransform(std::move(merge));
+        auto branch = QueryPipelineBuilder::getPipeline(std::move(partials));
+        branch.complete(std::make_shared<EmptySink>(partials_header));
+        receive_branches.start(std::move(branch), descriptor.filter_name);
+    }
+
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
@@ -948,6 +1077,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
                 executor.setCancelCallback(is_cancelled, 100);
             executor.execute();
         }
+
+        /// The data work is done; a filter that has not arrived by now has nothing left to serve.
+        receive_branches.finish();
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
@@ -1152,6 +1284,10 @@ protected:
         return true;
     }
 
+    /// Merge tasks end soon after their inputs here, so waiting for them is cheap and reports
+    /// their errors.
+    bool waitsForFilterOnlyStages() const override { return true; }
+
 private:
     /// Rethrow the exception of any already-finished failed task across all stages, without blocking.
     void rethrowFailedTasks()
@@ -1234,115 +1370,45 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
     assignHostsForTasks(distributed_query_plan_);
 }
 
-/// Worker hostnames from the `stateless_worker_client` config: the `cluster` replicas, or the
-/// single `host`; empty when the worker client is disabled.
-static Strings getDistributedWorkerHostnames(ContextPtr context)
-{
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        return {};
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (cluster_name.empty())
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host", "");
-        if (host.empty())
-            return {};
-        return {host};
-    }
-
-    auto cluster = context->tryGetCluster(cluster_name);
-    if (!cluster)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-    auto shard_addresses = cluster->getShardsAddresses();
-    if (shard_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-    /// Only a single-shard worker cluster is supported for now.
-    if (shard_addresses.size() > 1)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-
-    Strings result;
-    for (const auto & replica : shard_addresses[0])
-        result.push_back(replica.host_name);
-    return result;
-}
-
 size_t getCascadesPlanningNodeCount(ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
+    /// Read the settings from the query context, which the allocation also uses, so a subquery's own
+    /// `SETTINGS` cannot plan a different cluster or worker count than execution gets.
+    const ContextPtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+    const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
     /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-#if CLICKHOUSE_CLOUD
-    /// Cloud discovery leases `distributed_plan_workers_num` workers instead of a static cluster.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-        return requested_workers;
-#endif
-
-    /// Otherwise use the statically configured worker cluster's size.
-    return getDistributedWorkerHostnames(context).size();
+    /// With the client disabled the default cluster plans no distributed nodes, but an explicitly named
+    /// cluster cannot be served, so reject it instead of silently running locally.
+    const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+    {
+        if (!worker_cluster.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker client is not enabled; cannot use worker cluster '{}'", worker_cluster);
+        return 0;
+    }
+    /// Size the plan from the provider the query executes on; an unusable selection throws here.
+    return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
 
 TaskToHostMap::~TaskToHostMap() = default;
 
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
-
-#if CLICKHOUSE_CLOUD
-    /// When the discovery service is configured it is the only source of
-    /// workers - the statically configured cluster/host is never used as a
-    /// fallback, so the two can never be mixed. Discovery takes precedence when
-    /// both are present.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-    {
-        const auto workers_num = context->getSettingsRef()[Setting::distributed_plan_workers_num];
-        if (workers_num == 0)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker discovery is configured but `distributed_plan_workers_num` is 0; "
-                "set it to a positive value to lease workers from the discovery service");
-        auto provider = context->getStatelessWorkersProvider();
-        worker_allocation = provider->allocate(workers_num);
-        for (const auto & endpoint : worker_allocation->getEndpoints())
-            worker_addresses.push_back(resolveWorkerAddress(endpoint.host, endpoint.port, 0, context));
-        if (worker_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No stateless workers available from the discovery service");
-        return;
-    }
-#endif
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (!cluster_name.empty())
-    {
-        auto cluster = context->tryGetCluster(cluster_name);
-        if (!cluster)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-        auto shard_addresses = cluster->getShardsAddresses();
-        if (shard_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-        /// Only a single-shard worker cluster is supported for now.
-        if (shard_addresses.size() > 1)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-        for (const auto & replica : shard_addresses[0])
-            worker_addresses.push_back(
-                resolveWorkerAddress(replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port, context));
-    }
-    else
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host");
-        if (!host.empty())
-            worker_addresses.push_back(resolveWorkerAddress(host, 0, 0, context));
-    }
-
+    /// No `enabled` check here: a query that already resolved its provider drains on it even if the
+    /// client is disabled meanwhile, while resolving a new provider is refused by the registry.
+    /// One allocation per query, shared by its distributed plans.
+    worker_allocation = context->getOrCreateStatelessWorkerAllocation();
+    for (const auto & addr : worker_allocation->getAddresses())
+        worker_addresses.push_back(
+            resolveWorkerAddress(addr.host, addr.stateless_worker_port, addr.streaming_exchange_port, context));
     if (worker_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
+        throw Exception(ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE, "No stateless workers available");
 }
 
 void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
@@ -2195,9 +2261,11 @@ void DistributedQueryPlanExecutor::start()
             startStageWithDependencies(stage_name, executed_stages);
     }
 
-    /// Wait for all stages to finish
-    for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        running_stages.push_back(stage_name);
+    /// Wait for all data stages to finish. Whether the filter-only stages are waited for depends on
+    /// the executor, see `DistributedQueryStage::filter_only`.
+    for (const auto & [stage_name, stage] : distributed_query_plan.stages)
+        if (!stage.filter_only || waitsForFilterOnlyStages())
+            running_stages.push_back(stage_name);
 }
 
 bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
