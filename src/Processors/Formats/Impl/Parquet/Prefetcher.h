@@ -59,7 +59,29 @@ public:
 
     /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
     /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
-    std::optional<size_t> startPrefetchWithinLimit(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory);
+    /// `created_task_first_handle` receives, for each read task created, the position in `requests_to_start`
+    /// of the first handle it covers.
+    std::optional<size_t> startPrefetchWithinLimit(
+        const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
+        std::vector<size_t> * created_task_first_handle = nullptr);
+
+    /// Not thread safe; called before getAdjacentRanges and extendsAdjacentRanges. Start offsets of the structures that
+    /// the file metadata describes, the registered ranges' own included: adjacent ranges never span one.
+    void setBarriers(std::vector<size_t> sorted_offsets);
+
+    /// Ranges that are consecutive in the sorted order of the ranges registered before finalizeRanges(),
+    /// with no structure of the file between them (see setBarriers).
+    struct AdjacentRanges
+    {
+        size_t first_range_idx = 0;
+        size_t last_range_idx = 0;
+        size_t begin = 0;
+        size_t end = 0;
+    };
+
+    /// Nullopt if the handles' ranges are not such ranges.
+    std::optional<AdjacentRanges> getAdjacentRanges(const std::vector<PrefetchHandle *> & handles);
+    bool extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const;
 
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
@@ -208,6 +230,9 @@ private:
 
     std::atomic<bool> ranges_finalized {false};
 
+    /// See setBarriers. Sorted, immutable once set.
+    std::vector<size_t> barriers;
+
     /// (One mutex for all tasks because it's not used frequently.)
     std::mutex exception_mutex;
 
@@ -220,6 +245,7 @@ private:
     /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
     Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
+    bool noBarrierBetween(size_t begin, size_t end) const;
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
     [[noreturn]] void rethrowException(Task * task);

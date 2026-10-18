@@ -209,9 +209,13 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
     }
 }
 
-std::optional<size_t> Prefetcher::startPrefetchWithinLimit(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory)
+std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
+    const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
+    std::vector<size_t> * created_task_first_handle)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
+    if (created_task_first_handle)
+        created_task_first_handle->clear();
 
     std::unordered_set<const RequestState *> requests_set;
     std::vector<PrefetchHandle *> handles;
@@ -264,11 +268,80 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(const std::vector<Pre
             handle->memory = MemoryUsageToken(memory_usage, diff);
             charged += memory_usage;
         }
+
+        if (created_task_first_handle)
+        {
+            std::unordered_set<const Task *> not_seen(new_tasks.begin(), new_tasks.end());
+            for (size_t pos = 0; pos < requests_to_start.size() && !not_seen.empty(); ++pos)
+            {
+                const PrefetchHandle * handle = requests_to_start[pos];
+                if (*handle && not_seen.erase(handle->request->task))
+                    created_task_first_handle->push_back(pos);
+            }
+            chassert(not_seen.empty());
+        }
     }
 
     for (Task * task : new_tasks)
         scheduleTask(task);
     return charged;
+}
+
+void Prefetcher::setBarriers(std::vector<size_t> sorted_offsets)
+{
+    chassert(std::is_sorted(sorted_offsets.begin(), sorted_offsets.end()));
+    barriers = std::move(sorted_offsets);
+}
+
+bool Prefetcher::noBarrierBetween(size_t begin, size_t end) const
+{
+    if (end <= begin)
+        return true;
+    auto it = std::lower_bound(barriers.begin(), barriers.end(), begin);
+    return it == barriers.end() || *it >= end;
+}
+
+bool Prefetcher::extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const
+{
+    return next.first_range_idx == run.last_range_idx + 1 && noBarrierBetween(run.end, next.begin);
+}
+
+std::optional<Prefetcher::AdjacentRanges> Prefetcher::getAdjacentRanges(const std::vector<PrefetchHandle *> & handles)
+{
+    chassert(ranges_finalized.load(std::memory_order_relaxed));
+    /// The ranges' own starts are barriers, so empty means not set.
+    chassert(!barriers.empty());
+
+    std::vector<size_t> range_indices;
+    range_indices.reserve(handles.size());
+
+    std::lock_guard lock(mutex);
+    const auto & ranges = range_sets.at(0).ranges;
+    for (const PrefetchHandle * handle : handles)
+    {
+        if (!*handle)
+            continue;
+        const RequestState * req = handle->request;
+        if (req->range_set_idx != 0 || req->range_idx >= ranges.size() || ranges[req->range_idx].request != req)
+            return std::nullopt;
+        range_indices.push_back(req->range_idx);
+    }
+    if (range_indices.empty())
+        return std::nullopt;
+
+    std::sort(range_indices.begin(), range_indices.end());
+    range_indices.erase(std::unique(range_indices.begin(), range_indices.end()), range_indices.end());
+
+    const RangeState & first = ranges[range_indices.front()];
+    AdjacentRanges res{.first_range_idx = range_indices.front(), .last_range_idx = range_indices.back(), .begin = first.start, .end = first.end};
+    for (size_t i = 1; i < range_indices.size(); ++i)
+    {
+        const RangeState & range = ranges[range_indices[i]];
+        if (range_indices[i] != range_indices[i - 1] + 1 || !noBarrierBetween(res.end, range.start))
+            return std::nullopt;
+        res.end = std::max(res.end, range.end);
+    }
+    return res;
 }
 
 std::vector<PrefetchHandle> Prefetcher::splitRange(

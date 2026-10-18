@@ -33,6 +33,8 @@ struct AtomicBitSet
     /// First set bit at or after `start`.
     std::optional<size_t> findNext(size_t start) const;
     std::optional<size_t> findFirst() const { return findNext(0); }
+    /// First bit at or after `start` that is set here and not in `mask` (of the same size).
+    std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
 };
 
 // I'd like to talk to the manager.
@@ -146,6 +148,10 @@ private:
     /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
     /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
     AtomicBitSet column_data_read_ahead_row_groups;
+    /// Read-ahead depth slots held by each such row group: written by readAheadColumnData, read and zeroed by
+    /// the admission round that unsets the row group's bit.
+    std::vector<size_t> column_data_read_ahead_run_slots;
+    /// Slots held by all row groups.
     std::atomic<size_t> column_data_read_ahead_count {0};
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);

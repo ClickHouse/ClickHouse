@@ -56,6 +56,20 @@ std::optional<size_t> AtomicBitSet::findNext(size_t start) const
     return std::nullopt;
 }
 
+std::optional<size_t> AtomicBitSet::findNextAndNot(const AtomicBitSet & mask, size_t start) const
+{
+    chassert(mask.a.size() == a.size());
+    for (size_t i = start >> 6; i < a.size(); ++i)
+    {
+        UInt64 x = a[i].load(std::memory_order_relaxed) & ~mask.a[i].load(std::memory_order_relaxed);
+        if (i == start >> 6)
+            x &= ~0ull << (start & 63);
+        if (x)
+            return (i << 6) + getTrailingZeroBitsUnsafe(x);
+    }
+    return std::nullopt;
+}
+
 void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
@@ -94,7 +108,10 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
+    if (column_data_read_ahead)
+        reader.prefetcher.setBarriers(reader.getSortedMetadataOffsets(/*with_column_chunk_copies=*/ false));
     column_data_read_ahead_row_groups.resize(num_row_groups);
+    column_data_read_ahead_run_slots.assign(num_row_groups, 0);
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
@@ -798,7 +815,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
         if (stage_idx == ReadStage::ColumnData && column_data_read_ahead
             && column_data_read_ahead_row_groups.unset(row_group_idx, std::memory_order_relaxed))
-            ++released_read_ahead_slots;
+            released_read_ahead_slots += std::exchange(column_data_read_ahead_run_slots[row_group_idx], 0);
 
         /// Kicks off prefetches and adds their (and other) memory usage estimate to `diff`.
         auto & stage_tasks = stage.row_group_tasks_to_schedule[row_group_idx];
@@ -898,17 +915,82 @@ void ReadManager::readAheadColumnData()
     MemoryUsageDiff diff(ReadStage::ColumnData);
     /// Row groups this pass cannot read ahead. It stops after `depth` of them, so passes do not rescan long runs of them.
     size_t skipped = 0;
-    std::lock_guard lock(column_data_prefetch_mutex);
-    for (auto row_group_idx = stage.schedulable_row_groups.findNext(0); row_group_idx.has_value();
-         row_group_idx = stage.schedulable_row_groups.findNext(*row_group_idx + 1))
+    auto used_memory = [&]
     {
-        size_t read_ahead_row_groups = column_data_read_ahead_count.load(std::memory_order_acquire);
-        if (stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_row_groups >= depth)
+        return stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
+    };
+    auto depth_is_full = [&]
+    {
+        size_t read_ahead_slots = column_data_read_ahead_count.load(std::memory_order_acquire);
+        return stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_slots >= depth;
+    };
+
+    /// Larger row groups keep one request each: more requests stay in flight, and a slow one stalls in-order decoding for less.
+    const size_t small_row_group_bytes = reader.options.min_bytes_for_seek / 16;
+
+    /// Consecutive row groups smaller than small_row_group_bytes whose requests are adjacent ranges are started by one call,
+    /// up to bytes_per_read_task. A run of one row group holds one depth slot, a longer run one per read task its call
+    /// created, owned by the first row group of the run that reads from it.
+    std::vector<size_t> run;
+    std::vector<PrefetchHandle *> run_prefetches;
+    std::vector<size_t> run_prefetch_row_groups;
+    std::optional<Prefetcher::AdjacentRanges> run_ranges;
+    size_t run_begin = 0;
+    size_t run_limit = 0;
+    std::vector<size_t> created_tasks;
+
+    /// Returns false if the pass must stop.
+    auto try_start_run = [&]
+    {
+        size_t memory_usage = used_memory();
+        if (memory_usage >= budget)
+            return false;
+
+        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, budget - memory_usage, &created_tasks);
+        if (!charged)
+            return false;
+        if (*charged == 0)
+            return ++skipped != depth;
+
+        for (size_t i : run)
+        {
+            chassert(column_data_read_ahead_run_slots[i] == 0);
+            column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
+        }
+        size_t slots = 1;
+        if (run.size() == 1)
+        {
+            column_data_read_ahead_run_slots[run[0]] = 1;
+        }
+        else
+        {
+            for (size_t pos : created_tasks)
+                ++column_data_read_ahead_run_slots[run_prefetch_row_groups[pos]];
+            slots = created_tasks.size();
+        }
+        column_data_read_ahead_count.fetch_add(slots, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups, run.size());
+        return true;
+    };
+    auto start_run = [&]
+    {
+        bool keep_going = run.empty() || try_start_run();
+        run.clear();
+        run_prefetches.clear();
+        run_prefetch_row_groups.clear();
+        return keep_going;
+    };
+
+    std::lock_guard lock(column_data_prefetch_mutex);
+    for (auto row_group_idx = stage.schedulable_row_groups.findNextAndNot(column_data_read_ahead_row_groups, 0); row_group_idx.has_value();
+         row_group_idx = stage.schedulable_row_groups.findNextAndNot(column_data_read_ahead_row_groups, *row_group_idx + 1))
+    {
+        if (run.empty() && depth_is_full())
             break;
 
         /// Admission unsets the schedulable bit and takes the tasks under the same mutex, so a schedulable row group keeps its tasks.
         size_t i = *row_group_idx;
-        if (column_data_read_ahead_row_groups.test(i, std::memory_order_relaxed) || !stage.schedulable_row_groups.test(i, std::memory_order_acquire))
+        if (!stage.schedulable_row_groups.test(i, std::memory_order_acquire))
             continue;
 
         const auto & tasks = stage.row_group_tasks_to_schedule[i];
@@ -917,39 +999,51 @@ void ReadManager::readAheadColumnData()
                 return task.column_idx != UINT64_MAX && !reader.row_groups[i].columns.at(task.column_idx).offset_index.page_locations.empty();
             }))
         {
-            if (++skipped == depth)
+            if (!start_run() || ++skipped == depth)
                 break;
             continue;
         }
-
-        size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
-        if (memory_usage >= budget)
-            break;
 
         std::vector<PrefetchHandle *> prefetches;
         for (const Task & task : tasks)
             addColumnDataPrefetches(task, prefetches);
         if (prefetches.empty())
         {
-            if (++skipped == depth)
+            if (!start_run() || ++skipped == depth)
                 break;
             continue;
         }
 
-        auto charged = reader.prefetcher.startPrefetchWithinLimit(prefetches, &diff, budget - memory_usage);
-        if (!charged)
+        auto ranges = reader.prefetcher.getAdjacentRanges(prefetches);
+        if (ranges && ranges->end - ranges->begin >= small_row_group_bytes)
+            ranges.reset();
+        if (!run.empty() && !(ranges && run_ranges && reader.prefetcher.extendsAdjacentRanges(*run_ranges, *ranges) && ranges->end - run_begin <= run_limit)
+            && !start_run())
             break;
-        if (*charged == 0)
+
+        if (run.empty())
         {
-            if (++skipped == depth)
+            if (depth_is_full())
                 break;
-            continue;
+            size_t memory_usage = used_memory();
+            run_begin = ranges ? ranges->begin : 0;
+            run_limit = memory_usage < budget ? std::min(reader.options.bytes_per_read_task, budget - memory_usage) : 0;
+            run_ranges = ranges;
+        }
+        else
+        {
+            run_ranges->last_range_idx = ranges->last_range_idx;
+            run_ranges->end = std::max(run_ranges->end, ranges->end);
         }
 
-        column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
-        column_data_read_ahead_count.fetch_add(1, std::memory_order_relaxed);
-        ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups);
+        run.push_back(i);
+        run_prefetches.insert(run_prefetches.end(), prefetches.begin(), prefetches.end());
+        run_prefetch_row_groups.insert(run_prefetch_row_groups.end(), prefetches.size(), i);
+
+        if (!ranges && !start_run())
+            break;
     }
+    start_run();
 
     diff.finalized = true;
     for (size_t i = 0; i < diff.by_stage.size(); ++i)
@@ -1424,7 +1518,7 @@ ReadManager::ReadResult ReadManager::read()
                     }
                 }
                 if (size_t n = column_data_read_ahead_count.load(std::memory_order_relaxed))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} row groups hold a column data read-ahead slot", n);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} column data read-ahead slots are held", n);
                 return {};
             }
 

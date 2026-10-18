@@ -638,6 +638,10 @@ struct Reader
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
+    /// Sorted start offsets of the structures that the file metadata describes, over all row groups and columns.
+    /// `ColumnChunk.file_offset` is included only if `with_column_chunk_copies`.
+    std::vector<size_t> getSortedMetadataOffsets(bool with_column_chunk_copies) const;
+
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
