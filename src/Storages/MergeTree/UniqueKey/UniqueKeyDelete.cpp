@@ -105,14 +105,16 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
 MutationCommands scanCommands(
     const ASTDeleteQuery & query, const StorageInMemoryMetadata & metadata, const String & partition_id, const ContextPtr & context)
 {
-    MutationCommands commands;
-    for (const auto * name : {"_part", "_part_offset"})
-    {
-        /// `READ_COLUMN` reads by name, so a table column of the same name would replace the row locator.
+    /// `READ_COLUMN` and the `IN PARTITION ID` filter on `_partition_id` resolve their column by name,
+    /// where a table column of the same name wins.
+    for (const auto * name : {"_part", "_part_offset", "_partition_id"})
         if (metadata.getColumns().has(name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which a table column of the same name shadows", name);
 
+    MutationCommands commands;
+    for (const auto * name : {"_part", "_part_offset"})
+    {
         const auto column = metadata.virtuals.get(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
         commands.push_back({.type = MutationCommand::READ_COLUMN, .column_name = column.name, .data_type = column.type});
     }

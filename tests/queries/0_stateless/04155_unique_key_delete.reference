@@ -7,3 +7,5 @@ shadow_offset	1
 shadow_offset	2
 shadow_part	1
 shadow_part	2
+shadow_partition	1
+shadow_partition	2
