@@ -3695,9 +3695,13 @@ def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_clus
     assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
 
     instance.stop_clickhouse()
+    # This insert is streamed with the column layout before `extra` is added, which differs from the new
+    # snapshot of the table. It must not make the table skipped.
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 39) AS i")
+    cursor.execute(f"ALTER TABLE {bad} ADD COLUMN extra integer")
     cursor.execute(f"ALTER TABLE {bad} ADD PRIMARY KEY (key)")
     cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(40, 49) AS i")
-    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(30, 50) AS i")
+    cursor.execute(f"INSERT INTO {bad} SELECT i, i FROM generate_series(40, 50) AS i")
     # These changes precede the new snapshot of the table, which already contains their effect. Replaying the
     # update over the snapshot could not restore the unchanged TOAST value of the deleted row.
     cursor.execute(f"UPDATE {bad} SET value = value + 100 WHERE key = 0")
@@ -3713,6 +3717,70 @@ def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_clus
     cursor.execute(f"DELETE FROM {bad} WHERE key >= 45")
     check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
 
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_keeps_snapshot_position_of_bootstrapped_table_across_retry(
+    started_cluster,
+):
+    # A table that takes its first snapshot on attach skips the changes before the snapshot position. The
+    # position must survive a retry of the startup (or a restart) before the shared replication slot passes
+    # it. Otherwise the earlier changes are applied over the snapshot: the update of a row deleted before the
+    # snapshot cannot restore its unchanged TOAST value, and the table is skipped.
+    good = "snapshot_position_good"
+    bad = "snapshot_position_bad"
+    mat_db = "snapshot_position_database"
+    failpoint = "materialized_postgresql_fail_after_snapshot_on_attach"
+    pg_manager.create_postgres_table(good)
+    pg_manager.create_postgres_table(
+        bad, template=postgres_table_template_without_primary_key_with_payload
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"ALTER TABLE {bad} ALTER COLUMN payload SET STORAGE EXTERNAL")
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(0, 29) AS i")
+    cursor.execute(
+        f"INSERT INTO {bad} SELECT i, i, repeat('x', 10000) FROM generate_series(0, 29) AS i"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{good}, {bad}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{bad}"))
+
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {bad} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {good} SELECT i, i FROM generate_series(30, 39) AS i")
+    cursor.execute(f"UPDATE {bad} SET value = value + 100 WHERE key = 0")
+    cursor.execute(f"DELETE FROM {bad} WHERE key = 0")
+
+    # The first startup attempt loads the snapshot of the table and fails before replication starts, so the
+    # shared replication slot stays before the snapshot position. The retry resumes with the nested table.
+    # PostgreSQL is paused, so that no startup attempt gets that far before the failpoint is enabled.
+    with started_cluster.pause_container_using_signal("postgres1"):
+        instance.start_clickhouse()
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    assert_logs_contain_with_retry(
+        instance, f"Failpoint {failpoint}", retry_count=60, sleep_time=1
+    )
+
+    check_tables_are_synchronized(instance, good, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+    assert 40 == int(instance.query(f"SELECT count() FROM {mat_db}.{good}"))
+    assert 29 == int(instance.query(f"SELECT count() FROM {mat_db}.{bad}"))
+
+    cursor.execute(f"UPDATE {bad} SET value = value + 1000 WHERE key < 10")
+    cursor.execute(f"DELETE FROM {bad} WHERE key >= 25")
+    check_tables_are_synchronized(instance, bad, materialized_database=mat_db)
+
+    instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
     pg_manager.drop_materialized_db(mat_db)
 
 

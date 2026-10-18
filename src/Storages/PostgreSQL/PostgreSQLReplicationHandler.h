@@ -16,6 +16,8 @@ namespace DB
 struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 class PostgreSQLReplicationHandler : WithContext
 {
@@ -57,6 +59,10 @@ public:
     /// Tables passed to addStorage that startSynchronization does not replicate, because on attach they had
     /// neither a nested table nor a publication entry (see startSynchronization).
     const std::set<String> & getTablesSkippedOnAttach() const { return tables_skipped_on_attach; }
+
+    /// The file where the database engine persists the snapshot positions of the tables that take a snapshot while the
+    /// shared replication slot is behind it (see `snapshot_positions_path`). Must be called before startSynchronization.
+    void setSnapshotPositionsFile(DiskPtr disk, const String & path);
 
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
@@ -148,6 +154,11 @@ private:
     /// must be dropped and the initial synchronization must run from scratch.
     bool checkReplicationStateOnAttach(pqxx::nontransaction & tx);
 
+    /// `table_name` -> `start_lsn`, see `snapshot_positions_path`.
+    using SnapshotPositions = std::map<String, String>;
+    SnapshotPositions loadSnapshotPositions() const;
+    void saveSnapshotPositions(const SnapshotPositions & positions) const;
+
     void assertInitialized() const;
 
     void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
@@ -228,6 +239,15 @@ private:
     MaterializedStorages materialized_storages;
 
     std::set<String> tables_skipped_on_attach;
+
+    /// A table that takes its snapshot from a temporary replication slot (`ATTACH TABLE`, or the first snapshot of a table
+    /// on attach) must not get the changes before the snapshot position applied, but the shared replication slot may be
+    /// behind it. The consumer skips them until it reaches that position, and the position is persisted here, so that
+    /// it is not lost if the server restarts before the shared replication slot passes it. An entry is removed on attach
+    /// once the shared replication slot has passed it. Not set for the single-table engine: its replication slot is
+    /// moved to the snapshot position instead, because it does not stream changes of other tables.
+    DiskPtr snapshot_positions_disk;
+    String snapshot_positions_path;
 
     bool replication_handler_initialized = false;
 

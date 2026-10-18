@@ -40,6 +40,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 
+#include <filesystem>
+
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -127,6 +129,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             /* is_fresh_definition = */ !is_attach,
             *settings,
             /* is_materialized_postgresql_database = */ true);
+
+    /// A dot-prefixed file is not taken for table metadata, and is removed with the metadata directory by `DROP DATABASE`.
+    replication_handler->setSnapshotPositionsFile(
+        getDisk(), (std::filesystem::path(getMetadataPath()) / ".materialized_postgresql_snapshot_positions").string());
 
     std::set<String> tables_to_replicate;
     try

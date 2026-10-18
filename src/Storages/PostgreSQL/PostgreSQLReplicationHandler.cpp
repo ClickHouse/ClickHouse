@@ -5,6 +5,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -29,6 +30,12 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabasesCommon.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -69,6 +76,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char materialized_postgresql_fail_after_snapshot_on_attach[];
 }
 
 class TemporaryReplicationSlot
@@ -421,6 +434,61 @@ String PostgreSQLReplicationHandler::collidingForeignPublishedTables(
         colliding += schema + '.' + table;
     }
     return colliding;
+}
+
+
+void PostgreSQLReplicationHandler::setSnapshotPositionsFile(DiskPtr disk, const String & path)
+{
+    snapshot_positions_disk = std::move(disk);
+    snapshot_positions_path = path;
+}
+
+
+PostgreSQLReplicationHandler::SnapshotPositions PostgreSQLReplicationHandler::loadSnapshotPositions() const
+{
+    SnapshotPositions positions;
+    if (!snapshot_positions_disk || !snapshot_positions_disk->existsFile(snapshot_positions_path))
+        return positions;
+
+    const String content = readMetadataFile(snapshot_positions_disk, snapshot_positions_path);
+    ReadBufferFromString in(content);
+    while (!in.eof())
+    {
+        String table_name;
+        String lsn;
+        readEscapedString(table_name, in);
+        assertChar('\t', in);
+        readEscapedString(lsn, in);
+        assertChar('\n', in);
+        positions.emplace(std::move(table_name), std::move(lsn));
+    }
+    return positions;
+}
+
+
+void PostgreSQLReplicationHandler::saveSnapshotPositions(const SnapshotPositions & positions) const
+{
+    if (!snapshot_positions_disk)
+        return;
+
+    if (positions.empty())
+    {
+        snapshot_positions_disk->removeFileIfExists(snapshot_positions_path);
+        return;
+    }
+
+    WriteBufferFromOwnString out;
+    for (const auto & [table_name, lsn] : positions)
+    {
+        writeEscapedString(table_name, out);
+        writeChar('\t', out);
+        writeEscapedString(lsn, out);
+        writeChar('\n', out);
+    }
+
+    const String tmp_path = snapshot_positions_path + ".tmp";
+    writeMetadataFile(snapshot_positions_disk, tmp_path, out.str(), /* fsync_metadata */ true);
+    snapshot_positions_disk->replaceFile(tmp_path, snapshot_positions_path);
 }
 
 
@@ -794,10 +862,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StorageInfo> nested_storages;
 
-    /// Tables whose first snapshot is taken while the replica resumes from its existing replication slot,
-    /// and the position of that snapshot: the consumer applies their changes only after it.
-    std::unordered_map<String, StorageInfo> tables_bootstrapped_on_resume;
-    String tables_bootstrapped_on_resume_start_lsn;
+    /// Tables whose snapshot position is ahead of the existing replication slot on resume, with that position:
+    /// the consumer applies their changes only after it. These are the tables that take their first snapshot now,
+    /// and the ones that took it in a previous run, which the replication slot has not passed yet.
+    std::unordered_map<String, std::pair<StorageInfo, String>> tables_after_snapshot_position;
 
     /// snapshot_name is initialized only if a new replication slot is created.
     /// start_lsn is initialized in two places:
@@ -815,6 +883,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     auto initial_sync = [&]()
     {
         LOG_DEBUG(log, "Starting tables sync load");
+
+        /// All tables are loaded from the snapshot of the new replication slot.
+        saveSnapshotPositions({});
 
         if (user_managed_slot)
         {
@@ -888,6 +959,17 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// `ATTACH TABLE` does. Otherwise every attach would fail on the missing nested table.
         std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
         std::optional<std::set<std::pair<String, String>>> published;
+
+        /// Forget the snapshot positions that the replication slot has durably passed (`start_lsn` is its
+        /// `confirmed_flush_lsn`), and the ones of the tables that are not replicated anymore.
+        auto snapshot_positions = loadSnapshotPositions();
+        if (std::erase_if(snapshot_positions, [&](const auto & position)
+            {
+                return MaterializedPostgreSQLConsumer::getLSNValue(position.second) <= MaterializedPostgreSQLConsumer::getLSNValue(start_lsn)
+                    || !materialized_storages.contains(position.first);
+            }))
+            saveSnapshotPositions(snapshot_positions);
+
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
@@ -917,7 +999,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 if (!table_structure->physical_columns)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns");
                 auto storage_info = StorageInfo(materialized_storage->getNested(), table_structure->physical_columns->attributes);
-                nested_storages.emplace(table_name, std::move(storage_info));
+                if (auto position = snapshot_positions.find(table_name); position != snapshot_positions.end())
+                {
+                    LOG_INFO(log, "Table {}.{} was loaded from a snapshot at position {}, which replication slot {} has not "
+                             "passed yet: its earlier changes will be skipped",
+                             postgres_database, table_name, position->second, replication_slot);
+                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), position->second));
+                }
+                else
+                    nested_storages.emplace(table_name, std::move(storage_info));
             }
             catch (Exception & e)
             {
@@ -941,13 +1031,34 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
             TemporaryReplicationSlot temporary_slot(this, snapshot_tx, temporary_start_lsn, temporary_snapshot_name);
 
+            /// Record the snapshot position before the snapshot is loaded, so that a restart at any moment after it
+            /// cannot apply the changes before the snapshot position to the loaded table.
+            if (is_materialized_postgresql_database)
+            {
+                for (const auto & [table_name, materialized_storage] : tables_without_nested)
+                    snapshot_positions[table_name] = temporary_start_lsn;
+                saveSnapshotPositions(snapshot_positions);
+            }
+            else
+            {
+                /// The replication slot of the single-table engine streams only this table, so nothing needs
+                /// the changes before the snapshot position.
+                tx.exec(fmt::format(
+                    "SELECT pg_replication_slot_advance({}, {})",
+                    quoteStringPostgreSQL(replication_slot), quoteStringPostgreSQL(temporary_start_lsn)));
+                LOG_DEBUG(log, "Advanced replication slot {} to the snapshot position {}", replication_slot, temporary_start_lsn);
+            }
+
             for (const auto & [table_name, materialized_storage] : tables_without_nested)
             {
                 LOG_INFO(log, "Table {}.{} has no nested table yet, loading it from a new snapshot", postgres_database, table_name);
                 try
                 {
-                    tables_bootstrapped_on_resume.emplace(
-                        table_name, loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage));
+                    tables_after_snapshot_position.emplace(
+                        table_name,
+                        std::make_pair(
+                            loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage),
+                            temporary_start_lsn));
                 }
                 catch (...)
                 {
@@ -972,10 +1083,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                         throw;
                 }
             }
-            tables_bootstrapped_on_resume_start_lsn = temporary_start_lsn;
+
+            fiu_do_on(FailPoints::materialized_postgresql_fail_after_snapshot_on_attach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint materialized_postgresql_fail_after_snapshot_on_attach");
+            });
         }
 
-        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size() + tables_bootstrapped_on_resume.size());
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size() + tables_after_snapshot_position.size());
     }
 
     tx.commit();
@@ -995,8 +1110,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             nested_storages,
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
 
-    for (auto & [table_name, storage_info] : tables_bootstrapped_on_resume)
-        consumer->addNested(table_name, std::move(storage_info), tables_bootstrapped_on_resume_start_lsn);
+    for (auto & [table_name, storage_info_and_position] : tables_after_snapshot_position)
+        consumer->addNested(table_name, std::move(storage_info_and_position.first), storage_info_and_position.second);
 
     replication_handler_initialized = true;
 
@@ -1970,6 +2085,12 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
             TemporaryReplicationSlot temporary_slot(this, tx, start_lsn, snapshot_name);
 
+            /// See `snapshot_positions_path`. An entry left by a failure is dropped on the next attach,
+            /// because the table is not replicated then.
+            auto snapshot_positions = loadSnapshotPositions();
+            snapshot_positions[postgres_table_name] = start_lsn;
+            saveSnapshotPositions(snapshot_positions);
+
             /// Protect against deadlock.
             auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
             if (!nested)
@@ -2031,6 +2152,10 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
         getConsumer()->removeNested(postgres_table_name);
+
+        auto snapshot_positions = loadSnapshotPositions();
+        if (snapshot_positions.erase(postgres_table_name))
+            saveSnapshotPositions(snapshot_positions);
     }
     catch (...)
     {
