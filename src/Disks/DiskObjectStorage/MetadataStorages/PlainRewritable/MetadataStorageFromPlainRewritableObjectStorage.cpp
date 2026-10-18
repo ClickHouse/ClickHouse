@@ -1266,7 +1266,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::writeSnapshotIfDirty(UInt6
         }
         else
         {
-            out = object_storage->writeObject(StoredObject(key), WriteMode::Rewrite, /*object_attributes*/ std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, getWriteSettings());
+            /// The readers may read the snapshot at any moment, so they must never see it partially written.
+            auto write_settings = getWriteSettings();
+            write_settings.object_storage_write_atomically = true;
+            out = object_storage->writeObject(StoredObject(key), WriteMode::Rewrite, /*object_attributes*/ std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
             writePlainRewritableSnapshot(remote_layout, *out);
             out->finalize();
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotWritten);
