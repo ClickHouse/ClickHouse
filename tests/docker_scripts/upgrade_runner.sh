@@ -441,79 +441,56 @@ else
     echo -e "Cannot submit the mutation that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
 fi
 
-# Drop the row policies left by the stress phase, before the server is upgraded.
-#
-# A test drops its row policies at the end of its file, but the stress runner regularly stops a test file before its
-# last statement (see the mutations above), and it runs many tests in one shared database (`--database=test_N`). A
-# leftover policy filters every table it matches, a database-level `ON db.*` one also the tables that later tests
-# created with other columns, so a background read on the upgraded server fails on its condition: an eager dictionary
-# over such a table logs `UNKNOWN_IDENTIFIER` for the whole post-upgrade window. The old server fails the same way, so
-# this is test garbage, not a backward-compatibility signal. `DROP` is the only remedy: a policy that applies to nobody
-# makes reads throw under `throw_on_unmatched_row_policies`. The statements are generated server-side from
-# `system.row_policies.name`, which is already the quoted `<name> ON <database>.<table>`, so no name passes through
-# the shell.
-echo "Drop the row policies left by the stress phase"
+# Drop the row policies left by the stress phase whose filter cannot be applied to a table they cover, and keep the
+# rest: the upgraded server has to load and apply them. The stress runner stops test files before their last statement
+# and runs many tests in one database (`--database=test_N`), so the `ON db.*` policy of one test can outlive it over
+# the tables of other tests, which lack its columns. Every read of such a table fails on the filter, on the old server
+# already, and on the upgraded one so does the load of an eager dictionary over it.
+echo "Drop the row policies that cannot be applied to a table they cover"
 
+: > /tmp/drop_row_policies.sql
+row_policy_drop_failed=0
 if timeout 1m clickhouse-client --query "
-        SELECT name, storage, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except
-        FROM system.row_policies
-        WHERE storage != 'users_xml'
-        ORDER BY name
-        FORMAT Vertical" > /test_output/leftover_row_policies.txt \
-    && timeout 1m clickhouse-client --query "
-        SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';'
-        FROM system.row_policies
-        WHERE storage != 'users_xml'
-        FORMAT TSVRaw" > /tmp/drop_leftover_row_policies.sql
+        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
-    if [ -s /tmp/drop_leftover_row_policies.sql ]
-    then
-        timeout 5m clickhouse-client --ignore-error --queries-file /tmp/drop_leftover_row_policies.sql \
-            2> /test_output/undropped_row_policy_errors.txt ||:
-    fi
+    while read -r row_policy_id
+    do
+        # The planner applies row policies, so `EXPLAIN QUERY TREE` resolves this filter without the others.
+        if timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+                SELECT format('EXPLAIN QUERY TREE SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3};', char(96),
+                    replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
+                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
+                    p.select_filter)
+                FROM system.row_policies AS p
+                INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
+                WHERE p.id = {id:UUID}
+                FORMAT TSVRaw" > /tmp/row_policy_check.sql \
+            && timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null \
+                2>> /test_output/dropped_row_policies.txt
+        then
+            continue
+        fi
+        timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+            SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';' FROM system.row_policies WHERE id = {id:UUID}
+            FORMAT TSVRaw" >> /tmp/drop_row_policies.sql || row_policy_drop_failed=1
+    done < /tmp/row_policy_ids.txt
 else
     echo -e "Cannot list the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
 fi
 
-# Each `DROP` above may fail without stopping the rest, and this is where those failures are accounted for. It has to
-# stay before the row policy created below on purpose.
-if row_policies_left=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.row_policies WHERE storage != 'users_xml'")
+if [ -s /tmp/drop_row_policies.sql ]
 then
-    if [ "$row_policies_left" = 0 ]
-    then
-        echo -e "The stress phase left no row policy to the upgrade$OK" >> /test_output/test_results.tsv
-    else
-        timeout 1m clickhouse-client --query "
-            SELECT name, storage, select_filter
-            FROM system.row_policies
-            WHERE storage != 'users_xml'
-            ORDER BY name
-            FORMAT Vertical" > /test_output/undropped_row_policies.txt ||:
-        echo -e "$row_policies_left row policies could not be dropped before the upgrade (see undropped_row_policies.txt and undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policies.txt)" >> /test_output/test_results.tsv
-    fi
-else
-    echo -e "Cannot count the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
+    cat /tmp/drop_row_policies.sql >> /test_output/dropped_row_policies.txt
+    timeout 5m clickhouse-client --ignore-error --queries-file /tmp/drop_row_policies.sql \
+        2> /test_output/undropped_row_policy_errors.txt || row_policy_drop_failed=1
+fi
+if [ "$row_policy_drop_failed" != 0 ] || [ -s /test_output/undropped_row_policy_errors.txt ]
+then
+    echo -e "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 
-[ -s /test_output/leftover_row_policies.txt ] || rm -f /test_output/leftover_row_policies.txt
+[ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
-
-# A row policy is persisted state that the upgraded server has to load and apply, and the drop above takes away
-# whatever the stress phase happened to leave of it. Create one deliberately, after the drop.
-echo "Create a row policy that the upgraded server has to apply"
-
-row_policy_across_upgrade_created=0
-
-if timeout 1m clickhouse-client --query "
-    DROP TABLE IF EXISTS default.row_policy_across_upgrade SYNC;
-    CREATE TABLE default.row_policy_across_upgrade (k UInt64) ENGINE = MergeTree ORDER BY k;
-    INSERT INTO default.row_policy_across_upgrade SELECT number FROM numbers(10);
-    CREATE ROW POLICY row_policy_across_upgrade ON default.row_policy_across_upgrade USING k < 3 TO ALL;"
-then
-    row_policy_across_upgrade_created=1
-else
-    echo -e "Cannot create the row policy that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
-fi
 
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
@@ -744,25 +721,6 @@ then
     [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
 fi
 
-# Without the row policy created before the upgrade the table returns all 10 rows.
-if [ "$row_policy_across_upgrade_created" = 1 ]
-then
-    if row_policy_across_upgrade_rows=$(timeout 1m clickhouse-client --query "SELECT count() FROM default.row_policy_across_upgrade" \
-        2> /test_output/row_policy_across_upgrade_error.txt)
-    then
-        if [ "$row_policy_across_upgrade_rows" = 3 ]
-        then
-            echo -e "The row policy created before the upgrade was applied by the new server$OK" >> /test_output/test_results.tsv
-        else
-            echo -e "The row policy created before the upgrade was not applied by the new server: $row_policy_across_upgrade_rows of 10 rows visible, 3 expected$FAIL" >> /test_output/test_results.tsv
-        fi
-    else
-        echo -e "Cannot check whether the row policy created before the upgrade was applied (see row_policy_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/row_policy_across_upgrade_error.txt)" >> /test_output/test_results.tsv
-    fi
-
-    [ -s /test_output/row_policy_across_upgrade_error.txt ] || rm -f /test_output/row_policy_across_upgrade_error.txt
-fi
-
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
 cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickhouse-server.upgrade.log
@@ -776,8 +734,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       phase are killed before the upgrade (the `KILL MUTATION` loop above), so the upgraded server has
 #       none to resume and a mutation error here is a real finding. Do not allow-list a new one - when a
 #       test's intentionally broken mutation reaches this scan again, it is that kill step that is wrong.
-# Row-policy errors are absent for the same reason: the row policies left by the stress phase are dropped before the
-#       upgrade. When a leftover policy's error reaches this scan, it is that drop step that is wrong.
+# Row-policy errors are absent for the same reason: the row policies whose filter cannot be applied to a table they
+#       cover are dropped before the upgrade. When a leftover policy's error reaches this scan, it is that drop step
+#       that is wrong.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
