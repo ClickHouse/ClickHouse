@@ -452,14 +452,12 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
         /// A Compact part has no sizes of individual columns, but its reader prefetches a buffer
-        /// per column as well, so estimate the size of a column as an equal share of the data file.
+        /// per column as well. The data of one column can be of any size up to the whole data file,
+        /// so the size of the data file is the bound of the buffer of every column.
         std::optional<size_t> compact_part_column_size;
         if (read_info.data_part_info->isCompactPart())
-        {
-            size_t data_file_size = read_info.data_part_info->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-            size_t num_columns = std::max<size_t>(read_info.data_part_info->getColumns().size(), 1);
-            compact_part_column_size = std::max<size_t>(data_file_size / num_columns, 1);
-        }
+            compact_part_column_size = std::max<size_t>(
+                read_info.data_part_info->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION), 1);
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
