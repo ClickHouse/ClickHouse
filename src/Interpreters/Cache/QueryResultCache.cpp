@@ -108,6 +108,10 @@ struct HasNonDeterministicFunctionsMatcher
     struct Data
     {
         const ContextPtr context;
+        /// Whether a bare identifier that the analyzer can resolve as a niladic function (`CURRENT_TIMESTAMP`,
+        /// `now`) counts as a call of that function. The analyzer does so only when no column or alias of that
+        /// name is in scope, which is not known here, so this is conservative.
+        const bool check_niladic_identifiers = false;
         bool has_non_deterministic_functions = false;
     };
 
@@ -117,6 +121,14 @@ struct HasNonDeterministicFunctionsMatcher
     {
         if (data.has_non_deterministic_functions)
             return;
+
+        if (const auto * identifier = node->as<ASTIdentifier>(); identifier && data.check_niladic_identifiers && !identifier->compound())
+        {
+            if (const auto func = FunctionFactory::instance().tryGet(identifier->name(), data.context);
+                func && func->allowsOmittingParentheses() && !func->isDeterministic())
+                data.has_non_deterministic_functions = true;
+            return;
+        }
 
         if (const auto * function = node->as<ASTFunction>())
         {
@@ -425,9 +437,9 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context, bool check_niladic_identifiers = false)
 {
-    HasNonDeterministicFunctionsMatcher::Data finder_data{context};
+    HasNonDeterministicFunctionsMatcher::Data finder_data{.context = context, .check_niladic_identifiers = check_niladic_identifiers};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions
         || hasNonDeterministicObfuscate(ast, context);
@@ -482,6 +494,23 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
     /// `StorageView::getModificationHash`.
     if (!canComputeModificationHash(context, resolved_id.database_name, resolved_id.table_name, metadata->getColumns()))
         return {};
+
+    /// An `ALIAS` column is expanded into its expression only by the analyzer, after the query walk, so
+    /// `SELECT y FROM t` with `y ALIAS dictGet(...)` or `y ALIAS now64()` reads a dictionary or the clock
+    /// although neither appears in the query. Fail closed on such an expression, and on one that reads
+    /// other tables, whose changes the hash of this table does not cover.
+    for (const auto & column : metadata->getColumns())
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Alias || !column.default_desc.expression)
+            continue;
+        if (astContainsNonDeterministicFunctions(column.default_desc.expression, context, /*check_niladic_identifiers=*/ true))
+            return {};
+        CollectReferencedTablesMatcher::Data alias_tables;
+        ASTPtr expression = column.default_desc.expression->clone();
+        CollectReferencedTablesVisitor(alias_tables).visit(expression);
+        if (alias_tables.cannot_verify || !alias_tables.table_ids.empty())
+            return {};
+    }
 
     /// A row policy filters what the current user reads from the table without the table itself
     /// changing, so an unchanged table hash is not proof that the result is unchanged: an
@@ -548,7 +577,8 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     /// is unchanged - fail closed. This also covers a view whose stored SELECT uses such a function and
     /// is reached through the view-transparent path (`StorageView::getModificationHash` recurses into
     /// here with the view's stored SELECT).
-    if (astContainsNonDeterministicFunctions(ast, context))
+    /// A niladic function can also be spelled without parentheses (`CURRENT_TIMESTAMP`), as a bare identifier.
+    if (astContainsNonDeterministicFunctions(ast, context, /*check_niladic_identifiers=*/ true))
         return {};
 
     CollectReferencedTablesMatcher::Data finder_data;
@@ -733,7 +763,7 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
 /// `parseFilterASTsInjectedFromSettings`. A collected filter can carry filters of its own in the `SETTINGS`
 /// clause of a subquery, so it is walked the same way. With `additional_table_filters_matchable_names`, only
 /// the `additional_table_filters` entries keyed by one of these names are collected. Returns false when one
-/// cannot be parsed or has an unexpected shape.
+/// cannot be parsed or has an unexpected shape, or when a `SETTINGS` clause applies a settings `profile`.
 static bool collectFiltersFromQuerySettings(
     const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names)
 {
@@ -764,6 +794,10 @@ static bool collectFiltersFromQuerySettings(
 
         for (const auto & change : set_query->changes)
         {
+            /// `profile` applies the settings of a settings profile to this scope, which can include filters
+            /// that neither the query text nor the outer context shows. They cannot be analyzed here.
+            if (change.name == "profile")
+                return false;
             if (change.name == "additional_result_filter")
             {
                 if (change.value.getType() != Field::Types::String)
