@@ -265,6 +265,10 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
+    /// Whether `INSERT ... FROM INFILE` also inserts the data piped to stdin after the file, as `clickhouse-client`
+    /// does (see `02270_stdin_with_query_or_infile_data`). `clickhouse-local` inserts only the file.
+    virtual bool appendsStdinToInfileData() const { return true; }
+
     /// The setting that the `--format` option and the `format` config key are mirrored into.
     /// In `clickhouse-local`, `--format` has always set both the default input and the default output
     /// format, so it maps to the bidirectional `format` setting. In `clickhouse-client` (including the

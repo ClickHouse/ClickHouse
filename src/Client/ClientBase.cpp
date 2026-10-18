@@ -2612,7 +2612,10 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// Checking stdin waits for data or EOF, so skip it when the stdin data would not be inserted: an open pipe
+    /// would block the query.
+    const bool reads_stdin = !parsed_insert_query->infile || appendsStdinToInfileData();
+    bool have_data_in_stdin = reads_stdin && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
