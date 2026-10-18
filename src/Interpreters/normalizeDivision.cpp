@@ -14,7 +14,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool exact_division_for_integers;
+    extern const SettingsBool sql_compatible_division_for_integers;
 }
 
 namespace
@@ -37,7 +37,7 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
         updated_context->applySettingsChanges(changes);
         /// `InterpreterSetQuery` applies resets after explicit changes.
         updated_context->resetSettingsToDefaultValue(query_settings.default_settings);
-        exact = updated_context->getSettingsRef()[Setting::exact_division_for_integers];
+        exact = updated_context->getSettingsRef()[Setting::sql_compatible_division_for_integers];
         scope_context = std::move(updated_context);
     }
     const ContextPtr & current_context = scope_context ? scope_context : context;
@@ -104,7 +104,7 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
 
 void normalizeDivision(IAST & ast, const ContextPtr & context)
 {
-    normalize(ast, context->getSettingsRef()[Setting::exact_division_for_integers], context);
+    normalize(ast, context->getSettingsRef()[Setting::sql_compatible_division_for_integers], context);
 }
 
 }
