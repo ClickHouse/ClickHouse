@@ -10,3 +10,11 @@ CREATE USER grantees:
 TOO_BIG_AST
 CREATE USER default database:
 TOO_BIG_AST
+CREATE USER grantees container (baseline, must fit):
+not rejected
+CREATE USER default role names:
+TOO_BIG_AST
+CREATE USER grantees names:
+TOO_BIG_AST
+CREATE USER grantees except names:
+TOO_BIG_AST

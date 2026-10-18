@@ -25,10 +25,10 @@ $CLICKHOUSE_CLIENT --query "CREATE RULE ${ACTIVE} AS (SELECT 'nomatch') REWRITE 
 # `CREATE USER u` alone counts as exactly 5 AST elements for the rule-template walk (the rule
 # node, the `CREATE USER` node, `names`, the name-with-host and the name itself), so a limit of 5
 # passes the bare statement and only the extra clauses below can trip it.
-check() # $1 label, $2 template
+check() # $1 label, $2 template, $3 limit (default 5)
 {
     echo "$1:"
-    $CLICKHOUSE_CLIENT --query_rules "${ACTIVE}" --max_ast_elements 5 --query \
+    $CLICKHOUSE_CLIENT --query_rules "${ACTIVE}" --max_ast_elements "${3:-5}" --query \
         "CREATE RULE ${RULE} AS ($2) REJECT WITH 'blocked'" 2>&1 | grep -o -m1 "TOO_BIG_AST" || echo "not rejected"
     # A template that fits the limit is actually created, and rules are global server state.
     $CLICKHOUSE_CLIENT --query "DROP RULE IF EXISTS ${RULE}"
@@ -40,3 +40,11 @@ check "ALTER USER settings" "ALTER USER ${USER} SETTINGS max_threads = 1, max_me
 check "CREATE USER default role" "CREATE USER ${USER} DEFAULT ROLE ${ROLE}, ${ROLE}_2, ${ROLE}_3, ${ROLE}_4, ${ROLE}_5"
 check "CREATE USER grantees" "CREATE USER ${USER} GRANTEES ${ROLE}, ${ROLE}_2, ${ROLE}_3, ${ROLE}_4, ${ROLE}_5"
 check "CREATE USER default database" "CREATE USER ${USER} DEFAULT DATABASE ${CLICKHOUSE_DATABASE}"
+
+# `ASTRolesOrUsersSet` keeps its concrete name lists outside `children` as well. The bare statement
+# plus the role-set container is exactly 6 elements, so a limit of 6 admits the container and only
+# the names beneath it can trip the limit.
+check "CREATE USER grantees container (baseline, must fit)" "CREATE USER ${USER} GRANTEES ANY" 6
+check "CREATE USER default role names" "CREATE USER ${USER} DEFAULT ROLE ${ROLE}, ${ROLE}_2" 6
+check "CREATE USER grantees names" "CREATE USER ${USER} GRANTEES ${ROLE}, ${ROLE}_2" 6
+check "CREATE USER grantees except names" "CREATE USER ${USER} GRANTEES ANY EXCEPT ${ROLE}" 6

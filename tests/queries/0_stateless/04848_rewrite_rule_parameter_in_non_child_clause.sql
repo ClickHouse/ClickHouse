@@ -23,6 +23,16 @@ SHOW TABLES LIMIT {m_04848:UInt64};
 SET query_rules = '';
 DROP RULE rule_04848_limit;
 
+-- A query-level `param_*` binding in the `SETTINGS` clause scopes over the `LIMIT` carrier too.
+CREATE RULE rule_04848_scoped AS (SHOW TABLES LIMIT 42 SETTINGS param_p_04848 = 42) REJECT WITH 'blocked';
+SET query_rules = 'rule_04848_scoped';
+
+SHOW TABLES LIMIT 42 SETTINGS param_p_04848 = 42; -- { serverError REWRITE_RULE_REJECTION }
+SHOW TABLES LIMIT {p_04848:UInt64} SETTINGS param_p_04848 = 42; -- { serverError REWRITE_RULE_REJECTION }
+
+SET query_rules = '';
+DROP RULE rule_04848_scoped;
+
 -- The `WHERE` carrier: a `String` parameter substitutes as a bare literal.
 CREATE RULE rule_04848_where AS (SHOW TABLES WHERE name = 'blocked_04848') REJECT WITH 'blocked';
 SET query_rules = 'rule_04848_where';

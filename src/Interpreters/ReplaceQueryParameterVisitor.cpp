@@ -86,6 +86,9 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             scoped_parameters.insert_or_assign(name, value);
 
         ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
+        /// The query-level `param_*` bindings scope over the non-`children` carriers too (e.g.
+        /// `SHOW TABLES LIMIT {n:UInt64} SETTINGS param_n = 42`), see the branch below.
+        forEachMutableNonChildSemanticAST(*ast, [&](ASTPtr & member) { scoped_visitor.visit(member); });
         scoped_visitor.visitChildren(ast);
         num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
     }

@@ -13,6 +13,7 @@
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/FieldFromAST.h>
@@ -148,6 +149,14 @@ namespace
         else if (auto * quota = node.template as<ASTCreateQuotaQuery>())
         {
             visit_if(quota->roles);
+        }
+        else if (auto * roles_or_users = node.template as<ASTRolesOrUsersSet>())
+        {
+            /// `ParserRolesOrUsersSet` moves the concrete name lists into `children` only when they
+            /// contain a query parameter (`visit_if` skips them then), but the tree hash folds them
+            /// in either way, e.g. the role names of `CREATE USER u DEFAULT ROLE a, b, c`.
+            visit_if(roles_or_users->names);
+            visit_if(roles_or_users->except_names);
         }
         else if (auto * set_query = node.template as<ASTSetQuery>())
         {
