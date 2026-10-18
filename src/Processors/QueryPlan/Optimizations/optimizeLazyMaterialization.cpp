@@ -1,4 +1,6 @@
 #include <memory>
+#include <stack>
+#include <unordered_map>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -157,6 +159,57 @@ static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_outpu
     }
 
     required_output_positions[i] = true;
+}
+
+/// A function whose result depends on the block it runs on: a stateful one (`rowNumberInAllBlocks`,
+/// `runningDifference`) or one not deterministic within a query (`rowNumberInBlock`, `blockSize`, `rand`).
+/// Such a function must not be moved into the lazy half, because there it would run on the rows that
+/// survived the `LIMIT` instead of the original blocks, and return different values.
+static bool dependsOnItsBlock(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION
+        && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery());
+}
+
+/// Mark as required the outputs of the DAG that are computed by a function depending on its block,
+/// so that they are calculated in the main half, before the `LIMIT`.
+static void markBlockDependentOutputsAsRequired(const ActionsDAG & dag, std::vector<bool> & required_output_positions)
+{
+    std::unordered_map<const ActionsDAG::Node *, bool> depends;
+    std::stack<std::pair<const ActionsDAG::Node *, size_t>> stack;
+
+    auto calculate = [&](const ActionsDAG::Node * root)
+    {
+        if (depends.contains(root))
+            return depends[root];
+
+        stack.push({root, 0});
+        while (!stack.empty())
+        {
+            auto & [node, next_child] = stack.top();
+            if (next_child < node->children.size())
+            {
+                const auto * child = node->children[next_child++];
+                if (!depends.contains(child))
+                    stack.push({child, 0});
+                continue;
+            }
+
+            bool result = dependsOnItsBlock(*node);
+            for (const auto * child : node->children)
+                result = result || depends[child];
+            depends[node] = result;
+            stack.pop();
+        }
+
+        return depends[root];
+    };
+
+    const auto & outputs = dag.getOutputs();
+    size_t num_matched_outputs = std::min(outputs.size(), required_output_positions.size());
+    for (size_t i = 0; i < num_matched_outputs; ++i)
+        if (!required_output_positions[i] && calculate(outputs[i]))
+            required_output_positions[i] = true;
 }
 
 struct SplitExpressionStepResult
@@ -557,6 +610,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             /// `tryExecuteFunctionsAfterSorting` in `liftUpFunctions.cpp`.
             if (expr.hasArrayJoin())
                 return false;
+            markBlockDependentOutputsAsRequired(expr, required_columns);
             /// The number of DAG outputs can be less than the number of columns in the header.
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *expr_step->getInputHeaders().front() , std::move(required_columns));
@@ -569,6 +623,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             if (expr.hasArrayJoin())
                 return false;
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
+            markBlockDependentOutputsAsRequired(expr, required_columns);
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *filter_step->getInputHeaders().front(), std::move(required_columns));
             has_filter = true;
