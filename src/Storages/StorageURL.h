@@ -293,6 +293,10 @@ private:
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
     std::optional<time_t> current_file_last_modified;
+    /// The `Date` of the response that reported `current_file_last_modified`, by the clock of the same server.
+    std::optional<time_t> current_file_response_date;
+    /// The URI of the current file after following the redirects of its metadata request.
+    Poco::URI current_file_resolved_uri;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -302,6 +306,17 @@ private:
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
+    /// The query condition cache is used only for a plain `GET`, whose response depends on the URL alone.
+    bool allow_query_condition_cache = false;
+    /// The query condition cache key (`part_name`) of the file being read: its URL and version, see
+    /// `makeQueryConditionCacheFileKey`. Unset if the file cannot use the cache.
+    std::optional<String> current_query_condition_cache_file_key;
+
+    std::optional<String> makeQueryConditionCacheFileKey() const;
+    /// Records in the query condition cache the row groups of the file just read which hold no row the
+    /// condition needs.
+    void writeQueryConditionCacheEntry() const;
 
     Poco::Net::HTTPBasicCredentials credentials;
 
