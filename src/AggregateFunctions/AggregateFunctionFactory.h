@@ -102,6 +102,10 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// Whether the function, possibly with combinators, does not support some of its `Variant` arguments
+    /// according to `AggregateFunctionProperties::variant_arguments_conversion` and needs `AggregateFunctionVariantAdapter`.
+    bool needsVariantArgumentsConversion(const String & name, NullsAction action, const DataTypes & argument_types) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,

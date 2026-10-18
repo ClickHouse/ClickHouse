@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -108,7 +108,7 @@ SELECT quantileTiming(response_time) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, documentation});
+    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision.

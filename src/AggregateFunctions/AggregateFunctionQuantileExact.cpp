@@ -62,7 +62,7 @@ void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory)
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -101,7 +101,7 @@ SELECT quantileExact(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExact::name, {createAggregateFunctionQuantile<FuncQuantileExact>, documentation});
+    factory.registerFunction(NameQuantileExact::name, {createAggregateFunctionQuantile<FuncQuantileExact>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.

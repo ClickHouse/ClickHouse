@@ -1,8 +1,12 @@
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +29,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_AGGREGATION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -97,6 +102,30 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
 
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
+
+    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+            [](const auto & type) { return isVariant(type); })
+        && needsVariantArgumentsConversion(name, action, types_without_low_cardinality))
+    {
+        /// Apply the function to Nullable of the least common supertype of the alternatives of every Variant argument.
+        DataTypes nested_types = types_without_low_cardinality;
+        for (auto & type : nested_types)
+        {
+            if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+            {
+                auto supertype = tryGetLeastSupertype(variant->getVariants());
+                if (!supertype || !supertype->canBeInsideNullable())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument for aggregate function {}: "
+                        "the alternatives of the Variant don't have a common supertype that can be inside Nullable{}",
+                        type->getName(), name, getNumericVariantSupertypeHint(type));
+                type = makeNullable(supertype);
+            }
+        }
+
+        auto nested_function = get(name, action, nested_types, parameters, out_properties, state_variant);
+        return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, types_without_low_cardinality, nested_types, parameters);
+    }
 
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
@@ -431,6 +460,84 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     }
 }
 
+
+bool AggregateFunctionFactory::needsVariantArgumentsConversion(const String & name_param, NullsAction action, const DataTypes & argument_types) const
+{
+    String name = getAliasToOrName(name_param);
+    String lower_case_name;
+    bool is_case_insensitive = false;
+    Value found;
+
+    /// Find by exact match.
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
+    {
+        found = it->second;
+    }
+
+    if (!found.creator)
+    {
+        lower_case_name = Poco::toLower(name);
+        if (auto jt = case_insensitive_aggregate_functions.find(lower_case_name); jt != case_insensitive_aggregate_functions.end())
+        {
+            is_case_insensitive = true;
+            found = jt->second;
+        }
+    }
+
+    if (found.creator)
+    {
+        auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
+        if (opt)
+            found = *opt;
+
+        size_t first_converted_argument = 0;
+        switch (found.properties.variant_arguments_conversion)
+        {
+            case VariantArgumentsConversion::None:
+                return false;
+            case VariantArgumentsConversion::All:
+                first_converted_argument = 0;
+                break;
+            case VariantArgumentsConversion::AllExceptFirst:
+                first_converted_argument = 1;
+                break;
+        }
+
+        return std::any_of(argument_types.begin() + std::min(first_converted_argument, argument_types.size()), argument_types.end(),
+            [](const auto & type) { return isVariant(type); });
+    }
+
+    /// The function with a combinator needs the conversion if the combinator or its nested function needs it.
+    /// Unknown functions don't, the exception is thrown by `getImpl`.
+    AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
+    if (!combinator || combinator->isForInternalUsageOnly())
+        return false;
+
+    /// The combinator receives the arguments with Nullable removed, as `get` applies the "Null" combinator
+    /// before constructing the function with this combinator (ex: the condition of -If can be Nullable(UInt8)).
+    DataTypes combinator_arguments = argument_types;
+    if (std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return type->isNullable(); }))
+    {
+        AggregateFunctionCombinatorPtr null_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
+        if (!null_combinator)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
+                            "to apply a function to Nullable arguments.");
+        combinator_arguments = null_combinator->transformArguments(argument_types);
+    }
+
+    if (combinator->needsVariantArgumentsConversion(combinator_arguments))
+        return true;
+
+    String nested_name = name.substr(0, name.size() - combinator->getName().size());
+    if (combinator->transformsMultipleNestedFunctions())
+    {
+        auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(combinator_arguments);
+        return std::any_of(nested_arguments_list.begin(), nested_arguments_list.end(),
+            [&](const auto & nested_arguments) { return needsVariantArgumentsConversion(nested_name, action, nested_arguments); });
+    }
+
+    return needsVariantArgumentsConversion(nested_name, action, combinator->transformArguments(combinator_arguments));
+}
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
 {

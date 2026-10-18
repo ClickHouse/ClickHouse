@@ -255,6 +255,11 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
+    bool needsVariantArgumentsConversion(const DataTypes & arguments) const override
+    {
+        return !arguments.empty() && isVariant(arguments.back());
+    }
+
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,

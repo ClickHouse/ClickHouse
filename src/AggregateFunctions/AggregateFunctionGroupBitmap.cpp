@@ -309,7 +309,7 @@ SELECT groupBitmap(UserID) AS num FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupBitmap", {createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>, documentation});
+    factory.registerFunction("groupBitmap", {createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_and = R"(
 Calculates the AND of a bitmap column and returns it's cardinality.

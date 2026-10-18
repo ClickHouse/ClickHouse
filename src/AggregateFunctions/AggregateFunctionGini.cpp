@@ -267,7 +267,7 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("gini", {createAggregateFunctionGini, documentation});
+    factory.registerFunction("gini", {createAggregateFunctionGini, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }
