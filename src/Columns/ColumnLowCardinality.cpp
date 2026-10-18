@@ -213,7 +213,15 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        /// See the comment in `doInsertFrom`.
+        if (is_native)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+        compactIfSharedDictionary();
+        idx.insertManyIndexes(getDictionary().uniqueInsertFrom(src, position), length);
+        return;
+    }
 
     const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
 
