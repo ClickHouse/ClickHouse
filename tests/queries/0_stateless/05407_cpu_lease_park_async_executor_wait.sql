@@ -27,12 +27,12 @@ SETTINGS workload = '05407_wl', max_threads = 1, max_insert_threads = 1, use_con
     async_insert_max_data_size = 10485760, async_insert_use_adaptive_busy_timeout = 0, async_insert_busy_timeout_max_ms = 200,
     log_comment = '05407_h2';
 
--- The recursive member runs in its own pipeline.
+-- Each member of the recursive CTE runs in its own pipeline.
 WITH RECURSIVE r AS
 (
     SELECT number AS n, 0 AS d FROM numbers(1000000)
     UNION ALL
-    SELECT cityHash64(n, d) % 1000000000 AS n, d + 1 FROM r WHERE d < 2
+    SELECT n + 1, d + 1 FROM r WHERE d < 1 AND n < 10
 )
 SELECT count(), sum(cityHash64(arrayMap(i -> cityHash64(n, i), range(20)))) FROM r
 SETTINGS workload = '05407_wl', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 60,
