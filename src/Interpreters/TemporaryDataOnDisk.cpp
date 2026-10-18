@@ -551,6 +551,15 @@ static size_t applySizeDelta(size_t size, ssize_t delta)
     return size + static_cast<size_t>(delta);
 }
 
+/// The same as `applySizeDelta`, but atomically: the buffers of several threads update one scope concurrently.
+static void addSizeDelta(std::atomic<size_t> & size, ssize_t delta)
+{
+    if (delta < 0)
+        size.fetch_sub(common::negateIgnoreOverflow(static_cast<size_t>(delta)));
+    else
+        size.fetch_add(static_cast<size_t>(delta));
+}
+
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
@@ -568,8 +577,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
 
-    stat.compressed_size = new_consumption;
-    stat.uncompressed_size = applySizeDelta(stat.uncompressed_size, uncompressed_delta);
+    addSizeDelta(stat.compressed_size, compressed_delta);
+    addSizeDelta(stat.uncompressed_size, uncompressed_delta);
     if (compressed_delta > 0)
         spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
 }
