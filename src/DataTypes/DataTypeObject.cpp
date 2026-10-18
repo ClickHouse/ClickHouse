@@ -919,9 +919,13 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
         typed_paths.at(path)->updateHash(hash);
     }
 
-    // Include paths to skip in the hash
-    hash.update(paths_to_skip.size());
-    for (const auto & path : paths_to_skip)
+    // Include paths to skip in the hash, sorted like the typed paths above: they are a set, so two
+    // objects holding the same ones are one type and have to hash alike
+    std::vector<String> sorted_paths_to_skip(paths_to_skip.begin(), paths_to_skip.end());
+    std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
+
+    hash.update(sorted_paths_to_skip.size());
+    for (const auto & path : sorted_paths_to_skip)
         hash.update(path);
 
     // Include path regexps to skip in the hash
