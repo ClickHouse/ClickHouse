@@ -54,6 +54,8 @@ def table(request):
 
 INSERT = "INSERT INTO t SELECT number % 4, number, number FROM numbers(40)"
 SETTINGS = {
+    # The tests hold the uploads of a synchronous INSERT; the async insert queue would flush them in the background.
+    "async_insert": 0,
     "max_threads": 1,
     "max_insert_threads": 1,
     "max_block_size": 100,
