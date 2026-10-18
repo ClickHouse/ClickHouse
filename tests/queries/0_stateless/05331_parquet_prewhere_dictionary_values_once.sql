@@ -6,7 +6,7 @@
 SET engine_file_truncate_on_insert = 1;
 SET input_format_parquet_max_block_size = 1000, input_format_parquet_prefer_block_bytes = 0,
     input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
-    input_format_parquet_dictionary_filter_push_down = 0, use_query_condition_cache = 0,
+    input_format_parquet_dictionary_filter_push_down = 0, use_query_condition_cache = 0, use_columns_cache = 0,
     enable_multiple_prewhere_read_steps = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
     log_queries = 1;
 
