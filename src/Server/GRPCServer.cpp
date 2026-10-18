@@ -1949,13 +1949,27 @@ namespace
         };
 
         Stopwatch client_reading_final_watch;
-        if (send_final_message)
+        try
         {
-            responder_finished = true;
-            responder->writeAndFinish(result, {}, callback);
+            if (send_final_message)
+            {
+                responder_finished = true;
+                responder->writeAndFinish(result, {}, callback);
+            }
+            else
+                responder->write(result, callback);
         }
-        else
-            responder->write(result, callback);
+        catch (...)
+        {
+            /// The operation has not been submitted (e.g. allocating its completion tag failed), so its
+            /// callback will never be called. Nothing else would complete the call either (`close` does
+            /// not cancel a finished responder), so cancel it here to make gRPC deliver the
+            /// `AsyncNotifyWhenDone` tag, which `close` waits for.
+            failed_to_send_result = true;
+            sending_result.set(false);
+            responder->cancel();
+            throw;
+        }
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
