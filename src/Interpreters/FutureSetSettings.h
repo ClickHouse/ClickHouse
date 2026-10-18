@@ -19,13 +19,14 @@ struct FutureSetSettings
     /// The most values that the set keeps for index analysis; 0 keeps all of them.
     size_t max_size_for_index = 0;
 
-    /// Both thresholds of 0 keep the set in memory.
+    /// Both thresholds of 0 disable automatic spilling; workload requests can still spill the set.
     size_t max_bytes_before_external_set = 0;
     double max_bytes_ratio_before_external_set = 0;
     size_t max_block_size = 0;
     size_t min_free_disk_space = 0;
     String temporary_files_codec;
     size_t temporary_files_buffer_size = 0;
+    bool allow_spilling = false;
 
     /// No size limits, and the set stays in memory, for sets of internal operations that do not use query
     /// settings.
@@ -35,6 +36,7 @@ struct FutureSetSettings
 
     void disableSpilling()
     {
+        allow_spilling = false;
         max_bytes_before_external_set = 0;
         max_bytes_ratio_before_external_set = 0;
     }
