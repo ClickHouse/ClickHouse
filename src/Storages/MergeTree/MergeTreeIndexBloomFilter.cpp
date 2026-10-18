@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <cmath>
 
 
 namespace DB
@@ -870,7 +871,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, map_info->key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -1231,7 +1232,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
                 }
             }
             else if (function_name == "has")
@@ -1245,7 +1246,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
 
                 out.function = RPNElement::FUNCTION_HAS_ANY;
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+                bool has_float_zero = false;
+                out.predicate.emplace_back(std::make_pair(position, hashWithColumnAndOtherZeros(actual_type, column, has_float_zero)));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -1330,7 +1332,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (converted_field.isNull())
                 return false;
 
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
         }
 
         return true;
@@ -1403,7 +1405,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (converted_field.isNull())
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+        out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
         return true;
     }
 
@@ -1490,7 +1492,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, const_value)));
 
             return true;
         }
