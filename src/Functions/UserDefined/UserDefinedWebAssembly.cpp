@@ -795,10 +795,13 @@ public:
         return !(isColumnarV1() && declaresArgument([](const DataTypePtr & type) { return type->isNullable(); }));
     }
 
-    /// A declared Variant parameter takes the whole Variant column.
+    /// A declared Variant parameter takes the whole Variant column. The default Variant adaptor
+    /// also handles NULL rows itself, so it is used only together with the default NULL handling,
+    /// as in `IFunction`: a guest that handles NULL must not lose its NULL rows to the adaptor.
     bool useDefaultImplementationForVariant() const override
     {
-        return !(isColumnarV1() && declaresArgument([](const DataTypePtr & type) { return typeid_cast<const DataTypeVariant *>(type.get()) != nullptr; }));
+        return useDefaultImplementationForNulls()
+            && !(isColumnarV1() && declaresArgument([](const DataTypePtr & type) { return typeid_cast<const DataTypeVariant *>(type.get()) != nullptr; }));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
