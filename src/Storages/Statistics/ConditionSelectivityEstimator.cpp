@@ -750,7 +750,13 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+    /// The merged statistics count the rows they cover: fewer than all rows when some part has no statistics of the
+    /// column or incompatible ones.
+    estimator->partial_statistics = std::ranges::any_of(estimator->column_estimators,
+        [&](const auto & column) { return column.second.stats->getNumRows() < estimator->total_rows; });
+    return estimator;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const

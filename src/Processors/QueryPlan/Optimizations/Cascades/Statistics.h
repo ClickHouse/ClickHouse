@@ -30,6 +30,9 @@ struct ExpressionStatistics
     /// A default selectivity stood in for a predicate somewhere below: `estimated_row_count` is a
     /// guess, which the replication budget does not take on its own.
     bool estimate_from_defaults = false;
+    /// The estimate has another imprecise part, see `RelationStats::imprecise_estimate`: statistics that cover only
+    /// some parts of a table, a key without statistics, a hint, the rows of a past execution.
+    bool imprecise_estimate = false;
     /// The search value of this unknown result is the product of an unknown join's inputs and a
     /// stand-in key selectivity, which can be far below the rows the join produces; the cost model
     /// does not price a gather of such a result on it. Kept by the operators that copy their
@@ -74,6 +77,13 @@ struct ExpressionStatistics
     /// Takes the rows, the bound, the column statistics and the flags of a relation estimate; a
     /// missing estimate leaves the bound as the search value.
     void applyRelationStats(const RelationStats & relation_stats);
+
+    /// Takes the imprecision of an input this result is derived from.
+    void addImprecisionOf(const ExpressionStatistics & input)
+    {
+        estimate_from_defaults |= input.estimate_from_defaults;
+        imprecise_estimate |= input.imprecise_estimate;
+    }
 
     void dump(WriteBuffer & out) const;
     String dump() const;

@@ -161,6 +161,9 @@ public:
     static const AtomMap atom_map;
 
     UInt64 getTotalRows() const { return total_rows; }
+    /// The statistics of some column cover only some of the rows (parts without statistics of the column). The
+    /// estimates extend them to all rows, as from a sample, so they are less precise.
+    bool hasPartialStatistics() const { return partial_statistics; }
 
 private:
     friend class ColumnStatistics;
@@ -199,6 +202,7 @@ private:
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
+    bool partial_statistics = false;
     ColumnEstimators column_estimators;
     Strings parts_names;
 };

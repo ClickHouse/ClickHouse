@@ -177,7 +177,7 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
         {
             result.rows_unknown |= input_statistics(input_index).rows_unknown;
-            result.estimate_from_defaults |= input_statistics(input_index).estimate_from_defaults;
+            result.addImprecisionOf(input_statistics(input_index));
         }
         result.source = RowEstimateSource::NoSource;
         const auto op = intersect_or_except_step->getOperator();
@@ -250,7 +250,7 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
         {
             group->statistics->rows_unknown |= input_statistics(input_index).rows_unknown;
-            group->statistics->estimate_from_defaults |= input_statistics(input_index).estimate_from_defaults;
+            group->statistics->addImprecisionOf(input_statistics(input_index));
         }
         if (expression->inputs.size() > 1)
             group->statistics->source = RowEstimateSource::NoSource;
@@ -299,8 +299,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     ExpressionStatistics statistics;
     statistics.min_row_count = 0;
-    statistics.estimate_from_defaults = left_statistics.estimate_from_defaults || right_statistics.estimate_from_defaults
-        || join.estimate_from_defaults;
+    statistics.addImprecisionOf(left_statistics);
+    statistics.addImprecisionOf(right_statistics);
+    statistics.estimate_from_defaults |= join.estimate_from_defaults;
     statistics.column_statistics = join.column_stats;
     statistics.max_row_count = join.max_rows ? Float64(*join.max_rows) : Float64(std::numeric_limits<UInt64>::max());
 
@@ -420,6 +421,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     : Float64(relation_profile.rows);
             /// A default in the profile makes the rows a guess, which the replication gate must not take as proven.
             statistics.estimate_from_defaults |= relation_profile.estimate_from_defaults;
+            statistics.imprecise_estimate |= estimator->hasPartialStatistics();
             statistics.source = RowEstimateSource::Statistics;
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
             {
@@ -723,6 +725,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
 
     ExpressionStatistics aggregation_statistics;
     aggregation_statistics.estimate_from_defaults = shared.estimate_from_defaults;
+    aggregation_statistics.imprecise_estimate = shared.imprecise_estimate;
     aggregation_statistics.source = shared.source;
     /// The keys with their NDVs, value sizes and domains.
     aggregation_statistics.column_statistics = shared.column_stats;
@@ -806,7 +809,7 @@ ExpressionStatistics StatisticsDerivation::deriveUnionStatistics(
             result.column_statistics, input_headers.at(0)->getNames(), other.column_statistics, input_headers.at(input_index)->getNames(),
             roundToRowCount(result.estimated_row_count), roundToRowCount(other.estimated_row_count));
         result.rows_unknown |= other.rows_unknown;
-        result.estimate_from_defaults |= other.estimate_from_defaults;
+        result.addImprecisionOf(other);
         result.estimated_row_count += other.estimated_row_count;
         result.min_row_count += other.min_row_count;
         result.max_row_count += other.max_row_count;
@@ -833,6 +836,7 @@ ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const Distin
         : std::min(DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count, input_statistics.max_row_count);
     result.estimated_row_count = std::min(groups, input_statistics.estimated_distinct_bound);
     result.max_row_count = shared.max_rows ? Float64(*shared.max_rows) : input_statistics.max_row_count;
+    result.imprecise_estimate |= shared.imprecise_estimate;
     /// Without a key NDV, or over an unknown input, the distinct rows are unknown, unless the input
     /// bounds its distinct rows below the search value: that bound is then the estimate.
     result.rows_unknown = (!shared.estimated_rows || input_statistics.rows_unknown) && !(input_statistics.estimated_distinct_bound < groups);
