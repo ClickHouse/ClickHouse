@@ -91,6 +91,13 @@ void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
         = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
+InsertStartGate::Check MergeTreeSink::getPreWriteCheck() const
+{
+    /// The limits come from the context of this sink: the sinks of different materialized views writing
+    /// into the same table may run with different settings, and all of their checks take part.
+    return {context, storage.makeTooManyPartsCheck(context)};
+}
+
 void MergeTreeSink::onStart()
 {
     /// Used by tests: skews the start of the parallel sinks of one insert, widening the window
@@ -104,7 +111,7 @@ void MergeTreeSink::onStart()
     /// whose onStart runs late must not count the parts already committed by its sibling sinks and
     /// reject the very insert that wrote them.
     /// Only the rejection is shared: the `parts_to_delay_insert` backpressure applies per block, in `consume`.
-    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false); });
+    runPreWriteCheck();
 }
 
 void MergeTreeSink::onFinish()

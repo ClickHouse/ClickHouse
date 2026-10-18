@@ -233,9 +233,12 @@ public:
     /// resolved locally, so a direct alias to a replicated table is not hidden.
     bool storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth = 0) const;
 
-    /// Returns the physical target id for a visible forwarding chain, so two `Alias` branches
-    /// resolving to the same replicated table still participate in the same convergence check.
-    StorageIDMaybeEmpty getVisibleQuorumWriteTargetID(const StoragePtr & storage) const;
+    /// Returns the key of the quorum state the physical target of a visible forwarding chain writes to,
+    /// so two `Alias` branches resolving to the same replicated table still participate in the same
+    /// convergence check. For a `ReplicatedMergeTree` it is the Keeper cluster and the replication path:
+    /// the quorum status node is shared by all the replicas of a table, so two local tables that are
+    /// replicas of each other converge on the same quorum state even though their names differ.
+    String getVisibleQuorumWriteTargetKey(const StoragePtr & storage) const;
 
     /// Whether the physical write target behind `storage` is hidden from this builder: the write is
     /// forwarded through a nested `INSERT` (an `Alias`, a `Distributed` shard, a `Buffer` flush, a

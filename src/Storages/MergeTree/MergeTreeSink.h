@@ -62,6 +62,8 @@ public:
     void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
 protected:
+    InsertStartGate::Check getPreWriteCheck() const override;
+
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t max_parts_per_block;

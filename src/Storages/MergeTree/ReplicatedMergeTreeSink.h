@@ -84,6 +84,8 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
 
 protected:
+    InsertStartGate::Check getPreWriteCheck() const override;
+
     virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 

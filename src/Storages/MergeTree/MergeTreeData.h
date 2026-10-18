@@ -917,6 +917,12 @@ public:
     /// stream instead of once per query.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
+    /// The rejection part of `delayInsertOrThrowIfNeeded` as a callable that a sink registers as its
+    /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table or the
+    /// context alive: once either of them is gone, so is the sink that registered the check, and there
+    /// is no write to check any more.
+    std::function<void()> makeTooManyPartsCheck(const ContextPtr & query_context) const;
+
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.

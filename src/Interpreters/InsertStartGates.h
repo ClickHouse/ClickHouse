@@ -17,17 +17,60 @@ namespace DB
 /// One gate per destination table of an INSERT query, shared by all the sinks that write into that
 /// table on behalf of the query. With `max_insert_threads` greater than one the query writes through
 /// several sinks running in parallel, and their `onStart` calls are not ordered with respect to each
-/// other's writes. See `SinkToStorage::runOnceBeforeFirstWrite`.
+/// other's writes. See `SinkToStorage::runPreWriteCheck`.
 ///
-/// The gate remembers the outcome of the check, including a failure: the first sink to arrive runs it
-/// while the others wait, and every one of them observes that same outcome. Rerunning the check after
+/// The gate remembers the outcome of the check, including a failure: the first sink to arrive runs the
+/// checks of all the sinks holding the gate while the others wait, and every one of them observes that
+/// same outcome. Rerunning the check after
 /// a failure - what `std::call_once` does - would not be equivalent, because the check looks at mutable
 /// state (the parts of the destination table), so a concurrent merge or cleanup could let one sink of
 /// the query be rejected while another one, running the check a moment later, proceeds.
 class InsertStartGate
 {
 public:
-    void run(const std::function<void()> & check)
+    /// The pre-write check of one sink. `key` identifies the context the check runs with: the checks of
+    /// the parallel sinks of one stream are the same and are run only once. `check` must not keep the
+    /// sink alive - the gate may outlive it, see `addCheck`.
+    struct Check
+    {
+        std::weak_ptr<const void> key;
+        std::function<void()> check;
+    };
+
+    /// Registers the pre-write check of a sink holding the gate. The sinks get their gates while the
+    /// pipeline is being built, before any of them writes, and the first sink to start runs the checks of
+    /// all of them. The sinks writing into one table do not necessarily run the same check: the limits
+    /// come from the context of the sink, and the branches of different materialized views, or a write
+    /// through a `Buffer`, may run with different settings. The decision must not depend on which sink
+    /// happens to start first, so a sink with stricter limits rejects the query even if a sink with
+    /// looser ones has started before it.
+    ///
+    /// A check registered after the decision has been made - by a sink created during the execution, in
+    /// a nested `INSERT` - is not run: the query may already have written into the table, and running the
+    /// check now would count those parts. The sink observes the decision that has been made.
+    void addCheck(Check check)
+    {
+        std::unique_lock lock(mutex);
+
+        if (forward_to)
+        {
+            auto target = forward_to;
+            lock.unlock();
+            target->addCheck(std::move(check));
+            return;
+        }
+
+        if (done)
+            return;
+
+        for (const auto & existing : checks)
+            if (!existing.key.owner_before(check.key) && !check.key.owner_before(existing.key))
+                return;
+
+        checks.push_back(std::move(check));
+    }
+
+    void run()
     {
         std::unique_lock lock(mutex);
 
@@ -38,7 +81,7 @@ public:
         {
             auto target = forward_to;
             lock.unlock();
-            target->run(check);
+            target->run();
             return;
         }
 
@@ -46,13 +89,15 @@ public:
         {
             try
             {
-                check();
+                for (const auto & check : checks)
+                    check.check();
             }
             catch (...)
             {
                 exception = std::current_exception();
             }
             done = true;
+            checks.clear();
         }
 
         if (exception)
@@ -65,6 +110,9 @@ private:
     std::mutex mutex;
     bool done = false;
     std::exception_ptr exception;
+
+    /// Registered while the gate is not `done`.
+    std::vector<Check> checks;
 
     /// Set only while the gate is not `done`: from then on every sink holding this gate observes the
     /// decision of `forward_to` instead. Never changes once set.
@@ -243,6 +291,12 @@ public:
                 {
                     candidate->forward_to = gate;
                     merged.insert(candidate.get());
+                    /// The checks of the sinks holding the merged gate now take part in the decision of
+                    /// the chosen gate, unless it has been made already (see `InsertStartGate::addCheck`).
+                    if (!gate->done)
+                        for (auto & check : candidate->checks)
+                            gate->checks.push_back(std::move(check));
+                    candidate->checks.clear();
                 }
             }
 
@@ -288,9 +342,36 @@ private:
             participant->collectRegistries(registries, visited);
     }
 
+    /// The gates are keyed by the physical table incarnation, not by its name. A `Buffer` retains the
+    /// registries of the queries whose rows it holds after those queries have finished and resolves its
+    /// destination by name again on every flush, so the table behind a name may have been dropped and
+    /// recreated in between: the new table must receive its own pre-write decision instead of reusing
+    /// the one made for the old table. A table without a UUID (an `Ordinary` database) is keyed by name.
+    struct PhysicalTableHash
+    {
+        size_t operator()(const StorageID & table_id) const
+        {
+            if (table_id.hasUUID())
+            {
+                const auto & items = table_id.uuid.toUnderType().items;
+                return items[0] ^ items[1]; /// A UUID is random already.
+            }
+            return StorageID::DatabaseAndTableNameHash()(table_id);
+        }
+    };
+
+    struct PhysicalTableEqual
+    {
+        bool operator()(const StorageID & left, const StorageID & right) const
+        {
+            if (left.hasUUID() || right.hasUUID())
+                return left.uuid == right.uuid;
+            return StorageID::DatabaseAndTableNameEqual()(left, right);
+        }
+    };
+
     std::mutex mutex;
-    std::unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
-        gates;
+    std::unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, PhysicalTableHash, PhysicalTableEqual> gates;
 
     /// Non-empty only for the registry of a group write (see the constructor above).
     const std::vector<std::shared_ptr<InsertStartGates>> participants;

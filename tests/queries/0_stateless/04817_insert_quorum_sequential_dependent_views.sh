@@ -22,7 +22,10 @@ SETTINGS="--max_threads=8 --max_insert_threads=4 --max_threads_min_free_memory_p
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_mv_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_mv_2"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_mv_3"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_mv_4"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_source"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_source_2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_target_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_views_target_2"
 
@@ -54,8 +57,26 @@ done
 $CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x), min(x), max(x) FROM quorum_views_target_1"
 $CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x), min(x), max(x) FROM quorum_views_target_2"
 
+# Two views targeting different local tables that are replicas of the same table: the names differ,
+# but both branches write into the same replication group and share its quorum status node in Keeper,
+# so they converge just as well and have to be pushed sequentially too.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_views_source_2 (x UInt32) ENGINE = Null"
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW quorum_views_mv_3 TO quorum_views_target_1 AS SELECT x + 1000 AS x FROM quorum_views_source_2"
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW quorum_views_mv_4 TO quorum_views_target_2 AS SELECT x + 2000 AS x FROM quorum_views_source_2"
+
+for x in 1 2 3 4 5 6; do
+    $CLICKHOUSE_CLIENT $SETTINGS --insert_quorum=2 --insert_quorum_parallel=0 --parallel_view_processing=1 --insert_keeper_fault_injection_probability=0 -q \
+        "INSERT INTO quorum_views_source_2 VALUES ($x)"
+done
+
+$CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x), min(x), max(x) FROM quorum_views_target_1 WHERE x > 1000"
+$CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x), min(x), max(x) FROM quorum_views_target_2 WHERE x > 1000"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_mv_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_mv_2"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_mv_3"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_mv_4"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_source"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_source_2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_target_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_views_target_2"

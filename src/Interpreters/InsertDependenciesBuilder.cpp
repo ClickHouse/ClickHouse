@@ -1314,18 +1314,22 @@ bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr &
 }
 
 
-StorageIDMaybeEmpty InsertDependenciesBuilder::getVisibleQuorumWriteTargetID(const StoragePtr & storage) const
+String InsertDependenciesBuilder::getVisibleQuorumWriteTargetKey(const StoragePtr & storage) const
 {
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
-        return getVisibleQuorumWriteTargetID(alias->tryGetTargetTable());
+        return getVisibleQuorumWriteTargetKey(alias->tryGetTargetTable());
 
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
-        return getVisibleQuorumWriteTargetID(materialized_view->tryGetTargetTable());
+        return getVisibleQuorumWriteTargetKey(materialized_view->tryGetTargetTable());
 
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return getVisibleQuorumWriteTargetID(proxy->getNested());
+        return getVisibleQuorumWriteTargetKey(proxy->getNested());
 
-    return storage->getStorageID();
+    /// `ReplicatedMergeTreeSink::checkQuorumPrecondition` uses `<zookeeper_path>/quorum/status`.
+    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+        return fmt::format("keeper:{}:{}", replicated->getZooKeeperName(), replicated->getZooKeeperPath());
+
+    return "table:" + storage->getStorageID().getFullNameNotQuoted();
 }
 
 
@@ -1366,8 +1370,7 @@ void InsertDependenciesBuilder::computeQuorumStreamRequirements()
     /// whose dropped target is ignored by `ignore_materialized_views_with_dropped_target_table`, or whose
     /// expansion failed under `materialized_views_ignore_errors`. Such a branch never creates a sink, so
     /// it must not be counted as a writer.
-    std::unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
-        replicated_writers_per_target;
+    std::unordered_map<String, size_t> replicated_writers_per_target;
     size_t replicated_writers = 0;
     bool any_hidden_writer = false;
     bool converging_replicated_writers = false;
@@ -1386,7 +1389,7 @@ void InsertDependenciesBuilder::computeQuorumStreamRequirements()
                 ++replicated_writers;
                 if (!target_storage || storageHidesQuorumWriteTarget(target_storage))
                     any_hidden_writer = true;
-                else if (++replicated_writers_per_target[getVisibleQuorumWriteTargetID(target_storage)] >= 2)
+                else if (++replicated_writers_per_target[getVisibleQuorumWriteTargetKey(target_storage)] >= 2)
                     converging_replicated_writers = true;
             }
         }
@@ -2242,8 +2245,9 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         /// The gate is keyed by the physical destination table: different materialized views
-        /// converging on the same target table share one gate.
-        sink->setInsertStartGate(insert_start_gates->get(inner_table_id));
+        /// converging on the same target table share one gate. The id of the storage itself carries
+        /// its UUID, which tells a recreated table from the dropped one with the same name.
+        sink->setInsertStartGate(insert_start_gates->get(inner_storage->getStorageID()));
         /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
         /// the sinks created there share this query's gates. A no-op for the other sinks.
         sink->setInsertStartGateRegistry(insert_start_gates);
