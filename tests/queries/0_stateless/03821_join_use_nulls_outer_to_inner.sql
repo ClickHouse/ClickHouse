@@ -22,7 +22,6 @@ SET query_plan_optimize_join_order_limit = 0;
 SET join_use_nulls = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET query_plan_merge_filter_into_join_condition = 0; -- absorbing WHERE into join condition prevents prewhere filter push that this test validates

@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 -- no-parallel: enables a server-global failpoint (replicated_merge_tree_insert_quorum_fail_0)
 -- no-shared-merge-tree: the quorum INSERT path and the failpoint are specific to ReplicatedMergeTree
 -- no-replicated-database: creates two explicit replicas (r1, r2) sharing one ZooKeeper path
