@@ -135,6 +135,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         format = configuration.format;
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+
+        /// Resolving the stored `url` against `url_base` replaces it, which could send the stored credentials to another host.
+        if (StorageURL::resolveURLBase(filename, context->getSettingsRef()[Setting::url_base].value) != filename)
+            checkNamedCollectionOverride(*named_collection, "url", context);
     }
     else
     {
