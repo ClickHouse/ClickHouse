@@ -7175,8 +7175,10 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
             if (!column.codec)
                 continue;
 
+            /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values
+            /// of the column (not e.g. to the whole `Nullable` or `Tuple`), so they are not validated against the type.
             for (const auto & default_codec : default_codecs)
-                has_unsupported_codecs |= codec_factory.get(column.codec, column.type, default_codec)->isEncryption();
+                has_unsupported_codecs |= codec_factory.get(column.codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption();
         }
 
         if (!has_unsupported_codecs)

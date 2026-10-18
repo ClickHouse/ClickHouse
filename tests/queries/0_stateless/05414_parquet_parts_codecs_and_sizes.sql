@@ -4,6 +4,7 @@
 -- Data parts are not created in Parquet format when an encryption codec applies to some column, explicitly or by default.
 -- Values of DateTime64 with scales 7 and 8 out of the range of Parquet timestamps are read back without changes.
 -- The sizes of the columns of Parquet parts are known.
+-- The codecs of compound types apply to their values.
 
 DROP TABLE IF EXISTS t_parquet_encrypted;
 DROP TABLE IF EXISTS t_parquet_encrypted_default;
@@ -39,6 +40,20 @@ SELECT name, data_compressed_bytes > 0, data_compressed_bytes < 100000, data_unc
 FROM system.columns WHERE database = currentDatabase() AND table = 't_parquet_sizes' ORDER BY name;
 SELECT part_type, data_uncompressed_bytes > 1000000 FROM system.parts WHERE database = currentDatabase() AND table = 't_parquet_sizes' AND active;
 CHECK TABLE t_parquet_sizes SETTINGS check_query_single_value_result = 1;
+
+CREATE TABLE t_parquet_codec_types
+(
+    k UInt64,
+    a Nullable(Int64) CODEC(GCD, LZ4),
+    t Tuple(UInt32, Array(UInt64)) CODEC(T64, LZ4),
+    d Tuple(UInt32, UInt64) CODEC(Delta, Default)
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_rows_for_parquet_part = 1;
+INSERT INTO t_parquet_codec_types SELECT number, if(number % 3 = 0, NULL, number * 10), (number, [number, number * 2]), (number, number * 3) FROM numbers(1000);
+SELECT 'codecs of compound types', part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_parquet_codec_types' AND active;
+SELECT sum(a), countIf(a IS NULL), sum(t.1), sum(arraySum(t.2)), sum(d.2) FROM t_parquet_codec_types;
+DROP TABLE t_parquet_codec_types;
 
 DROP TABLE t_parquet_encrypted;
 DROP TABLE t_parquet_encrypted_default;

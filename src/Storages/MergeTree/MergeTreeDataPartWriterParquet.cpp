@@ -285,8 +285,12 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
         column.options = file_options;
         column.options.compression = CompressionMethod::None;
 
+        /// The codec of a column applies to its values (e.g. to the nested column of `Nullable` or `Array`),
+        /// like to the data substreams of the column in other formats.
         auto codec_desc = getCodecDescriptionOrDefault(name_and_type.name, default_codec);
-        auto codec = CompressionCodecFactory::instance().get(codec_desc, name_and_type.type, default_codec);
+        /// For compound types (`Tuple`, `Map`) only the generic codecs are used.
+        auto values_type = getInnermostPrimitiveType(name_and_type.type);
+        auto codec = CompressionCodecFactory::instance().get(codec_desc, values_type.get(), default_codec, /*only_generic=*/ !values_type);
         applyCodec(*codec, column.binary ? std::make_shared<DataTypeString>() : name_and_type.type, name_and_type.name, column.options);
 
         /// The values in the binary format are not text.
