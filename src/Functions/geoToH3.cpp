@@ -137,6 +137,13 @@ public:
                     getName(),
                     MAX_H3_RES);
 
+            if (lat < -90.0 || lat > 90.0)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'latitude' ({}) of function {} is out of bounds because latitude must be in the range [-90, 90]",
+                    lat,
+                    getName());
+
             LatLng coord;
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
