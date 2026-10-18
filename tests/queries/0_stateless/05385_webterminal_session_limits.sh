@@ -113,8 +113,10 @@ idle.close()
 
 # A query running longer than `idle_connection_timeout` is not interrupted,
 # and the session is closed after it becomes idle at the prompt again.
+# A large `interactive_delay` keeps the query silent: otherwise the progress and profile events
+# repaint the terminal every 100 ms and the output alone would keep the session alive.
 query = open_session(user_idle)
-send_text(query, "SELECT concat('query_', 'finished'), sleep(2) FORMAT TSV\r")
+send_text(query, "SELECT concat('query_', 'finished'), sleep(2) SETTINGS interactive_delay = 10000000 FORMAT TSV\r")
 output = b""
 while b"query_finished" not in output:
     opcode, payload = read_frame(query)
