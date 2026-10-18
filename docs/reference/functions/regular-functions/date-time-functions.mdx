@@ -1244,7 +1244,7 @@ For an alternative to `dateDiff`, see function [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**Aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **Arguments**
 
@@ -1590,6 +1590,8 @@ Using replacement fields, you can define a pattern for the resulting string.
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
+
+**Aliases**: `FORMAT_DATETIME`
 
 **Arguments**
 
@@ -2191,7 +2193,7 @@ This function is non-deterministic: it can return different results for the same
 now([timezone])
 ```
 
-**Aliases**: `current_timestamp`, `localtimestamp`
+**Aliases**: `localtimestamp`, `current_timestamp`
 
 **Arguments**
 
@@ -3363,7 +3365,7 @@ This function is non-deterministic: it can return different results for the same
 timezone()
 ```
 
-**Aliases**: `timeZone`
+**Aliases**: `current_timezone`, `timeZone`
 
 **Arguments**
 
@@ -3479,7 +3481,7 @@ Returns the day of the month (1-31) of a `Date` or `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Aliases**: `DAYOFMONTH`, `DAY`
+**Aliases**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **Arguments**
 
@@ -3526,7 +3528,7 @@ and whether the return value should be in the range from 0 to 6 or 1 to 7.
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Aliases**: `DAYOFWEEK`
+**Aliases**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **Arguments**
 
@@ -3568,7 +3570,7 @@ Returns the number of the day within the year (1-366) of a `Date` or `DateTime` 
 toDayOfYear(datetime)
 ```
 
-**Aliases**: `DAYOFYEAR`
+**Aliases**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **Arguments**
 
@@ -3727,6 +3729,8 @@ December 29, 2025 returns week 1 because it falls in the first week that contain
 toISOWeek(datetime[, timezone])
 ```
 
+**Aliases**: `WEEK_OF_YEAR`
+
 **Arguments**
 
 - `datetime` — Date or date with time to get the ISO week number from. [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`Date32`](/reference/data-types/date32) or [`DateTime64`](/reference/data-types/datetime64)
@@ -3775,6 +3779,8 @@ Converts a date or date with time to the ISO year number.
 toISOYear(datetime)
 ```
 
+**Aliases**: `YEAR_OF_WEEK`
+
 **Arguments**
 
 - `datetime` — The value with date or date with time. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
@@ -3816,7 +3822,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toLastDayOfMonth(value)
 ```
 
-**Aliases**: `LAST_DAY`
+**Aliases**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **Arguments**
 
