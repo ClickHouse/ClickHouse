@@ -3674,6 +3674,92 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     return result_projection_names;
 }
 
+namespace
+{
+
+/** The order in which `resolveFunction` resolves the arguments of `if` or `multiIf` with constant conditions,
+  * and whether each argument is in an unreachable branch (and may fail to resolve without an error).
+  * Only the conditions written as literals are recognized here, because the arguments are not resolved yet.
+  * Returns nothing if the conditions are not constant: then the arguments are resolved from left to right.
+  */
+std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantConditionalResolutionOrder(const FunctionNode & function_node)
+{
+    const auto & arguments = function_node.getArguments().getNodes();
+    const size_t arguments_size = arguments.size();
+
+    std::vector<size_t> order;
+    order.reserve(arguments_size);
+    std::vector<bool> unreachable(arguments_size, false);
+
+    if (function_node.getFunctionName() == "if")
+    {
+        if (arguments_size != 3)
+            return {};
+
+        auto constant_condition = tryExtractConstantFromConditionNode(arguments[0]);
+        if (!constant_condition)
+            return {};
+
+        const size_t live_index = *constant_condition ? 1 : 2;
+        const size_t dead_index = *constant_condition ? 2 : 1;
+        unreachable[dead_index] = true;
+        order = {0, dead_index, live_index};
+        return std::make_pair(std::move(order), std::move(unreachable));
+    }
+
+    if (function_node.getFunctionName() != "multiIf" || arguments_size < 3 || arguments_size % 2 == 0)
+        return {};
+
+    /// See the handling of `multiIf` in `resolveFunction`.
+    const size_t pairs_count = arguments_size / 2;
+    const size_t else_index = arguments_size - 1;
+    size_t live_index = else_index;
+
+    for (size_t pair = 0; pair < pairs_count; ++pair)
+    {
+        auto constant_condition = tryExtractConstantFromConditionNode(arguments[2 * pair]);
+        if (!constant_condition)
+            return {};
+
+        order.push_back(2 * pair);
+        if (*constant_condition)
+        {
+            live_index = 2 * pair + 1;
+            break;
+        }
+    }
+
+    for (size_t pair = 0; pair < pairs_count; ++pair)
+    {
+        const size_t condition_index = 2 * pair;
+        const size_t value_index = condition_index + 1;
+
+        if (value_index == live_index)
+            continue;
+
+        /// The conditions after the selected one are unreachable as well.
+        if (value_index > live_index)
+        {
+            order.push_back(condition_index);
+            unreachable[condition_index] = true;
+        }
+
+        order.push_back(value_index);
+        unreachable[value_index] = true;
+    }
+
+    if (live_index != else_index)
+    {
+        order.push_back(else_index);
+        unreachable[else_index] = true;
+    }
+
+    order.push_back(live_index);
+    return std::make_pair(std::move(order), std::move(unreachable));
+}
+
+}
+
 /** Expand the matchers nested inside a projection expression, in place.
   *
   * A matcher does not have to be the root of a projection item: its output can be consumed by a
@@ -3711,10 +3797,31 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
 
     /** `resolveFunction` accepts an invalid expression in a statically unreachable branch of `if` and `multiIf`:
       * it tries to resolve the branch, and if that throws, it replaces the function with its live branch.
-      * The condition is not known here, so an argument other than the first one that fails to expand is left
-      * as it is, and `resolveFunction` decides about it. It either drops the argument or reports the same error.
+      * An argument that may be unreachable and fails to expand is left as it is, and `resolveFunction` decides
+      * about it. It either drops the argument or reports the same error.
       */
-    const bool may_have_unreachable_arguments = function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf";
+    const auto & arguments = function_node->getArguments().getNodes();
+    std::vector<size_t> arguments_order(arguments.size());
+    std::iota(arguments_order.begin(), arguments_order.end(), 0);
+    std::vector<bool> arguments_may_be_unreachable(arguments.size(), false);
+
+    if (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf")
+    {
+        /// The conditions are not known here in general, so any argument other than the first one may be unreachable.
+        for (size_t i = 1; i < arguments.size(); ++i)
+            arguments_may_be_unreachable[i] = true;
+
+        /** With constant conditions, `resolveFunction` resolves the conditions up to the selected one,
+          * then the unreachable branches, and the selected branch last. The arguments are visited in the
+          * same order, so that a `REPLACE` transformer in an unreachable branch rewrites the selected one,
+          * as without `group_by_use_nulls`.
+          */
+        if (auto order = getConstantConditionalResolutionOrder(*function_node))
+        {
+            arguments_order = std::move(order->first);
+            arguments_may_be_unreachable = std::move(order->second);
+        }
+    }
 
     auto expand_matchers_in_node = [&](QueryTreeNodePtr & list_node, bool drops_unqualified, QueryTreeNodes & expanded_nodes)
     {
@@ -3740,15 +3847,17 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
         expanded_nodes.push_back(list_node);
     };
 
-    auto expand_matchers_in_list = [&](QueryTreeNodes & nodes, bool drops_unqualified, bool may_be_unreachable)
+    /// The nodes are visited in `order`, and the expanded ones are put in their original positions.
+    auto expand_matchers_in_list = [&](QueryTreeNodes & nodes, bool drops_unqualified, const std::vector<size_t> & order, const std::vector<bool> & may_be_unreachable)
     {
-        QueryTreeNodes expanded_nodes;
-        expanded_nodes.reserve(nodes.size());
+        std::vector<QueryTreeNodes> expanded_nodes_by_position(nodes.size());
 
-        for (size_t i = 0; i < nodes.size(); ++i)
+        for (size_t i : order)
         {
             auto & list_node = nodes[i];
-            if (!may_be_unreachable || i == 0)
+            auto & expanded_nodes = expanded_nodes_by_position[i];
+
+            if (!may_be_unreachable[i])
             {
                 expand_matchers_in_node(list_node, drops_unqualified, expanded_nodes);
                 continue;
@@ -3758,7 +3867,6 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             /// nor the guard of the preceding nodes half-rewritten.
             auto saved_projection_nodes_before_matcher = projection_nodes_before_matcher;
             const bool saved_expanded = expanded;
-            const size_t saved_expanded_nodes_size = expanded_nodes.size();
             auto list_node_copy = list_node->clone();
 
             try
@@ -3769,18 +3877,26 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             {
                 projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
                 expanded = saved_expanded;
-                expanded_nodes.resize(saved_expanded_nodes_size);
+                expanded_nodes.clear();
                 projection_nodes_before_matcher.insert(list_node.get());
                 expanded_nodes.push_back(list_node);
             }
         }
 
-        nodes = std::move(expanded_nodes);
+        QueryTreeNodes result_nodes;
+        result_nodes.reserve(nodes.size());
+        for (auto & expanded_nodes : expanded_nodes_by_position)
+            result_nodes.insert(result_nodes.end(), expanded_nodes.begin(), expanded_nodes.end());
+
+        nodes = std::move(result_nodes);
     };
 
     /// The parameters are resolved before the arguments, see `resolveFunction`.
-    expand_matchers_in_list(function_node->getParameters().getNodes(), false /*drops_unqualified*/, false /*may_be_unreachable*/);
-    expand_matchers_in_list(function_node->getArguments().getNodes(), drops_unqualified_matchers, may_have_unreachable_arguments);
+    auto & parameters = function_node->getParameters().getNodes();
+    std::vector<size_t> parameters_order(parameters.size());
+    std::iota(parameters_order.begin(), parameters_order.end(), 0);
+    expand_matchers_in_list(parameters, false /*drops_unqualified*/, parameters_order, std::vector<bool>(parameters.size(), false));
+    expand_matchers_in_list(function_node->getArguments().getNodes(), drops_unqualified_matchers, arguments_order, arguments_may_be_unreachable);
 
     if (!function_node->hasWindow())
         return expanded;
