@@ -3343,6 +3343,7 @@ static BlockIO executeQueryImpl(
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
+                        quota_ignored = reader->entryIgnoresQuota();
 
                         return true;
                     }
@@ -3352,7 +3353,9 @@ static BlockIO executeQueryImpl(
 
             if (get_result_from_query_result_cache())
             {
-                query_result_cache_hit_quota = context->getQuota();
+                /// A query exempt from quotas stays exempt when it is served from the cache (see `QueryResultCache::Key::ignore_quota`).
+                if (!quota_ignored)
+                    query_result_cache_hit_quota = context->getQuota();
                 if (query_result_cache_hit_quota)
                     query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
             }
@@ -3481,6 +3484,7 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
+                            key.ignore_quota = quota_ignored;
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
