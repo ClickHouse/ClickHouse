@@ -1661,6 +1661,100 @@ private:
         return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
     }
 
+    /// Order verdict of a pair of elements: 0 if they are equal, 1 if the left one comes first in the direction of the
+    /// comparison (`order_resolver` returns 1), and -1 otherwise.
+    static void compareElementsForOrder(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t rows,
+        PaddedPODArray<Int8> & verdict)
+    {
+        /// The comparison of tuples with `Nullable` elements returns `Nullable(UInt8)`, so such tuples are compared
+        /// element by element, with a NULL equal only to another NULL and sorting after every non-NULL value.
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left.type.get());
+        const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right.type.get());
+        auto contains_nullable = [](const IDataType & type)
+        {
+            return anyInTypeTree(type, [](const IDataType & t) { return t.isNullable(); });
+        };
+        if (left_tuple_type && right_tuple_type && left_tuple_type->getElements().size() == right_tuple_type->getElements().size()
+            && (contains_nullable(*left.type) || contains_nullable(*right.type)))
+        {
+            const auto & left_tuple = assert_cast<const ColumnTuple &>(*left.column);
+            const auto & right_tuple = assert_cast<const ColumnTuple &>(*right.column);
+
+            verdict.assign(rows, Int8(0));
+            PaddedPODArray<Int8> element_verdict;
+            for (size_t i = 0; i < left_tuple_type->getElements().size(); ++i)
+            {
+                compareNullableElementsForOrder(
+                    equals_resolver,
+                    order_resolver,
+                    {left_tuple.getColumnPtr(i), left_tuple_type->getElement(i), ""},
+                    {right_tuple.getColumnPtr(i), right_tuple_type->getElement(i), ""},
+                    rows,
+                    element_verdict);
+                for (size_t row = 0; row < rows; ++row)
+                    if (verdict[row] == 0)
+                        verdict[row] = element_verdict[row];
+            }
+            return;
+        }
+
+        ColumnsWithTypeAndName args{left, right};
+        auto equals_impl = equals_resolver->build(args);
+        ColumnPtr equals_col = equals_impl->execute(args, equals_impl->getResultType(), rows, /*dry_run=*/false)->convertToFullColumnIfConst();
+        auto order_impl = order_resolver->build(args);
+        ColumnPtr order_col = order_impl->execute(args, order_impl->getResultType(), rows, /*dry_run=*/false)->convertToFullColumnIfConst();
+        const auto & equals_data = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+        const auto & order_data = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+
+        verdict.resize(rows);
+        for (size_t row = 0; row < rows; ++row)
+            verdict[row] = equals_data[row] ? 0 : (order_data[row] ? 1 : -1);
+    }
+
+    /// Same as `compareElementsForOrder`, but the elements may be `Nullable`.
+    static void compareNullableElementsForOrder(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t rows,
+        PaddedPODArray<Int8> & verdict)
+    {
+        static constexpr bool order_is_less = IsOperation<Op>::less || IsOperation<Op>::less_or_equals;
+
+        const NullMap * left_null_map = nullptr;
+        const NullMap * right_null_map = nullptr;
+        auto unwrap = [](const ColumnWithTypeAndName & arg, const NullMap *& null_map)
+        {
+            ColumnWithTypeAndName nested{arg.column->convertToFullColumnIfConst(), removeNullable(arg.type), arg.name};
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(nested.column.get()))
+            {
+                null_map = &nullable->getNullMapData();
+                nested.column = nullable->getNestedColumnPtr();
+            }
+            return nested;
+        };
+        ColumnWithTypeAndName left_nested = unwrap(left, left_null_map);
+        ColumnWithTypeAndName right_nested = unwrap(right, right_null_map);
+
+        compareElementsForOrder(equals_resolver, order_resolver, left_nested, right_nested, rows, verdict);
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            bool left_is_null = left_null_map && (*left_null_map)[row];
+            bool right_is_null = right_null_map && (*right_null_map)[row];
+            if (left_is_null && right_is_null)
+                verdict[row] = 0;
+            else if (left_is_null || right_is_null)
+                verdict[row] = (order_is_less ? right_is_null : left_is_null) ? 1 : -1;
+        }
+    }
+
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
     /// (a NULL element is equal only to another NULL). For `!=` and `isDistinctFrom` (instantiated with `NotEqualsOp`)
     /// the result is inverted into inequality.
@@ -1727,10 +1821,26 @@ private:
 
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
-        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
-        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
-        ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
-        const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+        /// Per element pair: 0 if equal, 1 if the left element comes first, -1 otherwise.
+        PaddedPODArray<Int8> element_verdict;
+        const bool is_tuple_with_nullable = isTuple(gathered.element_args[0].type) && isTuple(gathered.element_args[1].type)
+            && (anyInTypeTree(*gathered.element_args[0].type, [](const IDataType & t) { return t.isNullable(); })
+                || anyInTypeTree(*gathered.element_args[1].type, [](const IDataType & t) { return t.isNullable(); }));
+        if (is_tuple_with_nullable)
+        {
+            compareElementsForOrder(
+                equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
+        }
+        else
+        {
+            ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
+            const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+            ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
+            const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+            element_verdict.resize(gathered.num_elements);
+            for (size_t j = 0; j < gathered.num_elements; ++j)
+                element_verdict[j] = element_equals[j] ? 0 : (element_order[j] ? 1 : -1);
+        }
 
         /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
         auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
@@ -1742,7 +1852,7 @@ private:
             bool n1 = elem_is_null(gathered.null_map1, j);
             if (n0 || n1)
                 return n0 && n1;
-            return element_equals[j];
+            return element_verdict[j] == 0;
         };
 
         /// Order of the first differing element, with NULL sorting after every non-NULL value.
@@ -1753,7 +1863,7 @@ private:
             /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
             if (n0 || n1)
                 return (order_is_less ? n1 : n0) ? 1 : 0;
-            return element_order[j];
+            return element_verdict[j] == 1 ? 1 : 0;
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
