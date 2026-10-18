@@ -184,3 +184,37 @@ SELECT 'after the mutation was killed, without pruning', count() FROM t_05200_ty
 SETTINGS use_statistics_for_part_pruning = 0;
 
 DROP TABLE t_05200_type;
+
+-- A finished mutation is still kept in `system.mutations` (see `finished_mutations_to_keep`) and in
+-- the mutations snapshot of a query. It must not disable statistics pruning and the query condition
+-- cache for the parts it was already applied to.
+
+DROP TABLE IF EXISTS t_05200_done;
+CREATE TABLE t_05200_done (x UInt64 STATISTICS(basic), spare UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 10;
+
+INSERT INTO t_05200_done SELECT number, number FROM numbers(10000);
+
+SELECT 'pruned by statistics before the drop', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05200_done WHERE x = 20000 SETTINGS use_statistics_for_part_pruning = 1)
+WHERE explain LIKE '%Statistics%';
+
+ALTER TABLE t_05200_done DROP COLUMN spare SETTINGS mutations_sync = 2;
+
+SELECT 'the drop is done', count() FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_05200_done' AND is_done;
+
+SELECT 'pruned by statistics after the drop', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05200_done WHERE x = 20000 SETTINGS use_statistics_for_part_pruning = 1)
+WHERE explain LIKE '%Statistics%';
+
+SELECT count() FROM t_05200_done WHERE x = 20000
+SETTINGS use_statistics_for_part_pruning = 0, use_query_condition_cache = 1, log_comment = '05200_qcc_after_drop';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'the query condition cache is used after the drop',
+    ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05200_qcc_after_drop' AND type = 'QueryFinish';
+
+DROP TABLE t_05200_done;

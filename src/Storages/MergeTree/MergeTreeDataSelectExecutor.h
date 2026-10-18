@@ -346,6 +346,19 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
 
+    /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
+    /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
+    /// `hasMetadataMutations`) also include finished mutations kept for `system.mutations`, so only the
+    /// commands newer than the part are checked.
+    static bool partHasPendingAlterOrMetadataMutations(
+        const MergeTreeData::DataPartPtr & part,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+
+    /// Same as `partHasPendingAlterOrMetadataMutations` for any of the parts.
+    static bool hasPendingAlterOrMetadataMutations(
+        const RangesInDataParts & parts,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+
 
 };
 

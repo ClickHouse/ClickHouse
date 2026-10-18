@@ -3699,8 +3699,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         reader_settings.use_query_condition_cache = false;
 
     /// Mirrors the read side in `filterPartsByQueryConditionCache`: while an alter or metadata mutation
-    /// is pending, a read returns values the part name does not describe, so do not record them.
-    if (mutations_snapshot && (mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
+    /// is pending for any of the parts, a read returns values the part name does not describe, so do
+    /// not record them. Finished mutations kept in the snapshot do not count.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(parts, mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
@@ -5377,7 +5378,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     /// See the same gate in `selectRangesToRead`.
-    if (mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations())
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part

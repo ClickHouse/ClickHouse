@@ -31,3 +31,8 @@ without on-the-fly mutations, without pruning	1
 after the mutation was killed	[10,11]
 after the mutation was killed, a filter	1
 after the mutation was killed, without pruning	1
+pruned by statistics before the drop	1
+the drop is done	1
+pruned by statistics after the drop	1
+0
+the query condition cache is used after the drop	1

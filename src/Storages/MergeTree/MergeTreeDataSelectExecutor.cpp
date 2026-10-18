@@ -9,6 +9,7 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
@@ -779,6 +780,35 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     return res;
 }
 
+bool MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (AlterConversions::isSupportedAlterMutation(command.type) || AlterConversions::isSupportedMetadataMutation(command.type))
+            return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(
+    const RangesInDataParts & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    return std::any_of(parts.begin(), parts.end(), [&](const auto & part)
+    {
+        return partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot);
+    });
+}
+
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
@@ -843,7 +873,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     ///    so once a column with the same name is added again (or another column is renamed onto the
     ///    dropped name), a read returns the new column while the stale statistics of the dropped one
     ///    would prune the part. The neighbouring gate for the top-k minmax index
-    ///    (`partHasStaleTopKIndex`) fences the same mutation kinds.
+    ///    (`partHasStaleTopKIndex`) fences the same mutation kinds. The alter and metadata mutations
+    ///    are checked per part below: the snapshot also holds finished ones, which must not disable
+    ///    the pruning of the parts they were already applied to.
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
     /// 5. A row policy applies: the statistics describe all rows of a part, including the ones the
@@ -853,9 +885,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     ///    this table and is applied above the read (e.g. for a child of `Merge`).
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot
-            && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-                || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
         || query_info.row_level_filter
         || (!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context)))
@@ -878,6 +908,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot))
+        {
+            res_parts.push_back(part);
+            continue;
+        }
+
         auto estimates = part.data_part->getEstimates(required_columns);
 
         /// The statistics describe the values as they are stored in the part. When the part stores a
@@ -1786,9 +1822,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// A pending `ALTER MODIFY COLUMN` (an alter mutation) or `DROP COLUMN` / `RENAME COLUMN`
             /// (a metadata mutation) changes the values a read returns for a column name without
             /// changing the part name, so an entry recorded before the change would drop marks that
-            /// match now. The write sides are gated symmetrically (see `ReadFromMergeTree`).
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-                || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
+            /// match now. Only the mutations still applicable to the parts count: the snapshot also
+            /// holds finished ones. The write sides are gated symmetrically (see `ReadFromMergeTree`).
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+            || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
