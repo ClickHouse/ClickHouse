@@ -8,6 +8,7 @@
 #include <Common/NaNUtils.h>
 
 #include <numeric>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -58,26 +60,44 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
+    /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
+    static Weight addWeights(Weight lhs, Weight rhs)
+    {
+        Weight sum = 0;
+        if (common::addOverflow(lhs, rhs, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in an exact weighted quantile does not fit UInt64");
+        return sum;
+    }
+
     void add(const Value & x, Weight weight)
     {
         if constexpr (!interpolated)
         {
             /// Keep compatibility for function quantilesExactWeighted.
             if (!isNaN(x))
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
         else
         {
             /// Ignore values with zero weight in function quantilesExactWeightedInterpolated.
             if (!isNaN(x) && weight)
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
     }
 
     void merge(const QuantileExactWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getKey()] += pair.getMapped();
+        {
+            auto & value_weight = map[pair.getKey()];
+            value_weight = addWeights(value_weight, pair.getMapped());
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -316,8 +336,10 @@ private:
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
-        return array[size - 1].second - 1;
+        std::partial_sum(array, array + size, array,
+            [](const Pair & acc, const Pair & p) { return Pair(p.first, addWeights(acc.second, p.second)); });
+        /// A deserialized state may contain only zero weights.
+        return common::subIgnoreOverflow(array[size - 1].second, Weight(1));
     }
 
     /// getFloat implementation with interpolation

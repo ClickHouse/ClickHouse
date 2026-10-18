@@ -1,5 +1,6 @@
 #include <Functions/FunctionsConsistentHashing.h>
 #include <Functions/FunctionFactory.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -8,6 +9,7 @@ namespace
 {
 
 /// Code from https://arxiv.org/pdf/1406.2294.pdf
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
 {
     int64_t b = -1;

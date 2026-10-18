@@ -11,6 +11,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
@@ -379,7 +380,9 @@ protected:
     size_t needle_size;
     const UInt8 * needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+    const size_t step = needle_size >= sizeof(VolnitskyTraits::Ngram)
+        ? needle_size - sizeof(VolnitskyTraits::Ngram) + 1
+        : 0;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
@@ -647,6 +650,7 @@ public:
         return false;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     size_t searchOneFirstIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();

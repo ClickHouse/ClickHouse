@@ -36,7 +36,7 @@ static_assert(
     "`size_t` is a distinct type here and needs an instantiation of its own");
 #endif
 
-template <iota_supported_types T> void iota(T * begin, size_t count, T first_value);
+template <iota_supported_types T> void NO_SANITIZE_UNSIGNED_OVERFLOW iota(T * begin, size_t count, T first_value);
 
 extern template void iota(UInt8 * begin, size_t count, UInt8 first_value);
 extern template void iota(UInt32 * begin, size_t count, UInt32 first_value);
@@ -46,7 +46,7 @@ extern template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
 
 template <iota_supported_types T>
-void iotaWithStep(T * begin, size_t count, T first_value, T step);
+void NO_SANITIZE_UNSIGNED_OVERFLOW iotaWithStep(T * begin, size_t count, T first_value, T step);
 
 extern template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
 extern template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);

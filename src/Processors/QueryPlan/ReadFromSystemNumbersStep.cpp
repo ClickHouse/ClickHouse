@@ -15,6 +15,7 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -113,7 +114,8 @@ protected:
 
         iotaWithStepOptimized(vec.data(), count, next, step);
 
-        next += count * step;
+        /// `step` may be the wrapping (negated) step, so both operations wrap by design.
+        next = common::addIgnoreOverflow(next, common::mulIgnoreOverflow(count, step));
         remaining -= count;
 
         progress(column->size(), column->byteSize());
@@ -526,7 +528,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
         NumbersLikeUtils::checkLimits(context->getSettingsRef(), total_count);
 
-        UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
+        UInt64 wrapping_step = common::negateIgnoreOverflow(numbers_storage.step);
         auto source = std::make_shared<SimpleSteppedNumbersSource>(
             max_block_size, numbers_storage.offset, wrapping_step, total_count, numbers_storage.column_name);
         source->addTotalRowsApprox(total_count);

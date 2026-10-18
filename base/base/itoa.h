@@ -19,7 +19,7 @@
     M(Int64) \
     M(Int128)
 
-#define INSTANTIATION(T) char * itoa(T i, char * p);
+#define INSTANTIATION(T) char * NO_SANITIZE_UNSIGNED_OVERFLOW itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
 
 /// The 256-bit types are taken by reference. By value they are `byval` aggregates holding an array, and

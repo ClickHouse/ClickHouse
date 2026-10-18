@@ -3,6 +3,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <base/Decimal_fwd.h>
+#include <base/sanitizer_defs.h>
 
 #include <limits>
 
@@ -25,8 +26,10 @@ void assertEOF(ReadBuffer & buf);
 [[noreturn]] void throwReadAfterEOF();
 [[noreturn]] void throwNumberWithoutDigits();
 
+/// Without `CHECK_OVERFLOW` the accumulation of the digits, and the negation of the result for a
+/// negative number, are meant to wrap around - that is what "do not check overflow" means here.
 template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
-ReturnType readIntTextInBaseImpl(T & x, ReadBuffer & buf)
+ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readIntTextInBaseImpl(T & x, ReadBuffer & buf)
 {
     using UnsignedT = make_unsigned_t<T>;
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -381,7 +384,7 @@ bool tryParseInt(T & x, std::string_view str)
   * - a repeated sign is not diagnosed: '+-' reports a field without digits, '-+' stops at the second one.
   */
 template <typename T, typename ReturnType = void>
-ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
+ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     bool negative = false;

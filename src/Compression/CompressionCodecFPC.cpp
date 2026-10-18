@@ -11,6 +11,7 @@
 #include <bit>
 #include <concepts>
 #include <cstring>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -38,7 +39,7 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
@@ -85,7 +86,10 @@ ASTPtr CompressionCodecFPC::getCodecDescription() const
     return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
-UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+/// The reserve size wraps `UInt32` for a long codec chain, and that wrap is load-bearing:
+/// `getCheckedReserveSize` in `CompressionCodecMultiple` rejects the chain precisely by noticing
+/// that a codec reserved less than its own input. `04812_codec_chain_reserve_overflow` pins it.
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     auto float_count = (uncompressed_size + float_width - 1) / float_width;
     if (float_count % 2 != 0)
@@ -166,11 +170,13 @@ public:
     }
 
     [[nodiscard]]
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     TUInt predict() const noexcept
     {
         return table[hash] + prev_value;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void add(TUInt value) noexcept
     {
         table[hash] = value - prev_value;

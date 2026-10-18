@@ -116,7 +116,7 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
     if (patch_begin < patch_end)
     {
         patch_read_result->min_part_offset = offset_data[patch_begin];
-        patch_read_result->max_part_offset = offset_data[patch_end - 1];
+        patch_read_result->max_part_offset = offset_data[static_cast<ssize_t>(patch_end) - 1];
     }
 
     return patch_read_result;

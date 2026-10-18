@@ -1,5 +1,6 @@
 #include <Coordination/ACLMap.h>
 #include <Common/SipHash.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ ACLMap::MapEntry & ACLMap::numToAcl(ACLId id)
     return it->second;
 }
 
-ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
+ACLId NO_SANITIZE_UNSIGNED_OVERFLOW ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
     if (acls.empty())
         return 0;
@@ -131,7 +132,7 @@ std::vector<std::pair<ACLId, Coordination::ACLs>> ACLMap::getMapping() const
     return vec;
 }
 
-void ACLMap::addMapping(ACLId acls_id, const Coordination::ACLs & acls)
+void NO_SANITIZE_UNSIGNED_OVERFLOW ACLMap::addMapping(ACLId acls_id, const Coordination::ACLs & acls)
 {
     std::lock_guard lock(map_mutex);
 
@@ -140,7 +141,9 @@ void ACLMap::addMapping(ACLId acls_id, const Coordination::ACLs & acls)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} already exists", acls_id);
     if (auto [it, inserted] = acl_to_num.emplace(acls, acls_id); !inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACLs with id {} and {} are identical", acls_id, it->second);
-    max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
+    /// max_acl_id pointer next slot. For the maximum ID it wraps around to zero, as in `convertACLs`,
+    /// which skips IDs that are still in use.
+    max_acl_id = std::max(acls_id + 1, max_acl_id);
 }
 
 void ACLMap::addUsage(ACLId acl_id)

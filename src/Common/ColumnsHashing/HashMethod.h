@@ -13,6 +13,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -185,6 +186,7 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
         return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     std::pair<FieldType, bool> getKeyHolderInRange(size_t row, Arena &) const
     {
         FieldType shifted_key = unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
@@ -331,6 +333,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
     /// Trailing bytes beyond the key length are masked off, so the result depends only on the
     /// key content and is independent of neighbouring data.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
     {
         const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
@@ -632,9 +635,8 @@ struct HashMethodKeysFixed
             {
                 if (covers_sub_range)
                 {
-                    const size_t index = row - prepared_keys_begin;
-                    if (index < prepared_keys.size())
-                        return prepared_keys[index];
+                    if (row >= prepared_keys_begin && row - prepared_keys_begin < prepared_keys.size())
+                        return prepared_keys[row - prepared_keys_begin];
                     return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
                 }
             }
@@ -655,9 +657,8 @@ struct HashMethodKeysFixed
             {
                 if (covers_sub_range)
                 {
-                    const size_t index = row - prepared_keys_begin;
-                    if (index < prepared_keys.size())
-                        return prepared_keys[index];
+                    if (row >= prepared_keys_begin && row - prepared_keys_begin < prepared_keys.size())
+                        return prepared_keys[row - prepared_keys_begin];
                     return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
                 }
             }

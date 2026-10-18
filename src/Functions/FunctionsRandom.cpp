@@ -5,6 +5,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/randomSeed.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #if defined(__AVX2__)
 #  include <x86intrin.h>
 #endif
@@ -82,7 +83,8 @@ struct LinearCongruentialGenerator
         current = value;
     }
 
-    [[maybe_unused]] UInt32 next()
+    /// The generator works modulo 2^64.
+    [[maybe_unused]] NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 next()
     {
         current = current * a + c;
         return static_cast<UInt32>(current >> 16);
@@ -146,6 +148,7 @@ struct ArsParams
     }
 
     /// Step the Weyl sequence to the next round key.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void advanceKey()
     {
         key_lo += weyl_0;
@@ -255,7 +258,7 @@ void RandImpl::execute(char * output, size_t size)
 using namespace VectorExtension;
 
 /// The Murmur finalizer of intHash64, applied to four values at once.
-inline UInt64x4 intHash64x4(UInt64x4 x)
+inline UInt64x4 NO_SANITIZE_UNSIGNED_OVERFLOW intHash64x4(UInt64x4 x)
 {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccdULL;

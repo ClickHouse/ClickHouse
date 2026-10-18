@@ -50,7 +50,8 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
                     "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]",
                     value,
                     columns.size());
-            pos = columns.size() + value + 1;
+            /// `value` is in `[-columns.size(), 0]` here, so negating it cannot overflow and the subtraction cannot wrap.
+            pos = columns.size() - static_cast<UInt64>(-value) + 1;
         }
     }
     else

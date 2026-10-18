@@ -539,7 +539,7 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
         if (isInvisible(invisible_rows, i))
             continue;
 
-        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[i - 1]), child_rows);
+        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1]), child_rows);
         const size_t range_end = std::min<size_t>(static_cast<size_t>(base) + offsets[i], child_rows);
         if (range_begin < range_end)
             memset(mask.data() + range_begin, 0, range_end - range_begin);
@@ -1375,7 +1375,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
             ? static_cast<size_t>(std::upper_bound(dictionary.offsets.begin(), dictionary.offsets.end(), static_cast<size_t>(index))
                 - dictionary.offsets.begin())
             : 0;
-        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[segment_index - 1];
+        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[static_cast<ssize_t>(segment_index) - 1];
         const size_t index_in_segment = static_cast<size_t>(index) - segment_start;
         const FieldDictionaryValues & segment = segments[segment_index];
         if (segment.null_entries && segment.null_entries->getUInt(index_in_segment))

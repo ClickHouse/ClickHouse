@@ -1,5 +1,6 @@
 
 #include <Common/logger_useful.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
@@ -35,6 +36,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
@@ -2040,6 +2042,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     }
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     probed = true;
@@ -2070,7 +2073,7 @@ bool Reader::BloomFilterLookup::probe(const std::vector<uint64_t> & hashes)
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = common::mulIgnoreOverflow(UInt32(h), salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {

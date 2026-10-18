@@ -1,5 +1,6 @@
 #include <Formats/ProtobufSerializer.h>
 #include <Common/Arena.h>
+#include <base/sanitizer_defs.h>
 
 #if USE_PROTOBUF
 #    include <AggregateFunctions/IAggregateFunction.h>
@@ -2357,7 +2358,7 @@ namespace
         {
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
-            for (size_t i : collections::range(offsets[row_num - 1], offsets[row_num]))
+            for (size_t i : collections::range(offsets[static_cast<ssize_t>(row_num) - 1], offsets[row_num]))
                 element_serializer->writeRow(i);
         }
 
@@ -2791,6 +2792,7 @@ namespace
         }
 
     private:
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         size_t findFieldIndexByFieldTag(int field_tag)
         {
             while (true)
@@ -3081,7 +3083,7 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & offset_column0 = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[0]);
-            size_t start_offset = offset_column0.getElement(row_num - 1);
+            size_t start_offset = row_num ? offset_column0.getElement(row_num - 1) : 0;
             size_t end_offset = offset_column0.getElement(row_num);
             for (size_t i : collections::range(start_offset, end_offset))
                 message_serializer->writeRow(i);

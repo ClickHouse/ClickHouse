@@ -148,7 +148,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row - 1] == ColumnArray::OffsetAt(row)
         total_elements += src_offsets[row] - src_offsets[row - 1];
         res_offsets[i] = total_elements;
     }
@@ -753,7 +753,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[static_cast<ssize_t>(i) - 1], static_cast<T>(i));
     return result;
 }
 

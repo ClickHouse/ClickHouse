@@ -17,6 +17,7 @@
 #include <mutex>
 #include <chrono>
 #include <functional>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -313,11 +314,13 @@ private:
             else
                 last_running = std::max(last_running, thread_num);
         }
-        void exitRunning(size_t thread_num)
+        NO_SANITIZE_UNSIGNED_OVERFLOW void exitRunning(size_t thread_num)
         {
             --running_count;
             if (last_running == thread_num)
             {
+                /// Scan down for the next running thread. Reaching zero wraps the counter around to
+                /// `npos`, which is exactly the "no running thread" value it is initialised with.
                 while (last_running-- > 0)
                 {
                     if (isRunning(last_running))

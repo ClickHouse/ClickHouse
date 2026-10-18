@@ -429,7 +429,9 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (max_keys)
         {
-            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
+            /// `children.size()` is unsigned, so casting only the left operand would leave the
+            /// subtraction in `size_t` and the `<= 0` test below would depend on the wrap.
+            ssize_t keys_left = static_cast<ssize_t>(max_keys) - static_cast<ssize_t>(children.size());
             if (keys_left <= 0)
                 break;
             request.SetMaxKeys(static_cast<int>(keys_left));

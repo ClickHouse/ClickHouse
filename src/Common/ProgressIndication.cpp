@@ -230,7 +230,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         profiling_msg = profiling_msg_builder.str();
     }
 
-    int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
+    int64_t remaining_space = static_cast<int64_t>(terminal_width) - static_cast<int64_t>(written_progress_chars);
 
     /// `Progress` is updated concurrently and only piecewise atomically, so the counts are taken from
     /// one snapshot: otherwise a total number of rows published between two loads could make the

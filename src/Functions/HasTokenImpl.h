@@ -89,7 +89,7 @@ struct HasTokenImpl
             if (pos + pattern_size <= begin + haystack_offsets[i])
             {
                 /// Now check that this is a token
-                if ((pos == begin + haystack_offsets[i - 1] || isTokenSeparator(pos[-1]))
+                if ((pos == begin + haystack_offsets[static_cast<ssize_t>(i) - 1] || isTokenSeparator(pos[-1]))
                     && (pos + pattern_size == begin + haystack_offsets[i] || isTokenSeparator(pos[pattern_size])))
                 {
                     res[i] = !negate;

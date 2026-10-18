@@ -342,7 +342,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 {
                     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
                     const ColumnArray::Offsets & offsets = column_array.getOffsets();
-                    size_t offset = offsets[row_num - 1];
+                    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
                     size_t next_offset = offsets[row_num];
                     size_t row_count = next_offset - offset;
                     const IColumn & nested_column = column_array.getData();
@@ -487,7 +487,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 const ColumnMap & column_map = assert_cast<const ColumnMap &>(column);
                 const ColumnArray & column_array = column_map.getNestedColumn();
                 const ColumnArray::Offsets & offsets = column_array.getOffsets();
-                size_t offset = offsets[row_num - 1];
+                size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
                 size_t next_offset = offsets[row_num];
                 size_t row_count = next_offset - offset;
                 const ColumnTuple & nested_columns = column_map.getNestedData();

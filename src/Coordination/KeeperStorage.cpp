@@ -667,7 +667,7 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
         }
     }
 
-    nodes_digest += digest_change;
+    addToDigest(nodes_digest, digest_change);
 
     return Coordination::Error::ZOK;
 }

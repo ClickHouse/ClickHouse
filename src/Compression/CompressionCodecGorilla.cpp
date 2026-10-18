@@ -12,6 +12,7 @@
 #include <IO/BitHelpers.h>
 
 #include <cstring>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -163,7 +164,10 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+/// The reserve size wraps `UInt32` for a long codec chain, and that wrap is load-bearing:
+/// `getCheckedReserveSize` in `CompressionCodecMultiple` rejects the chain precisely by noticing
+/// that a codec reserved less than its own input. `04812_codec_chain_reserve_overflow` pins it.
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
 

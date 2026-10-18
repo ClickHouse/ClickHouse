@@ -1093,9 +1093,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (r_is_vectorsimilarity)
                     r_index_priority = 0;
 #endif
-                // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
+                // reversed since we want to prioritize coarser indexes; `UInt64` keeps the full domain of the granularity
+                const UInt64 neg_l_granularity = std::numeric_limits<UInt64>::max() - l_index->getGranularity();
+                const UInt64 neg_r_granularity = std::numeric_limits<UInt64>::max() - r_index->getGranularity();
 
                 const auto l_size = idx_sizes[l];
                 const auto r_size = idx_sizes[r];
@@ -2184,11 +2184,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -2197,15 +2198,16 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 {
     size_t marks = 1;
 
-    if (rows_setting + rows_granularity <= rows_setting) /// overflow
+    /// The granularity is zero, or `rows_setting + rows_granularity` would overflow.
+    if (rows_granularity == 0 || rows_setting > std::numeric_limits<size_t>::max() - rows_granularity)
         marks = max_marks;
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;
 
     if (bytes_granularity)
     {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+        /// `bytes_setting + bytes_granularity` would overflow.
+        if (bytes_setting > std::numeric_limits<size_t>::max() - bytes_granularity)
             marks = max_marks;
         else if (bytes_setting)
             marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);

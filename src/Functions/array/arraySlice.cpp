@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -19,6 +20,7 @@
 
 #include <limits>
 #include <optional>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -98,6 +100,7 @@ public:
         return arguments[0].type;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
@@ -161,7 +164,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)));
             }
             else if (isColumnConst(*length_column))
             {
@@ -169,7 +172,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
@@ -256,7 +259,7 @@ private:
             else
             {
                 /// Compute |offset| in the unsigned domain: -INT64_MIN does not fit in Int64. Offset 0 falls here too.
-                const UInt64 abs_offset = UInt64(0) - static_cast<UInt64>(*offset);
+                const UInt64 abs_offset = common::negateIgnoreOverflow(static_cast<UInt64>(*offset));
                 if (abs_offset == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Offset {} of function {} is out of range for a QBit of dimension {}: "
@@ -278,7 +281,7 @@ private:
             if (*length >= 0)
             {
                 const size_t requested_length = static_cast<size_t>(*length);
-                const UInt64 abs_offset = offset && *offset < 0 ? UInt64(0) - static_cast<UInt64>(*offset) : 0;
+                const UInt64 abs_offset = offset && *offset < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(*offset)) : 0;
                 if (abs_offset > dimension)
                 {
                     /// `getSliceFromRight` clamps an oversized negative offset to the left edge, but preserves the
@@ -292,7 +295,7 @@ private:
             else
             {
                 /// A negative length leaves the last |length| elements of the vector unselected, as for Arrays.
-                const UInt64 abs_length = UInt64(0) - static_cast<UInt64>(*length);
+                const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(*length));
                 result_length = abs_length < result_length ? result_length - static_cast<size_t>(abs_length) : 0;
             }
         }

@@ -144,12 +144,12 @@ struct BloomFilterHash
         if (checkAndGetColumn<ColumnNullable>(&array_col.getData()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
 
-        /// Offsets are a prefix sum, so row r's elements are [offsets[r-1], offsets[r]).
+        /// Offsets are a prefix sum, so row r's elements are [offsets[static_cast<ssize_t>(r) - 1], offsets[r]).
         /// offsets[-1] reads as 0 (PaddedPODArray left padding), giving the correct start
         /// for pos == 0.
         const auto & offsets = array_col.getOffsets();
-        limit = offsets[pos + limit - 1] - offsets[pos - 1];
-        pos = offsets[pos - 1];
+        limit = offsets[static_cast<ssize_t>(pos + limit) - 1] - offsets[static_cast<ssize_t>(pos) - 1];
+        pos = offsets[static_cast<ssize_t>(pos) - 1];
 
         if (limit != 0)
             return nullptr;
@@ -336,7 +336,7 @@ struct BloomFilterHash
 
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
-                ColumnString::Offset current_offset = offsets[index + pos - 1];
+                ColumnString::Offset current_offset = offsets[static_cast<ssize_t>(index + pos) - 1];
                 size_t length = offsets[index + pos] - current_offset;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
                     reinterpret_cast<const char *>(&data[current_offset]), length);

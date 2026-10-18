@@ -17,6 +17,7 @@
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace CurrentMetrics
@@ -349,12 +350,17 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
-        new_pos = offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+        new_pos = static_cast<size_t>(offset);
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = static_cast<size_t>(getPosition()) + offset;
+        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+        off_t target = 0;
+        if (common::addOverflow(getPosition(), offset, target) || target < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", getPosition(), offset);
+        new_pos = static_cast<size_t>(target);
     }
     else
     {
@@ -421,7 +427,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
     if (!impl->isSeekCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
-        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
+        && new_pos > file_offset_of_buffer_end && new_pos - file_offset_of_buffer_end < min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = new_pos - file_offset_of_buffer_end;

@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <base/sanitizer_defs.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -84,6 +85,7 @@ void assertNoDefOverflow(ColumnChunkWriteState & s)
             "really need this for some reason).");
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, const NullMap & null_map)
 {
     /// Increment definition levels for non-nulls.

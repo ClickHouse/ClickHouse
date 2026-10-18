@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
+#include <base/sanitizer_defs.h>
 #include <atomic>
 #include <memory>
 #include <new>
@@ -101,7 +102,10 @@ namespace ProfileEvents
         std::unique_ptr<std::atomic_bool[]> should_trace_holder;
         std::atomic_bool trace_all_profile_events = false;
 
-        Count load(Event event) const;
+        /// Sums the per-CPU shards, each of which can hold a negative count on its own, so the
+        /// accumulation is modular. The attribute has to sit on the declaration: on the out-of-line
+        /// definition alone it is silently ignored.
+        Count NO_SANITIZE_UNSIGNED_OVERFLOW load(Event event) const;
         void fetchAdd(Event event, Count amount, int32_t cpu);
 
     public:

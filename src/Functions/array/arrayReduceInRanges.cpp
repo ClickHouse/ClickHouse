@@ -276,27 +276,36 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 Int64 index = indices_col.getInt(j);
                 UInt64 length = lengths_col.getUInt(j);
 
-                /// Keep the same as in arraySlice
+                /// Keep the same as in arraySlice: the range is clipped to the array.
+                /// The bounds are compared with the remaining size instead of being added to the user-controlled
+                /// `index` and `length`, which could wrap around.
+                const size_t size = end - begin;
 
                 if (index > 0)
                 {
-                    local_begin = index - 1;
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    const UInt64 offset = static_cast<UInt64>(index) - 1;
+                    if (offset < size)
+                    {
+                        local_begin = offset;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                 }
                 else if (index < 0)
                 {
-                    if (end - begin + index > 0)
-                        local_begin = end - begin + index;
+                    /// Written this way to not overflow for the minimum `Int64`.
+                    const UInt64 offset_from_end = static_cast<UInt64>(-(index + 1)) + 1;
+                    if (offset_from_end <= size)
+                    {
+                        local_begin = size - offset_from_end;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                     else
-                        local_begin = 0;
-
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    {
+                        /// The range starts before the array: skip the part of it that is before the start.
+                        const UInt64 before_start = offset_from_end - size;
+                        if (length > before_start)
+                            local_end = std::min<UInt64>(length - before_start, size);
+                    }
                 }
             }
 
@@ -332,7 +341,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
                         size_t place_offset = 0;
                         if (level)
-                            place_offset = place_offsets[level - 1];
+                            place_offset = place_offsets[static_cast<ssize_t>(level) - 1];
 
                         true_func->merge(place, places[place_offset + (place_curr >> level)], arena.get());
                         place_curr += 1 << level;

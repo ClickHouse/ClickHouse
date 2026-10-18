@@ -6,6 +6,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -57,13 +58,16 @@ struct QuantileBFloat16Histogram
         add(x, 1);
     }
 
-    void add(const Value & x, Weight w)
+    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
+    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
+    /// map is still looked up once per row.
+    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight w)
     {
         if (!isNaN(x))
             data[toBFloat16(x)] += w;
     }
 
-    void merge(const QuantileBFloat16Histogram & rhs)
+    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileBFloat16Histogram & rhs)
     {
         for (const auto & pair : rhs.data)
             data[pair.getKey()] += pair.getMapped();
