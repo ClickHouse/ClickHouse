@@ -10,6 +10,8 @@
 
 #include <fmt/format.h>
 
+#include <exception>
+
 namespace DB
 {
 
@@ -35,7 +37,7 @@ class LineSampleWriteBuffer final : public WriteBufferFromPointer
 {
 public:
     /// Thrown out of the serialization when the buffer is full.
-    struct Full
+    struct Full : std::exception
     {
     };
 
