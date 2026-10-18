@@ -772,9 +772,10 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
 
     # Even when re-adding the table to replication also fails, the wrapper remains visible and the
     # persisted tables list is restored, so the surviving nested table is not stranded and the DETACH
-    # can still be retried after a restart.
+    # can still be retried after a restart. The restart forces a full reload that hides the tables until
+    # the background startup publishes them, and that startup can need a retry, so wait for the table.
     instance.restart_clickhouse()
-    assert table_name in instance.query("SHOW TABLES FROM test_database").split()
+    assert_nested_table_is_created(instance, table_name)
 
     # Restart reconstructs the publication from the restored list before it republishes the wrapper, so
     # the surviving table is not merely visible: it resumes replication before the retry. Wait for the
