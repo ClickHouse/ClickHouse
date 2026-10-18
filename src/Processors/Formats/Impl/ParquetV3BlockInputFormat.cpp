@@ -130,6 +130,8 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     hash.update(format_settings.parquet.local_time_as_utc);
     hash.update(format_settings.parquet.detect_variant_by_structure);
     hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    /// Decoding a `Variant` value as `JSON` or `Dynamic` throws if it is nested deeper than this.
+    hash.update(format_settings.max_parser_depth);
     hash.update(format_settings.precise_float_parsing);
     hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
     options->file_identity = hash.get64();
