@@ -452,18 +452,16 @@ echo "Drop the row policies that cannot be applied to a table they cover"
 : > /test_output/undropped_row_policy_errors.txt
 row_policy_check_failed=0
 row_policy_drop_failed=0
-# The check of a filter runs its scalar subqueries, and they apply the row policies of the tables they read, so the
-# filters without a subquery are checked, and dropped, first.
 if timeout 1m clickhouse-client --query "
-        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL
-        ORDER BY positionCaseInsensitive(select_filter, 'SELECT') != 0" > /tmp/row_policy_ids.txt
+        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
     while read -r row_policy_id
     do
-        # `EXPLAIN QUERY TREE` does not apply the row policies of the table it reads. Unqualified tables of the filter
-        # resolve in the current database, so use the policy's one, where its test reads the table.
+        # `DESCRIBE` of `view()` only analyzes the query: apart from those in table function arguments, the subqueries
+        # of the filter do not run, so the row policies of the tables they read cannot fail this check. Unqualified
+        # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
         if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
-                SELECT format('USE {0}{1}{0}; EXPLAIN QUERY TREE SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3};', char(96),
+                SELECT format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3});', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
                     replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
                     p.select_filter)
@@ -477,10 +475,10 @@ then
         fi
         timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
             && continue
-        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table or
-        # function, a wrong type or number of arguments, or an invalid constant. A resource limit, a timeout or a lost
-        # connection does not.
-        if ! grep -qE '^Code: (6|36|42|43|46|47|53|59|60|69|125|184|386)\. DB::Exception: Received from ' \
+        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table,
+        # database or function, a wrong type or number of arguments or columns, or an invalid constant. A resource
+        # limit, a timeout, a lost connection or an error that depends on the reader (access, settings) does not.
+        if ! grep -qE '^Code: (6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675)\. DB::Exception: Received from ' \
             /tmp/row_policy_check_errors.txt
         then
             cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
