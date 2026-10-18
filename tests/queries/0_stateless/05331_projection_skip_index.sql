@@ -306,3 +306,44 @@ SELECT k2, sum(value) FROM t_proj_agg WHERE k2 = 2 GROUP BY k2;
 SELECT k2, sum(value) FROM t_proj_agg WHERE k2 = 2 GROUP BY k2 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_proj_agg;
+
+------------------------------------------------------------------------------
+-- 7. Index types do not depend on the settings of the `ALTER` session
+------------------------------------------------------------------------------
+
+-- `enable_extended_results_for_datetime_functions` changes the type of `toStartOfHour` over a `DateTime64`
+-- column from `DateTime` to `DateTime64`. Inserts and merges compute the index with the server settings, so
+-- the type recorded for the index must not come from the session that runs the `ALTER`. First, the index
+-- is added with `ADD PROJECTION`.
+
+DROP TABLE IF EXISTS t_proj_alter_settings;
+
+CREATE TABLE t_proj_alter_settings (k UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY k;
+
+ALTER TABLE t_proj_alter_settings ADD PROJECTION proj
+    (SELECT k, ts, INDEX ix toStartOfHour(ts) TYPE set(100) GRANULARITY 1 ORDER BY k)
+    SETTINGS enable_extended_results_for_datetime_functions = 1;
+
+INSERT INTO t_proj_alter_settings SELECT number, toDateTime64('2026-01-01 00:00:00', 3) FROM numbers(1);
+
+DROP TABLE t_proj_alter_settings;
+
+-- Second, an `ALTER` that does not touch the projection analyzes all projections again. It must not change
+-- the type the index already has.
+
+DROP TABLE IF EXISTS t_proj_reanalyze;
+
+CREATE TABLE t_proj_reanalyze
+(
+    k UInt64,
+    ts DateTime64(3),
+    PROJECTION proj (SELECT k, ts, INDEX ix toStartOfHour(ts) TYPE set(100) GRANULARITY 1 ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO t_proj_reanalyze SELECT number, toDateTime64('2026-01-01 00:00:00', 3) FROM numbers(1);
+
+ALTER TABLE t_proj_reanalyze ADD COLUMN extra UInt8 SETTINGS enable_extended_results_for_datetime_functions = 1;
+OPTIMIZE TABLE t_proj_reanalyze FINAL;
+
+DROP TABLE t_proj_reanalyze;

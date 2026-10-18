@@ -571,7 +571,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         for (auto & index : indices->children)
         {
             IndexDescription index_desc = IndexDescription::getIndexFromAST(
-                        index->clone(), metadata.columns, false, metadata.escape_index_filenames, query_context);
+                        index->clone(), metadata.columns, false, metadata.escape_index_filenames, query_context->getGlobalContext());
 
             /// Text indexes are not supported in projections yet. `MergeTask` does not pass `text` indexes to the
             /// part writer; it builds them only in `MergeTask::MergeTextIndexStage`, which does nothing for the
