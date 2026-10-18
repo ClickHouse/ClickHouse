@@ -640,6 +640,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         builder->withPartInfo(global_ctx->future_part->part_info);
         builder->withPartType(global_ctx->future_part->part_format.part_type);
+        /// The frozen effective settings (including a projection's `WITH SETTINGS`), which the
+        /// reservation priced: they decide e.g. the mark layout of the compact writer.
+        builder->withSettings(global_ctx->data_settings);
 
         global_ctx->new_data_part = std::move(*builder).build();
     }

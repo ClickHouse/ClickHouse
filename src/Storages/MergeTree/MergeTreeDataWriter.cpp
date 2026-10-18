@@ -1268,10 +1268,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection, base_data_settings).part_type;
 
-    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
-    auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = base_data_settings ? data.applySettingsChanges(base_data_settings, &projection.settings_changes)
                                             : data.getSettings(&projection.settings_changes);
+    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp)
+                             .withPartType(part_type)
+                             .withSettings(data_settings)
+                             .build();
+    auto projection_part_storage = new_data_part->getDataPartStoragePtr();
 
     if (is_temp)
         projection_part_storage->beginTransaction();
