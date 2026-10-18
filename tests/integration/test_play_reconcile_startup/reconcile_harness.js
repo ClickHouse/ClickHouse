@@ -1768,6 +1768,42 @@ async function main() {
         }
     }
 
+    /// Guard (silent password-manager refill before a `run=1` link of an implicit run): the password
+    /// manager may fill the user field with a saved login without an `input` event, so nothing cancels
+    /// the deferred auto-run. The query runs only when that explicit user is the linked account;
+    /// a refill of another login leaves the query in the editor and drops `run=1`.
+    for (const [refilled_user, expect_run] of [['alice', true], ['bob', false]]) {
+        const q = 'DELETE FROM target WHERE id = 1';
+        const run_users = [];
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                vm.runInContext(`user_elem.value = ${JSON.stringify(refilled_user)};`, sandbox);
+                sandbox.postAll = async () => { run_users.push(vm.runInContext('user_elem.value', sandbox)); };
+                sandbox.fetch = async () => ({
+                    ok: false,
+                    status: 503,
+                    headers: { get: () => null },
+                    text: async () => '',
+                    json: async () => ({}),
+                });
+            },
+        });
+        await sleep(50);
+        const what = expect_run ? 'refilled with the linked account' : 'refilled with another account';
+        check('run-link-silent-refill', `the query is auto-run only as the linked account (${what})`,
+            JSON.stringify(run_users) === JSON.stringify(expect_run ? ['alice'] : []), run_users);
+        if (!expect_run) {
+            check('run-link-silent-refill', 'the refused link no longer carries run=1',
+                new URL(r.sandbox.location.href).searchParams.get('run') === null, r.sandbox.location.href);
+            check('run-link-silent-refill', 'the query stays in the editor',
+                vm.runInContext('query_area.value', r.sandbox) === q, vm.runInContext('query_area.value', r.sandbox));
+        }
+    }
+
     /// Guard (cancellation while the implicit account is asked): an action that cancels a deferred
     /// auto-run (a database selection) or a run of the user (here one that has already completed,
     /// which bumps `tab.reqNum`) while the probe is pending must cancel the auto-run once the probe

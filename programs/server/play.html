@@ -21799,13 +21799,26 @@ const implicit_user_from_url = current_url.searchParams.get('implicit_user') || 
 /// cancels a deferred auto-run (`deferred_run_cancelled`: a database selection, a parameter edit), or
 /// a run started meanwhile (`tab.reqNum`, which also covers a run that has already completed),
 /// cancels the auto-run as well.
+/// A user that is named explicitly by the time the auto-run starts (e.g. silently refilled by the
+/// password manager, which fires no `input` event) must be that same account: a refill of another
+/// saved login would otherwise run the linked query as a different user than the link records.
 function runDeferredStartupQuery() {
-    if (!implicit_user_from_url || effectiveConnectionUser(url_elem.value, user_elem.value)) {
+    if (!implicit_user_from_url) {
         postAll();   /// saves history itself on completion
         return;
     }
-    const connection = connectionTuple();
     const tab = getActiveTab();
+    const explicit_user = effectiveConnectionUser(url_elem.value, user_elem.value);
+    if (explicit_user) {
+        if (explicit_user === implicit_user_from_url) {
+            postAll();
+        } else {
+            tab.runnableUrl = false;
+            refreshCurrentHistoryEntry(tab);
+        }
+        return;
+    }
+    const connection = connectionTuple();
     const query = query_area.value;
     const request_num = tab.reqNum;
     learnImplicitUser(url_elem.value, password_elem.value).then(name => {
