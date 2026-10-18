@@ -4,6 +4,9 @@
 -- point range. Both guards are checked on keys with several applicable key expressions, so every
 -- candidate atom of one predicate leaf goes through them.
 
+-- Disable force_primary_key_reverse_order: the selected marks depend on the physical order of the rows, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 {#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
     selected by index analysis. -#}
 {% macro check(table, predicate) -%}
