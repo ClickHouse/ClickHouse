@@ -276,3 +276,13 @@ history_restore=$(echo "$content" | sed -n '/^window.onpopstate = function(event
         | grep -qxF "    if (!sameServerAddress(host, previous_host) || user !== previous_user) password = '';" \
     && echo cleared || echo kept)
 echo "dashboard history_save=${history_save} history_password=${history_restore}"
+
+# `/binary` keeps its position in the query string, together with the server and the user. After a
+# handover the entry has to name the handed-over connection, not the one the page was opened with,
+# or a reload or a shared link opens the map of the previous server at the position viewed on the new one.
+content=$(fetch_page binary)
+history_host=$(echo "$content" | sed -n '/^        function updateHistory() {$/,/^        }$/p' \
+        | grep -qxF "            if (sameServerAddress(host, defaultServerAddress())) params.delete('host'); else params.set('host', host);" \
+    && echo "$content" | sed -n '/^        function applyConnectionFromHost(data) {$/,/^        }$/p' | grep -qxF "            updateHistory();" \
+    && echo bound || echo stale)
+echo "binary history=${history_host}"
