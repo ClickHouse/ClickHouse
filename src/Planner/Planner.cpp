@@ -2567,6 +2567,16 @@ static std::optional<UInt128> prepareSubqueryCacheReferencedTablesModificationHa
     const ContextPtr & query_context,
     const Settings & settings)
 {
+    /// A consistency consumer of the whole query - an outer query cached with
+    /// `query_cache_use_only_when_data_was_not_changed`, or a `REFRESH ... IF CHANGED` - installs the
+    /// object-set capture before the plan is built and certifies the result with the current hashes of
+    /// the tables it reads. An entry of a subquery that does not validate its own sources could be older
+    /// than those hashes, and the consumer would certify the stale rows as current. Such a subquery must
+    /// not be served from (nor written to) the cache. A capture installed for a consistent sibling
+    /// subquery below disables it as well, which only costs a cache miss.
+    if (should_cache && !settings[Setting::query_cache_use_only_when_data_was_not_changed] && query_context->getQueryConsumedObjectSets())
+        should_cache = false;
+
     std::optional<UInt128> referenced_tables_modification_hash;
     if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
     {
