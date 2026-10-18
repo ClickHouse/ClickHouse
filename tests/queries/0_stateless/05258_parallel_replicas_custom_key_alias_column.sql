@@ -4,6 +4,7 @@
 
 DROP TABLE IF EXISTS custom_key_alias;
 DROP TABLE IF EXISTS custom_key_alias_set;
+DROP TABLE IF EXISTS custom_key_array;
 
 CREATE TABLE custom_key_alias_set (id UInt64) ENGINE = Set;
 INSERT INTO custom_key_alias_set VALUES (1), (2);
@@ -47,5 +48,16 @@ SETTINGS parallel_replicas_custom_key = 'a_in_set', parallel_replicas_mode = 'cu
 SELECT sum(c) FROM (SELECT count() AS c FROM custom_key_alias)
 SETTINGS parallel_replicas_custom_key = 'a_plain', parallel_replicas_mode = 'custom_key_sampling';
 
+-- An array column on the right-hand side of `IN` is not a table, so it keeps working in the custom key.
+CREATE TABLE custom_key_array (a UInt64, arr Array(UInt64)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO custom_key_array SELECT number, [number % 3] FROM numbers(100);
+
+SELECT sum(c) FROM (SELECT count() AS c FROM custom_key_array)
+SETTINGS parallel_replicas_custom_key = 'a IN arr', parallel_replicas_mode = 'custom_key_sampling';
+
+SELECT sum(c) FROM (SELECT count() AS c FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), custom_key_array))
+SETTINGS parallel_replicas_custom_key = 'a IN arr', parallel_replicas_mode = 'custom_key_sampling';
+
 DROP TABLE custom_key_alias;
 DROP TABLE custom_key_alias_set;
+DROP TABLE custom_key_array;

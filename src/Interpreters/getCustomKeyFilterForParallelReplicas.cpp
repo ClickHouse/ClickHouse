@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -57,7 +58,12 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
-        checkExpressionDoesntContainSubqueries(*expanded_custom_key_ast);
+        /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
+        /// arrives with a plain identifier on the right-hand side. It is a table only if it is not a column.
+        checkExpressionDoesntContainSubqueries(
+            *expanded_custom_key_ast,
+            [&](const ASTIdentifier & identifier)
+            { return columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier.name()); });
         checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
     }
 
@@ -230,7 +236,10 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     if (custom_key_ast)
     {
         UserDefinedSQLFunctionVisitor::visit(custom_key_ast, context.shared_from_this());
-        checkExpressionDoesntContainSubqueries(*custom_key_ast);
+        /// The columns of the table are not known here, so an identifier on the right-hand side of `IN`
+        /// may be an array column (`a IN arr`). `getCustomKeyFilterForParallelReplica` checks it against
+        /// the columns before the key is used to filter the data.
+        checkExpressionDoesntContainSubqueries(*custom_key_ast, [](const ASTIdentifier &) { return true; });
         checkExpressionDoesntContainMatchers(*custom_key_ast);
     }
 

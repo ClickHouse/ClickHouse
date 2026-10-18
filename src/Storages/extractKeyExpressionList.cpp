@@ -17,7 +17,8 @@ namespace DB
         extern const int BAD_ARGUMENTS;
     }
 
-    void checkExpressionDoesntContainSubqueries(const IAST & ast)
+    void checkExpressionDoesntContainSubqueries(
+        const IAST & ast, const std::function<bool(const ASTIdentifier &)> & is_allowed_in_rhs_identifier)
     {
         checkStackSize();
 
@@ -34,13 +35,15 @@ namespace DB
             if (args && args->children.size() == 2)
             {
                 const auto & rhs = args->children[1];
-                if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+                const auto * rhs_identifier = rhs->as<ASTIdentifier>();
+                if (rhs->as<ASTTableIdentifier>()
+                    || (rhs_identifier && !(is_allowed_in_rhs_identifier && is_allowed_in_rhs_identifier(*rhs_identifier))))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain a table in the 'IN' operator");
             }
         }
 
         for (const auto & child : ast.children)
-            checkExpressionDoesntContainSubqueries(*child);
+            checkExpressionDoesntContainSubqueries(*child, is_allowed_in_rhs_identifier);
     }
 
     /// The Analyzer expands wildcards and column matchers into the columns of the table,
