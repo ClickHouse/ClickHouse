@@ -16,6 +16,18 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
 
+    /// The parsed footer of the file, if the code that split the file into buckets has already read it
+    /// (see `ParquetBucketSplitter::splitForParallelReading`). The reader of the bucket then uses it
+    /// instead of reading and parsing the footer again. The caller is responsible for the bucket being
+    /// read from the same version of the file. Not serialized: the buckets sent to other servers don't
+    /// carry it.
+    std::shared_ptr<const parquet::format::FileMetaData> file_metadata;
+
+    /// Whether the bucket is one of the buckets made by `ParquetBucketSplitter::splitForParallelReading`,
+    /// so that the other row groups of the file are read by other readers of the same query rather than
+    /// skipped. Not serialized, like `file_metadata`.
+    bool is_split_for_parallel_reading = false;
+
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
     void serialize(WriteBuffer & buffer) override;
@@ -33,6 +45,12 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context) override;
 };
 
 class ParquetV3BlockInputFormat final : public IInputFormat
@@ -100,7 +118,7 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    std::shared_ptr<const parquet::format::FileMetaData> getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
