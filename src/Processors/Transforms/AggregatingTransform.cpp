@@ -1489,10 +1489,12 @@ void AggregatingTransform::consume(Chunk chunk)
         = query_result_previews && query_result_previews->control.isActivated() && !query_result_previews->control.isDisabled();
 
     {
-        /// Pairs with the snapshot walk in tryEmitQueryResultPreview. It also covers the kept-keys
-        /// cutoff below, which rebuilds the hash table of this stream.
+        /// Pairs with the snapshot walk in tryEmitQueryResultPreview. It is taken even after the
+        /// previews are disabled: an emitter that has passed its `isDisabled` check before may still
+        /// be walking this hash table. It also covers the kept-keys cutoff below, which rebuilds the
+        /// hash table of this stream.
         std::unique_lock<std::mutex> preview_lock;
-        if (consider_previews)
+        if (query_result_previews)
             preview_lock = std::unique_lock(query_result_previews->control.participantMutex(variant_index));
 
         /// The kept-keys cutoff froze in another stream: restrict this stream's hash table to the
@@ -1578,56 +1580,74 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
     /// The states of every participant are merged into one private snapshot, which is then
     /// finalized into the preview chunk. Nothing is copied out of a participant: the merge only
     /// reads its states, and it happens under the participant's lock.
-    AggregatedDataVariants snapshot;
-
-    for (size_t i = 0; i < many_data->variants.size(); ++i)
+    ///
+    /// An aggregate function may throw on an intermediate state when merging or finalizing it (for
+    /// example, a statistical test whose second sample is still empty), while the final result is
+    /// valid. Such an error must not fail the query: the preview is dropped.
+    auto build_preview = [&]() -> Chunk
     {
-        std::lock_guard participant_lock(control.participantMutex(i));
+        AggregatedDataVariants snapshot;
 
-        /// Once the aggregation spilled to disk, the in-memory state is incomplete. A spill happens
-        /// under the owner's participant lock, so a spill of this participant is visible here.
-        for (const auto & aggregator : *params->aggregator_list_ptr)
+        for (size_t i = 0; i < many_data->variants.size(); ++i)
         {
-            if (aggregator.hasTemporaryData())
+            std::lock_guard participant_lock(control.participantMutex(i));
+
+            /// Once the aggregation spilled to disk, the in-memory state is incomplete. A spill happens
+            /// under the owner's participant lock, so a spill of this participant is visible here.
+            for (const auto & aggregator : *params->aggregator_list_ptr)
+            {
+                if (aggregator.hasTemporaryData())
+                {
+                    control.disable();
+                    return {};
+                }
+            }
+
+            auto & participant = *many_data->variants[i];
+            if (participant.empty())
+                continue;
+
+            if (participant.isTwoLevel())
             {
                 control.disable();
-                return;
+                return {};
+            }
+
+            /// The merged snapshot holds at least the keys of this participant, so a participant that
+            /// alone is over the threshold settles it before the merge does the work.
+            if (preview_settings.max_result_rows && participant.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
+            {
+                control.disable();
+                return {};
+            }
+
+            params->aggregator.mergeIntoQueryResultPreviewSnapshot(participant, snapshot);
+
+            /// The threshold counts the rows of the preview - the keys of the merged snapshot - not
+            /// the keys of every participant added up, which would depend on `max_threads`.
+            if (preview_settings.max_result_rows && snapshot.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
+            {
+                /// Aggregation states never shrink, so previews are off for the rest of the query.
+                control.disable();
+                return {};
             }
         }
 
-        auto & participant = *many_data->variants[i];
-        if (participant.empty())
-            continue;
+        control.startNextRound();
+        return params->aggregator.convertQueryResultPreviewSnapshotToChunk(snapshot);
+    };
 
-        if (participant.isTwoLevel())
-        {
-            control.disable();
-            return;
-        }
-
-        /// The merged snapshot holds at least the keys of this participant, so a participant that
-        /// alone is over the threshold settles it before the merge does the work.
-        if (preview_settings.max_result_rows && participant.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
-        {
-            control.disable();
-            return;
-        }
-
-        params->aggregator.mergeIntoQueryResultPreviewSnapshot(participant, snapshot);
-
-        /// The threshold counts the rows of the preview - the keys of the merged snapshot - not
-        /// the keys of every participant added up, which would depend on `max_threads`.
-        if (preview_settings.max_result_rows && snapshot.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
-        {
-            /// Aggregation states never shrink, so previews are off for the rest of the query.
-            control.disable();
-            return;
-        }
+    Chunk preview;
+    try
+    {
+        preview = build_preview();
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, control, isCancelled());
+        return;
     }
 
-    control.startNextRound();
-
-    Chunk preview = params->aggregator.convertQueryResultPreviewSnapshotToChunk(snapshot);
     if (!preview.getNumRows())
         return;
 
@@ -1763,15 +1783,18 @@ void AggregatingTransform::initGenerate()
     if (is_generate_initialized.test_and_set())
         return;
 
+    /// Until the finish barrier below, another transform may still be consuming and snapshotting
+    /// this variant for a query result preview (see tryEmitQueryResultPreview), so everything that
+    /// fills, rebuilds, converts or flushes the hash table before the barrier happens under the
+    /// participant lock.
+    std::unique_lock<std::mutex> preview_lock;
+    if (query_result_previews)
+        preview_lock = std::unique_lock(query_result_previews->control.participantMutex(variant_index));
+
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
-        /// Another transform may still be consuming and snapshotting this variant for a query result preview.
-        std::unique_lock<std::mutex> preview_lock;
-        if (query_result_previews)
-            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(variant_index));
-
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
         else
@@ -1794,13 +1817,7 @@ void AggregatingTransform::initGenerate()
     /// data to join, the freeze is already visible here.
     if (const auto & shared = many_data->shared_kept_keys;
         shared && !no_more_keys && !variants.empty() && shared->frozen.load(std::memory_order_acquire))
-    {
-        /// The cutoff rebuilds the hash table, which another transform may be snapshotting for a query result preview.
-        std::unique_lock<std::mutex> preview_lock;
-        if (query_result_previews)
-            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(variant_index));
         applySharedKeptKeysCutoff(/*may_freeze=*/false);
-    }
 
     if (params->aggregator.hasTemporaryData())
     {
@@ -1824,6 +1841,10 @@ void AggregatingTransform::initGenerate()
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
     }
+
+    /// After the barrier, no transform of this aggregation is consuming anymore, so no snapshot is in progress.
+    if (preview_lock.owns_lock())
+        preview_lock.unlock();
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
