@@ -40,64 +40,35 @@ namespace
             makeTagsExpression());
     }
 
-    /// Key for Prometheus's natural order of a label value: digit runs compare by number, other runs as strings.
-    /// A run's class orders a digit run against other runs the way a string compare of their first chars would.
-    ASTPtr makeNaturalSortKey(ASTPtr label_value)
+    /// arrayMap(t -> t.2, arraySort(t -> t.1, groupArray((<sort_key>, group))))
+    /// Sorting makes the result independent of the order in which groupArray() collected the rows.
+    ASTPtr makeSortedGroupsByKey(ASTPtr && sort_key, bool descending)
     {
-        auto run = [] { return make_intrusive<ASTIdentifier>("c"); };
-        auto is_digits = [&] { return makeASTFunction("match", run(), make_intrusive<ASTLiteral>(String{"^[0-9]"})); };
-        auto without_leading_zeros = [&]
-        {
-            return makeASTFunction("replaceRegexpOne", run(), make_intrusive<ASTLiteral>(String{"^0+"}), make_intrusive<ASTLiteral>(String{}));
-        };
+        auto sorted_pairs = makeASTFunction(
+            descending ? "arrayReverseSort" : "arraySort",
+            makeASTLambda({"t"},
+                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u))),
+            makeASTFunction("groupArray",
+                makeASTFunction("tuple", std::move(sort_key), make_intrusive<ASTIdentifier>(ColumnNames::Group))));
 
-        auto run_class = makeASTFunction("multiIf",
-            is_digits(), make_intrusive<ASTLiteral>(1u),
-            makeASTFunction("less", run(), make_intrusive<ASTLiteral>(String{"0"})), make_intrusive<ASTLiteral>(0u),
-            make_intrusive<ASTLiteral>(2u));
-        auto number_length = [&] { return makeASTFunction("length", without_leading_zeros()); };
-
-        /// Like Prometheus, digit runs above the Int64 range compare as plain strings; they sort after smaller numbers.
-        auto is_too_big = [&]
-        {
-            return makeASTFunction("and", is_digits(), makeASTFunction("or",
-                makeASTFunction("greater", number_length(), make_intrusive<ASTLiteral>(19u)),
-                makeASTFunction("and",
-                    makeASTFunction("equals", number_length(), make_intrusive<ASTLiteral>(19u)),
-                    makeASTFunction("greater", without_leading_zeros(), make_intrusive<ASTLiteral>(String{"9223372036854775807"})))));
-        };
-        auto run_order = makeASTFunction("multiIf",
-            is_too_big(), make_intrusive<ASTLiteral>(20u),
-            is_digits(), number_length(),
-            make_intrusive<ASTLiteral>(0u));
-        auto run_text = makeASTFunction("if", is_too_big(), run(), without_leading_zeros());
-
-        /// arrayMap(c -> (<run_class>, <run_order>, <run_text>), extractAll(<value>, '[0-9]+|[^0-9]+'))
         return makeASTFunction("arrayMap",
-            makeASTLambda({"c"}, makeASTFunction("tuple", std::move(run_class), std::move(run_order), std::move(run_text))),
-            makeASTFunction("extractAll", std::move(label_value), make_intrusive<ASTLiteral>(String{"[0-9]+|[^0-9]+"})));
+            makeASTLambda({"t"},
+                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(2u))),
+            std::move(sorted_pairs));
     }
 
-    /// Builds the per-series sort key for sort_by_label() / sort_by_label_desc(): the natural sort keys
-    /// of the given label values (a missing label is an empty string), with the full label set as a tiebreaker.
-    ASTPtr makeSortByLabelKey(const std::vector<String> & labels)
+    /// Orders the groups for sort_by_label() / sort_by_label_desc() exactly like Prometheus:
+    /// timeSeriesSortGroupsByTags(groupArray(group), [<labels>], <descending>)
+    ASTPtr makeSortedGroupsByLabels(const std::vector<String> & labels, bool descending)
     {
-        auto key = makeASTFunction("tuple");
+        Array label_names;
         for (const auto & label : labels)
-        {
-            /// tupleElement(arrayFirst(t -> t.1 = '<label>', timeSeriesGroupToTags(group)), 2)
-            auto label_value = makeASTFunction("tupleElement",
-                makeASTFunction("arrayFirst",
-                    makeASTLambda({"t"},
-                        makeASTFunction("equals",
-                            makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u)),
-                            make_intrusive<ASTLiteral>(label))),
-                    makeTagsExpression()),
-                make_intrusive<ASTLiteral>(2u));
-            key->arguments->children.push_back(makeNaturalSortKey(std::move(label_value)));
-        }
-        key->arguments->children.push_back(makeTagsExpression());
-        return key;
+            label_names.push_back(label);
+
+        return makeASTFunction("timeSeriesSortGroupsByTags",
+            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+            make_intrusive<ASTLiteral>(std::move(label_names)),
+            make_intrusive<ASTLiteral>(descending));
     }
 
     /// Materializes `query` and makes `query_piece` continue from its `group` and `values` columns.
@@ -118,7 +89,7 @@ namespace
 
     /// Orders the vector at the sort*() call site: builds a subquery mapping each series (`sort_group`)
     /// to its position (`sort_rank`) in the required order, later applied by finalizeSQL().
-    void materializeSortRank(SQLQueryPiece & query_piece, ASTPtr && sort_key, bool descending, ConverterContext & context)
+    void materializeSortRank(SQLQueryPiece & query_piece, ASTPtr && sorted_groups, ConverterContext & context)
     {
         /// The other store methods hold at most one series, so there is nothing to order.
         if (query_piece.store_method != StoreMethod::VECTOR_GRID)
@@ -129,26 +100,12 @@ namespace
         String vector_grid = materializeVectorGrid(query_piece, std::move(query_piece.select_query), context);
 
         /// Step 1:
-        /// SELECT arrayMap(t -> t.2, arraySort(t -> t.1, groupArray((<sort_key>, group)))) AS sorted_groups
-        /// FROM <vector_grid>
-        ///
-        /// arraySort() (arrayReverseSort() for the descending variants) makes the result deterministic
-        /// regardless of the order in which groupArray() collected the rows.
+        /// SELECT <sorted_groups> AS sorted_groups FROM <vector_grid>
         ASTPtr step1_query;
         {
             SelectQueryBuilder builder;
 
-            auto sorted_pairs = makeASTFunction(
-                descending ? "arrayReverseSort" : "arraySort",
-                makeASTLambda({"t"},
-                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u))),
-                makeASTFunction("groupArray",
-                    makeASTFunction("tuple", std::move(sort_key), make_intrusive<ASTIdentifier>(ColumnNames::Group))));
-
-            builder.select_list.push_back(makeASTFunction("arrayMap",
-                makeASTLambda({"t"},
-                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(2u))),
-                std::move(sorted_pairs)));
+            builder.select_list.push_back(std::move(sorted_groups));
             builder.select_list.back()->setAlias(ColumnNames::SortedGroups);
 
             builder.from_table = vector_grid;
@@ -253,7 +210,7 @@ SQLQueryPiece applySortFunction(
 
         /// sort_by_label() / sort_by_label_desc() do not change the values, they only order the vector, which must
         /// happen right at this call site: outer functions must see (and keep) the order produced here.
-        materializeSortRank(argument, makeSortByLabelKey(labels), function_name == "sort_by_label_desc", context);
+        materializeSortRank(argument, makeSortedGroupsByLabels(labels, function_name == "sort_by_label_desc"), context);
         argument.node = function_node;
         return std::move(argument);
     }
@@ -277,7 +234,7 @@ SQLQueryPiece applySortFunction(
 
     /// sort() / sort_desc() do not change the values, they only order the vector at this call site.
     /// The new rank map replaces any ordering set by an inner sort*() call (e.g. sort_desc(sort_by_label(...))).
-    materializeSortRank(argument, makeSortByValueKey(), function_name == "sort_desc", context);
+    materializeSortRank(argument, makeSortedGroupsByKey(makeSortByValueKey(), function_name == "sort_desc"), context);
     argument.node = function_node;
     return std::move(argument);
 }

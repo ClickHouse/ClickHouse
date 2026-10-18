@@ -48,6 +48,21 @@ INSERT INTO ts_tags VALUES
 INSERT INTO ts_tags VALUES
     ('00000000-0000-0000-0000-000000000031', 'big', {'instance':'host9999999999999999999'}),
     ('00000000-0000-0000-0000-000000000032', 'big', {'instance':'host10000000000000000000'});
+
+-- 'cyc' has digit runs on both sides of the Int64 limit: Prometheus's comparator orders them in a cycle,
+-- so only Prometheus's own sort algorithm over the tag-sorted input gives its order.
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000041', 'cyc', {'instance':'host99'}),
+    ('00000000-0000-0000-0000-000000000042', 'cyc', {'instance':'host923'}),
+    ('00000000-0000-0000-0000-000000000043', 'cyc', {'instance':'host9223372036854775807'}),
+    ('00000000-0000-0000-0000-000000000044', 'cyc', {'instance':'host9223372036854775808'}),
+    ('00000000-0000-0000-0000-000000000045', 'cyc', {'instance':'host10000000000000000000'});
+
+-- 'lz' has equal numbers written with different leading zeros; Prometheus's comparator calls each one smaller.
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000051', 'lz', {'instance':'host01'}),
+    ('00000000-0000-0000-0000-000000000052', 'lz', {'instance':'host1'}),
+    ('00000000-0000-0000-0000-000000000053', 'lz', {'instance':'host001'});
 INSERT INTO ts_time_ranges SELECT id, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC') FROM ts_tags;
 
 INSERT INTO ts_data VALUES
@@ -66,7 +81,15 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000025', toDateTime64(1700000000, 3, 'UTC'), 25),
     ('00000000-0000-0000-0000-000000000026', toDateTime64(1700000000, 3, 'UTC'), 26),
     ('00000000-0000-0000-0000-000000000031', toDateTime64(1700000000, 3, 'UTC'), 31),
-    ('00000000-0000-0000-0000-000000000032', toDateTime64(1700000000, 3, 'UTC'), 32);
+    ('00000000-0000-0000-0000-000000000032', toDateTime64(1700000000, 3, 'UTC'), 32),
+    ('00000000-0000-0000-0000-000000000041', toDateTime64(1700000000, 3, 'UTC'), 41),
+    ('00000000-0000-0000-0000-000000000042', toDateTime64(1700000000, 3, 'UTC'), 42),
+    ('00000000-0000-0000-0000-000000000043', toDateTime64(1700000000, 3, 'UTC'), 43),
+    ('00000000-0000-0000-0000-000000000044', toDateTime64(1700000000, 3, 'UTC'), 44),
+    ('00000000-0000-0000-0000-000000000045', toDateTime64(1700000000, 3, 'UTC'), 45),
+    ('00000000-0000-0000-0000-000000000051', toDateTime64(1700000000, 3, 'UTC'), 51),
+    ('00000000-0000-0000-0000-000000000052', toDateTime64(1700000000, 3, 'UTC'), 52),
+    ('00000000-0000-0000-0000-000000000053', toDateTime64(1700000000, 3, 'UTC'), 53);
 "
 
 promql_client()
@@ -80,10 +103,10 @@ promql_client -q "sort_by_label(up, 'instance')"
 echo "-- sort_by_label_desc(up, 'instance'): natural descending order (host20, host10, host2, host1)"
 promql_client -q "sort_by_label_desc(up, 'instance')"
 
-echo "-- sort_by_label(mem, 'dc', 'host'): sort by 'dc' then 'host'; missing 'dc' sorts first (empty string)"
+echo "-- sort_by_label(mem, 'dc', 'host'): sort by 'dc' then 'host'; as in Prometheus, the series without 'dc' ends up last"
 promql_client -q "sort_by_label(mem, 'dc', 'host')"
 
-echo "-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above"
+echo "-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above, the series without 'dc' first"
 promql_client -q "sort_by_label_desc(mem, 'dc', 'host')"
 
 echo "-- sort_by_label(net, 'instance'): Prometheus order (host2, host10, host-1, host.1, hostA, host_1)"
@@ -97,6 +120,18 @@ promql_client -q "sort_by_label(big, 'instance')"
 
 echo "-- sort_by_label_desc(big, 'instance'): reverse of the above"
 promql_client -q "sort_by_label_desc(big, 'instance')"
+
+echo "-- sort_by_label(cyc, 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(cyc, 'instance')"
+
+echo "-- sort_by_label_desc(cyc, 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label_desc(cyc, 'instance')"
+
+echo "-- sort_by_label(lz, 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(lz, 'instance')"
+
+echo "-- sort_by_label_desc(lz, 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label_desc(lz, 'instance')"
 
 echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
 promql_client -q "abs(sort_by_label(mem, 'host'))"
@@ -112,6 +147,13 @@ promql_client -q "quantile(0.5, sort(up))"
 
 echo "-- vector(scalar(sort(up))): same through scalar(); more than one series makes scalar() nan"
 promql_client -q "vector(scalar(sort(up)))"
+
+echo "-- timeSeriesSortGroupsByTags()"
+$CLICKHOUSE_CLIENT -q "
+SELECT arrayMap(g -> timeSeriesExtractTag(g, 'host'),
+    timeSeriesSortGroupsByTags(
+        [timeSeriesTagsToGroup([('host', 'host10')]), timeSeriesTagsToGroup([('host', 'host9')]), timeSeriesTagsToGroup([('host', 'host1')])],
+        ['host'], false)) AS hosts"
 
 echo "-- error: sort_by_label requires at least 2 arguments"
 promql_client -q "sort_by_label(up)" 2>&1 | grep -o "expects at least 2 arguments" | head -n 1

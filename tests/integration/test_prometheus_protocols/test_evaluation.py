@@ -563,6 +563,19 @@ def send_test_data():
                 {"__name__": "rate_bucket", "le": "+Inf"},
                 {300: 60, 330: 90, 360: 120},
             ),
+            # A digit run above the Int64 range: Prometheus compares it with other digit runs as a string.
+            (
+                {"__name__": "natsort_hosts", "host": "host9223372036854775808"},
+                {200: 3},
+            ),
+            (
+                {"__name__": "natsort_hosts", "host": "host923"},
+                {200: 2},
+            ),
+            (
+                {"__name__": "natsort_hosts", "host": "host99"},
+                {200: 1},
+            ),
         ]
     )
 
@@ -3541,6 +3554,29 @@ def test_sort_functions():
         [
             ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
             ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    # "9223372036854775808" does not fit Int64, so it is less than "923" and "99" by a string compare.
+    do_query_test(
+        "sort_by_label(natsort_hosts, 'host')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "natsort_hosts", "host": "host9223372036854775808"}, "value": [200, "3"]}, {"metric": {"__name__": "natsort_hosts", "host": "host99"}, "value": [200, "1"]}, {"metric": {"__name__": "natsort_hosts", "host": "host923"}, "value": [200, "2"]}]}',
+        [
+            ["[('__name__','natsort_hosts'),('host','host9223372036854775808')]", "1970-01-01 00:03:20.000", 3],
+            ["[('__name__','natsort_hosts'),('host','host99')]", "1970-01-01 00:03:20.000", 1],
+            ["[('__name__','natsort_hosts'),('host','host923')]", "1970-01-01 00:03:20.000", 2],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label_desc(natsort_hosts, 'host')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "natsort_hosts", "host": "host923"}, "value": [200, "2"]}, {"metric": {"__name__": "natsort_hosts", "host": "host99"}, "value": [200, "1"]}, {"metric": {"__name__": "natsort_hosts", "host": "host9223372036854775808"}, "value": [200, "3"]}]}',
+        [
+            ["[('__name__','natsort_hosts'),('host','host923')]", "1970-01-01 00:03:20.000", 2],
+            ["[('__name__','natsort_hosts'),('host','host99')]", "1970-01-01 00:03:20.000", 1],
+            ["[('__name__','natsort_hosts'),('host','host9223372036854775808')]", "1970-01-01 00:03:20.000", 3],
         ],
     )
 
