@@ -224,7 +224,7 @@ void emitCompressedColumnarOutputs(
         for (const UInt64 ref_word : refsOf(*word))
         {
             pairs.blocks.push_back(stored_columns[refWordBlockNo(ref_word)]);
-            pairs.row_numbers.push_back(static_cast<UInt32>(refWordRowNo(ref_word)));
+            pairs.row_numbers.push_back(refWordRowNo(ref_word));
         }
     }
 

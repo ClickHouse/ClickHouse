@@ -3,12 +3,12 @@
 -- `max_bytes_before_external_join`; randomized block-size / memory settings shift the footprint
 -- and make the thresholds flaky)
 
--- Regression test: with `enable_join_in_memory_compression` on, compression must act as the
--- intermediate step before spilling also when the *only* configured memory budget is
--- `max_bytes_before_external_join` (`max_bytes_ratio_before_external_join` folds into the same
--- effective threshold). `SpillingHashJoin` switches to `GraceHashJoin` once the stored size reaches
--- half of that threshold; a compressible build side must compress at that point and stay in memory
--- instead of spilling.
+-- With `enable_join_in_memory_compression` on, the automatic switch to `GraceHashJoin` (spilling) at
+-- `max_bytes_before_external_join` sees the compressed size of the build side, so a compressible build
+-- side stays in memory instead of spilling.
+
+-- Compress from the first stored block.
+SET join_in_memory_compression_min_bytes = 0;
 
 DROP TABLE IF EXISTS jimc_e_left;
 DROP TABLE IF EXISTS jimc_e_right;
@@ -31,8 +31,8 @@ SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] FROM system.quer
 WHERE current_database = currentDatabase() AND log_comment = '04616_hash_off' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
--- With compression on, the stored blocks compress before the switch check fires, the (tiny) compressed
--- build side stays below the threshold, and the join never switches to `GraceHashJoin`.
+-- With compression on, the (tiny) compressed build side stays below the threshold, and the join never
+-- switches to `GraceHashJoin`.
 SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_before_external_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
@@ -44,7 +44,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04616_hash_on' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
--- Same for `parallel_hash` (the threshold is evaluated against the join's total across all slots).
+-- Same for `parallel_hash`.
 SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 0, max_bytes_before_external_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k

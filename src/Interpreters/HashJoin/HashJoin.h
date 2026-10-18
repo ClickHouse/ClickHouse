@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <deque>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -600,55 +599,13 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
 
-    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
-    /// concurrent join's global byte counter, so that the `max_bytes_in_join` half-threshold in
-    /// `shrinkStoredBlocksToFit` fires on the logical join's total instead of the slot-local count.
-    /// The size limit itself is enforced on the global total, so with balanced keys every slot
-    /// would otherwise stay under its own half-threshold while the global total already exceeds
-    /// the limit, and the query would throw before anything compresses.
-    void setLogicalJoinTotalBytesCounter(const std::atomic<size_t> * counter) { logical_join_total_bytes = counter; }
-
-    /// Companion of setLogicalJoinTotalBytesCounter: points to the part of this slot's byte count that
-    /// the counter above already includes (`ConcurrentHashJoin::InternalHashJoin::local_total_bytes`,
-    /// published by `updateTotalRowsAndBytesUnlocked` after each insert completes). The counter therefore
-    /// lags by the current insert's own delta while `shrinkStoredBlocksToFit` runs at the end of that
-    /// insert, and without this the logical total that crosses a threshold inside the last non-empty slot
-    /// of a source block is observed by no slot at all: every earlier slot saw a lower total, and the next
-    /// source block is first met by `SpillingHashJoin`'s pre-insert spill check, which switches to
-    /// `GraceHashJoin` before any slot can compress. The slots of one source block are filled
-    /// sequentially, so the current insert's delta is the only unpublished one, and adding it back
-    /// reconstructs the logical total as of the end of this insert. Read under the slot's mutex, which
-    /// the wrapper holds across the insert and the publication, so it never races.
-    void setPublishedLogicalJoinLocalBytes(const size_t * published_bytes) { published_logical_join_local_bytes = published_bytes; }
-
-    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
-    /// concurrent join's shared query-memory baseline for the `max_memory_usage` (and available-memory)
-    /// compression trigger in `shrinkStoredBlocksToFit`. The slots build sequentially, so each slot would
-    /// otherwise snapshot its own `memory_usage_before_adding_blocks` on its first insert, and a later slot
-    /// would start from a higher baseline (earlier slots already grew the query memory) and need more growth
-    /// before its own half-of-`max_memory_usage` threshold fires - letting the query hit the memory limit
-    /// before those slots ever compress. The first slot to insert publishes the earliest baseline here, and
-    /// every slot then measures the query-memory delta from that common point, matching the way the
-    /// `max_bytes_in_join` trigger is aggregated across slots via `setLogicalJoinTotalBytesCounter`.
-    void setSharedMemoryUsageBaseline(std::atomic<Int64> * baseline) { shared_memory_usage_before_adding_blocks = baseline; }
-
-    /// "Not yet published" marker for the shared baseline above, the initial value of the atomic
-    /// handed to setSharedMemoryUsageBaseline. Must be a value getCurrentQueryMemoryUsage can never
-    /// return: 0 is a legitimate baseline at query start, and using it as the marker would let a
-    /// later slot overwrite a published 0 with its own higher snapshot, silently re-raising the
-    /// compression trigger's reference point.
-    static constexpr Int64 SHARED_MEMORY_USAGE_BASELINE_UNSET = std::numeric_limits<Int64>::min();
-
-    /// When this HashJoin (or the `ConcurrentHashJoin` it is a slot of) is wrapped by a
-    /// `SpillingHashJoin` and `enable_join_in_memory_compression` is on, holds the wrapper's
-    /// effective spill threshold (`max_bytes_before_external_join`, with the ratio setting already
-    /// folded in). It arms the compression trigger in `shrinkStoredBlocksToFit` at the same point
-    /// the wrapper would otherwise switch to `GraceHashJoin` (`total * 2 >= threshold`): the wrapper
-    /// checks before each insert while compression runs at the end of the insert that crosses the
-    /// point, so a compressible build side shrinks below the threshold before the next insert's
-    /// switch check sees it - compression genuinely acts as the intermediate step before spilling
-    /// even when this threshold is the only configured memory budget.
-    void setExternalJoinThresholdForCompression(size_t threshold) { external_join_threshold_for_compression = threshold; }
+    /// Overrides `join_in_memory_compression_min_bytes` for this instance, e.g. with the share of one
+    /// `parallel_hash` slot. Has no effect unless `enable_join_in_memory_compression` is on.
+    void setInMemoryCompressionMinBytes(size_t value)
+    {
+        if (in_memory_compression_min_bytes)
+            in_memory_compression_min_bytes = value;
+    }
 
     /// Streams the stored right-side blocks out of the join, one block per `next` call.
     /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
@@ -698,15 +655,6 @@ public:
     void debugKeys() const;
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
-
-    /// Arms insert-time compaction (compression, with `enable_join_in_memory_compression`) for the
-    /// right-side blocks added from now on, as if the memory-pressure trigger inside
-    /// `shrinkStoredBlocksToFit` had fired. Needed by `JoinSwitcher` (`join_algorithm = 'auto'`),
-    /// which enforces the join limits itself and therefore calls `shrinkStoredBlocksToFit` with
-    /// `force_optimize`: that path deliberately skips the trigger evaluation, so without arming it
-    /// here every block added after the forced pass would be stored uncompressed and the next limit
-    /// crossing would switch to `MergeJoin` on an uncompressed build size.
-    void armCompactionForFurtherBlocks() { shrink_blocks = true; }
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
@@ -795,21 +743,11 @@ private:
     /// (by `enable_join_in_memory_compression`); see `haveCompressed`.
     bool have_compressed = false;
 
-    /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
-    /// with `enable_join_in_memory_compression` on.
-    const std::atomic<size_t> * logical_join_total_bytes = nullptr;
-
-    /// See setPublishedLogicalJoinLocalBytes. Null unless this instance is a `ConcurrentHashJoin` slot
-    /// with `enable_join_in_memory_compression` on.
-    const size_t * published_logical_join_local_bytes = nullptr;
-
-    /// See setSharedMemoryUsageBaseline. Null unless this instance is a `ConcurrentHashJoin` slot
-    /// with `enable_join_in_memory_compression` on.
-    std::atomic<Int64> * shared_memory_usage_before_adding_blocks = nullptr;
-
-    /// See setExternalJoinThresholdForCompression. Zero unless wrapped by a `SpillingHashJoin`
-    /// with `enable_join_in_memory_compression` on.
-    size_t external_join_threshold_for_compression = 0;
+    /// The stored size after which `enable_join_in_memory_compression` starts compressing the stored
+    /// blocks. Unset when the setting is off.
+    std::optional<size_t> in_memory_compression_min_bytes;
+    /// Whether the stored blocks are compressed: once set, the blocks added later are compressed on insertion.
+    bool compress_stored_blocks = false;
 
     std::vector<Sizes> key_sizes;
 
@@ -839,11 +777,7 @@ private:
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
-    /// Query memory usage snapshotted before the first stored block, the reference point for the
-    /// `max_memory_usage` shrink/compression trigger. An optional rather than a zero-marked value:
-    /// getCurrentQueryMemoryUsage can legitimately return 0 at join start, and treating that as
-    /// "not yet snapshotted" would leave the trigger disarmed (or re-snapshot it later, higher).
-    std::optional<Int64> memory_usage_before_adding_blocks;
+    Int64 memory_usage_before_adding_blocks = 0;
 
     /// Peak of bytes observed in the hash table during the build phase
     size_t peak_build_bytes = 0;
@@ -938,6 +872,12 @@ private:
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
+
+    /// Replaces every stored column with a compacted copy: compressed (when `compress` and worthwhile)
+    /// or shrunk to fit.
+    void compactStoredBlocks(bool compress);
+    /// Compresses the blocks stored so far and makes the blocks added later compressed on insertion.
+    void startInMemoryCompression();
 };
 
 /// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.

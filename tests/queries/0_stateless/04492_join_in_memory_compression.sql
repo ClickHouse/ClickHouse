@@ -1,5 +1,8 @@
 -- Tests for `enable_join_in_memory_compression`: hash-based joins compress their stored right-side
--- blocks under memory pressure (instead of only shrinking), then decompress them at probe time.
+-- blocks, then decompress them at probe time.
+
+-- Compress from the first stored block.
+SET join_in_memory_compression_min_bytes = 0;
 
 DROP TABLE IF EXISTS jimc_left;
 DROP TABLE IF EXISTS jimc_right;
@@ -19,8 +22,8 @@ SELECT sum(cityHash64(l.lv, r.pad)) FROM jimc_left AS l INNER JOIN jimc_right AS
 SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 24000000, join_overflow_mode = 'throw', query_plan_join_swap_table = 'false'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- ... while with compression it shrinks well below the limit and the query succeeds. The result must
--- equal the uncompressed one (left subquery: no compression, no limit; right subquery: forced
--- compression with a limit that would otherwise overflow), for every join kind and strictness.
+-- equal the uncompressed one (left subquery: no compression, no limit; right subquery: compression
+-- with a limit that would otherwise overflow), for every join kind and strictness.
 
 SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_left AS l INNER JOIN jimc_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0, query_plan_join_swap_table = 'false')
@@ -50,7 +53,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_left AS l ANY L
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 1, max_bytes_in_join = 24000000, query_plan_join_swap_table = 'false');
 
 -- parallel_hash and grace_hash build on the same HashJoin internals; enabling the setting must not
--- change results. (Their per-slot / per-bucket accounting differs, so just check no regression.)
+-- change results.
 SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_left AS l INNER JOIN jimc_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'parallel_hash', enable_join_in_memory_compression = 0)
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_left AS l INNER JOIN jimc_right AS r ON l.k = r.k

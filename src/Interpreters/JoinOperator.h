@@ -2,7 +2,6 @@
 
 #include <Core/Joins.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <QueryPipeline/SizeLimits.h>
@@ -92,6 +91,10 @@ struct JoinSettings
     UInt64 cross_join_min_rows_to_compress;
     UInt64 cross_join_min_bytes_to_compress;
 
+    /* In-memory compression of the right side of hash joins */
+    bool enable_join_in_memory_compression;
+    UInt64 join_in_memory_compression_min_bytes;
+
     /* Partial merge join settings */
     UInt64 partial_merge_join_left_table_buffer_bytes;
     UInt64 partial_merge_join_rows_in_right_blocks;
@@ -120,18 +123,6 @@ struct JoinSettings
     UInt64 join_to_sort_maximum_table_rows;
     bool allow_dynamic_type_in_join_keys;
 
-    /* In-memory compression of right-side blocks */
-    bool enable_join_in_memory_compression;
-    /// Query memory limit (`max_memory_usage`), used as the secondary trigger for shrinking / compressing
-    /// stored blocks under memory pressure (half of it), alongside `max_bytes_in_join`.
-    UInt64 max_memory_usage;
-    /// Whether `max_memory_usage` above differs from the query-wide value, i.e. was overridden by a
-    /// subquery-local SETTINGS clause. Such a value cannot be restored from the receiver's query
-    /// context when a plan stream omits it, so it forces the serialization version that carries it
-    /// (see QueryPlanSerializationSettings::getMinRequiredVersion). Never serialized itself:
-    /// JoinStepLogical::deserialize recomputes it against the receiver's query context.
-    bool max_memory_usage_is_step_local = false;
-
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
@@ -149,11 +140,6 @@ struct JoinSettings
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
-
-    /// Builds JoinSettings from the context a join step is planned under (possibly a subquery scope
-    /// with its own SETTINGS), detecting a step-local `max_memory_usage` override by comparing with
-    /// the query-wide context.
-    static JoinSettings fromContext(const ContextPtr & context);
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.

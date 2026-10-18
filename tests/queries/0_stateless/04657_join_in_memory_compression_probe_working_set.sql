@@ -38,7 +38,7 @@ SELECT (SELECT sum(cityHash64(l.k, r.pad))
         FROM jimc_ws_left AS l
         INNER JOIN jimc_ws_right AS r ON l.k = r.k
         SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 1,
-                 max_bytes_in_join = 50000000)
+                 join_in_memory_compression_min_bytes = 0)
 SETTINGS log_comment = '04657_ws', enable_analyzer = 1;
 
 SYSTEM FLUSH LOGS query_log;

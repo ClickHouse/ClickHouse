@@ -3,16 +3,16 @@
 -- `max_bytes_in_join`; randomized block-size / memory settings shift the footprint and make the
 -- thresholds flaky)
 
--- Regression test: with `enable_join_in_memory_compression` on, `join_algorithm = 'auto'`
--- (`JoinSwitcher`) must give compression its chance before abandoning the in-memory hash join for
--- the disk-based `partial_merge`. The switcher feeds its hash join with `check_limits = false`,
--- which skips the hash join's own shrink pass, so without an explicit compression pass at the
--- switch point the decision always saw the uncompressed build size and the setting was silently
--- ineffective on the default `auto` surface.
+-- With `enable_join_in_memory_compression` on, `join_algorithm = 'auto'` (`JoinSwitcher`) sees the
+-- compressed size of the build side, so a compressible build side stays in the in-memory hash join
+-- instead of switching to the disk-based `partial_merge`.
 --
 -- `auto` only resolves to `JoinSwitcher` when no automatic external spilling is configured, so both
 -- `auto` queries zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`
 -- (otherwise `SpillingHashJoin` handles the memory budget - covered by 04616).
+
+-- Compress from the first stored block.
+SET join_in_memory_compression_min_bytes = 0;
 
 DROP TABLE IF EXISTS jimc_a_left;
 DROP TABLE IF EXISTS jimc_a_right;
@@ -24,9 +24,9 @@ CREATE TABLE jimc_a_right (k UInt64, rv UInt64, pad String) ENGINE = Memory;
 INSERT INTO jimc_a_left SELECT number, number FROM numbers(40000);
 INSERT INTO jimc_a_right SELECT number, number, repeat('x', 1000) FROM numbers(40000);
 
--- With compression on, the build side (~46 MiB) crosses `max_bytes_in_join` (24 MB), compresses at
--- the would-be switch point back below the limit, and the join stays in memory. The result must
--- match the plain `hash` reference and the compression event must fire.
+-- With compression on, the build side (~46 MiB uncompressed) stays below `max_bytes_in_join` (24 MB),
+-- and the join stays in memory. The result must match the plain `hash` reference and the compression
+-- event must fire.
 SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INNER JOIN jimc_a_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INNER JOIN jimc_a_right AS r ON l.k = r.k
@@ -51,12 +51,9 @@ SELECT ProfileEvents['JoinInMemoryCompressedColumns'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04641_auto_off' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
--- The build blocks that arrive after the first compression pass must be compressed too: the pass at
--- the switch point is one-shot (re-running it on the same data would only burn CPU), so it arms
--- insert-time compression in the hash join instead. Here the right side is fed in many small blocks
--- and only a few of them fit under `max_bytes_in_join`, so without that the later blocks would be
--- stored uncompressed, the next limit crossing would switch to `partial_merge`, and its own right
--- side (still uncompressed, still over the limit) would be flushed to temporary files.
+-- The right side is fed in many small blocks, and only a few of them fit under `max_bytes_in_join`
+-- uncompressed: every block must be compressed on insertion, otherwise the join would switch to
+-- `partial_merge`, and its right side would be flushed to temporary files.
 SELECT (SELECT sum(cityHash64(l.number, r.k, r.pad)) FROM numbers(20000) AS l
             INNER JOIN (SELECT number AS k, repeat('x', 1000) AS pad FROM numbers(60000)) AS r ON l.number = r.k
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0, query_plan_join_swap_table = 'false')

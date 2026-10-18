@@ -132,13 +132,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
-/// Version 21 lets serialized join steps carry the in-memory join compression settings
-/// (`max_memory_usage`, `enable_join_in_memory_compression`). As with version 5, an older peer
-/// rejects the unknown names (`QueryPlanSerializationSettings::readBinary` throws), so they are
-/// omitted towards such a peer; an omitted `max_memory_usage` is restored on the receiver from the
-/// query settings that travel with the query (see `JoinStepLogical::deserialize`), and a fragment
-/// whose behavior really depends on either name raises its own required version instead (see
-/// `QueryPlanSerializationSettings::getMinRequiredVersion`).
+/// Version 21 adds the `enable_join_in_memory_compression` and `join_in_memory_compression_min_bytes`
+/// join step settings. A peer below it does not know the names, so they are not written towards it,
+/// and it runs the join without in-memory compression.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -226,11 +222,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
-/// First query-plan serialization version that knows the `max_memory_usage` and
-/// `enable_join_in_memory_compression` plan setting names. Gates writing them in
-/// `QueryPlanSerializationSettings::writeChangedBinary`, and is the version
-/// `QueryPlanSerializationSettings::getMinRequiredVersion` returns for a fragment that really
-/// depends on either of them.
+/// First query-plan serialization version that knows `enable_join_in_memory_compression` and
+/// `join_in_memory_compression_min_bytes`. Below it, the names are not written: the older peer runs the
+/// join without in-memory compression, which changes only its memory usage, not the result.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

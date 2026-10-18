@@ -2,7 +2,6 @@
 #include <any>
 #include <limits>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -19,7 +18,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
@@ -295,6 +293,10 @@ HashJoin::HashJoin(
     if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0
         || table_join->enableJoinInMemoryCompression())
         data->row_store_state = RowStoreState::Disabled;
+
+    /// `CROSS JOIN` has its own compression (`cross_join_min_rows_to_compress`, `cross_join_min_bytes_to_compress`).
+    if (table_join->enableJoinInMemoryCompression() && kind != JoinKind::Cross)
+        in_memory_compression_min_bytes = table_join->joinInMemoryCompressionMinBytes();
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
@@ -1004,22 +1006,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
       * In that case memory consumed by stored blocks will be underestimated.
       */
-    if (!memory_usage_before_adding_blocks.has_value())
-    {
-        Int64 current_query_memory = JoinCommon::getCurrentQueryMemoryUsage();
-        /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, all slots share one
-        /// query-memory baseline so the `max_memory_usage` trigger measures the whole logical join's
-        /// growth rather than each slot's own later baseline. The first slot to insert publishes the
-        /// earliest baseline; the others read it back. See setSharedMemoryUsageBaseline.
-        if (shared_memory_usage_before_adding_blocks)
-        {
-            Int64 expected = SHARED_MEMORY_USAGE_BASELINE_UNSET;
-            shared_memory_usage_before_adding_blocks->compare_exchange_strong(expected, current_query_memory, std::memory_order_relaxed);
-            memory_usage_before_adding_blocks = shared_memory_usage_before_adding_blocks->load(std::memory_order_relaxed);
-        }
-        else
-            memory_usage_before_adding_blocks = current_query_memory;
-    }
+    if (!memory_usage_before_adding_blocks)
+        memory_usage_before_adding_blocks = JoinCommon::getCurrentQueryMemoryUsage();
 
     if (strictness == JoinStrictness::Asof)
     {
@@ -1072,11 +1060,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
 
-    /// Once the join hits memory pressure, new blocks are compacted on insertion too. With
-    /// `enable_join_in_memory_compression`, compaction means compression (a stronger form of shrinking)
-    /// for hash-family joins; it is applied below, after the structure check, since compressed columns
-    /// would not pass it. Otherwise just shrink here.
-    const bool compress_on_insert = shrink_blocks && kind != JoinKind::Cross && table_join->enableJoinInMemoryCompression();
+    /// Once `enable_join_in_memory_compression` started compressing the stored blocks, new blocks are
+    /// compressed on insertion. It is applied below, after the structure check, since compressed columns
+    /// would not pass it. Otherwise, once the join hits memory pressure, new blocks are shrunk here.
+    const bool compress_on_insert = compress_stored_blocks;
     if (shrink_blocks && !compress_on_insert)
         block_to_save = block_to_save.shrinkToFit();
 
@@ -1258,6 +1245,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 doDebugAsserts();
             }
 
+            /// Independent of `check_limits`: the inserts into a `grace_hash` bucket or a `parallel_hash` slot
+            /// do not check the limits here, but they compress all the same.
+            if (!compress_stored_blocks && in_memory_compression_min_bytes && data->allocated_size >= *in_memory_compression_min_bytes)
+                startInMemoryCompression();
+
             if (!check_limits)
                 return true;
 
@@ -1321,34 +1313,15 @@ void DecompressResolver::disableBudget()
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
-    /// Stored blocks are already compacted (some columns are `ColumnCompressed`, which cannot be
-    /// `cloneResized`). Nothing more to do, and re-running would be unsafe. This also guards the
-    /// `force_optimize` path (`StorageJoin::optimize`) from touching already-compressed data.
-    if (have_compressed)
+    /// The stored blocks are already compacted by `enable_join_in_memory_compression`, and its
+    /// `ColumnCompressed` columns cannot be `cloneResized`. This also guards the `force_optimize`
+    /// path (`StorageJoin::optimize`).
+    if (compress_stored_blocks)
         return;
 
     Int64 current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
-    /// The baseline is only unset when no block was stored yet (e.g. a force_optimize call on an
-    /// empty join); a zero delta keeps the memory-growth triggers below disarmed for that case.
-    Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks.value_or(current_memory_usage);
-    Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks.has_value() ? table_join->getMaxMemoryUsage() : 0;
-
-    /// With `enable_join_in_memory_compression`, react to overall memory pressure even without an
-    /// explicit `max_memory_usage` / `max_bytes_in_join`, the same way external aggregation and sorting
-    /// activate: derive the query memory budget from the memory still available on the server
-    /// (`getMostStrictAvailableSystemMemory`). Otherwise the feature only ever triggers when one of those
-    /// limits is set, which is rarely the case in practice, so it would stay dormant exactly when a large
-    /// build side is about to exhaust memory. The available value already excludes what this join has
-    /// added so far, so add the delta back to approximate the budget as of when it started adding blocks.
-    if (memory_usage_before_adding_blocks.has_value() && table_join->enableJoinInMemoryCompression())
-    {
-        if (auto available_system_memory = getMostStrictAvailableSystemMemory())
-        {
-            Int64 system_memory_budget = static_cast<Int64>(*available_system_memory) + query_memory_usage_delta;
-            if (max_total_bytes_for_query == 0 || system_memory_budget < max_total_bytes_for_query)
-                max_total_bytes_for_query = system_memory_budget;
-        }
-    }
+    Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
+    Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
 
     auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
@@ -1362,54 +1335,40 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         * is bigger than half of all memory available for query,
         * then shrink stored blocks to fit.
         */
-
-        /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, compare the logical
-        /// join's total (the sum over all slots, which is what `max_bytes_in_join` is enforced on)
-        /// against the half-threshold, not this slot's local count. The global counter is only
-        /// updated after each slot insert completes, so while this call runs it still lags by this
-        /// insert's own delta: add that delta back (this slot's current count minus the part already
-        /// published to the counter) so the trigger sees the logical total as of the end of this
-        /// insert. Without it, a threshold crossed inside the last non-empty slot of a source block is
-        /// observed by no slot at all and the next block spills first - see
-        /// setPublishedLogicalJoinLocalBytes. Take the max with the local count so a slot that holds
-        /// most of the build side on its own still fires.
-        size_t observed_bytes_in_join = total_bytes_in_join;
-        if (logical_join_total_bytes)
-        {
-            size_t logical_bytes_in_join = logical_join_total_bytes->load(std::memory_order_relaxed);
-            if (published_logical_join_local_bytes && total_bytes_in_join > *published_logical_join_local_bytes)
-                logical_bytes_in_join += total_bytes_in_join - *published_logical_join_local_bytes;
-            observed_bytes_in_join = std::max(observed_bytes_in_join, logical_bytes_in_join);
-        }
-
-        /// The `SpillingHashJoin` wrapper switches to `GraceHashJoin` (spills) when the stored size
-        /// reaches half of `max_bytes_before_external_join`, checking before each insert. With
-        /// `enable_join_in_memory_compression`, compression must get its chance first, so its trigger
-        /// uses the same comparison: it fires at the end of the insert that crosses the point, before
-        /// the next insert's switch check observes the (now reduced) size. Zero unless wrapped by a
-        /// `SpillingHashJoin` with compression on (see setExternalJoinThresholdForCompression).
-        shrink_blocks = (max_total_bytes_in_join && observed_bytes_in_join > max_total_bytes_in_join / 2)
-            || (external_join_threshold_for_compression && observed_bytes_in_join * 2 >= external_join_threshold_for_compression)
+        shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2)
             || (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
         if (!shrink_blocks)
             return;
     }
 
-    /// With `enable_join_in_memory_compression`, the response to memory pressure is to compress the stored
-    /// blocks (a stronger form of compaction than shrinking), trading probe-time decompression for lower
-    /// peak memory. CROSS JOIN keeps its own dedicated, threshold-based compression path.
-    const bool compress_in_memory = kind != JoinKind::Cross && table_join->enableJoinInMemoryCompression();
-
     LOG_DEBUG(
         log,
-        "{} stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
-        compress_in_memory ? "Compressing" : "Shrinking",
+        "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
         ReadableSize(total_bytes_in_join),
         max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
-    /// Each cloneResized below replaces a stored column object in place, so any emit table built by a
+    compactStoredBlocks(/*compress=*/false);
+
+    auto new_total_bytes_in_join = getTotalByteCount();
+
+    Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
+
+    LOG_DEBUG(
+        log,
+        "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
+        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
+        ReadableSize(current_memory_usage - new_current_memory_usage),
+        ReadableSize(new_total_bytes_in_join),
+        ReadableSize(new_current_memory_usage));
+
+    total_bytes_in_join = new_total_bytes_in_join;
+}
+
+void HashJoin::compactStoredBlocks(bool compress)
+{
+    /// Each column replaced below replaces a stored column object in place, so any emit table built by a
     /// prior query (a persistent StorageJoin builds one per SELECT, then OPTIMIZE/insert runs this) is
     /// left with dangling `const IColumn *`. Bump the generation on every exit - including the exception
     /// paths, where some columns were already replaced - so the next probe rebuilds it against the new
@@ -1425,15 +1384,15 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         try
         {
             for (auto & column : stored_columns.columns)
-                column = compress_in_memory ? compressColumnIfWorthwhile(column, have_compressed) : column->cloneResized(column->size());
+                column = compress ? compressColumnIfWorthwhile(column, have_compressed) : column->cloneResized(column->size());
 
-            /// `cloneResized`/`compress` replaces each column with a new object.
+            /// `cloneResized` and `compress` replace each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
             stored_columns.rebuildReplicatedColumns();
         }
         catch (...)
         {
-            /// If cloneResized throws (e.g., due to memory allocation failure or fault injection),
+            /// If cloneResized or compress throws (e.g., due to memory allocation failure or fault injection),
             /// some columns may have already been replaced with shrunk copies while
             /// data->allocated_size still reflects the old sizes. Recalculate to stay consistent.
             /// Also rebuild replicated_columns for columns that were already replaced, to avoid dangling pointers.
@@ -1467,20 +1426,21 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         doDebugAsserts();
     }
+}
 
-    auto new_total_bytes_in_join = getTotalByteCount();
+void HashJoin::startInMemoryCompression()
+{
+    compress_stored_blocks = true;
 
-    Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
-
+    const size_t bytes_before = getTotalByteCount();
+    compactStoredBlocks(/*compress=*/true);
     LOG_DEBUG(
         log,
-        "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
-        ReadableSize(current_memory_usage - new_current_memory_usage),
-        ReadableSize(new_total_bytes_in_join),
-        ReadableSize(new_current_memory_usage));
-
-    total_bytes_in_join = new_total_bytes_in_join;
+        "{}Compressed stored blocks in memory, {} rows, {} -> {}",
+        instance_log_id,
+        getTotalRowCount(),
+        ReadableSize(bytes_before),
+        ReadableSize(getTotalByteCount()));
 }
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const

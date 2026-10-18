@@ -10,21 +10,14 @@
 -- disabled, while every analyzer-enabled config passes). The compression path with the analyzer disabled
 -- is still covered by 04492, which is not analyzer-pinned.
 
--- Regression tests for the documented contract of `enable_join_in_memory_compression` beyond plain
--- `hash`: the setting must compress the stored right-side blocks under memory pressure for
--- `parallel_hash` (slots are merged into slot 0 via two-level maps) and standalone `grace_hash` (the
--- active in-memory bucket). Each scenario checks the compressed result equals the uncompressed one and,
--- via the `JoinInMemoryCompressedColumns` profile event, that compression really happened.
---
--- Per the documented contract, standalone `grace_hash` compression is a one-time compaction of the
--- active in-memory bucket when it reaches `max_bytes_in_join`, just before the bucket would rehash or
--- spill. Two grace-specific aspects are deliberately out of the contract and so are not asserted here:
---   * the `max_memory_usage` trigger does not apply to a `grace_hash` bucket (the bucket only reaches
---     this hook through the join `SizeLimits` overflow check, not the query memory tracker); and
---   * blocks inserted into the bucket after the one-time compaction are not compressed again.
--- For `hash`/`parallel_hash` the `max_memory_usage` trigger is wired, but is not asserted either: its
--- firing depends on total query-memory growth, which in a small test is dominated by the uncompressible
--- hash table rather than the compressible stored blocks, so there is no robust threshold to assert.
+-- Regression tests for `enable_join_in_memory_compression` beyond plain `hash`: the setting must
+-- compress the stored right-side blocks for `parallel_hash` (slots are merged into slot 0 via two-level
+-- maps) and standalone `grace_hash` (the in-memory bucket). Each scenario checks the compressed result
+-- equals the uncompressed one and, via the `JoinInMemoryCompressedColumns` profile event, that
+-- compression really happened.
+
+-- Compress from the first stored block.
+SET join_in_memory_compression_min_bytes = 0;
 
 DROP TABLE IF EXISTS jimc_c_left;
 DROP TABLE IF EXISTS jimc_c_right;
@@ -47,12 +40,11 @@ SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04494_parallel_hash' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
--- 2. standalone grace_hash: the active in-memory bucket must compress under pressure instead of only
--- spilling/rehashing. Without compressing the bucket before rehash the event stays zero.
+-- 2. standalone grace_hash: the in-memory bucket compresses its stored blocks as well.
 SELECT (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, enable_join_in_memory_compression = 0)
      = (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
-            SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, enable_join_in_memory_compression = 1, max_bytes_in_join = 8000000, query_plan_join_swap_table = 'false')
+            SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, enable_join_in_memory_compression = 1, query_plan_join_swap_table = 'false')
 SETTINGS log_comment = '04494_grace_hash', enable_analyzer = 1;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0 FROM system.query_log

@@ -180,23 +180,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             if (extension_ && extension_->parallel_reading_coordinator)
             {
-                /// The plan is re-serialized down to each receiver's advertised version
-                /// (Connection::sendQueryPlan / serializeForReceiver), so a replica only has to
-                /// support the version this fragment actually requires, not the current global
-                /// maximum - during a rolling upgrade a not-yet-upgraded replica keeps serving the
-                /// fragments it can execute. The constant is the floor for the data-dependent
-                /// parallel-replicas read flag, which getRequiredSerializationVersion cannot see.
-                const UInt64 min_plan_version = query_plan
-                    ? std::max<UInt64>(
-                          DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS,
-                          query_plan->getRequiredSerializationVersion())
-                    : 0;
-
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
                     && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
-                    && query_plan_serialization_version >= min_plan_version)
+                    && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
@@ -209,13 +197,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                         "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}, "
                         "query_plan_serialization_version={}): "
                         "remote replica doesn't support stream id (requires parallel_replicas_version >= {}) or query plan serialization "
-                        "for this fragment (requires query_plan_serialization_version >= {})",
+                        "for parallel replicas (requires query_plan_serialization_version >= {})",
                         result.entry->getDescription(),
                         protocol_version,
                         parallel_replicas_version,
                         query_plan_serialization_version,
                         DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
-                        min_plan_version);
+                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
                     result.entry->disconnect();
                 }
             }
