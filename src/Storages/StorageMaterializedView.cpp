@@ -64,6 +64,8 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ServerSetting
@@ -1254,6 +1256,21 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         auto filters_hash = computeAdditionalFiltersModificationHash(effective_context, own_names, additional_table_filters_matchable_names);
         if (!filters_hash)
             return {};
+        /// The dependencies of those filters are hashed under the effective reader's context, so for
+        /// `system.tables.modification_hash` of a `SQL SECURITY DEFINER` / `NONE` view they are checked
+        /// against the definer's grants rather than the caller's: a definer-profile filter
+        /// `x IN (SELECT x FROM private)` would expose the churn of `private`, which the caller may not
+        /// read. Fail closed whenever such a filter applies; the caller's own access to the target was
+        /// checked above.
+        if (caller_checked_target)
+        {
+            const auto & effective_settings = effective_context->getSettingsRef();
+            if (!effective_settings[Setting::additional_result_filter].value.empty())
+                return {};
+            for (const auto & entry : effective_settings[Setting::additional_table_filters].value)
+                if (additional_table_filters_matchable_names.contains(entry.safeGet<Tuple>().at(0).safeGet<String>()))
+                    return {};
+        }
         updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names);
         hash.update(*filters_hash);
         hash.update(*target_hash);
