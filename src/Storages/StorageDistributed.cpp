@@ -2154,6 +2154,7 @@ ClusterPtr StorageDistributed::getCluster() const
 static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
+    const Cluster::Addresses * shard_addresses,
     const StorageID & table_id,
     const IStorage * owner,
     ContextPtr context)
@@ -2198,6 +2199,21 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
         with_identity.update(storage->getStorageID().uuid);
         with_identity.update(*table_hash);
         return with_identity.get128();
+    }
+
+    /// For `system.tables.modification_hash` the hash is exposed as a value, so it must describe only what
+    /// the caller may read (see `ModificationHashIntrospectionScope`). The remote probe below runs with the
+    /// cluster connection's credentials, so the shard checks the visibility of the configured user, not of
+    /// the caller: a caller with `SELECT` on this wrapper only would observe the churn of columns of the
+    /// remote table it cannot read. Keep the probe only when the shard runs it as the caller - the cluster
+    /// passes the initial user with an inter-server secret, or the configured user is the caller itself -
+    /// and fail closed otherwise.
+    if (isModificationHashIntrospection() && cluster.getSecret().empty())
+    {
+        const String caller = context->getUserName();
+        if (!shard_addresses || shard_addresses->empty()
+            || std::ranges::any_of(*shard_addresses, [&](const Cluster::Address & address) { return address.user != caller; }))
+            return {};
     }
 
     /// Ask the shard for the modification hash and the UUID of the underlying table through system.tables.
@@ -2385,12 +2401,17 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
             if (shard_info.getAllNodeCount() > 1)
                 return {};
 
-            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, this, query_context);
+            auto shard_hash = getModificationHashOfRemoteTableInShard(
+                *cluster, shard_info, i < shards_addresses.size() ? &shards_addresses[i] : nullptr, remote_table_id, this, query_context);
             if (!shard_hash)
                 return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
 
             /// Shard identity: its configured number and the address(es) of the probed replica.
             hash.update(shard_info.shard_num);
+            /// The weight decides which shard `optimize_skip_unused_shards` routes a sharding key value to
+            /// (`createSelector` indexes the slot-to-shard map, in which each shard repeats `weight` times),
+            /// so a weight-only configuration change moves rows between the shards a query reads.
+            hash.update(shard_info.weight);
             if (i < shards_addresses.size())
                 for (const auto & address : shards_addresses[i])
                     hash.update(address.readableString());
