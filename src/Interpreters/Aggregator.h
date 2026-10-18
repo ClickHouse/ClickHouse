@@ -1112,16 +1112,20 @@ private:
         AdaptiveMergeTask & task,
         size_t & pruned_records) const;
 
-    /// Rebuilds the aggregate arguments of drained argument records into dense columns and applies them to the places
-    /// of their groups, as the batch executor applies a block. `key_offset` and `fixed_arguments_offset` locate the key
-    /// and the fixed-size arguments in the records' format (see `visitStagedRecordFormat`).
+    /// Rebuilds the aggregate arguments of drained argument records of `format` (see `visitStagedRecordFormat`) into
+    /// dense columns and applies them to the places of their groups (see `executeStagedArguments`).
+    template <typename Record>
     void executeStagedArgumentRecords(
+        const Record & format,
         Arena * arena,
         PaddedPODArray<AggregateDataPtr> & places,
         const RowStorePointers & records,
-        size_t key_offset,
-        size_t fixed_arguments_offset,
         bool use_compiled_functions) const;
+
+    /// Applies the argument columns rebuilt from drained records to the places of their groups, as the batch executor
+    /// applies a block.
+    void executeStagedArguments(
+        Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
     /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.

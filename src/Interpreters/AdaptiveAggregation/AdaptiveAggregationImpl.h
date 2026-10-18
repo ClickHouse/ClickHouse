@@ -105,8 +105,8 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 ///
 /// The weighting separates the shapes by how much a repeat costs. With an accurate cardinality estimate,
 /// a near-unique stream has repeat ~ 1 and wasted bytes ~ 0 regardless of the records' size. A stream of
-/// narrow fixed-width records pays ~ 24 bytes per repeat (a numeric key, a small argument and bookkeeping),
-/// so it crosses the bound only past repeat ~ 13, where the pathological mid-cardinality streams live.
+/// narrow fixed-width records pays ~ 24 bytes per repeat (a numeric key, a small argument and the cost per
+/// record), so it crosses the bound only past repeat ~ 13, where the pathological mid-cardinality streams live.
 /// Wide keys or wide arguments pay the whole payload per repeat, so ~ 100-byte records cross already
 /// at repeat ~ 4.
 /// For cheap states, the bound of 300 splits the measured shapes: every shape that wants the thaw wastes
@@ -119,6 +119,11 @@ constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 65'536;
 constexpr size_t adaptive_thaw_state_cost_multiplier = 4;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
+
+/// The thaw weighs every staged record at its bytes plus this fixed cost, for the lookup of its group that the merge
+/// pays per record, where an ordinary table updates the state in place. Its value is the cost per record that the
+/// bounds above are calibrated with.
+constexpr size_t adaptive_thaw_record_cost = 8;
 
 /// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
 /// `Aggregator::adaptiveStagingVerdict`), weighs the whole staged stream of a thread that is still frozen
@@ -354,14 +359,12 @@ private:
     bool keys_are_const = false;
 };
 
-/// What `Aggregator::appendDelayedRecords` staged beyond the fixed parts of a batch's records, for the accounting of the
-/// batch (see `Aggregator::accountStagedBatch`): the key bytes as staged, the variable-size argument bytes at their
-/// serialized sizes, and whether the keys were staged as bytes, which adds a key size to every record.
+/// What `Aggregator::appendDelayedRecords` staged for a batch, for the accounting of the batch (see
+/// `Aggregator::accountStagedBatch`): the bytes of the keys, and the bytes of the whole records as the buffer holds them.
 struct AdaptiveStagedBytes
 {
     size_t key_bytes = 0;
-    size_t variable_argument_bytes = 0;
-    bool keys_as_bytes = false;
+    size_t record_bytes = 0;
 };
 
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
@@ -429,9 +432,9 @@ struct AdaptiveAggregationProducer
         }
 
         /// The thaw evidence of this thread (see `Aggregator::adaptiveStagingRepeats`): the rows the frozen table saw,
-        /// the records it staged and their estimated footprint (key bytes, variable-width argument bytes and the
-        /// per-record bookkeeping), and a sparse sample of distinct staged hashes. Scaling the sample estimates
-        /// the number of keys, which the known record count turns into a repetition estimate.
+        /// the records it staged and their cost (see `Aggregator::accountStagedBatch`), and a sparse sample of distinct
+        /// staged hashes. Scaling the sample estimates the number of keys, which the known record count turns into a
+        /// repetition estimate.
         size_t rows = 0;
         size_t staged_records = 0;
         size_t staged_bytes = 0;
@@ -439,7 +442,9 @@ struct AdaptiveAggregationProducer
 
         size_t getEstimatedStagedKeyCount() const
         {
-            return distinct_sampled_hashes.size() * (adaptive_thaw_sample_mask + 1);
+            /// Staged keys that all fall outside the sample number fewer than about one sample's worth, so an empty
+            /// sample counts as one sampled key.
+            return std::max<size_t>(distinct_sampled_hashes.size(), 1) * (adaptive_thaw_sample_mask + 1);
         }
 
         size_t getEstimatedDistinctInputCount() const

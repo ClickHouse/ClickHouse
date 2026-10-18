@@ -8,10 +8,12 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
@@ -671,7 +673,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     };
 
     size_t key_bytes = 0;
-    size_t variable_argument_bytes = 0;
+    size_t record_bytes = 0;
 
     const auto append_key_records = [&]<typename Record>(Record) ALWAYS_INLINE
     {
@@ -681,11 +683,13 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const UInt64 hash = hashes[i];
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
-            char * record = partitions.append(partition, Record::bytesForKey(key_size));
+            const size_t bytes = Record::bytesForKey(key_size);
+            char * record = partitions.append(partition, bytes);
             Record::writeHeader(record, hash, Record::with_count ? misses.getMultiplicities()[i] : 0, key_size);
             write_key(i, key_size, record + Record::key_offset);
             zeroStagedRecordPadding(record + Record::key_offset + key_size);
             key_bytes += key_size;
+            record_bytes += bytes;
         }
     };
 
@@ -749,11 +753,18 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         std::vector<std::optional<size_t>> serialized_in_scratch(variable_sources.size());
         std::optional<Arena> argument_scratch;
 
+        /// A `String` argument, the common variable-size case, is staged by `writeStagedString` (see `isStagedString`). The
+        /// other variable-size arguments take their column's own serialization.
+        std::vector<const ColumnString *> string_sources(variable_sources.size(), nullptr);
+        for (size_t j = 0; j < variable_sources.size(); ++j)
+            if (isStagedString(argument_layout.variable_fields[j]))
+                string_sources[j] = &assert_cast<const ColumnString &>(*variable_sources[j].column);
+
         std::array<char *, adaptive_argument_staging_batch_rows> argument_rows{};
         for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
         {
             const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
-            if constexpr (!std::is_same_v<Record, StagedArgumentRecord>)
+            if constexpr (std::is_same_v<Record, StagedFixedArgumentRecord<RecordKey>>)
             {
                 for (size_t i = batch_begin; i < batch_end; ++i)
                 {
@@ -762,6 +773,30 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                     char * record = partitions.append(partition, format.stride);
                     write_key(i, sizeof(RecordKey), record + Record::key_offset);
                     argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
+                }
+                key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
+                record_bytes += (batch_end - batch_begin) * format.stride;
+            }
+            else if constexpr (std::is_same_v<Record, StagedStringArgumentRecord<RecordKey>>)
+            {
+                /// The format is chosen only when every variable-size argument is staged as a `String`.
+                chassert(argument_layout.variable_fields_are_strings);
+                for (size_t i = batch_begin; i < batch_end; ++i)
+                {
+                    prefetch_append(i);
+                    const size_t partition = layout.partitionOf(hashes[i]);
+                    size_t variable_bytes = 0;
+                    for (size_t j = 0; j < string_sources.size(); ++j)
+                        variable_bytes += stagedStringBytes(string_sources[j]->getDataAt(variable_sources[j].rows[i]));
+
+                    const size_t bytes = format.key_offset + sizeof(RecordKey) + variable_bytes;
+                    char * record = partitions.append(partition, bytes);
+                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
+                    write_key(i, sizeof(RecordKey), record + format.key_offset);
+                    char * variable = record + format.key_offset + sizeof(RecordKey);
+                    for (size_t j = 0; j < string_sources.size(); ++j)
+                        variable = writeStagedString(variable, string_sources[j]->getDataAt(variable_sources[j].rows[i]));
+                    record_bytes += bytes;
                 }
                 key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
             }
@@ -780,7 +815,12 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
                         const auto & [column, rows] = variable_sources[j];
-                        if (const auto size = column->getSerializedValueSize(rows[i], &serialization_settings))
+                        if (const auto * string = string_sources[j])
+                        {
+                            serialized_in_scratch[j].reset();
+                            variable_bytes += stagedStringBytes(string->getDataAt(rows[i]));
+                        }
+                        else if (const auto size = column->getSerializedValueSize(rows[i], &serialization_settings))
                         {
                             serialized_in_scratch[j].reset();
                             variable_bytes += *size;
@@ -813,24 +853,24 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                     const char * scratch = scratch_begin;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
-                        if (const auto & serialized_size = serialized_in_scratch[j])
+                        const auto & [column, rows] = variable_sources[j];
+                        if (const auto * string = string_sources[j])
+                            variable = writeStagedString(variable, string->getDataAt(rows[i]));
+                        else if (const auto & serialized_size = serialized_in_scratch[j])
                         {
                             memcpy(variable, scratch, *serialized_size);
                             variable += *serialized_size;
                             scratch += *serialized_size;
                         }
                         else
-                        {
-                            const auto & [column, rows] = variable_sources[j];
                             variable = column->serializeValueIntoMemory(rows[i], variable, &serialization_settings);
-                        }
                     }
                     zeroStagedRecordPadding(variable);
                     if (scratch_bytes)
                         argument_scratch->rollback(scratch_bytes);
 
                     key_bytes += key_size;
-                    variable_argument_bytes += variable_bytes;
+                    record_bytes += bytes;
                 }
             }
 
@@ -859,7 +899,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     chassert(!batch_keeps_key_bytes
         || misses.getKeys().size() == (keys_are_const ? key_size_of(0) : static_cast<size_t>(kept_key_bytes - staged_keys)));
 
-    return {.key_bytes = key_bytes, .variable_argument_bytes = variable_argument_bytes, .keys_as_bytes = adaptive_key_stages_bytes<RecordKey>};
+    return {.key_bytes = key_bytes, .record_bytes = record_bytes};
 }
 
 }

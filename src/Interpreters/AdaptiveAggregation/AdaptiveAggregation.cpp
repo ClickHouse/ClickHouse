@@ -57,21 +57,14 @@ bool Aggregator::adaptiveStagingWastes(
     const size_t distinct = frozen.getEstimatedStagedKeyCount();
     if (frozen.staged_records < adaptive_thaw_min_staged_records
         || frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows
-        || !distinct || frozen.staged_records <= distinct)
+        || frozen.staged_records <= distinct)
         return false;
 
     const size_t retained_bytes_per_key = std::max(adaptive_staging_min_state_bytes_per_key, state_bytes_per_key);
     const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(adaptive_state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
 
-    /// The fixed argument area has one width for the whole query. Deriving its size here keeps the
-    /// record writers' accounting limited to keys, variable arguments and bookkeeping. The layout
-    /// counts a shared argument once and excludes arguments stored in their numeric key's bytes.
-    UInt128 staged_bytes = frozen.staged_bytes;
-    if (!is_simple_count && params.aggregates_size)
-        staged_bytes += static_cast<UInt128>(frozen.staged_records) * adaptive_argument_layout->fixed_bytes;
-
-    return static_cast<UInt128>(frozen.staged_records - distinct) * staged_bytes
+    return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
         > state_bytes * frozen.staged_records * state_cost_multiplier;
 }
 
@@ -95,12 +88,11 @@ void Aggregator::accountStagedBatch(
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
     /// - `staged_records` grows by the batch's record count.
-    /// - `staged_bytes` grows by the batch's estimated footprint, computed below as
-    ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the variable-width
-    ///   aggregate arguments at their serialized sizes, and the per-record bookkeeping (the
-    ///   eight-byte routing hash, plus eight bytes of key size and padding only for byte-staged
-    ///   keys). A column read by several aggregates is staged once, so it is counted once; a
-    ///   count batch stages the combined multiplicity instead of arguments.
+    /// - `staged_bytes` grows by the bytes of the batch's records as the buffer holds them, plus
+    ///   `adaptive_thaw_record_cost` per record for the lookup of its group at the drain. A column read
+    ///   by several aggregates is staged once, so it is counted once; an argument read from its numeric
+    ///   key's bytes takes none of its own; a count record carries the combined multiplicity instead of
+    ///   arguments.
     ///   Variable-width arguments count in full because staging such a value pays real work
     ///   at every step. The record copies it out of the block, the record pins that memory
     ///   until the merge drains it, and updating the aggregate state from it copies the value
@@ -110,8 +102,7 @@ void Aggregator::accountStagedBatch(
     ///   Fixed-width arguments also occupy memory until the drain, and rebuilding their dense
     ///   columns copies them again before the ordinary batch executor consumes them. A repeated
     ///   key pays these copies on each occurrence, while an ordinary table updates its states in
-    ///   place. Their fixed area is counted by `adaptiveStagingWastes` from the record count and
-    ///   `AdaptiveArgumentLayout::fixed_bytes`. The comparison uses repetition within this producer,
+    ///   place. The comparison uses repetition within this producer,
     ///   since equal keys in different producers would also occupy separate ordinary tables. A
     ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
     ///   its local streams repeat little.
@@ -123,12 +114,9 @@ void Aggregator::accountStagedBatch(
     if (params.adaptiveMayThaw())
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
-        size_t batch_bytes = staged.key_bytes + (is_simple_count ? total * sizeof(UInt32) : staged.variable_argument_bytes);
-        batch_bytes += total * (sizeof(UInt64) + (staged.keys_as_bytes ? sizeof(UInt64) : 0));
-
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
-        frozen.staged_bytes += batch_bytes;
+        frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
         for (size_t i = 0; i < total; ++i)
         {
             const auto hash = hashes[i];
@@ -207,14 +195,15 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
 
 bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
 {
-    /// The byte twin of the key-count bound is the table's own tracked memory: its hash-table buffer, its arenas and
-    /// the heap memory that its states own, such as the sets of `uniqExact`, which a few groups can grow while the key
-    /// count stays low. It is checked between blocks, so a byte-triggered freeze lands on a block boundary; the
-    /// mid-block freeze crossing checks only the key count. The memory of the whole aggregation is no bound: it sums
-    /// the allocations of every thread, including the blocks they are processing, so the growth of some tables would
-    /// freeze the others.
+    /// The byte twin of the key-count bound is the table's hash-table buffer: the cells that every probe walks, hits and
+    /// misses alike, so it keeps a table with wide cells cache-resident. The memory of the states is no bound: it grows
+    /// through the keys that the table already holds, which a freeze does not stop, and freezing a few groups with
+    /// growing states would only stage the rest of the stream. It is checked between blocks, so a byte-triggered freeze
+    /// lands on a block boundary; the mid-block freeze crossing checks only the key count. The memory of the whole
+    /// aggregation is no bound either: it sums the allocations of every thread, including the blocks they are
+    /// processing, so the growth of some tables would freeze the others.
     const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.memoryUsage() >= params.adaptive_aggregator_freeze_threshold_bytes;
+        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
     return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
         && result.isConvertibleToTwoLevel();
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -8,6 +10,7 @@
 #include <vector>
 
 #include <base/PackedStringRef.h>
+#include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <Common/Arena.h>
@@ -53,6 +56,9 @@ struct AdaptiveArgumentLayout
 
     std::vector<FixedField> fixed_fields;
     std::vector<Field> variable_fields;
+    /// Whether every variable-size argument is staged as a `String` (see `isStagedString`), which the records of a
+    /// fixed-width key stage without a header (see `StagedStringArgumentRecord`).
+    bool variable_fields_are_strings = false;
     /// A single numeric grouping key used as an argument is read from the key's bytes in the record.
     std::optional<Field> key_field;
     size_t fixed_bytes = 0;
@@ -103,15 +109,15 @@ Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t ke
 
 /// The staged record formats. A record never straddles two chunks, and nothing in it points
 /// outside the record, so a chunk can go to disk and come back byte for byte. Fields are read
-/// and written unaligned. Fixed-stride argument records need no padding; the other formats
-/// keep their sizes a multiple of the narrowest header field.
+/// and written unaligned. The argument records of a fixed-width key need no padding; the other
+/// formats keep their sizes a multiple of the narrowest header field.
 ///
 /// The merge emplaces a staged key with its routing hash, the table's own hash of the key (see
 /// `emplaceStagedKey`). A record of a byte-staged key, and a general record, starts with the
-/// hash, because rehashing the key bytes would take a pass over them. A record of a fixed stride
-/// has a fixed-width key and stores no hash: the merge rehashes the key in a few instructions,
-/// which costs less than eight more bytes in a record of a dozen or two, written by the staging,
-/// read by the merge, and written to disk and read back by a spill.
+/// hash, because rehashing the key bytes would take a pass over them. An argument record of a
+/// fixed-width key stores no hash: the merge rehashes the key in a few instructions, which costs
+/// less than eight more bytes in a record of a dozen or two, written by the staging, read by the
+/// merge, and written to disk and read back by a spill.
 inline size_t alignStagedRecord(size_t bytes)
 {
     return ::Memory::alignUp(bytes, alignof(UInt32));
@@ -124,6 +130,38 @@ inline size_t alignStagedRecord(size_t bytes)
 inline void ALWAYS_INLINE zeroStagedRecordPadding(char * fields_end)
 {
     unalignedStore<UInt32>(fields_end, 0);
+}
+
+/// A staged `String` argument: a UInt32 length and the bytes, copied straight from and to the column without its
+/// serialization's virtual calls. The length fits every value, because the buffer rejects a record whose chunk does
+/// not fit 32 bits (see `PartitionedRecordBuffer::append`).
+inline size_t ALWAYS_INLINE stagedStringBytes(std::string_view value)
+{
+    return sizeof(UInt32) + value.size();
+}
+
+/// Writes a staged `String` at `to` and returns the position after it.
+inline char * ALWAYS_INLINE writeStagedString(char * to, std::string_view value)
+{
+    chassert(value.size() <= std::numeric_limits<UInt32>::max());
+    unalignedStore<UInt32>(to, static_cast<UInt32>(value.size()));
+    memcpy(to + sizeof(UInt32), value.data(), value.size());
+    return to + stagedStringBytes(value);
+}
+
+/// Reads the staged `String` at `from` and moves `from` past it.
+inline std::string_view ALWAYS_INLINE readStagedString(const char *& from)
+{
+    const std::string_view value(from + sizeof(UInt32), unalignedLoad<UInt32>(from));
+    from += stagedStringBytes(value);
+    return value;
+}
+
+/// Whether a variable-size argument is staged by `writeStagedString` rather than in its column's serialization. The
+/// writer and the drain both decide by it, so they agree on the encoding of every field.
+inline bool isStagedString(const AdaptiveArgumentLayout::Field & field)
+{
+    return isString(field.type);
 }
 
 /// Every format offers the readers the same interface: `bytes(record)`, the size of the record; `key(record)`, the
@@ -211,9 +249,45 @@ struct StagedFixedArgumentRecord
     const size_t stride;
 };
 
+/// General records with a fixed-width key whose variable-size arguments are all `String`s: {fixed-size arguments, key,
+/// then each `String` argument as `writeStagedString` stages it}, with no header. The key has the compile-time width,
+/// and a record's size follows from the lengths.
+template <typename Key>
+struct StagedStringArgumentRecord
+{
+    static constexpr bool with_count = false;
+    static constexpr bool with_arguments = true;
+    static constexpr size_t fixed_arguments_offset = 0;
+
+    explicit StagedStringArgumentRecord(const AdaptiveArgumentLayout & layout)
+        : key_offset(layout.fixed_bytes)
+        , strings(layout.variable_fields.size())
+    {
+    }
+
+    size_t bytes(const char * record) const
+    {
+        const char * value = record + key_offset + sizeof(Key);
+        for (size_t i = 0; i < strings; ++i)
+            readStagedString(value);
+        return static_cast<size_t>(value - record);
+    }
+
+    std::pair<const char *, size_t> key(const char * record) const { return {record + key_offset, sizeof(Key)}; }
+
+    template <typename Table>
+    UInt64 hash(const Table & table, const char * record) const { return table.hash(unalignedLoad<Key>(record + key_offset)); }
+
+    /// The key follows the fixed-size arguments, whose area has one size for the query.
+    const size_t key_offset;
+    /// The number of `String` arguments, which follow the key.
+    const size_t strings;
+};
+
 /// General records otherwise: {UInt64 hash, UInt32 size, UInt32 key size, fixed-size arguments, key,
 /// variable-size arguments}, the arguments laid out by `AdaptiveArgumentLayout`. `size` is the
-/// whole padded record.
+/// whole padded record. A `String` argument is staged by `writeStagedString`; another variable-size argument is in its
+/// column's serialization.
 struct StagedArgumentRecord
 {
     static constexpr bool with_count = false;
@@ -245,9 +319,10 @@ struct StagedArgumentRecord
 
 /// Calls `f` with the format of the records that `Key` and the layout produce: count records for an aggregation by a
 /// lone `count`, key-only records for one without aggregate functions, which has no layout, and argument records
-/// otherwise, of a fixed stride when the key has a fixed width and every argument a fixed size. The writer and every
-/// reader of the records dispatch through it, so they agree on the format. It is inlined with `f` into the caller, so
-/// the caller's loops keep their state in registers.
+/// otherwise. For a fixed-width key the argument records have a fixed stride when every argument has a fixed size, and
+/// no header when the variable-size arguments are all `String`s. The writer and every reader of the records dispatch
+/// through it, so they agree on the format. It is inlined with `f` into the caller, so the caller's loops keep their
+/// state in registers.
 template <typename Key, typename F>
 ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(const AdaptiveArgumentLayout * layout, bool is_simple_count, F && f)
 {
@@ -259,6 +334,8 @@ ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(const AdaptiveArgumentLayou
     {
         if (layout->variable_fields.empty())
             return f(StagedFixedArgumentRecord<Key>(*layout));
+        if (layout->variable_fields_are_strings)
+            return f(StagedStringArgumentRecord<Key>(*layout));
     }
     return f(StagedArgumentRecord(*layout));
 }

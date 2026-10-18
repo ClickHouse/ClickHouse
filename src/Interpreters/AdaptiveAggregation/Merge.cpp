@@ -6,6 +6,7 @@
 #include <bit>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
@@ -362,6 +363,48 @@ namespace
             callback(Table::cell_type::getKey(it->getValue()), it.getHash());
     }
 
+    /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of
+    /// `layout`, in the order of the records. The values of a record follow its key: a `String` as `writeStagedString`
+    /// staged it, appended without a read buffer or a virtual call, and another value in its column's own serialization.
+    template <typename Format>
+    MutableColumns decodeStagedVariableArguments(
+        const Format & format, const AdaptiveArgumentLayout & layout, const RowStorePointers & records)
+    {
+        MutableColumns columns;
+        std::vector<ColumnString *> string_columns;
+        columns.reserve(layout.variable_fields.size());
+        string_columns.reserve(layout.variable_fields.size());
+        for (const auto & field : layout.variable_fields)
+        {
+            auto column = field.type->createColumn();
+            column->reserve(records.ptrs.size());
+            string_columns.push_back(isStagedString(field) ? &assert_cast<ColumnString &>(*column) : nullptr);
+            columns.push_back(std::move(column));
+        }
+
+        const IColumn::SerializationSettings serialization_settings;
+        for (const char * record : records.ptrs)
+        {
+            const auto [key_pos, key_size] = format.key(record);
+            const char * value = key_pos + key_size;
+            for (size_t j = 0; j < columns.size(); ++j)
+            {
+                if (auto * string = string_columns[j])
+                {
+                    const std::string_view staged = readStagedString(value);
+                    string->insertData(staged.data(), staged.size());
+                }
+                else
+                {
+                    ReadBufferFromMemory in(value, record + format.bytes(record) - value);
+                    columns[j]->deserializeAndInsertFromArena(in, &serialization_settings);
+                    value = in.position();
+                }
+            }
+        }
+        return columns;
+    }
+
 }
 
 template <typename Method, bool copy_keys, typename Table, typename Filter>
@@ -464,8 +507,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             chassert(!adaptive_argument_layout->key_field
                 || adaptive_argument_layout->key_field->type->getSizeOfValueInMemory() == sizeof(Key));
             if (!places.empty())
-                executeStagedArgumentRecords(
-                    arena, places, records, format.key_offset, Record::fixed_arguments_offset, use_compiled_functions);
+                executeStagedArgumentRecords(format, arena, places, records, use_compiled_functions);
         }
     });
 
@@ -670,12 +712,12 @@ size_t Aggregator::selectCountFirstBestGroups(
     return counting_table.size();
 }
 
+template <typename Record>
 void Aggregator::executeStagedArgumentRecords(
+    const Record & format,
     Arena * arena,
     PaddedPODArray<AggregateDataPtr> & places,
     const RowStorePointers & records,
-    size_t key_offset,
-    size_t fixed_arguments_offset,
     bool use_compiled_functions) const
 {
     const auto & argument_layout = *adaptive_argument_layout;
@@ -687,42 +729,31 @@ void Aggregator::executeStagedArgumentRecords(
     if (const auto & field = argument_layout.key_field)
     {
         auto column = field->type->createColumn();
-        column->fillFromRowStorePtrs(field->type, records, key_offset, column->sizeOfValueIfFixed(), 0, rows);
+        column->fillFromRowStorePtrs(field->type, records, format.key_offset, column->sizeOfValueIfFixed(), 0, rows);
         arguments[field->position] = std::move(column);
     }
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, fixed_arguments_offset + field.offset, field.size, 0, rows);
+        column->fillFromRowStorePtrs(field.type, records, Record::fixed_arguments_offset + field.offset, field.size, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
-    /// Only the records of the variable format carry variable-size arguments.
+    /// Only the records with a variable size carry variable-size arguments, after the key.
     if (!argument_layout.variable_fields.empty())
     {
-        MutableColumns variable_columns;
-        variable_columns.reserve(argument_layout.variable_fields.size());
-        for (const auto & field : argument_layout.variable_fields)
-        {
-            variable_columns.push_back(field.type->createColumn());
-            variable_columns.back()->reserve(rows);
-        }
-
-        const StagedArgumentRecord format(argument_layout);
-        const IColumn::SerializationSettings serialization_settings;
-        for (const char * record : records.ptrs)
-        {
-            const auto [key_pos, key_size] = format.key(record);
-            const char * values = key_pos + key_size;
-            ReadBufferFromMemory in(values, record + StagedArgumentRecord::bytes(record) - values);
-            for (auto & column : variable_columns)
-                column->deserializeAndInsertFromArena(in, &serialization_settings);
-        }
-
+        auto variable_columns = decodeStagedVariableArguments(format, argument_layout, records);
         for (size_t j = 0; j < variable_columns.size(); ++j)
             arguments[argument_layout.variable_fields[j].position] = std::move(variable_columns[j]);
     }
 
+    executeStagedArguments(arena, places, arguments, use_compiled_functions);
+}
+
+void Aggregator::executeStagedArguments(
+    Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const
+{
+    const size_t rows = places.size();
     AggregateColumns aggregate_columns(params.aggregates_size);
     AggregateFunctionInstructions instructions(params.aggregates_size + 1);
     NestedColumnsHolder nested_columns_holder;

@@ -1,5 +1,7 @@
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -45,6 +47,7 @@ AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_p
             else
                 layout->variable_fields.push_back({.position = position, .type = std::move(type)});
         }
+    layout->variable_fields_are_strings = std::ranges::all_of(layout->variable_fields, isStagedString);
     return layout;
 }
 
