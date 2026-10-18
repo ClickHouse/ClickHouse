@@ -956,7 +956,8 @@ struct ToWeekImpl
 
     static UInt8 execute(UInt64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        /// Retain the extended date range: UInt64 timestamps can exceed the 16-bit DayNum limit.
+        YearWeek yw = time_zone.toYearWeek(static_cast<Int64>(t), week_mode);
         return yw.second;
     }
     static UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)

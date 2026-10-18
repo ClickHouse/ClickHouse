@@ -121,3 +121,9 @@ SELECT countIf(formatDateTime(addDays(toDate('2023-12-20'), toInt32(number)), '%
 -- UInt64 timestamps also use the MySQL format parser via fromUnixTimestamp.
 SELECT fromUnixTimestamp(toUInt64(1704067200), '%Y-%U', 'UTC');
 SELECT fromUnixTimestamp(toUInt64(1704585600), '%Y-%U', 'UTC');
+
+-- UInt64 timestamps after the Date limit keep their full date for %U.
+SELECT fromUnixTimestamp(toUInt64(5662310400), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680800000), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC') = fromUnixTimestamp(toInt64(5680281600), '%Y-%U', 'UTC');
