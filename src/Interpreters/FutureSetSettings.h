@@ -22,6 +22,8 @@ struct FutureSetSettings
     /// Both thresholds of 0 disable automatic spilling; workload requests can still spill the set.
     size_t max_bytes_before_external_set = 0;
     double max_bytes_ratio_before_external_set = 0;
+    size_t max_bytes_for_external_set_bloom_filter = 0;
+    size_t max_bytes_for_external_set_cache = 0;
     size_t max_block_size = 0;
     size_t min_free_disk_space = 0;
     String temporary_files_codec;
