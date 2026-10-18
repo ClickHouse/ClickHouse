@@ -433,6 +433,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
+            context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
@@ -452,6 +453,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -460,6 +462,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
+            context->onQueryExecutionStarted();
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
                 res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
@@ -467,6 +470,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+            context->onQueryExecutionStarted();
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
