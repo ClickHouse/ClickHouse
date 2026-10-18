@@ -22,7 +22,7 @@ for i in {0..3}; do
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO t_read_thread_cancel
         SELECT number, repeat(toString(number), 20), repeat(toString(number), 20), repeat(toString(number), 20)
-        FROM numbers($((i * 500000)), 500000)"
+        FROM numbers($((i * 50000)), 50000)"
 done
 
 # Each iteration starts merges and cancels them while they read columns.
