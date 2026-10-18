@@ -10,6 +10,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -249,6 +252,9 @@ namespace CurrentMetrics
     extern const Metric FreezePartThreads;
     extern const Metric FreezePartThreadsActive;
     extern const Metric FreezePartThreadsScheduled;
+    extern const Metric MergeTreeStatisticsLoaderThreads;
+    extern const Metric MergeTreeStatisticsLoaderThreadsActive;
+    extern const Metric MergeTreeStatisticsLoaderThreadsScheduled;
     extern const Metric ColumnsDescriptionsCacheSize;
 }
 
@@ -1142,17 +1148,81 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     auto statistics_cache = getContext()->getStatisticsCache();
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    for (const auto & part : parts)
+    /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
+    std::vector<ColumnsStatistics> parts_statistics(parts.size());
+    loadStatisticsOfPartsInParallel(parts.size(), local_context->getSettingsRef()[Setting::max_threads], [&](size_t part_index)
     {
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
-        auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
-        estimator_builder.incrementRowCount(part.data_part->rows_count);
-        for (const auto & [column_name, stat] : stats)
+        parts_statistics[part_index] = parts[part_index].data_part->loadStatistics(required_columns_set, statistics_cache.get());
+    });
+
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    {
+        estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+        for (const auto & [column_name, stat] : parts_statistics[part_index])
             estimator_builder.addStatistics(column_name, stat);
     }
 
     return estimator_builder.getEstimator();
+}
+
+void MergeTreeData::loadStatisticsOfPartsInParallel(size_t num_parts, size_t max_threads, const std::function<void(size_t)> & load_part)
+{
+    const size_t num_threads = std::min(max_threads, num_parts);
+    if (num_threads <= 1)
+    {
+        for (size_t part_index = 0; part_index < num_parts; ++part_index)
+            load_part(part_index);
+        return;
+    }
+
+    /// Outlive `pool`, whose destructor joins the jobs that still use them when scheduling throws.
+    std::vector<std::exception_ptr> exceptions(num_parts);
+    std::atomic<size_t> next_part_index = 0;
+    std::atomic<bool> has_exception = false;
+
+    /// A pool of its own, like the analysis of indexes in `filterPartsByPrimaryKeyAndSkipIndexes`: the caller
+    /// may run in a thread of any shared pool, and waiting there for the jobs of the same pool could deadlock.
+    ThreadPool pool(
+        CurrentMetrics::MergeTreeStatisticsLoaderThreads,
+        CurrentMetrics::MergeTreeStatisticsLoaderThreadsActive,
+        CurrentMetrics::MergeTreeStatisticsLoaderThreadsScheduled,
+        num_threads);
+
+    for (size_t job = 0; job < num_threads; ++job)
+    {
+        pool.scheduleOrThrowOnError(
+            [&, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_LOAD_STATISTICS);
+
+                /// The parts are taken in their order, so when a part throws, every part before it has been taken
+                /// and is loaded to the end: the exception of the first failed part is the same for any scheduling.
+                while (!has_exception.load(std::memory_order_relaxed))
+                {
+                    const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                    if (part_index >= num_parts)
+                        break;
+
+                    try
+                    {
+                        load_part(part_index);
+                    }
+                    catch (...)
+                    {
+                        exceptions[part_index] = std::current_exception();
+                        has_exception.store(true, std::memory_order_relaxed);
+                    }
+                }
+            });
+    }
+
+    pool.wait();
+
+    for (const auto & exception : exceptions)
+        if (exception)
+            std::rethrow_exception(exception);
 }
 
 bool MergeTreeData::supportsFinal() const

@@ -103,6 +103,7 @@ namespace DB
     M(MERGETREE_INDEX, "MergeTreeIndex") \
     M(MERGETREE_LOAD_ACTIVE_PARTS, "ActiveParts") \
     M(MERGETREE_LOAD_OUTDATED_PARTS, "OutdatedParts") \
+    M(MERGETREE_LOAD_STATISTICS, "LoadStatistics") \
     M(MERGETREE_LOAD_UNEXPECTED_PARTS, "UnexpectedParts") \
     M(MERGETREE_MOVE, "Move") \
     M(MERGETREE_PARTS_CLEANUP, "PartsCleaning") \

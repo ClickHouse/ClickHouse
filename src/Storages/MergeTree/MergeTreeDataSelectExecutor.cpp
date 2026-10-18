@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -865,9 +866,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     size_t total_parts_before = parts.size();
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    for (const auto & part : parts)
+    std::vector<Estimates> parts_estimates(parts.size());
+    MergeTreeData::loadStatisticsOfPartsInParallel(parts.size(), settings[Setting::max_threads], [&](size_t part_index)
     {
-        auto estimates = part.data_part->getEstimates(required_columns);
+        parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+    });
+
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    {
+        const auto & part = parts[part_index];
+        const auto & estimates = parts_estimates[part_index];
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)

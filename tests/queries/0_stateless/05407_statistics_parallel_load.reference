@@ -1,0 +1,19 @@
+50
+71	337179
+71	337179
+71	337179
+24	56310
+24	56310
+36	170082
+0	4999	0	99	5000
+0	4999	0	99	5000
+0	4999	0	99	5000
+pruning_parallel	5	0
+pruning_sequential	5	0
+pruning_off	50	0
+prewhere_parallel	50	50
+prewhere_sequential	50	50
+both_parallel	5	5
+min_max_parallel	0	0
+min_max_sequential	0	0
+min_max_off	50	0
