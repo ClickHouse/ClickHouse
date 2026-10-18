@@ -26,6 +26,7 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
 
 #include <Poco/AutoPtr.h>
 
@@ -103,11 +104,15 @@ class MovesList;
 class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
+class IStatelessWorkersProvider;
+using StatelessWorkersProviderPtr = std::shared_ptr<IStatelessWorkersProvider>;
+class StatelessWorkersProviderRegistry;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
+class StatisticsCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -418,6 +423,9 @@ protected:
 
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
+
+    using ClientConnectedCallback = std::function<bool()>;
+    ClientConnectedCallback client_connected_callback; /// Returns false once the client has disconnected. Not inherited by copies.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -810,6 +818,11 @@ class Context: public ContextData, public std::enable_shared_from_this<Context>
 private:
     /// ContextData mutex
     mutable ContextSharedMutex mutex;
+
+    /// Held across the blocking allocation, so separate from `mutex`.
+    mutable std::mutex stateless_worker_allocation_mutex;
+    mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
+    mutable StatelessWorkersProviderPtr stateless_worker_provider;
 
     Context();
     Context(const Context &);
@@ -1554,6 +1567,9 @@ public:
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
 
+    void setClientConnectedCallback(ClientConnectedCallback && callback) { client_connected_callback = callback; }
+    ClientConnectedCallback getClientConnectedCallback() const { return client_connected_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1620,6 +1636,15 @@ public:
     void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
+    /// The provider for the named worker cluster (empty = default), built on first use.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
+    std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
+    void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
+    /// The query's provider, resolved once so plan sizing and the allocation use the same workers.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider() const;
+    /// The query's allocation, shared by all of its distributed plans.
+    StatelessWorkerAllocationPtr getOrCreateStatelessWorkerAllocation() const;
+
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
@@ -1673,6 +1698,10 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    void setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<StatisticsCache> getStatisticsCache() const;
+    void clearStatisticsCache() const;
     void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     /// `default_size` is the size to use when `columns_cache_size` is absent from `config`, see `getDefaultColumnsCacheSize`.
     void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size);
