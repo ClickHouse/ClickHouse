@@ -288,17 +288,18 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
         return {};
 
     /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
-    /// so a condition on it may let other files make the threshold on a rerun.
-    auto reads_mutable_object_metadata = [&](const ActionsDAG & dag)
+    /// and so can the name of the table (`_table`, by `RENAME TABLE` or `EXCHANGE TABLES`, which keep
+    /// the UUID), so a condition on them may let other files make the threshold on a rerun.
+    auto reads_mutable_virtual_columns = [&](const ActionsDAG & dag)
     {
         return std::ranges::any_of(dag.getInputs(), [&](const auto * input)
         {
             const auto & name = input->result_name;
-            return (name == "_time" || name == "_etag" || name == "_tags") && virtual_columns.contains(name);
+            return (name == "_time" || name == "_etag" || name == "_tags" || name == "_table") && virtual_columns.contains(name);
         });
     };
-    if ((filter_actions_dag && reads_mutable_object_metadata(*filter_actions_dag))
-        || (query_info.prewhere_info && reads_mutable_object_metadata(query_info.prewhere_info->prewhere_actions)))
+    if ((filter_actions_dag && reads_mutable_virtual_columns(*filter_actions_dag))
+        || (query_info.prewhere_info && reads_mutable_virtual_columns(query_info.prewhere_info->prewhere_actions)))
         return {};
 
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
