@@ -70,8 +70,10 @@ bool shouldShowAddress(const void * addr)
     return show_addresses.load(std::memory_order_relaxed);
 }
 
+#if !defined(OS_WINDOWS)
 /// A fault address above the first page is shown only as an offset inside a loaded object:
 /// the runtime address of the heap, a stack or JIT code must not be published.
+/// Only the POSIX signal-context code below reports fault addresses.
 std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
 {
     if (!shouldShowAddress(addr))
@@ -85,6 +87,7 @@ std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr
         return {};
     return resolved;
 }
+#endif
 }
 
 StackTrace::StackTrace()
