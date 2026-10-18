@@ -860,7 +860,7 @@ which stores token positions to support exact phrase matching.
 Allow creating text indexes with the experimental `scoring = 'bm25'` argument
 which stores the per-row weights of the tokens (term frequencies) and document lengths to support BM25 relevance scoring.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to gate the experimental `scoring = 'bm25'` text index argument that stores BM25 scoring data in the `v3_with_scoring` text index format."}) \
+        {"26.11", false, false, "New setting to gate the experimental `scoring = 'bm25'` text index argument that stores BM25 scoring data in the `v3_with_scoring` text index format."}) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
