@@ -34,6 +34,9 @@ namespace DB
 ///       target table (`.inner_id.timeranges.<uuid>`, the keyword `TIME RANGES`, the `store_time_ranges` setting), so the
 ///       "tags" table is generated with `ReplacingMergeTree` and uses its deduplication cache by default.
 ///       The settings `*_min_time_and_max_time` apply to the earlier versions only.
+///   9 - The default partition key of an inner recent samples table pins the timezone:
+///       `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions leave it to the
+///       server timezone, whose every change moves the meaning of the partition values already written.
 namespace TimeSeriesVersion
 {
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
@@ -76,11 +79,15 @@ namespace TimeSeriesVersion
     /// The earlier versions store it in the columns `min_time` and `max_time` of the "tags" target table.
     constexpr UInt64 MIN_WITH_TIME_RANGES_TARGET = 8;
 
+    /// The first version whose default recent-samples partition key names a timezone. The earlier versions
+    /// generate it without one, so their tables keep the partition grid they were written on.
+    constexpr UInt64 MIN_WITH_UTC_PARTITION_KEY = 9;
+
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 8;
+    constexpr UInt64 LATEST = 9;
 
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
@@ -89,6 +96,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
     static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
     static_assert(MIN_WITH_TIME_RANGES_TARGET <= LATEST);
+    static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
 
     static_assert(MIN_SUPPORTED <= LATEST);
     static_assert((MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL) && (MIN_SUPPORTED_BY_PROMQL <= LATEST));
