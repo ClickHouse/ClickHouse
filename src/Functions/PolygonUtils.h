@@ -350,11 +350,15 @@ private:
     CoordinateType x_scale;
     CoordinateType y_scale;
 
+    /// Cell (row, col) is [x_bounds[col], x_bounds[col + 1]] x [y_bounds[row], y_bounds[row + 1]].
+    VectorWithMemoryTracking<CoordinateType> x_bounds;
+    VectorWithMemoryTracking<CoordinateType> y_bounds;
+
     bool has_empty_bound = false;
 
     void buildGrid();
 
-    /// Calculate bounding box and shift/scale of cells.
+    /// Calculate bounding box, shift/scale and bounds of cells.
     void calcGridAttributes(Box & box);
 
     template <typename T>
@@ -388,6 +392,7 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
 
     size += cells.capacity() * sizeof(Cell);
     size += polygons.capacity() * sizeof(Polygon);
+    size += (x_bounds.capacity() + y_bounds.capacity()) * sizeof(CoordinateType);
     size += getPolygonAllocatedBytes(polygon);
 
     for (const auto & elem : polygons)
@@ -439,6 +444,17 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(y_shift)
         && isFinite(grid_size)))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
+
+    /// The last bound is the box side: min + grid_size * cell_width can round to either side of it.
+    x_bounds.resize(grid_size + 1);
+    y_bounds.resize(grid_size + 1);
+    for (size_t i = 0; i < grid_size; ++i)
+    {
+        x_bounds[i] = min_corner.x() + static_cast<CoordinateType>(i) * cell_width;
+        y_bounds[i] = min_corner.y() + static_cast<CoordinateType>(i) * cell_height;
+    }
+    x_bounds[grid_size] = max_corner.x();
+    y_bounds[grid_size] = max_corner.y();
 }
 
 template <typename CoordinateType>
@@ -465,18 +481,11 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     for (const auto & inner : polygon.inners())
         check_ring(inner);
 
-    const Point & min_corner = box.min_corner();
-
     for (size_t row = 0; row < grid_size; ++row)
     {
-        CoordinateType y_min = min_corner.y() + static_cast<CoordinateType>(row) * cell_height;
-        CoordinateType y_max = min_corner.y() + static_cast<CoordinateType>(row + 1) * cell_height;
-
         for (size_t col = 0; col < grid_size; ++col)
         {
-            CoordinateType x_min = min_corner.x() + static_cast<CoordinateType>(col) * cell_width;
-            CoordinateType x_max = min_corner.x() + static_cast<CoordinateType>(col + 1) * cell_width;
-            Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
+            Box cell_box(Point(x_bounds[col], y_bounds[row]), Point(x_bounds[col + 1], y_bounds[row + 1]));
 
             size_t cell_index = getCellIndex(row, col);
             auto & cell = cells[cell_index];
@@ -560,21 +569,29 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (has_empty_bound)
         return false;
 
-    if (!isFinite(x) || !isFinite(y))
+    /// Raw pointers: the hardened operator[] would add a bounds check to every access on this hot path.
+    const CoordinateType * xb = x_bounds.data();
+    const CoordinateType * yb = y_bounds.data();
+    const size_t last = grid_size - 1;
+
+    /// Also false for NaN and infinities: the bounds are finite.
+    if (!(x >= xb[0] && x <= xb[last + 1] && y >= yb[0] && y <= yb[last + 1]))
         return false;
 
-    CoordinateType float_row = (y + y_shift) * y_scale;
-    CoordinateType float_col = (x + x_shift) * x_scale;
+    /// The scaled coordinate can round across a cell boundary: move to the cell whose bounds hold the point.
+    /// It is in [0, grid_size] here; converting through int is one instruction, unlike a conversion to size_t.
+    size_t row = std::min<size_t>(static_cast<size_t>(static_cast<int>((y + y_shift) * y_scale)), last);
+    size_t col = std::min<size_t>(static_cast<size_t>(static_cast<int>((x + x_shift) * x_scale)), last);
+    while (y < yb[row])
+        --row;
+    while (y >= yb[row + 1] && row < last)
+        ++row;
+    while (x < xb[col])
+        --col;
+    while (x >= xb[col + 1] && col < last)
+        ++col;
 
-    if (float_row < 0 || float_row > grid_size)
-        return false;
-    if (float_col < 0 || float_col > grid_size)
-        return false;
-
-    int row = std::min<int>(static_cast<int>(float_row), grid_size - 1);
-    int col = std::min<int>(static_cast<int>(float_col), grid_size - 1);
-
-    int index = getCellIndex(row, col);
+    size_t index = getCellIndex(row, col);
     const auto & cell = cells[index];
 
     switch (cell.type)
