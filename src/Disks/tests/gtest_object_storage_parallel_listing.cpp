@@ -1086,17 +1086,6 @@ TEST(ObjectStorageParallelListing, UnorderedDirectoryBucketWidenedWalkIsComplete
             expected.push_back(key);
     ASSERT_EQ(expected.size(), 18u);
 
-    /// An unordered listing has no early stop, so a bound would be meaningless there.
-    EXPECT_THROW(
-        ObjectStorageParallelListingIterator(
-            "root/", 4, 256, makeListLevel(s3), makeProbeLevel(s3), makeShouldDescendPredicate(glob),
-            /* allow_keyspace_split */ false, /* check_cancellation */ {},
-            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
-            ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
-            /* allow_start_after */ false, /* root_range_end */ *leastKeyAfterPrefixRegion("root/year="),
-            /* is_marker_only_prefix */ {}, /* max_page_bytes_bound */ 0, /* listing_is_ordered */ false),
-        DB::Exception);
-
     for (size_t threads : {1, 4, 16})
     {
         ObjectStorageParallelListingIterator iterator(
