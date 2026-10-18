@@ -1052,7 +1052,9 @@ void encodePlain(const typename ParquetDType::c_type * values, size_t count, siz
         {
             unalignedStoreLittleEndian<UInt32>(dst, values[i].len);
             dst += sizeof(UInt32);
-            memcpy(dst, values[i].ptr, values[i].len);
+            /// An empty string may have a null pointer, which `memcpy` does not accept.
+            if (values[i].len)
+                memcpy(dst, values[i].ptr, values[i].len);
             dst += values[i].len;
         }
     }
@@ -1075,7 +1077,8 @@ void encodePlain(const typename ParquetDType::c_type * values, size_t count, siz
         char * dst = out.data() + pos;
         if constexpr (std::endian::native == std::endian::little)
         {
-            memcpy(dst, values, count * sizeof(T));
+            if (count)
+                memcpy(dst, values, count * sizeof(T));
         }
         else
         {
