@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 为了正确运行这些查询，每台主机都必须具有相同的集群定义 (为简化配置同步，你可以使用来自 ZooKeeper 的替换) 。它们还必须连接到 ZooKeeper 服务器。
 
-该查询的本地版本最终会在集群中的每台主机上执行，即使某些主机当前不可用也是如此。
+通常情况下，该查询的本地版本最终会在集群中的每台主机上执行，即使某些主机当前不可用也是如此。但是，这些查询会存储在队列中，而条目在队列中的保留时间受[若干设置](/zh/reference/settings/server-settings/settings/distributed)限制。因此，如果某台主机不可用的时间过长，那么它在恢复可用后可能不会再执行该查询。
 
 <Warning>
-  可保证单台主机内查询的执行顺序。
+  只要将 [distributed&#95;ddl.pool&#95;size](/zh/reference/settings/server-settings/settings/distributed#distributed_ddl.pool_size) 设置为 1，即可保证单台主机内查询的执行顺序。
 </Warning>

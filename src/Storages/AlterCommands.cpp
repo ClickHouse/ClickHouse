@@ -56,10 +56,6 @@
 #include <ranges>
 #include <vector>
 
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
-
 namespace DB
 {
 namespace Setting
@@ -1267,14 +1263,6 @@ void AlterCommand::apply(
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
-
-#if CLICKHOUSE_CLOUD
-        /// For Shared Catalog on secondary replicas very likely we don't have the settings used to run the SELECT on the initiator.
-        /// Because of that we can fail, or the resulting columns can be different from the original ones.
-        /// So we return early and set the columns ourselves, if they differ.
-        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
-            return;
-#endif
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
