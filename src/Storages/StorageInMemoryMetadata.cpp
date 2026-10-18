@@ -1286,9 +1286,15 @@ void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & setting
     /// The views point into `changed.data`, which outlives this loop.
     std::sort(row_affecting.begin(), row_affecting.end());
 
+    /// Frame the collection and each name and value with its length: `SipHash::update` of a string
+    /// does not, so `{format_schema = 'xjoin_use_nulls1'}` would otherwise hash the same as
+    /// `{format_schema = 'x', join_use_nulls = 1}`.
+    hash.update(row_affecting.size());
     for (const auto & [name, value] : row_affecting)
     {
+        hash.update(name.size());
         hash.update(name);
+        hash.update(value.size());
         hash.update(value);
     }
 }
