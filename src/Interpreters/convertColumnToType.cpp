@@ -133,21 +133,7 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
-/// The alternative that row `row` of a `Variant`/`Dynamic` column occupies: its type, and the column and
-/// row that hold the value. A genuine value of such a constant has that type rather than the carrier's -
-/// the carrier only records which alternative it is - and `convertFieldToType` keys its conversions on the
-/// source type (an `Enum` renders as its name, a `Bool` as `'true'`/`'false'`), while `IColumn::get`
-/// returns the nested value alone. One layer is enough: an alternative may not itself be a `Variant` or a
-/// `Dynamic`, although it may be a composite that contains one. For any other column, and for a `NULL`
-/// row, which has no alternative, this is `from`, `value` and `row` themselves.
-struct ActiveAlternative
-{
-    DataTypePtr type;
-    const IColumn * column = nullptr;
-    size_t row = 0;
-    /// Owns `column` when it was deserialized from the shared variant of a `Dynamic`.
-    ColumnPtr holder;
-};
+}
 
 ActiveAlternative resolveActiveAlternative(const IColumn & value, const DataTypePtr & from, size_t row)
 {
@@ -194,6 +180,9 @@ ActiveAlternative resolveActiveAlternative(const IColumn & value, const DataType
 
     return {from, &value, row, {}};
 }
+
+namespace
+{
 
 bool isVariantOrDynamic(const IDataType & type)
 {

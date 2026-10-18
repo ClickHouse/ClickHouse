@@ -1,7 +1,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
@@ -491,6 +494,25 @@ namespace
             ColumnPtr converted = convertColumnToTypeOrNull(
                 column, from, to, format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
             return converted ? (*converted)[0] : Field(Null());
+        }
+
+        /// A composite may be held in a carrier: a non-`NULL` `Nullable(Tuple(...))`, or a `Dynamic` / `Variant`
+        /// whose active alternative is a composite. Unwrap the carrier together with its column, so that the
+        /// members of the composite that were not replaced are still converted from their source columns.
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+        {
+            if (!column_nullable->isNullAt(0))
+                return convertExpressionValueToType(
+                    column_nullable->getNestedColumn(), removeNullable(from), value, to, format_settings);
+        }
+        else if (typeid_cast<const ColumnVariant *>(&column) || typeid_cast<const ColumnDynamic *>(&column))
+        {
+            const ActiveAlternative alternative = resolveActiveAlternative(column, from, 0);
+            if (alternative.column != &column)
+            {
+                ColumnPtr nested = alternative.column->cut(alternative.row, 1);
+                return convertExpressionValueToType(*nested, alternative.type, value, to, format_settings);
+            }
         }
 
         const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
