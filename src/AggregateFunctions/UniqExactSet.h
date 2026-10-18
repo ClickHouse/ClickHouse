@@ -53,6 +53,14 @@ class UniqExactSet
 public:
     using value_type = typename SingleLevelSet::value_type;
 
+    /// Estimates buffer bytes per distinct value at the maximum load of a single-level set. This
+    /// excludes fixed state storage and the spare capacity immediately after a buffer grows.
+    static size_t getEstimatedBytesPerValue()
+    {
+        const typename SingleLevelSet::grower_type grower;
+        return sizeof(typename SingleLevelSet::cell_type) * grower.bufSize() / grower.maxFill();
+    }
+
     template <typename Arg, SetLevelHint hint>
     auto ALWAYS_INLINE insert(Arg && arg)
     {
@@ -141,13 +149,13 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            /// The wait covers this call's tasks alone: concurrent merges of other groups may share the pool.
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
-
                     while (true)
                     {
                         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -160,16 +168,19 @@ public:
                             accessor(places[i])->convertToTwoLevel();
                     }
                 };
-                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
-                    thread_pool.scheduleOrThrowOnError(thread_func);
-
-                thread_pool.wait();
+                const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num);
+                /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool
+                /// accepts a task, so the runner waits for every accepted task before this frame unwinds.
+                runner.reserve(max_threads_to_enqueue);
+                for (size_t i = 0; i < max_threads_to_enqueue; ++i)
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
             {
-                thread_pool.wait();
+                is_cancelled.store(true);
                 throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
     }
 
@@ -244,6 +255,9 @@ public:
             };
 
             const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool accepts
+            /// a task, so the runner waits for every accepted task before this frame unwinds.
+            runner.reserve(max_threads_to_enqueue);
             for (size_t i = 0; i < max_threads_to_enqueue
                  && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
                 runner.enqueueAndKeepTrack(thread_func, Priority{});
@@ -312,6 +326,9 @@ public:
                     };
 
                     const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool
+                    /// accepts a task, so the runner waits for every accepted task before this frame unwinds.
+                    runner.reserve(max_threads_to_enqueue);
                     for (size_t i = 0; i < max_threads_to_enqueue
                          && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});

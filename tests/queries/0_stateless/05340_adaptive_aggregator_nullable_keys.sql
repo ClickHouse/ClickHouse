@@ -1,7 +1,9 @@
 -- The adaptive aggregator takes Nullable keys whose method packs the null map into the key. Every key
 -- has NULL next to its nested default value, and every result is compared with the ordinary path.
 
+-- The free-memory cap of the thread count is off, so the queries keep their four streams on a loaded server.
 SET max_threads = 4;
+SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 1024;
 SET adaptive_aggregator_freeze_threshold = 8;
 SET group_by_two_level_threshold = 10000000;

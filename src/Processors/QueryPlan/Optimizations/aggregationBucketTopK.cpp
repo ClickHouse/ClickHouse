@@ -13,10 +13,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// The per-bucket selection scans every cell anyway; past this many candidate rows per bucket
-/// the saved materialization no longer pays for the selection scan.
-constexpr size_t max_bucket_top_k = 65536;
-
 /// Traces an output column of a pass-through expression to the input column it forwards:
 /// aliases are unwrapped, anything computed disqualifies.
 const String * traceThroughExpression(const ExpressionStep & expression, const String & name)
@@ -33,12 +29,18 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
 
 }
 
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
+    /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or distributed
+    /// plan would show the optimization without executing it.
+    if (settings.make_distributed_plan || settings.serialize_query_plan)
+        return 0;
+
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
     /// or more pass-through expressions over a final aggregation, and the sort column is the
-    /// aggregation's lone-`count()` output. `HAVING`, `WITH TOTALS`, `LIMIT BY` and windows sit
-    /// between the aggregation and the sorting as their own steps and break the adjacency.
+    /// output of the aggregation's lone `count()`, `uniqExact` or `uniqExactIf`. `HAVING`,
+    /// `WITH TOTALS`, `LIMIT BY` and windows sit between the aggregation and the sorting as their
+    /// own steps and break the adjacency.
     const auto * limit = typeid_cast<LimitStep *>(parent_node->step.get());
     if (!limit || parent_node->children.size() != 1)
         return 0;
@@ -56,7 +58,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const size_t n = sorting->getLimit();
-    if (n == 0 || n > max_bucket_top_k)
+    if (n == 0 || n > Aggregator::Params::max_bucket_top_k)
         return 0;
 
     const auto & description = sorting->getSortDescription();
@@ -89,11 +91,13 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const auto & params = aggregating->getParams();
-    if (!aggregating->isFinal() || aggregating->isGroupingSets() || params.overflow_row || params.keys_size == 0)
+    /// An in-order aggregation has no two-level conversion to run the selection in.
+    if (!aggregating->isFinal() || aggregating->inOrder() || aggregating->isGroupingSets() || params.overflow_row
+        || params.keys_size == 0)
         return 0;
 
-    /// The selection reads the count straight from the aggregate state and handles no
-    /// null-key cell, so nullable and low-cardinality keys stay on the ordinary conversion.
+    /// The selection reads the count from the aggregate state and handles no null-key cell, so
+    /// nullable and low-cardinality keys stay on the ordinary conversion.
     const auto & header = node->step->getOutputHeader();
     for (const auto & key : params.keys)
     {
@@ -107,7 +111,18 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         const auto & aggregate = params.aggregates[i];
         if (aggregate.column_name != column)
             continue;
-        if (aggregate.function->getName() != "count" || !aggregate.argument_names.empty() || !aggregate.parameters.empty())
+        /// The selection ranks by a count it reads without converting the group: a lone `count()`'s
+        /// state, or the exact distinct count `uniqExact` finalizes from its set, also as `uniqExactIf`
+        /// over the rows its condition admits (the analyzer makes it of `uniqExact(if(...))`). The
+        /// adaptive aggregation also bounds these counts by the rows of a group to skip groups (see
+        /// `AdaptiveTopKPruning`), which an approximate `uniq` estimate could exceed, and so could a
+        /// combinator that takes several values from a row, like `-Array`.
+        const auto & function = *aggregate.function;
+        const String name = function.getName();
+        const bool lone_count = name == "count" && aggregate.argument_names.empty() && aggregate.parameters.empty();
+        const bool distinct_count = (name == "uniqExact" || name == "uniqExactIf") && aggregate.parameters.empty()
+            && WhichDataType(function.getResultType()).isUInt64();
+        if (!lone_count && !distinct_count)
             return 0;
 
         aggregating->enableBucketTopK(n, ascending, i);

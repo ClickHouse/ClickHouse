@@ -40,6 +40,8 @@ SELECT count() FROM
     LIMIT 5
 ) SETTINGS query_plan_aggregation_bucket_top_k = 0;
 
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 SELECT 'the optimization still applies without an arrayJoin';
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1

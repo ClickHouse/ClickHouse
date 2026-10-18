@@ -5,6 +5,7 @@
 #include <Common/PODArray.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 
@@ -56,6 +57,15 @@ public:
     /// Scatter rows from the row-major buffer into columns in layout order.
     MutableColumns scatterRows(size_t start, size_t length) const;
     MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
+
+    /// Gathers selected fixed-width values into existing rows. A nullable field stores its null byte
+    /// followed by the value bytes. The source is a full column without `LowCardinality`, not a
+    /// constant, sparse or replicated one. Both spans must describe the same number of rows.
+    static void gatherFieldToRows(
+        const IColumn & source,
+        std::span<const UInt32> source_rows,
+        std::span<char * const> destination_rows,
+        size_t field_offset);
 
     const FieldLayout & getFieldLayout(size_t input_col_index) const;
 
