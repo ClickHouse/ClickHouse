@@ -4,6 +4,7 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SilkFiberMutex.h>
 #include <Common/UniqueLock.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -47,7 +48,7 @@ public:
     using ReadContext = RemoteQueryExecutorReadContext;
 
     /// To avoid deadlock in case of OOM and timeout in CancellationChecker
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, std::mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, Silk::FiberMutex>;
 
     /// We can provide additional logic for RemoteQueryExecutor
     /// For example for s3Cluster table function we provide an Iterator over tasks to do.
@@ -315,7 +316,7 @@ private:
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    std::mutex external_tables_mutex;
+    Silk::FiberMutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
     bool established = false;
@@ -335,7 +336,7 @@ private:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    mutable std::mutex was_cancelled_mutex;
+    mutable Silk::FiberMutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
@@ -344,7 +345,7 @@ private:
     /// set. A counter because `work` and `onUpdatePorts` can enter `finish` on different threads.
     /// Lock order is this mutex before `was_cancelled_mutex`; only the `cancel_in_finish_drain`
     /// failpoint reverses it, and there the counter is non-zero so `cancel` returns without locking.
-    mutable std::mutex finish_gate_mutex;
+    mutable Silk::FiberMutex finish_gate_mutex;
     size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
 
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can

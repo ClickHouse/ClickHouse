@@ -1,0 +1,13 @@
+<clickhouse>
+    <startup_scripts>
+        <scripts>
+            <query>CREATE TABLE default.startup_target (x UInt64) ENGINE = Memory</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE default.startup_runner (query String) ENGINE = QueryRunner</query>
+        </scripts>
+        <scripts>
+            <query>INSERT INTO default.startup_runner VALUES ('INSERT INTO default.startup_target VALUES (1)')</query>
+        </scripts>
+    </startup_scripts>
+</clickhouse>

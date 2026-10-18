@@ -14,12 +14,14 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-#define QUERY_RUNNER_SETTINGS(DECLARE, ALIAS) \
+#define QUERY_RUNNER_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, cluster, "", "Name of the cluster to send the queries to. If empty, the queries are executed locally.", 0) \
     DECLARE(String, shard, "1", "1-based index of the cluster's shard to send the queries to, or 'random' to pick a random shard per query, or 'all' to run each query on every shard. Requires the 'cluster' setting.", 0) \
     DECLARE(QueryRunnerMode, mode, QueryRunnerMode::ASYNCHRONOUS, "If 'synchronous', INSERT returns after all queries of the inserted batch have finished. If 'asynchronous', INSERT returns as soon as the queries are queued.", 0) \
-    DECLARE(NonZeroUInt64, threads, 4, "Number of background threads executing the queries.", 0) \
-    DECLARE(UInt64, max_queue_size, 1000, "Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged.", 0) \
+    DECLARE(WorkerKind, scheduler, WorkerKind::THREADS, "If 'threads', the queries run on a thread pool. If 'fibers', the queries run on fibers; requires the cluster mode, a build with silk, and the 'enable_silk_runtime' server setting - otherwise an error is thrown.", 0) \
+    DECLARE(NonZeroUInt64, threads, 4, "Number of background threads executing the queries. Threads only.", 0) \
+    DECLARE(UInt64, connection_pool_size, 100, "Size of the connection pool to each replica. A pool is kept per replica and per distinct `database` value.", 0) \
+    DECLARE_WITH_ALIAS(UInt64, max_pending_queries, 1000, "Maximum number of queries submitted but not yet finished, 0 means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged.", 0, max_queue_size) \
 
 DECLARE_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QUERY_RUNNER_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QueryRunnerSettings, QueryRunnerSetting)

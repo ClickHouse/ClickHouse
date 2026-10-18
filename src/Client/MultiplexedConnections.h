@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <Common/SilkFiberMutex.h>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -115,7 +116,7 @@ private:
     size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
-    mutable std::mutex cancel_mutex;
+    mutable Silk::FiberMutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;
 };

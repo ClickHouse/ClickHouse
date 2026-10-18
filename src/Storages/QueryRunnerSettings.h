@@ -15,6 +15,7 @@ struct QueryRunnerSettingsImpl;
 #define QUERY_RUNNER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, QueryRunnerMode) \
+    M(CLASS_NAME, WorkerKind) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64)
 
