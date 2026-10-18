@@ -9602,9 +9602,9 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior must opt in via
     /// the `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
-    /// Parts with no rows count as no parts: a mutation that deletes every row leaves such a part
-    /// active until cleanup removes it (#124118).
-    if (replace && std::ranges::all_of(src_all_parts, [](const auto & part) { return part->rows_count == 0; })
+    /// Parts whose rows are all gone count as no parts: a mutation that deletes every row and a
+    /// lightweight `DELETE` of every row leave such a part active (#124118).
+    if (replace && std::ranges::none_of(src_all_parts, [](const auto & part) { return part->hasExistingRows(); })
         && !query_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

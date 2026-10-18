@@ -774,7 +774,11 @@ public:
     bool hasLightweightDelete() const;
 
     /// Read existing rows count from _row_exists column
-    UInt64 readExistingRowsCount();
+    UInt64 readExistingRowsCount() const;
+
+    /// True if at least one row is not hidden by a lightweight delete. Reads `_row_exists` when the
+    /// cached `existing_rows_count` cannot tell.
+    bool hasExistingRows() const;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
