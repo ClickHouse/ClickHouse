@@ -149,6 +149,7 @@ private:
     ThreadPoolCallbackRunnerFast & runnerFor(FFI_VortexTaskQueue queue) const;
 
     /// Whether the reads have a pool of their own (`max_download_threads`) or share the parsing one.
+    /// Always false without a parsing pool: then `read` runs the reads inline too.
     bool hasSeparateIORunner() const;
 
     /// The queue whose drivers are responsible for running the tasks of `queue`. Without a separate

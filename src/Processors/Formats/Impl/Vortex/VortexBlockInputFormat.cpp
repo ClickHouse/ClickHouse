@@ -138,7 +138,12 @@ VortexBlockInputFormat::~VortexBlockInputFormat()
 
 bool VortexBlockInputFormat::hasSeparateIORunner() const
 {
-    return parser_shared_resources && !parser_shared_resources->io_runner.isDisabled();
+    /// Without a parsing pool `read` runs every task inline, the reads included. The download pool
+    /// may still exist, set up by a `Parquet` reader that initialized the shared resources first,
+    /// but reads scheduled on it would be invisible to `read`, which would then take a read still
+    /// in flight for a stuck scan.
+    return parser_shared_resources && !parser_shared_resources->io_runner.isDisabled()
+        && parser_shared_resources->parsing_runner.getMode() == ThreadPoolCallbackRunnerFast::Mode::ThreadPool;
 }
 
 ThreadPoolCallbackRunnerFast & VortexBlockInputFormat::runnerFor(FFI_VortexTaskQueue queue) const
