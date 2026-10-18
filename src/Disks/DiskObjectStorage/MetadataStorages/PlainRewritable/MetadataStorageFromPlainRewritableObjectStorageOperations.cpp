@@ -173,19 +173,19 @@ std::optional<StoredObject> removeLinkAndGetBlobToRemove(
 void copyBlobOfListedFile(
     IObjectStorage & object_storage,
     const std::filesystem::path & path,
-    const std::filesystem::path & remote_path,
-    const std::filesystem::path & remote_path_to,
+    const std::string & remote_path,
+    const std::string & remote_path_to,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
     try
     {
-        object_storage.copyObject(StoredObject(pathToGenericString(remote_path)), StoredObject(pathToGenericString(remote_path_to)), read_settings, write_settings);
+        object_storage.copyObject(StoredObject(remote_path), StoredObject(remote_path_to), read_settings, write_settings);
     }
     catch (...)
     {
         /// Some object storages (Azure) throw their own exception types.
-        if (!object_storage.exists(StoredObject(pathToGenericString(remote_path))))
+        if (!object_storage.exists(StoredObject(remote_path)))
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "The metadata lists the file '{}', but its blob '{}' does not exist: metadata and object storage diverged "
@@ -699,7 +699,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     copyBlobOfListedFile(*object_storage, path, remote_source_path, remote_tmp_path, getReadSettings(), getWriteSettings());
 
     remove_attempted = true;
-    object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_source_path)));
+    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
 
     fs_tree->removeFile(pathToGenericString(path));
 }
@@ -726,10 +726,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     {
         undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
         {
-            if (object_storage->exists(StoredObject(pathToGenericString(remote_source_path))))
+            if (object_storage->exists(StoredObject(remote_source_path)))
                 return;
 
-            if (!object_storage->exists(StoredObject(pathToGenericString(remote_tmp_path))))
+            if (!object_storage->exists(StoredObject(remote_tmp_path)))
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
                     "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
@@ -738,13 +738,13 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
                     remote_source_path,
                     remote_tmp_path);
 
-            object_storage->copyObject(StoredObject(pathToGenericString(remote_tmp_path)), StoredObject(pathToGenericString(remote_source_path)), getReadSettings(), getWriteSettings());
+            object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
         });
     }
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
     });
 
     /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
@@ -772,8 +772,8 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
         });
 
-        removed_objects.push_back(StoredObject(pathToGenericString(remote_source_path)));
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
+        removed_objects.push_back(StoredObject(remote_source_path));
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
         /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
         /// leaves either nothing or a marked leftover, never an unmarked one.
         removeTombstoneMarker(*object_storage, *layout, tmp_name);
@@ -873,7 +873,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
     undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     });
 }
 
@@ -1063,7 +1063,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fs_tree->recordFile(pathToGenericString(path_to), file_from_remote_info.value());
 
         target_remove_attempted = true;
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     }
     else
     {
@@ -1075,7 +1075,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
         object_storage->copyObject(
-            /*object_from=*/StoredObject(pathToGenericString(remote_path_from)), /*object_to=*/StoredObject(pathToGenericString(remote_path_to)), read_settings, write_settings);
+            /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
 
         /// Fires once the blob is published and before this method knows it.
         fiu_do_on(FailPoints::plain_object_storage_fail_after_copy_on_file_move, {
@@ -1088,7 +1088,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
 
         source_remove_attempted = true;
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_from)));
+        object_storage->removeObjectIfExists(StoredObject(remote_path_from));
     }
 
     fs_tree->removeFile(pathToGenericString(path_from));
@@ -1134,12 +1134,12 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     {
         undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
         {
-            if (object_storage->exists(StoredObject(pathToGenericString(remote_path_from))))
+            if (object_storage->exists(StoredObject(remote_path_from)))
                 return;
 
             /// Stops the reversal: with both keys gone, `remote_path_to` may hold the last copy of the source, which the
             /// stages below would overwrite or remove.
-            if (!object_storage->exists(StoredObject(pathToGenericString(tmp_remote_path_from))))
+            if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
                     "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
@@ -1149,8 +1149,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
                     tmp_remote_path_from);
 
             object_storage->copyObject(
-                /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_from)),
-                /*object_to=*/StoredObject(pathToGenericString(remote_path_from)),
+                /*object_from=*/StoredObject(tmp_remote_path_from),
+                /*object_to=*/StoredObject(remote_path_from),
                 read_settings,
                 write_settings);
         });
@@ -1172,7 +1172,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         if (!had_existing_target)
         {
             /// The key held no file before the move, so nothing of value can be there.
-            object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
+            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
             return;
         }
 
@@ -1180,7 +1180,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         if (!target_remove_attempted)
             return;
 
-        if (!object_storage->exists(StoredObject(pathToGenericString(tmp_remote_path_to))))
+        if (!object_storage->exists(StoredObject(tmp_remote_path_to)))
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Cannot restore the blob of the file '{}': its temporary copy '{}' is gone, and the move may have removed "
@@ -1190,8 +1190,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
                 remote_path_to);
 
         object_storage->copyObject(
-            /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_to)),
-            /*object_to=*/StoredObject(pathToGenericString(remote_path_to)),
+            /*object_from=*/StoredObject(tmp_remote_path_to),
+            /*object_to=*/StoredObject(remote_path_to),
             read_settings,
             write_settings);
     });
@@ -1201,7 +1201,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// either nothing or a marked leftover, never an unmarked one.
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
     });
 
     undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the source file '{}'", path_from), [&]
@@ -1211,7 +1211,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     });
 
     undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the target file '{}'", path_to), [&]
@@ -1234,7 +1234,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
         return;
     }
 
-    removed_objects.push_back(StoredObject(pathToGenericString(remote_path_from)));
+    removed_objects.push_back(StoredObject(remote_path_from));
 
     if (source_copy_attempted)
     {
@@ -1242,8 +1242,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the move from '{}' to '{}'", path_from, path_to);
         });
 
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
-        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
         /// The markers outlive the objects they mark, so that a process that dies in the middle of this always
         /// leaves either nothing or a marked leftover, never an unmarked one.
         removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
