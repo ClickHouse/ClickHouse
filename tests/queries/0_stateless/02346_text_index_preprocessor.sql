@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache and global udf factory
-
 -- Tests the preprocessor argument in the text indexes
 
 DROP TABLE IF EXISTS tab;
@@ -134,14 +131,14 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, 'Baz');
 DROP TABLE tab;
 
 SELECT '- Test preprocessor declaration using a UDF.';
-DROP FUNCTION IF EXISTS udf;
-CREATE FUNCTION udf AS (s) -> concat(val, lower(val));
+DROP FUNCTION IF EXISTS udf_02346;
+CREATE FUNCTION udf_02346 AS (s) -> concat(val, lower(val));
 
 CREATE TABLE tab
 (
     id UInt64,
     val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = udf(val))
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = udf_02346(val))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -167,7 +164,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, 'BAR');
 SELECT count() FROM tab WHERE hasAnyTokens(val, 'Baz');
 
 DROP TABLE tab;
-DROP FUNCTION udf;
+DROP FUNCTION udf_02346;
 
 SELECT 'Negative tests.';
 

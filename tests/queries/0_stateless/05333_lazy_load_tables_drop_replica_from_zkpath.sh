@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
-# no-parallel: `SYSTEM DROP REPLICA` reaches server-wide state.
+# Tags: no-replicated-database, no-shared-merge-tree
 # no-replicated-database: the database engine is replaced, which drops the `lazy_load_tables` setting.
 # no-shared-merge-tree: the table engine is replaced.
 

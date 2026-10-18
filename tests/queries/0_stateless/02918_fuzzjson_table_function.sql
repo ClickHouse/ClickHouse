@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database: Named collection is used
+-- Tags: no-replicated-database: Named collection is used
 --
 SET explain_query_plan_default = 'legacy';
 
