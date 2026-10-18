@@ -29,6 +29,12 @@ namespace ProfileEvents
 namespace DB::Parquet
 {
 
+/// Whether `to - from >= gap`, without wrapping around for large `gap` (it comes from unrestricted settings).
+static bool gapAtLeast(size_t from, size_t to, size_t gap)
+{
+    return to >= from && to - from >= gap;
+}
+
 void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_)
 {
     min_bytes_for_seek = options.min_bytes_for_seek;
@@ -339,8 +345,8 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     for (size_t idx = range_idx; idx > 0; --idx)
     {
         const RangeState & r = ranges[idx - 1];
-        if (r.end + min_bytes_for_seek <= start_offset || // short gap
-            r.start + bytes_per_read_task <= initial_offset || // task not too big
+        if (gapAtLeast(r.end, start_offset, min_bytes_for_seek) || // short gap
+            gapAtLeast(r.start, initial_offset, bytes_per_read_task) || // task not too big
             !r.request->allow_incidental_read.load(std::memory_order_relaxed)) // range wants to be coalesced
             break;
 
@@ -374,8 +380,8 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     for (size_t idx = range_idx + 1; idx < ranges.size(); ++idx)
     {
         const RangeState & r = ranges[end_idx];
-        if (end_offset + min_bytes_for_seek <= r.start ||
-            initial_offset + bytes_per_read_task <= r.end ||
+        if (gapAtLeast(end_offset, r.start, min_bytes_for_seek) ||
+            gapAtLeast(initial_offset, r.end, bytes_per_read_task) ||
             !r.request->allow_incidental_read.load(std::memory_order_relaxed))
             break;
 

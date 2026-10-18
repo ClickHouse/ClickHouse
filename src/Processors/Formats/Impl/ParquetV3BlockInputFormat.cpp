@@ -155,7 +155,10 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     , object_with_metadata(object_with_metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
-    read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    /// Saturate: `min_bytes_for_seek` comes from an unrestricted setting.
+    read_options.bytes_per_read_task = min_bytes_for_seek > std::numeric_limits<size_t>::max() / 4
+        ? std::numeric_limits<size_t>::max()
+        : min_bytes_for_seek * 4;
 
     if (!format_filter_info)
         format_filter_info = std::make_shared<FormatFilterInfo>();

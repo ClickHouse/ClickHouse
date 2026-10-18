@@ -2703,7 +2703,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && worth_convert_to_two_level
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = spill_decision_memory + params.min_free_disk_space;
+        size_t size = getTemporaryFileReserveSize(static_cast<size_t>(spill_decision_memory), params.min_free_disk_space);
         writeToTemporaryFile(result, size);
         reseedKeptKeysAfterSpill(result);
     }
@@ -2747,7 +2747,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
+    writeToTemporaryFile(data_variants, getTemporaryFileReserveSize(before, params.min_free_disk_space));
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -2755,7 +2755,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
 
 void Aggregator::consumeToTemporaryFile(AggregatedDataVariants & data_variants) const
 {
-    flushToTemporaryFile(data_variants, data_variants.memoryUsage() + params.min_free_disk_space, /*reinitialize=*/false);
+    flushToTemporaryFile(data_variants, getTemporaryFileReserveSize(data_variants.memoryUsage(), params.min_free_disk_space), /*reinitialize=*/false);
     /// The conversion does not clear the tables (the inline-count method returns before its
     /// shrink), so tear the variants down here: the consumer holds them only to destroy them,
     /// and the buffers should return to the allocator now, not when the last owner drops.
@@ -5751,7 +5751,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && worth_convert_to_two_level
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = getTemporaryFileReserveSize(static_cast<size_t>(current_memory_usage), params.min_free_disk_space);
         writeToTemporaryFile(result, size);
         reseedKeptKeysAfterSpill(result);
     }

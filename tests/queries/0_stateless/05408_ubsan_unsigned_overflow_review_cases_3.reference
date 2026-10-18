@@ -1,0 +1,10 @@
+-- timeSlots stops after the last representable slot
+[4294967295]
+[4294967295]
+[4294967295]
+-- pointInPolygon with an empty hole
+1
+-- Parquet with the maximum seek threshold
+4
+-- unrepresentable free disk space to keep for a spill
+NOT_ENOUGH_SPACE

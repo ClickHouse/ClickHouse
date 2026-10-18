@@ -637,6 +637,8 @@ bool PointInPolygonWithGrid<CoordinateType>::isInside(const Polygon & poly, Coor
     auto inside_ring = [x, y](const Ring & ring)
     {
         bool inside = false;
+        if (ring.empty())
+            return inside;
         for (size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
         {
             const Point & a = ring[i];

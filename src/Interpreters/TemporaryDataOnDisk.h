@@ -69,6 +69,10 @@ using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
+/// The size to reserve for a temporary file of `data_size` bytes that keeps `min_free_disk_space` bytes free.
+/// Throws `NOT_ENOUGH_SPACE` if the sum is not representable (`min_free_disk_space` comes from an unrestricted setting).
+size_t getTemporaryFileReserveSize(size_t data_size, size_t min_free_disk_space);
+
 #if ENABLE_DISTRIBUTED_CACHE
 struct DistributedCacheTag
 {};
