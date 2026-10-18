@@ -420,31 +420,36 @@ size_t nonAdaptiveStreamsShare(const NameAndTypePair & column, size_t column_str
     return std::min(column_streams, 2 * countNonAdaptiveColumnStreams(column));
 }
 
-/// On-disk column data file (.bin) names a wide part physically stores: one per non-ephemeral substream.
-/// This is the ground truth for the stream layout of an old part that predates columns_substreams.txt
-/// and, unlike the default serialization, it accounts for the dynamic substreams of JSON / Dynamic
-/// columns (which are written as separate files on disk but cannot be enumerated from the default
-/// serialization).
+/// Stream names of the column data files (.bin) a wide part physically stores: one per non-ephemeral
+/// substream. This is the ground truth for the stream layout of an old part that predates
+/// columns_substreams.txt and, unlike the default serialization, it accounts for the dynamic substreams of
+/// JSON / Dynamic columns (which are written as separate files on disk but cannot be enumerated from the
+/// default serialization). The .bin extension is stripped, so the names compare equal to the stream names
+/// ISerialization::getFileNameForStream produces (collectStaticStreamFileNames) and that
+/// columns_substreams.txt records.
 std::unordered_set<std::string> collectWidePartDataFileNames(const IMergeTreeDataPart & part)
 {
     std::unordered_set<std::string> data_files;
     for (const auto & [file_name, _] : part.checksums.files)
         if (file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
-            data_files.insert(file_name);
+            data_files.insert(file_name.substr(0, file_name.size() - std::string_view(IMergeTreeDataPart::DATA_FILE_EXTENSION).size()));
     return data_files;
 }
 
-/// Whether a wide part's on-disk stream file (a .bin name) belongs to the given column. Every stream file is
-/// named escapeForFileName(column) followed by '.', '%2E', or the file extension (the ColumnsSubstreams
-/// substream-name invariant, see ColumnsSubstreams::findInvalidSubstreamName), so no column's escaped name is a
-/// prefix of another column's files. Used to keep only the files of columns the merged part still writes and to
-/// drop an old part's on-disk files for a column removed by a metadata-only ALTER DROP COLUMN.
+/// Whether a wide part's on-disk stream (a name from collectWidePartDataFileNames) belongs to the given column.
+/// Every stream is named escapeForFileName(column), optionally followed by a substream suffix starting with '.'
+/// or '%2E' (the ColumnsSubstreams substream-name invariant, see ColumnsSubstreams::findInvalidSubstreamName),
+/// so no column's escaped name is a prefix of another column's streams. Used to keep only the streams of columns
+/// the merged part still writes and to drop an old part's on-disk files for a column removed by a metadata-only
+/// ALTER DROP COLUMN. The offsets a Nested object's columns share (share_nested_offsets) are named after the
+/// Nested object, not after any of its columns, so they do not belong to any column here; callers that count a
+/// part's streams match them by their static name (collectStaticStreamFileNames) instead.
 bool streamFileBelongsToColumn(const std::string & file_name, const std::string & escaped_column_name)
 {
     if (!file_name.starts_with(escaped_column_name))
         return false;
     const std::string_view rest(file_name.data() + escaped_column_name.size(), file_name.size() - escaped_column_name.size());
-    return rest.starts_with('.') || rest.starts_with("%2E");
+    return rest.empty() || rest.starts_with('.') || rest.starts_with("%2E");
 }
 
 /// Number of on-disk column streams that a wide part actually reads/writes through. Prefer the exact
@@ -516,9 +521,13 @@ size_t countPartStreamsForColumns(
         for (const auto & column : written_columns)
             escaped_written_columns.push_back(escapeForFileName(column.name));
 
+        /// The offsets shared by the columns of a Nested object (share_nested_offsets, e.g. n.size0) are named
+        /// after the Nested object rather than any of its columns, so they are matched by their static name.
+        const auto static_files = collectStaticStreamFileNames(written_columns, ISerialization::StreamFileNameSettings(settings));
         size_t data_files = 0;
         for (const auto & file_name : collectWidePartDataFileNames(part))
-            if (std::any_of(
+            if (static_files.contains(file_name)
+                || std::any_of(
                     escaped_written_columns.begin(), escaped_written_columns.end(),
                     [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
                 ++data_files;
