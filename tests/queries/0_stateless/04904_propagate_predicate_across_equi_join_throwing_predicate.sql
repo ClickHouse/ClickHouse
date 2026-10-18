@@ -19,7 +19,7 @@ SELECT count()
 FROM (SELECT * FROM prop_throwing_src WHERE intDiv(1, k) = 1) AS s
 INNER JOIN prop_throwing_dst AS d ON s.k = d.k;
 
--- A join key outside the target primary key must not gain a full scan filter
+-- A join key outside the target primary key is copied too: it shrinks the hash table
 SELECT countIf(explain LIKE '%ilter column:%k = 1%')
 FROM
 (

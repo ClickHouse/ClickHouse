@@ -13,8 +13,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key.
-/// Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
+/// Copies filter conjuncts across equi-join keys. A copy on a primary key column prunes granules;
+/// on any other column it still shrinks the target's join input. Limited to `Expression`/`Filter`
+/// chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
@@ -80,8 +81,8 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from, empty when there is none
-NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// Primary key of the MergeTree the target reads from. `std::nullopt` when it reads from something else
+std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
@@ -93,13 +94,30 @@ NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
     return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// Worth copying only when every substituted key is in the target's primary key
-bool atomCanUseTargetPrimaryKey(
+/// A fixed-size comparison costs a fraction of what any join algorithm spends per row, so a copy
+/// that filters nothing is a rounding error. A set lookup is an order of magnitude more, so it has
+/// to earn its place by pruning the primary key instead of being evaluated over the whole target
+bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
+{
+    if (atom->function_base->getName() == "in")
+        return false;
+    for (const auto * child : atom->children)
+    {
+        if (!child->result_type->isValueRepresentedByNumber())
+            return false;
+    }
+    return true;
+}
+
+/// Every substituted key has to resolve to a column the target reads, and a copy that cannot prune
+/// the primary key is only worth it when the atom itself is cheap
+bool atomWorthCopying(
     const QueryPlan::Node * target_root,
-    const NameSet & primary_key_columns,
+    const NameSet & prunable_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
+    const bool cheap = atomIsCheapEnoughForAnyTarget(atom);
     for (const auto * child : atom->children)
     {
         if (child->type != ActionsDAG::ActionType::INPUT)
@@ -108,7 +126,9 @@ bool atomCanUseTargetPrimaryKey(
         if (it == substitution.end())
             return false;
         const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
-        if (!target_column || !primary_key_columns.contains(*target_column))
+        if (!target_column)
+            return false;
+        if (!cheap && !prunable_columns.contains(*target_column))
             return false;
     }
     return true;
@@ -215,15 +235,17 @@ size_t tryPropagateToSide(
     QueryPlan::Node * source_root,
     const FilterStep * source_filter,
     const SubstitutionMap & substitution,
+    bool index_analysis_enabled,
     QueryPlan::Nodes & nodes)
 {
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    /// Only helps when the target feeds a MergeTree primary key
     const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (primary_key_columns.empty())
+    if (!primary_key_columns)
         return 0;
+    /// With index analysis off a key column prunes nothing, so an expensive atom has nothing to earn
+    const NameSet prunable_columns = index_analysis_enabled ? *primary_key_columns : NameSet{};
 
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
@@ -241,7 +263,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomCanUseTargetPrimaryKey(target_root, primary_key_columns, atom, filter_level_sub))
+            && atomWorthCopying(target_root, prunable_columns, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())
@@ -281,7 +303,8 @@ size_t tryPropagateToSide(
 
 }
 
-size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
+size_t tryPropagatePredicateAcrossEquiJoin(
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool index_analysis_enabled, const Optimization::ExtraSettings &)
 {
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
     if (!join || parent_node->children.size() != 2)
@@ -331,9 +354,9 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
 
     size_t propagated = 0;
     if (can_l_to_r)
-        propagated += tryPropagateToSide(parent_node, 1, left_root, left_filter, l_to_r, nodes);
+        propagated += tryPropagateToSide(parent_node, 1, left_root, left_filter, l_to_r, index_analysis_enabled, nodes);
     if (can_r_to_l)
-        propagated += tryPropagateToSide(parent_node, 0, right_root, right_filter, r_to_l, nodes);
+        propagated += tryPropagateToSide(parent_node, 0, right_root, right_filter, r_to_l, index_analysis_enabled, nodes);
     return propagated;
 }
 
