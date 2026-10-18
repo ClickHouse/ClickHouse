@@ -1,0 +1,22 @@
+[('a','"b"')]
+[('a','b')]
+['a']
+['1','"x"']
+[1,2]
+[('b','1')]
+Array(Tuple(String, String))
+Array(Tuple(String, String))
+Array(String)
+Array(String)
+Array(Int64)
+Nullable(String)
+Nullable(Tuple(a Int64))
+1	[('a','"b"'),('c','[1,2]')]	[('a','b'),('c','[1,2]')]	['a','c']	[]	[]
+2	[]	[]	[]	[]	[]
+3	[]	[]	[]	['1','2']	[1,2]
+['b']
+[]
+['b']
+[]
+[]
+\N	Nullable(Nothing)
