@@ -42,12 +42,15 @@ namespace Setting
 }
 
 /// Drops the distinct-value caps and the uniqueness of a result whose values the derivation does not follow.
-static void clearDistinctValueCaps(ExpressionStatistics & statistics)
+/// For a step that can add values to its input columns: no limit, value range or NULL fraction of the input holds.
+static void clearValueBounds(ExpressionStatistics & statistics)
 {
     for (auto & [_, column_stats] : statistics.column_statistics)
     {
         column_stats.max_distinct_values = 0;
         column_stats.unique = false;
+        column_stats.clearValueRange();
+        column_stats.null_fraction.reset();
     }
 }
 
@@ -237,7 +240,7 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         result.min_row_count = 0;
         result.max_row_count = Float64(std::numeric_limits<UInt64>::max());
         /// The array columns become their elements, which the caps of the arrays do not bound.
-        clearDistinctValueCaps(result);
+        clearValueBounds(result);
         group->statistics = std::move(result);
     }
     else if (!expression->inputs.empty())
@@ -246,7 +249,7 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         /// estimate has none either.
         group->statistics = input_statistics(0);
         /// A step not derived here can add values (`ROLLUP` and `CUBE` fill keys with defaults).
-        clearDistinctValueCaps(*group->statistics);
+        clearValueBounds(*group->statistics);
         for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
         {
             group->statistics->rows_unknown |= input_statistics(input_index).rows_unknown;

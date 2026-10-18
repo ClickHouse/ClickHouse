@@ -316,12 +316,14 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         stats.max_rows = multiplyRows(input_stats.max_rows, sets);
         stats.imprecise_estimate = true;
         /// A key missing from a set is filled with a default or NULL: one more value, which a group of another set
-        /// can have too.
+        /// can have too, and which can be outside the value range.
         for (auto & [_, column_stats] : stats.column_stats)
         {
             if (column_stats.max_distinct_values)
                 column_stats.max_distinct_values = saturatingAdd(column_stats.max_distinct_values, UInt64{1});
             column_stats.unique = false;
+            column_stats.clearValueRange();
+            column_stats.null_fraction.reset();
         }
     }
     return stats;
@@ -384,6 +386,27 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 namespace
 {
+
+/// Whether the read returns only values that the statistics of its parts describe.
+bool readReturnsStoredValues(const ReadFromMergeTree & reading)
+{
+    const auto & data = reading.getMergeTreeData();
+    /// A `FINAL` merge can make rows that are not stored (a sum, a merged aggregate state, a rolled up value, or a
+    /// row made of the values of several rows); Replacing and the collapsing modes return some of the stored rows.
+    if (reading.isQueryWithFinal())
+    {
+        using enum MergeTreeData::MergingParams::Mode;
+        const auto mode = data.merging_params.mode;
+        if (mode != Ordinary && mode != Replacing && mode != Collapsing && mode != VersionedCollapsing)
+            return false;
+    }
+    /// The read applies the patches and mutations of its snapshot to the parts: updates, type conversions, and
+    /// renames or drops that give a column name the values of another column or defaults.
+    if (const auto snapshot = reading.getMutationsSnapshot();
+        snapshot && (snapshot->hasPatchParts() || snapshot->hasDataMutations() || snapshot->hasAlterMutations() || snapshot->hasMetadataMutations()))
+        return false;
+    return !data.hasEnabledMaskingPolicies(reading.getContext());
+}
 
 RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
@@ -469,6 +492,12 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
             {
                 auto relation_profile = estimateReadProfile(
                     *reading, *estimator, reading->getStorageMetadata(), analyzed_result.get(), filter, prewhere_node);
+                if (!readReturnsStoredValues(*reading))
+                    for (auto & [_, column_stats] : relation_profile.column_stats)
+                    {
+                        column_stats.clearValueRange();
+                        column_stats.null_fraction.reset();
+                    }
                 /// A selectivity estimate that rounds to zero rows does not prove the relation empty;
                 /// one row keeps the joins above from taking it as empty.
                 RelationStats stats{

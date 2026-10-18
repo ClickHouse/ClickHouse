@@ -109,6 +109,16 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     for (auto & [_, stats] : column_stats)
         stats.unique = false;
 
+    /// NULLs or defaults in place of the values of a side can be outside the value range of its columns.
+    const auto drop_value_ranges = [&](const std::unordered_map<String, ColumnStats> & filled_side)
+    {
+        for (const auto & [column, _] : filled_side)
+        {
+            auto & stats = column_stats[column];
+            stats.clearValueRange();
+            stats.null_fraction.reset();
+        }
+    };
     /// An outer join pads the unmatched rows of one side with NULLs or defaults for the other side's
     /// columns: one more value each.
     const auto add_padding_value = [&](const std::unordered_map<String, ColumnStats> & padded_side)
@@ -116,8 +126,17 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         for (const auto & [column, _] : padded_side)
             if (auto & values = column_stats[column].max_distinct_values; values != 0)
                 values = saturatingAdd(values, UInt64{1});
+        drop_value_ranges(padded_side);
     };
-    if (join_operator.strictness != JoinStrictness::Semi && join_operator.strictness != JoinStrictness::Anti)
+    if (join_operator.strictness == JoinStrictness::Anti)
+    {
+        /// The columns of the other side, when the output has them, hold only NULLs or defaults.
+        if (join_operator.kind == JoinKind::Left)
+            drop_value_ranges(right->column_stats);
+        if (join_operator.kind == JoinKind::Right)
+            drop_value_ranges(left->column_stats);
+    }
+    else if (join_operator.strictness != JoinStrictness::Semi)
     {
         if (join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Full)
             add_padding_value(right->column_stats);

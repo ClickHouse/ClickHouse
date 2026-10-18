@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB::ErrorCodes
 {
@@ -206,6 +207,32 @@ Float64 unionWidth(Float64 width, Float64 rows, Float64 other_width, Float64 oth
     return std::max(width, other_width);
 }
 
+namespace
+{
+
+/// The value range and NULL fraction of a union cover the values of both inputs; unknown when an input's are.
+void mergeUnionValueStats(ColumnStats & stats, const ColumnStats * other, UInt64 rows, UInt64 other_rows)
+{
+    const bool ranges_comparable = other && stats.min_value && stats.max_value && other->min_value && other->max_value
+        && stats.value_type && other->value_type && stats.value_type->equals(*other->value_type)
+        && stats.min_value->getType() == other->min_value->getType() && stats.max_value->getType() == other->max_value->getType();
+    if (ranges_comparable)
+    {
+        stats.min_value = std::min(*stats.min_value, *other->min_value);
+        stats.max_value = std::max(*stats.max_value, *other->max_value);
+    }
+    else
+        stats.clearValueRange();
+
+    const Float64 all_rows = Float64(rows) + Float64(other_rows);
+    if (other && stats.null_fraction && other->null_fraction && all_rows > 0)
+        stats.null_fraction = (*stats.null_fraction * Float64(rows) + *other->null_fraction * Float64(other_rows)) / all_rows;
+    else
+        stats.null_fraction.reset();
+}
+
+}
+
 void addUnionColumnStats(
     std::unordered_map<String, ColumnStats> & result,
     const Names & result_columns,
@@ -238,6 +265,7 @@ void addUnionColumnStats(
             stats.domain_distinct_values = std::max(stats.domain_distinct_values, other_column->second.domain_distinct_values);
             stats.avg_bytes = unionWidth(stats.avg_bytes, Float64(result_rows), other_column->second.avg_bytes, Float64(other_rows));
         }
+        mergeUnionValueStats(stats, other_column == other.end() ? nullptr : &other_column->second, result_rows, other_rows);
     }
 }
 
@@ -420,8 +448,7 @@ void limitColumnStats(std::unordered_map<String, ColumnStats> & column_stats, st
     {
         if (rows && stats.num_distinct_values > *rows)
             stats.num_distinct_values = *rows;
-        stats.min_value.reset();
-        stats.max_value.reset();
+        stats.clearValueRange();
         stats.null_fraction.reset();
     }
 }
@@ -492,6 +519,88 @@ void updateJoinKeyDistinctCounts(
     }
 }
 
+namespace
+{
+
+/// The range of `output` values, when `output` is a chain of one-argument functions of `input` that is
+/// monotonic on the range of the input values.
+std::optional<Range> mapRangeThroughMonotonicChain(const ActionsDAG::Node & output, const ActionsDAG::Node & input, const ColumnStats & stats)
+{
+    if (!stats.min_value || !stats.max_value || !stats.value_type)
+        return {};
+    /// A range of another type has another meaning for the same `Field` (a `JOIN USING` can cast the column).
+    const auto input_type = removeLowCardinalityAndNullable(input.result_type);
+    if (!removeLowCardinalityAndNullable(stats.value_type)->equals(*input_type))
+        return {};
+    /// The statistics of a floating-point column leave `NaN` out of its range, and a function can map `NaN`
+    /// outside the range it maps the other values to.
+    if (isFloat(input_type))
+        return {};
+
+    KeyCondition::MonotonicFunctionsChain chain;
+    for (const auto * node = &output; node != &input; node = node->children.front())
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            continue;
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 1
+            || !node->function_base->hasInformationAboutMonotonicity())
+            return {};
+        chain.push_back(node->function_base);
+    }
+    std::ranges::reverse(chain);
+    return KeyCondition::applyMonotonicFunctionsChainToRange(
+        Range(*stats.min_value, true, *stats.max_value, true), chain, input.result_type);
+}
+
+/// Number of integers in a closed range whose bounds are 64-bit integers.
+std::optional<UInt64> countIntegersInRange(const Range & range)
+{
+    const auto left_type = range.left.getType();
+    if (left_type != range.right.getType())
+        return {};
+
+    UInt64 width = 0;
+    if (left_type == Field::Types::UInt64)
+    {
+        const auto left = range.left.safeGet<UInt64>();
+        const auto right = range.right.safeGet<UInt64>();
+        if (right < left)
+            return {};
+        width = right - left;
+    }
+    else if (left_type == Field::Types::Int64)
+    {
+        const auto left = range.left.safeGet<Int64>();
+        const auto right = range.right.safeGet<Int64>();
+        if (right < left)
+            return {};
+        width = static_cast<UInt64>(right) - static_cast<UInt64>(left);
+    }
+    else
+        return {};
+    return saturatingAdd(width, UInt64{1});
+}
+
+/// A monotonic function maps the input range into the range between its values at the ends, so an
+/// integer result has at most as many values as that range holds integers (e.g. `toYear(d)` of a decade
+/// of dates has at most 11). Statistics of some parts only can miss values outside the range, so the
+/// bound caps the estimates but not `max_distinct_values`.
+void boundStatsByMonotonicRange(ColumnStats & stats, const Range & output_range, const DataTypePtr & output_type)
+{
+    stats.min_value = static_cast<const Field &>(output_range.left);
+    stats.max_value = static_cast<const Field &>(output_range.right);
+    stats.value_type = output_type;
+    const auto integers = countIntegersInRange(output_range);
+    if (!integers)
+        return;
+    if (stats.num_distinct_values != 0)
+        stats.num_distinct_values = std::min(stats.num_distinct_values, *integers);
+    if (stats.domain_distinct_values != 0)
+        stats.domain_distinct_values = std::min(stats.domain_distinct_values, *integers);
+}
+
+}
+
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
@@ -527,13 +636,20 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
         /// The value range and NULL set survive only lineage known to pass the value through
-        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
-        /// or a `CAST`, which may rewrite NULL rows into real values.
+        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `cityHash64(k)`)
+        /// or a `CAST`, which may rewrite NULL rows into real values. A function chain that is monotonic
+        /// on the value range maps the range instead, unless it turns NULL rows into values (`assumeNotNull`
+        /// exposes whatever values are stored under NULL, which the range does not cover).
         if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
         {
-            stats.min_value.reset();
-            stats.max_value.reset();
+            const auto & output = *outputs[output_lineage.output_position];
+            std::optional<Range> output_range;
+            if (output_lineage.input->ndv_delta == 0)
+                output_range = mapRangeThroughMonotonicChain(output, *inputs[output_lineage.input->input_position], stats);
+            stats.clearValueRange();
             stats.null_fraction.reset();
+            if (output_range)
+                boundStatsByMonotonicRange(stats, *output_range, output.result_type);
         }
         /// Such a function can map two values to one.
         if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound || output_lineage.input->ndv_delta != 0)

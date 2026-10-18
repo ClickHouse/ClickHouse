@@ -22,9 +22,12 @@ struct ColumnStats
     UInt64 table_selected_rows = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
-    /// Value range from `basic`/`minmax` statistics; unset when unknown.
+    /// Value range, as values of `value_type`; unset when unknown. It comes from `basic`/`minmax` statistics and
+    /// a monotonic function can map it. A user must check the type: a `JOIN USING` can change the type of the
+    /// column and keep the range. A step that can add values outside the range clears it.
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
+    DataTypePtr value_type = nullptr;
     /// Fraction of NULL values; unset when unknown.
     std::optional<Float64> null_fraction = {};
     /// Most distinct values the column can have, proven by a filter (`x = c`, `x IN (c1, ...)`) and kept
@@ -34,6 +37,13 @@ struct ColumnStats
     /// Every value of the column is on at most one row: the column is the only key of an aggregation. A join on it
     /// matches each row of the other side at most once. Whatever can repeat a row (a join, a union) drops the flag.
     bool unique = false;
+
+    void clearValueRange()
+    {
+        min_value.reset();
+        max_value.reset();
+        value_type = nullptr;
+    }
 };
 
 struct RelationProfile

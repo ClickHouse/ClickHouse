@@ -174,6 +174,7 @@ static ColumnStats makeColumnStats(
     auto estimate = stats->getEstimate();
     result.min_value = std::move(estimate.estimated_min);
     result.max_value = std::move(estimate.estimated_max);
+    result.value_type = stats->getDataType();
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
     return result;
