@@ -33,7 +33,7 @@
 [('host','h1')]	[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]
 [('host','h2')]	[('1970-01-01 00:01:50.000',0.75),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]
 -- the in-order aggregation runs over primary key ranges
-4	0
+1	0
 1
 -- the split by primary key ranges can be switched off by the setting
 0	1

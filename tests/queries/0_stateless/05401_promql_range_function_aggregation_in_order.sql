@@ -109,26 +109,31 @@ DROP TABLE time_ranges_table;
 DROP TABLE tags_table;
 
 -- Many series: each series is a counter with one sample per second, so the rate of every series is 1 and the sum is the number of series.
+-- Four inserts make four parts with overlapping ranges of ids.
 DROP TABLE IF EXISTS prometheus_big;
 CREATE TABLE prometheus_big ENGINE = TimeSeries;
 
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(0, 300))
-FROM numbers(4000);
+FROM numbers(500);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(300, 600))
-FROM numbers(4000);
+FROM numbers(500);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(600, 900))
-FROM numbers(4000);
+FROM numbers(500);
 INSERT INTO prometheus_big (metric_name, tags, samples)
 SELECT 'big', map('inst', toString(number)), arrayMap(i -> (toDateTime64(i, 3), toFloat64(i)), range(900, 1200))
-FROM numbers(4000);
+FROM numbers(500);
 
--- The samples are split into one primary key range per thread. Each range is aggregated on its own thread
--- and the streams are not merged, because the ranges hold disjoint series.
+-- The table is small, so a lower threshold per stream keeps four reading streams.
+SET merge_tree_min_rows_for_concurrent_read = 1024;
+SET merge_tree_min_bytes_for_concurrent_read = 1024;
+
+-- The samples are split into primary key ranges, up to one per thread. Each range is aggregated on its own thread
+-- and the streams are not merged, because the ranges hold disjoint series. The number of ranges depends on the marks.
 SELECT '-- the in-order aggregation runs over primary key ranges';
-SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') AS ranges,
+SELECT countIf(explain LIKE '%FilterSortedStreamByRange%') > 1 AS split,
        countIf(explain LIKE '%FinishAggregatingInOrderTransform%') AS merging
 FROM (EXPLAIN PIPELINE SELECT * FROM prometheusQueryRange('prometheus_big', 'sum(rate(big[60s]))', 60, 1200, 10));
 

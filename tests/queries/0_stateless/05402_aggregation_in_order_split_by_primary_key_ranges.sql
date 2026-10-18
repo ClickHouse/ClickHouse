@@ -10,6 +10,8 @@ SET merge_tree_min_rows_for_concurrent_read = 1024;
 SET merge_tree_min_bytes_for_concurrent_read = 1024;
 SET optimize_aggregation_in_order = 1;
 SET aggregation_in_order_split_by_primary_key_ranges = 1;
+-- The queries below group by up to 100000 distinct keys; a small block budget would make one block per key.
+SET aggregation_in_order_max_block_bytes = 50000000;
 
 DROP TABLE IF EXISTS t_agg_ranges;
 CREATE TABLE t_agg_ranges (k UInt64, ts UInt64, v Float64)

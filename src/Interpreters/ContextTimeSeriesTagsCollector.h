@@ -154,6 +154,11 @@ public:
     Group replaceTag(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
     VectorWithMemoryTracking<Group> replaceTag(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
 
+    /// The ids of a selector whose set of tags is stored under several ids, keyed by the query which finds them.
+    /// The query is executed once per query context: the selector is evaluated several times by the generated SQL.
+    ColumnPtr findIDsSharingTags(const String & query) const;
+    void storeIDsSharingTags(const String & query, ColumnPtr ids);
+
 private:
     /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
@@ -259,6 +264,8 @@ private:
     VectorWithMemoryTracking<UInt64> sampling_keys TSA_GUARDED_BY(mutex);
 
     std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
+
+    std::unordered_map<String, ColumnPtr> ids_sharing_tags_by_query TSA_GUARDED_BY(mutex);
 
     /// Identifier maps: a typed map per common fixed-size id layout, and the generic map for other id types.
     IDMap<UInt64> id_map_uint64 TSA_GUARDED_BY(mutex);

@@ -201,7 +201,8 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         auto aggregation = aggregateRangeVector(range_argument, std::move(aggregate_function), context);
         builder.select_list.push_back(std::move(aggregation.group_expression));
         builder.select_list.back()->setAlias(ColumnNames::Group);
-        builder.group_by.push_back(std::move(aggregation.group_by_key));
+        if (aggregation.group_by_key)
+            builder.group_by.push_back(std::move(aggregation.group_by_key));
         result_values = std::move(aggregation.aggregate_function);
     }
 

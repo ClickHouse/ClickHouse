@@ -429,6 +429,7 @@ namespace
                 /// GROUP BY <group>
                 /// HAVING notEmpty(samples)
                 /// The samples of a series are aggregated as in the functions over range vectors, see aggregateRangeVector().
+                /// When the aggregation gives no key, <raw_data> is already aggregated per series and `WHERE notEmpty(samples)` is used.
                 auto aggregation = aggregateRangeVector(
                     result,
                     makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
@@ -447,8 +448,15 @@ namespace
                     make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
                 time_series->setAlias(samples_outer_column_name);
 
-                group_by.push_back(std::move(aggregation.group_by_key));
-                having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                if (aggregation.group_by_key)
+                {
+                    group_by.push_back(std::move(aggregation.group_by_key));
+                    having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
+                else
+                {
+                    where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
 
                 break;
             }

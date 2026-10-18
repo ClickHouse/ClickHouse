@@ -15,9 +15,27 @@ struct TimeSeriesSettings;
 class StorageTimeSeriesSelector : public StorageWithCommonVirtualColumns
 {
 public:
+    /// What the table function returns: the optional last argument `mode`.
+    enum class Mode
+    {
+        /// The samples of the matching series: columns `id`, `timestamp`, `value`.
+        SAMPLES,
+
+        /// The samples of the matching series whose set of tags is stored under several matching ids.
+        /// Nothing is read from the samples table when every matching set of tags is stored under one id.
+        SAMPLES_OF_IDS_SHARING_TAGS,
+
+        /// The ids of the matching series whose set of tags is stored under several matching ids: column `id`.
+        IDS_SHARING_TAGS,
+    };
+
+    static constexpr std::string_view MODE_SAMPLES_OF_IDS_SHARING_TAGS = "samples_of_ids_sharing_tags";
+    static constexpr std::string_view MODE_IDS_SHARING_TAGS = "ids_sharing_tags";
+
     struct Configuration
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
+        Mode mode = Mode::SAMPLES;
 
         /// Data types of the columns `id`, `timestamp` and `value` in the TimeSeries table.
         /// The columns returned by table function timeSeriesSelector() have these data types.
