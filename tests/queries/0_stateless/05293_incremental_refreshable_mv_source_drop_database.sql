@@ -31,8 +31,7 @@ SELECT 'source_rows', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.src;
 
 -- Merges were not cancelled by the rejected drops.
 OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.src FINAL;
-SELECT 'active_parts', count() FROM system.parts
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 'src' AND active;
+SELECT 'active_parts', uniqExact(_part) FROM {CLICKHOUSE_DATABASE_1:Identifier}.src;
 
 -- The view keeps reading the source.
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src VALUES (3);
