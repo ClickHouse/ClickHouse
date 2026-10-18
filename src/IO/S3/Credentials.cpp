@@ -57,6 +57,8 @@ namespace S3
 #    include <aws/core/http/HttpClientFactory.h>
 
 #    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/utils/StringUtils.h>
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
@@ -75,7 +77,6 @@ namespace S3
 #    include <Poco/Net/HTTPClientSession.h>
 #    include <Poco/Net/HTTPRequest.h>
 #    include <Poco/Net/HTTPResponse.h>
-#    include <Poco/StreamCopier.h>
 
 namespace ProfileEvents
 {
@@ -453,12 +454,12 @@ String getAvailabilityZoneOrException(bool is_zone_id)
         token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
         token_request.setContentLength(0);
 
-        token_session.sendRequest(token_request);
+        sendHTTPRequest(token_session, token_request)->finalize();
 
         Poco::Net::HTTPResponse token_response;
-        std::istream & token_rs = token_session.receiveResponse(token_response);
+        auto token_body = receiveHTTPResponse(token_session, token_response);
         if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-            Poco::StreamCopier::copyToString(token_rs, token_str);
+            readStringUntilEOF(token_str, *token_body);
         else
             LOG_WARNING(
                 logger,
@@ -474,14 +475,14 @@ String getAvailabilityZoneOrException(bool is_zone_id)
 
     if (!token_str.empty())
         request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
-    session.sendRequest(request);
+    sendHTTPRequest(session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session.receiveResponse(response);
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     return response_data;
 }
 }
@@ -508,12 +509,12 @@ static String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
 
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
+    sendHTTPRequest(session, request)->finalize();
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
@@ -1139,23 +1140,32 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     }
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_)
+    : role_arn(std::move(role_arn_))
+    , role_session_name(std::move(role_session_name_))
+    , external_id(std::move(external_id_))
+    , policy(std::move(policy_))
 {
 }
 
 Aws::Http::HeaderValueCollection AssumeRoleRequest::GetHeaders() const
 {
-    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::AMZN_XML_CONTENT_TYPE)}};
+    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::FORM_CONTENT_TYPE)}};
 }
 
-void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
+Aws::String AssumeRoleRequest::SerializePayload() const
 {
-    uri.AddQueryStringParameter("RoleArn", role_arn);
-    uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    Aws::StringStream ss;
+    ss << "Action=AssumeRole&Version=2011-06-15";
+    ss << "&RoleArn=" << Aws::Utils::StringUtils::URLEncode(role_arn.c_str());
+    ss << "&RoleSessionName=" << Aws::Utils::StringUtils::URLEncode(role_session_name.c_str());
     /// ExternalId is optional; STS rejects an empty value, so only send it when configured.
     if (!external_id.empty())
-        uri.AddQueryStringParameter("ExternalId", external_id);
+        ss << "&ExternalId=" << Aws::Utils::StringUtils::URLEncode(external_id.c_str());
+    /// Policy is optional.
+    if (!policy.empty())
+        ss << "&Policy=" << Aws::Utils::StringUtils::URLEncode(policy.c_str());
+    return ss.str();
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1229,9 +1239,36 @@ AWSAssumeRoleClient::AWSAssumeRoleClient(
     if (client_configuration.region != "aws-global")
         endpoint_str += client_configuration.region + ".";
 
-    endpoint_str += "amazonaws.com?Action=AssumeRole&Version=2011-06-15";
+    endpoint_str += "amazonaws.com";
 
     endpoint.SetURL(endpoint_str);
+}
+
+std::shared_ptr<AWSAssumeRoleClient> AWSAssumeRoleClient::create(
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+    const std::string & sts_endpoint_override)
+{
+    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
+    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
+    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
+    auto sts_client_configuration = client_configuration;
+
+    /// At most 3 retries.
+    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
+    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<unsigned int>(3));
+    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
+
+    /// Keep the caller's timeouts only if they are set and within the caps.
+    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
+    static constexpr auto request_cap_ms
+        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
+    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
+        sts_client_configuration.connectTimeoutMs = connect_cap_ms;
+    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
+        sts_client_configuration.requestTimeoutMs = request_cap_ms;
+
+    return std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
 }
 
 AssumeRoleOutcome AWSAssumeRoleClient::assumeRole(const AssumeRoleRequest & request) const
@@ -1259,22 +1296,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
-    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
-    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
-    auto sts_client_configuration = client_configuration;
-    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
-    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
-    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
-    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
-    static constexpr auto request_cap_ms
-        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
-    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
-        sts_client_configuration.connectTimeoutMs = connect_cap_ms;
-    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
-        sts_client_configuration.requestTimeoutMs = request_cap_ms;
-
-    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
+    auto client = AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
@@ -1322,7 +1344,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name, external_id);
+    AssumeRoleRequest request(role_arn, session_name, external_id, /* policy_ */ "");
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {

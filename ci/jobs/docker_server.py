@@ -187,7 +187,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
 # fast on the first attempt. The count is bounded by the job budget below.
-BUILDX_RETRIES = 2
+BUILDX_RETRIES = 5
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -393,8 +393,8 @@ BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
 # is ambiguous (OOM, external kill), so only this proves the expiry. Same discrimination
 # as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
 BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
-# Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
-BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+# Neither sentinel is in `BUILDX_RETRY_ERRORS`: an expiry is retried only if its output
+# matches another entry, else a build is rebuilt against the next apt mirror, if any.
 BUILDX_TIMEOUT_KILL_AFTER = 120
 # A per-invocation bound does not bound the job: main() loops over os variants and tags,
 # so the invocation count is not fixed. Keep back this much of the cap for recording a

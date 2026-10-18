@@ -104,7 +104,7 @@ CREATE TABLE external_tags
     tags Map(LowCardinality(String), String)
 )
 ENGINE = MergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_text_external ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, store_min_time_and_max_time = 0 TAGS external_tags;
+CREATE TABLE ts_text_external ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 TAGS external_tags;
 INSERT INTO ts_text_external (metric_name, tags, samples) VALUES ('test_metric', {'job':'api'}, [(1000, 1.)]);
 SELECT value FROM prometheusQuery(ts_text_external, 'test_metric{job="api"}', 1000);
 DROP TABLE ts_text_external;

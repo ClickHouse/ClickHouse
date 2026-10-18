@@ -94,6 +94,9 @@ private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
 
+    /// Planner contexts that own the data `shared_table_expression_data` points to.
+    std::vector<PlannerContextPtr> shared_table_expression_data_owners;
+
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
 };
@@ -200,6 +203,14 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
+    /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
+    /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
+    /// replicas. Everything materialized while planning must then survive serialization, which rules
+    /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
+    /// receiving node cannot resolve it.
+    bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -213,6 +224,8 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
+
+    bool may_be_serialized_for_remote_execution = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
