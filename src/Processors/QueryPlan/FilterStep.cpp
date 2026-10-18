@@ -21,13 +21,22 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -258,8 +267,98 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
+/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
+static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            const auto & function = *node->function_base;
+            if (function.isStateful()
+                || function.hasObservableSideEffects()
+                || !function.isDeterministicInScopeOfQuery()
+                || function.isSuitableForShortCircuitArgumentsExecution(arguments)
+                || function.canThrow(arguments))
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return true;
+}
+
+/// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
+/// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
+/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
+/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
+/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
+static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && (node->function_base->isStateful()
+                || node->function_base->hasObservableSideEffects()
+                || !node->function_base->isDeterministicInScopeOfQuery()))
+            return true;
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
 /// Try to split the left most AND atom to a separate DAG.
-static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name)
+/// With `reorder`, the left most atom that can be moved to the front of the chain is preferred.
+static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     const auto * filter = &dag.findInOutputs(filter_name);
     while (filter->type == ActionsDAG::ActionType::ALIAS)
@@ -268,7 +367,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (filter->type != ActionsDAG::ActionType::FUNCTION || filter->function_base->getName() != "and")
         return {};
 
-    const ActionsDAG::Node * condition_to_split = nullptr;
+    /// Non-trivial atoms from left to right.
+    std::vector<const ActionsDAG::Node *> atoms;
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
     while (!nodes.empty())
@@ -285,25 +385,38 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
             continue;
         }
 
-        if (isTrivialSubtree(node))
-            continue;
-
-        /// Do not split subtree if it's the last non-trivial one.
-        /// So, split the first found condition only when there is a another one found.
-        if (condition_to_split)
-            return splitSingleAndFilter(dag, condition_to_split);
-
-        condition_to_split = node;
+        if (!isTrivialSubtree(node))
+            atoms.push_back(node);
     }
 
-    return {};
+    /// Do not split subtree if it's the last non-trivial one.
+    if (atoms.size() < 2)
+        return {};
+
+    /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
+    /// split the cheap one first. The atoms that are not moved keep their relative order.
+    /// A cheap atom is never moved in front of another cheap atom: it does not save anything, while the written order
+    /// may put the more selective condition first, as in `notEmpty(s) AND s < 'x'`.
+    /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
+    if (reorder)
+    {
+        for (const auto * atom : atoms)
+        {
+            if (canBeMovedToTheFrontOfAndChain(atom))
+                return splitSingleAndFilter(dag, atom);
+            if (!isHeavyAndChainAtom(atom) || hasOrderSensitiveFunctions(atom))
+                break;
+        }
+    }
+
+    return splitSingleAndFilter(dag, atoms.front());
 }
 
-static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     std::vector<ActionsAndName> res;
 
-    while (auto condition = trySplitSingleAndFilter(dag, filter_name))
+    while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder))
         res.push_back(std::move(*condition));
 
     return res;
@@ -347,8 +460,14 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
+    /// The atoms are reordered only with short-circuit evaluation, like the arguments of `and`.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+    {
+        const auto & actions_settings = settings.getActionsSettings();
+        bool reorder = actions_settings.short_circuit_function_evaluation != ShortCircuitFunctionEvaluation::DISABLE
+            && actions_settings.short_circuit_function_evaluation_reorder_arguments;
+        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name, reorder);
+    }
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every FilterTransform instance: the computation is linear in the size
@@ -398,6 +517,21 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
+/// Whether the AND chain atoms are reordered (`short_circuit_function_evaluation_reorder_arguments` with short-circuit evaluation enabled), to show the AND chain split as it is executed.
+/// The pipeline is not built for `EXPLAIN`, so the setting is taken from the query context. Without a query context
+/// (the plan is described outside of a query), the default value of the setting is used.
+static bool reorderAndChainForDescription()
+{
+    auto reorder = [](const Settings & query_settings)
+    {
+        return query_settings[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE
+            && query_settings[Setting::short_circuit_function_evaluation_reorder_arguments];
+    };
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return reorder(query_context->getSettingsRef());
+    return reorder(Settings());
+}
+
 void FilterStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -406,7 +540,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     std::vector<ActionsAndName> and_atoms;
     if (!settings.pretty && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
     for (auto & and_atom : and_atoms)
     {
@@ -448,7 +582,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
     std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
     for (auto & and_atom : and_atoms)
     {
@@ -501,9 +635,16 @@ void FilterStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(filter_column_name, ctx.out);
+    /// A cache key must not depend on the name this plan build composed for the filter column
+    /// (`greater(__table1.x, 5_UInt8)` here, `greater(__table2.x, 5_UInt8)` in the plan enclosing a
+    /// shipped fragment). What the predicate computes says the same thing build-independently, and
+    /// unlike an output index it does not move when the two builds order their outputs differently.
+    if (ctx.for_cache_key)
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
+    else
+        writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
