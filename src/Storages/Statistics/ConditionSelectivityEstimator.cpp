@@ -730,6 +730,7 @@ void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data
 {
     estimator->parts_names.push_back(data_part->name);
     estimator->total_rows += data_part->rows_count;
+    parts_columns.emplace_back(data_part->rows_count, 0);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
@@ -739,13 +740,18 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
         has_data = true;
         auto & column_estimator = estimator->column_estimators[column_name];
 
+        bool merged = true;
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
         else if (column_estimator.stats->structureEquals(*column_stats))
             column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
+        /// Incompatible statistics (e.g. a concurrent ALTER changed the column type, shifting the aggregate-function
+        /// state layout). Skip this part's statistics so the estimator still works with the compatible parts instead
+        /// of crashing.
+        else
+            merged = false;
+        if (merged && !parts_columns.empty())
+            ++parts_columns.back().second;
     }
 }
 
@@ -753,11 +759,28 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
 {
     if (!has_data)
         return nullptr;
-    /// The merged statistics count the rows they cover: fewer than all rows when some part has no statistics of the
-    /// column or incompatible ones.
-    estimator->partial_statistics = std::ranges::any_of(estimator->column_estimators,
-        [&](const auto & column) { return column.second.stats->getNumRows() < estimator->total_rows; });
+    /// The merged statistics of a column count the rows they cover: fewer than all rows when some part has no statistics
+    /// of the column or incompatible ones. Rows that are not counted by part have only this measure.
+    UInt64 rows_without_statistics = 0;
+    for (const auto & [_, column] : estimator->column_estimators)
+        rows_without_statistics = std::max(rows_without_statistics, estimator->total_rows - std::min(column.stats->getNumRows(), estimator->total_rows));
+    /// Different columns can lack statistics in different parts.
+    UInt64 rows_of_parts_without_statistics = 0;
+    for (const auto & [rows, columns] : parts_columns)
+        if (columns < estimator->column_estimators.size())
+            rows_of_parts_without_statistics += rows;
+    estimator->rows_without_statistics = std::max(rows_without_statistics, rows_of_parts_without_statistics);
     return estimator;
+}
+
+bool ConditionSelectivityEstimator::recordRowsWithoutStatistics(RelationProfile & profile) const
+{
+    if (rows_without_statistics == 0)
+        return false;
+    for (auto & [column_name, column_stats] : profile.column_stats)
+        if (const auto column = column_estimators.find(column_name); column != column_estimators.end())
+            column_stats.rows_without_statistics = total_rows - std::min(column->second.stats->getNumRows(), total_rows);
+    return rows_without_statistics >= profile.rows;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const

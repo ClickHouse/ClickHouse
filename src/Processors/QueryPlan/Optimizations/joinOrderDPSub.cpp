@@ -558,6 +558,7 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 const auto member_values = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
                 side->from_statistics = std::max(side->from_statistics, member_values.from_statistics);
                 side->rows = std::max(side->rows, member_values.rows);
+                side->imprecise |= member_values.imprecise;
                 domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
             if (has_left && has_right)

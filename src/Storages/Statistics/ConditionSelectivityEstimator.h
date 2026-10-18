@@ -34,9 +34,24 @@ struct ColumnStats
     /// by what follows it; zero when nothing proves a limit. Unlike `num_distinct_values` it never
     /// comes from a sketch, so the row bounds may use it.
     UInt64 max_distinct_values = 0;
+    /// Rows of the column that its statistics do not describe (parts without statistics of the column); each can add
+    /// a value that `num_distinct_values` does not count.
+    UInt64 rows_without_statistics = 0;
     /// Every value of the column is on at most one row: the column is the only key of an aggregation. A join on it
     /// matches each row of the other side at most once. Whatever can repeat a row (a join, a union) drops the flag.
     bool unique = false;
+
+    /// Whether the rows without statistics could add as many values as `num_distinct_values` counts, or more, within
+    /// the proven limit: a group count, a join or a filter that uses the NDV is then not precise.
+    bool hasImpreciseDistinctValues() const
+    {
+        if (rows_without_statistics == 0 || num_distinct_values == 0)
+            return false;
+        UInt64 new_values = rows_without_statistics;
+        if (max_distinct_values != 0)
+            new_values = std::min(new_values, max_distinct_values - std::min(max_distinct_values, num_distinct_values));
+        return new_values >= num_distinct_values;
+    }
 
     void clearValueRange()
     {
@@ -171,9 +186,10 @@ public:
     static const AtomMap atom_map;
 
     UInt64 getTotalRows() const { return total_rows; }
-    /// The statistics of some column cover only some of the rows (parts without statistics of the column). The
-    /// estimates extend them to all rows, as from a sample, so they are less precise.
-    bool hasPartialStatistics() const { return partial_statistics; }
+    /// Rows without statistics (parts without statistics of a column) are estimated from the other rows, as from a
+    /// sample: they can change the row estimate by up to their number, and add up to their number of distinct values
+    /// to a column. Records them in the columns of `profile`, and returns whether they could double its rows.
+    bool recordRowsWithoutStatistics(RelationProfile & profile) const;
 
 private:
     friend class ColumnStatistics;
@@ -212,7 +228,8 @@ private:
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
-    bool partial_statistics = false;
+    /// The rows of the parts that lack the statistics of some column.
+    UInt64 rows_without_statistics = 0;
     ColumnEstimators column_estimators;
     Strings parts_names;
 };
@@ -231,6 +248,8 @@ public:
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    /// The rows of each part and the number of columns it has statistics of.
+    std::vector<std::pair<UInt64, size_t>> parts_columns;
 };
 
 }

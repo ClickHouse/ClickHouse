@@ -128,6 +128,8 @@ struct KeyDistinctValues
 {
     UInt64 from_statistics = 0;
     UInt64 rows = 0;
+    /// `from_statistics` could be too low, see `ColumnStats::hasImpreciseDistinctValues`.
+    bool imprecise = false;
 
     UInt64 orRows() const { return from_statistics ? from_statistics : rows; }
 };

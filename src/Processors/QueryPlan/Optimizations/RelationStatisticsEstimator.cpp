@@ -263,6 +263,8 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
         /// A key has at most as many values as the input has rows.
         if (distinct_values && input_stats.max_rows)
             distinct_values = std::min(distinct_values, *input_stats.max_rows);
+        if (key_stats != input_stats.column_stats.end() && key_stats->second.hasImpreciseDistinctValues())
+            aggregation_stats.imprecise_estimate = true;
         if (distinct_values == 0)
         {
             /// A key without an NDV leaves the group count to the other keys, or unknown, and marks
@@ -492,6 +494,7 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
             {
                 auto relation_profile = estimateReadProfile(
                     *reading, *estimator, reading->getStorageMetadata(), analyzed_result.get(), filter, prewhere_node);
+                const bool imprecise_rows = estimator->recordRowsWithoutStatistics(relation_profile);
                 if (!readReturnsStoredValues(*reading))
                     for (auto & [_, column_stats] : relation_profile.column_stats)
                     {
@@ -505,7 +508,7 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
                     .max_rows = analyzed_result ? std::optional<UInt64>(analyzed_result->selected_rows) : std::nullopt,
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
-                    .imprecise_estimate = estimator->hasPartialStatistics(),
+                    .imprecise_estimate = imprecise_rows,
                     .estimate_from_defaults = relation_profile.estimate_from_defaults,
                     .source = RowEstimateSource::Statistics};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));

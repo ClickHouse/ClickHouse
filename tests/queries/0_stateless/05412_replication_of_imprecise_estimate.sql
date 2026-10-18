@@ -31,6 +31,89 @@ SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
     SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
 WHERE explain LIKE '%JoinLogical%';
 
+-- A part without statistics that is small next to the estimate cannot make it far off: the 100 rows of the second
+-- part could add at most 100 rows to the estimate of 1,000, so the estimate stays precise and the join broadcasts.
+DROP TABLE IF EXISTS t_small_gap;
+CREATE TABLE t_small_gap (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+SYSTEM STOP MERGES t_small_gap;
+INSERT INTO t_small_gap SELECT number % 10 FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
+INSERT INTO t_small_gap SELECT 100 + number FROM numbers(100) SETTINGS materialize_statistics_on_insert = 0;
+
+SELECT '-- statistics on all but 100 rows: the join broadcasts';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT a FROM t_small_gap WHERE a = 5) AS s ON f.a = s.a
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+DROP TABLE t_small_gap;
+
+-- Few rows without statistics can still add many distinct values: 10,000 rows of one value have statistics, 100 rows
+-- of 100 new values do not. `DISTINCT k` has 101 rows, while the statistics see 1, so its estimate is imprecise and
+-- the bound of 10,100 rows does not fit the budget.
+DROP TABLE IF EXISTS t_new_values;
+CREATE TABLE t_new_values (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+SYSTEM STOP MERGES t_new_values;
+INSERT INTO t_new_values SELECT 7 FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
+INSERT INTO t_new_values SELECT 1000 + number FROM numbers(100) SETTINGS materialize_statistics_on_insert = 0;
+
+SELECT '-- 100 new values without statistics: the join of their DISTINCT does not broadcast';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT DISTINCT k FROM t_new_values) AS s ON f.a = s.k
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+
+-- The same new values reach the estimates above the read: an `INTERSECT` that takes the NDV of this input, and a
+-- filter above a `LIMIT` that estimates `k != 7` from the NDV of 1.
+DROP TABLE IF EXISTS t_keys;
+CREATE TABLE t_keys (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+INSERT INTO t_keys SELECT number FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
+SELECT '-- an INTERSECT with the new values: the join does not broadcast';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT k FROM t_keys INTERSECT DISTINCT SELECT k FROM t_new_values) AS s ON f.a = s.k
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+SELECT '-- a filter on the new values above a LIMIT: the join does not broadcast';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT k FROM (SELECT k FROM t_new_values ORDER BY k DESC LIMIT 10050) WHERE k != 7) AS s ON f.a = s.k
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+DROP TABLE t_keys;
+DROP TABLE t_new_values;
+
+-- A function can fold the known values into fewer: 365 dates of one year have statistics, 100 dates of 100 later years
+-- do not. The 100 rows cannot double the 365 dates, but they can more than double the 1 year that `toYear` leaves. The
+-- years are 2 bytes wide, so the budget is smaller than the bound of 10,100 rows.
+DROP TABLE IF EXISTS t_new_years;
+CREATE TABLE t_new_years (d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq';
+SYSTEM STOP MERGES t_new_years;
+INSERT INTO t_new_years SELECT toDate('2000-01-01') + number % 365 FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
+INSERT INTO t_new_years SELECT toDate('2001-01-01') + toIntervalYear(number) FROM numbers(100) SETTINGS materialize_statistics_on_insert = 0;
+SELECT '-- the years of 100 new dates without statistics: the join of their DISTINCT does not broadcast';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT DISTINCT toYear(d) AS y FROM t_new_years) AS s ON f.a = s.y
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 10000)
+WHERE explain LIKE '%JoinLogical%';
+DROP TABLE t_new_years;
+
+-- A comparison of two columns above a `LIMIT` (which keeps the filter out of the read): `k` has statistics on every
+-- part, `b` not on the 100 rows of the second partition, which hold new values. One NDV that these rows could double
+-- makes the comparison a default, in either order of the columns; with the NDV of `k` alone it would be 0 rows.
+DROP TABLE IF EXISTS t_few_matches;
+CREATE TABLE t_few_matches (p UInt8, k UInt64 STATISTICS(uniq), b UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY tuple();
+INSERT INTO t_few_matches SELECT 1, 7, 7 FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
+INSERT INTO t_few_matches SELECT 2, 7, 100000 + number FROM numbers(100) SETTINGS materialize_statistics_on_insert = 1;
+ALTER TABLE t_few_matches ADD STATISTICS b TYPE uniq;
+ALTER TABLE t_few_matches MATERIALIZE STATISTICS b IN PARTITION 1;
+SELECT '-- a comparison of two columns, one of them with rows without statistics: the join does not broadcast';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT k FROM (SELECT k, b FROM t_few_matches ORDER BY k DESC LIMIT 10100) WHERE k != b) AS s ON f.a = s.k
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+SELECT extract(explain, '(Broadcast|Shuffle|Local) HashJoin') FROM (
+    EXPLAIN SELECT count() FROM t_fact AS f JOIN (SELECT k FROM (SELECT k, b FROM t_few_matches ORDER BY k DESC LIMIT 10100) WHERE b != k) AS s ON f.a = s.k
+    SETTINGS distributed_plan_max_bytes_to_broadcast = 50000)
+WHERE explain LIKE '%JoinLogical%';
+DROP TABLE t_few_matches;
+
 SYSTEM START MERGES t_part_stats;
 ALTER TABLE t_part_stats MATERIALIZE STATISTICS ALL;
 

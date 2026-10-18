@@ -184,7 +184,10 @@ KeyDistinctValues keyDistinctValues(const RelationStats & relation, const String
 {
     KeyDistinctValues result;
     if (auto it = relation.column_stats.find(column); it != relation.column_stats.end())
+    {
         result.from_statistics = it->second.num_distinct_values;
+        result.imprecise = it->second.hasImpreciseDistinctValues();
+    }
     result.rows = relation.estimated_rows ? *relation.estimated_rows : relation.max_rows.value_or(0);
     return result;
 }
@@ -250,6 +253,9 @@ void addUnionColumnStats(
         if (result_column == result.end())
             continue;
         auto other_column = other.find(other_columns[position]);
+        if (other_column != other.end())
+            result_column->second.rows_without_statistics
+                = saturatingAdd(result_column->second.rows_without_statistics, other_column->second.rows_without_statistics);
         const UInt64 other_distinct_values = other_column == other.end() ? 0 : other_column->second.num_distinct_values;
         const UInt64 other_max_distinct_values = other_column == other.end() ? 0 : other_column->second.max_distinct_values;
         auto & stats = result_column->second;
@@ -507,10 +513,18 @@ void updateJoinKeyDistinctCounts(
         minimum = std::min(minimum, std::max<UInt64>(1, roundToRowCount(overlap)));
     }
 
+    /// The narrowed keys take values from both sides, so the rows without statistics of each side can add values.
+    const UInt64 rows_without_statistics = saturatingAdd(left_stats.rows_without_statistics, right_stats.rows_without_statistics);
     if (update_left)
+    {
         left_stats.num_distinct_values = minimum;
+        left_stats.rows_without_statistics = rows_without_statistics;
+    }
     if (update_right)
+    {
         right_stats.num_distinct_values = minimum;
+        right_stats.rows_without_statistics = rows_without_statistics;
+    }
     /// The key values of both sides come from the same domain.
     if (domain)
     {

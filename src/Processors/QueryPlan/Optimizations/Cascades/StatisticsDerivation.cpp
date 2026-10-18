@@ -216,6 +216,8 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
                         continue;
                     output_column->second.num_distinct_values
                         = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    output_column->second.rows_without_statistics
+                        = std::max(output_column->second.rows_without_statistics, other_column->second.rows_without_statistics);
                     /// Any input's proven limit holds for the output.
                     if (const UInt64 other_max = other_column->second.max_distinct_values)
                     {
@@ -430,7 +432,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     : Float64(relation_profile.rows);
             /// A default in the profile makes the rows a guess, which the replication gate must not take as proven.
             statistics.estimate_from_defaults |= relation_profile.estimate_from_defaults;
-            statistics.imprecise_estimate |= estimator->hasPartialStatistics();
+            statistics.imprecise_estimate |= estimator->recordRowsWithoutStatistics(relation_profile);
             statistics.source = RowEstimateSource::Statistics;
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
             {
@@ -439,6 +441,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                 output_stats.max_distinct_values = column_stats.max_distinct_values;
                 output_stats.table_rows = column_stats.table_rows;
                 output_stats.table_selected_rows = column_stats.table_selected_rows;
+                output_stats.rows_without_statistics = column_stats.rows_without_statistics;
             }
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
@@ -621,10 +624,18 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
         const bool left_is_constant = left->column && isColumnConst(*left->column);
         const bool right_is_constant = right->column && isColumnConst(*right->column);
 
+        /// An NDV that rows without statistics could double is as good as unknown.
         auto column_ndv = [&](const ActionsDAG::Node * side) -> UInt64
         {
             auto it = input_statistics.column_statistics.find(side->result_name);
-            return it != input_statistics.column_statistics.end() ? it->second.num_distinct_values : 0;
+            if (it == input_statistics.column_statistics.end() || it->second.hasImpreciseDistinctValues())
+                return 0;
+            return it->second.num_distinct_values;
+        };
+        auto has_imprecise_ndv = [&](const ActionsDAG::Node * side)
+        {
+            auto it = input_statistics.column_statistics.find(side->result_name);
+            return it != input_statistics.column_statistics.end() && it->second.hasImpreciseDistinctValues();
         };
 
         Float64 equal_selectivity = CascadesDefaults::DEFAULT_EQUALITY_SELECTIVITY;
@@ -639,7 +650,8 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
                 equal_selectivity = 1.0;
                 used_default = false;
             }
-            else if (UInt64 max_ndv = std::max(column_ndv(left), column_ndv(right)))
+            else if (UInt64 max_ndv = std::max(column_ndv(left), column_ndv(right));
+                     max_ndv && !has_imprecise_ndv(left) && !has_imprecise_ndv(right))
             {
                 equal_selectivity = 1.0 / Float64(max_ndv);
                 used_default = false;
@@ -658,6 +670,31 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
     }
 
     return CascadesDefaults::DEFAULT_UNKNOWN_SELECTIVITY;
+}
+
+/// The rows without statistics of the columns that `predicate` reads, together: different columns can lack statistics
+/// in different parts.
+static UInt64 rowsWithoutStatistics(const ActionsDAG::Node & predicate, const ExpressionStatistics & input_statistics)
+{
+    UInt64 result = 0;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{&predicate};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (auto it = input_statistics.column_statistics.find(node->result_name); it != input_statistics.column_statistics.end())
+                result = saturatingAdd(result, it->second.rows_without_statistics);
+            continue;
+        }
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return result;
 }
 
 Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const ExpressionStatistics & input_statistics)
@@ -689,6 +726,9 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
         const Float64 selectivity = estimatePredicateSelectivity(filter_node, input_statistics, used_default);
         result_statistics.estimate_from_defaults |= used_default;
         result_statistics.estimated_row_count *= selectivity;
+        /// The rows without statistics of a column the predicate reads could double the rows it keeps.
+        result_statistics.imprecise_estimate |= Float64(rowsWithoutStatistics(*filter_node, input_statistics))
+            >= std::max(result_statistics.estimated_row_count, 1.0);
         result_statistics.min_row_count = 0;
         /// A value survives the filter when any of its rows does.
         for (auto & [column_name, column_stats] : result_statistics.column_statistics)

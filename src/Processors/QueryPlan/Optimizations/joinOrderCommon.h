@@ -41,6 +41,8 @@ struct JoinKeyEstimate
     bool has_equality = false;
     /// Some key NDV comes from statistics.
     bool from_statistics = false;
+    /// Some key NDV could be too low (rows without statistics can add values), so the rows rest on an assumption.
+    bool imprecise_distinct_values = false;
     /// The probe side of a semi join was built from the preserved side's key values (a decorrelated
     /// subquery joined with the distinct correlation keys), so every probe key is a preserved key:
     /// the preserved side matches in the share of its keys the probe side has, whatever the key
@@ -58,6 +60,7 @@ struct JoinKeyEstimate
     void add(const KeyDistinctValues & left, const KeyDistinctValues & right, UInt64 domain_distinct_values)
     {
         has_equality = true;
+        imprecise_distinct_values |= left.imprecise || right.imprecise;
         const UInt64 largest = std::max(left.orRows(), right.orRows());
         if (largest == 0)
             return;
@@ -254,7 +257,10 @@ inline KeyDistinctValues getColumnStats(
         if (auto it = dp_table.find(rels); it != dp_table.end())
         {
             if (auto col_it = it->second->column_stats.find(column_name); col_it != it->second->column_stats.end())
+            {
                 result.from_statistics = col_it->second.num_distinct_values;
+                result.imprecise = col_it->second.hasImpreciseDistinctValues();
+            }
             result.rows = roundToRowCount(searchRows(it->second, query_graph));
         }
         return result;
@@ -410,6 +416,8 @@ inline bool joinRowsRestOnAssumption(const JoinKeyEstimate & keys, std::optional
 {
     if (!left_rows || !right_rows)
         return false;
+    if (keys.imprecise_distinct_values)
+        return true;
     if (!keys.from_statistics)
         return keys.has_equality;
     return keys.assumesIndependentKeys(static_cast<double>(*left_rows), static_cast<double>(*right_rows));
