@@ -258,13 +258,13 @@ bool ArrayJoinResultIterator::hasNext() const
 }
 
 
-Block ArrayJoinResultIterator::next()
+Block ArrayJoinResultIterator::next(const std::atomic<bool> * is_cancelled)
 {
     if (!hasNext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more elements in ArrayJoinResultIterator.");
 
     if (array_join->element_filter)
-        return nextWithElementFilter();
+        return nextWithElementFilter(is_cancelled);
 
     size_t max_block_size = array_join->max_block_size;
     const auto & offsets = anyOffsets();
@@ -336,7 +336,7 @@ Block ArrayJoinResultIterator::next()
     return res;
 }
 
-Block ArrayJoinResultIterator::nextWithElementFilter()
+Block ArrayJoinResultIterator::nextWithElementFilter(const std::atomic<bool> * is_cancelled)
 {
     const size_t max_block_size = array_join->max_block_size;
     const auto & offsets = anyOffsets();
@@ -344,9 +344,20 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
     const bool is_unaligned = array_join->is_unaligned;
     const bool is_left = array_join->is_left;
 
+    auto stop_if_cancelled = [&]
+    {
+        if (!is_cancelled || !is_cancelled->load(std::memory_order_acquire))
+            return false;
+        current_row = total_rows;
+        return true;
+    };
+
     /// Skip fully-dead windows here, the inflating transform would push each empty chunk otherwise
     while (current_row < total_rows)
     {
+        if (stop_if_cancelled())
+            break;
+
         size_t next_row = current_row;
         for (; next_row < total_rows; ++next_row)
             if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
@@ -404,7 +415,9 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             auto cut_col = src.column->cut(current_row, window_rows)->convertToFullColumnIfReplicated();
             element_block.insert({cut_col->replicate(win_offsets), src.type, required.name});
         }
-        array_join->element_filter->execute(element_block, num_elements);
+        array_join->element_filter->execute(element_block, num_elements, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ false, is_cancelled);
+        if (stop_if_cancelled())
+            break;
         auto filter_column = element_block.getByName(array_join->element_filter_column_name).column;
 
         ConstantFilterDescription constant_filter(*filter_column);
