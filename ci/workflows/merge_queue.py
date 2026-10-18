@@ -28,6 +28,13 @@ workflow = Workflow.Config(
         # cannot break them together. Cheap enough to run unconditionally - see
         # `JobConfigs.docs_examples_mq_job`.
         JobConfigs.docs_examples_mq_job,
+        # clang-tidy on the merge group state. The full tidy build takes hours,
+        # so the queue cannot run it, and clang-tidy breakage keeps reaching
+        # `master` from pull requests that were green before the changes they are
+        # merged on top of. This job analyzes only the translation units the pull
+        # request touches, which is cheap enough for the queue; the full check on
+        # `master` still covers the rest of the tree.
+        JobConfigs.tidy_changed_files_job,
     ],
     artifacts=[
         *[
