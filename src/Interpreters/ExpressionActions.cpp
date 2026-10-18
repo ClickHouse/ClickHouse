@@ -1635,10 +1635,12 @@ void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, s
             /// execute lazily themselves, but they are transparent wrappers in the actions DAG: the cost of
             /// an eager descendant is paid by whoever executes them. Continue through them, otherwise a lazy
             /// ancestor above such a wrapper keeps comparing against an underestimated eager cost.
+            /// Continue through a statically lazy parent even if it was switched to the eager execution:
+            /// its own cost is propagated from the snapshot, which does not include this descendant.
             const bool is_transparent_wrapper
                 = actions[parent_action_index].node->type == ActionsDAG::ActionType::ALIAS
                 || action_states[parent_action_index].is_short_circuit_function;
-            if (shouldExecuteLazily(parent_action_index) || is_transparent_wrapper)
+            if (actions[parent_action_index].is_lazy_executed || is_transparent_wrapper)
                 self(self, parent_action_index);
         }
     };
