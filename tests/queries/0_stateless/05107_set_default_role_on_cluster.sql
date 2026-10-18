@@ -1,4 +1,4 @@
--- Tags: no-parallel, zookeeper, no-replicated-database
+-- Tags: zookeeper, no-replicated-database
 -- Tag no-replicated-database: distributed_ddl_output_mode is none
 
 -- `SET DEFAULT ROLE` changes the user, so it takes an `ON CLUSTER` clause, in either position.
