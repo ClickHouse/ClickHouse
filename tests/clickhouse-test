@@ -1765,26 +1765,25 @@ def auto_statistics_generator():
     return gen
 
 
-def randomize_external_sort_group_by():
-    """Returns a dict of 4 settings for external sort/group by.
+def randomize_external_thresholds(operations):
+    """Returns a dict of the settings `max_bytes_before_external_<operation>` and
+    `max_bytes_ratio_before_external_<operation>` for each of the operations, which
+    either all spill by bytes or all spill by ratio.
     The Bytes-vs-Ratio choice is made per call (not per process),
     so each test run gets an independent choice."""
+    settings = {}
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
-        return {
-            "max_bytes_before_external_sort": generator(),
-            "max_bytes_before_external_group_by": generator(),
-            "max_bytes_ratio_before_external_sort": 0,
-            "max_bytes_ratio_before_external_group_by": 0,
-        }
+        for operation in operations:
+            settings[f"max_bytes_before_external_{operation}"] = generator()
+            settings[f"max_bytes_ratio_before_external_{operation}"] = 0
+        return settings
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
-    return {
-        "max_bytes_before_external_sort": 0,
-        "max_bytes_before_external_group_by": 0,
-        "max_bytes_ratio_before_external_sort": round(generator(), 2),
-        "max_bytes_ratio_before_external_group_by": round(generator(), 2),
-    }
+    for operation in operations:
+        settings[f"max_bytes_before_external_{operation}"] = 0
+        settings[f"max_bytes_ratio_before_external_{operation}"] = round(generator(), 2)
+    return settings
 
 
 # To keep dependency list as short as possible, tzdata is not used here (to
@@ -2061,6 +2060,13 @@ class SettingsRandomizer:
             0.2, 0.2, 1, 128
         ),
         "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
+        # Memory budgets of a set of `IN` written to disk: 0 disables the structure, and 128 MiB is the default
+        "max_bytes_for_external_set_bloom_filter": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
+        "max_bytes_for_external_set_cache": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
     }
 
     dependent_settings = {
@@ -2130,8 +2136,9 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
-        # Bytes-vs-Ratio choice is made per test, not per process
-        random_settings.update(randomize_external_sort_group_by())
+        # Bytes-vs-Ratio choice is made per test, not per process. Sets of `IN` make their own choice.
+        random_settings.update(randomize_external_thresholds(["sort", "group_by"]))
+        random_settings.update(randomize_external_thresholds(["set"]))
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         for setting, parent_setting in SettingsRandomizer.conditional_settings.items():
