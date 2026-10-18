@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -85,6 +86,19 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
+}
+
+void MaterializedPostgreSQLSettings::checkConsistencyForFreshDefinition() const
+{
+    /// A user-managed replication slot has a single fixed name, which is shared by every replica of a database or table
+    /// created with `ON CLUSTER`, while the unique replication consumer identifier exists to make the consumer unique.
+    if (!(*this)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty()
+        && (*this)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `materialized_postgresql_replication_slot` cannot be used together with "
+            "`materialized_postgresql_use_unique_replication_consumer_identifier`: a user-managed replication slot has a single "
+            "fixed name and cannot be unique per consumer. Remove one of these settings");
 }
 
 bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
