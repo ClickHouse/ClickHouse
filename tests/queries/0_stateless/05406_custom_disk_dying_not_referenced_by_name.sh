@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-object-storage, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-parallel, no-object-storage, no-replicated-database, no-shared-merge-tree
 # no-parallel: the fail point is global, and would pause the release of the custom disks of other tests.
+# no-fasttest: tests that enable a fail point run alone, and are kept out of the fast test.
 # no-shared-merge-tree: custom disk
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
