@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
@@ -433,6 +434,9 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+    ArchiveEntryPositions entry_positions;
+    /// The row count cache key of the archive entry being read, unset for a plain file.
+    std::optional<String> current_archive_entry_cache_key;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
