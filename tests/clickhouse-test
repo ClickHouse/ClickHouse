@@ -288,6 +288,14 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
+# The interpreter for each non-SQL test extension, matching the shebang the style check requires for it. See where
+# it is used for why tests are not executed directly.
+TEST_INTERPRETERS = {
+    ".sh": "/usr/bin/env bash",
+    ".py": "/usr/bin/env python3",
+    ".expect": "/usr/bin/expect -f",
+}
+
 # Appended to output rescued from a timed-out command: the dump is incomplete.
 TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
 
@@ -1757,26 +1765,25 @@ def auto_statistics_generator():
     return gen
 
 
-def randomize_external_sort_group_by():
-    """Returns a dict of 4 settings for external sort/group by.
+def randomize_external_thresholds(operations):
+    """Returns a dict of the settings `max_bytes_before_external_<operation>` and
+    `max_bytes_ratio_before_external_<operation>` for each of the operations, which
+    either all spill by bytes or all spill by ratio.
     The Bytes-vs-Ratio choice is made per call (not per process),
     so each test run gets an independent choice."""
+    settings = {}
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
-        return {
-            "max_bytes_before_external_sort": generator(),
-            "max_bytes_before_external_group_by": generator(),
-            "max_bytes_ratio_before_external_sort": 0,
-            "max_bytes_ratio_before_external_group_by": 0,
-        }
+        for operation in operations:
+            settings[f"max_bytes_before_external_{operation}"] = generator()
+            settings[f"max_bytes_ratio_before_external_{operation}"] = 0
+        return settings
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
-    return {
-        "max_bytes_before_external_sort": 0,
-        "max_bytes_before_external_group_by": 0,
-        "max_bytes_ratio_before_external_sort": round(generator(), 2),
-        "max_bytes_ratio_before_external_group_by": round(generator(), 2),
-    }
+    for operation in operations:
+        settings[f"max_bytes_before_external_{operation}"] = 0
+        settings[f"max_bytes_ratio_before_external_{operation}"] = round(generator(), 2)
+    return settings
 
 
 # To keep dependency list as short as possible, tzdata is not used here (to
@@ -2015,7 +2022,6 @@ class SettingsRandomizer:
         "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
-        "use_statistics_cache": lambda: random.random() > 0.05,
         # Columns cache settings - randomize with 0.5 probability each
         "use_columns_cache": lambda: random.randint(0, 1),
         "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
@@ -2054,6 +2060,13 @@ class SettingsRandomizer:
             0.2, 0.2, 1, 128
         ),
         "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
+        # Memory budgets of a set of `IN` written to disk: 0 disables the structure, and 128 MiB is the default
+        "max_bytes_for_external_set_bloom_filter": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
+        "max_bytes_for_external_set_cache": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
     }
 
     dependent_settings = {
@@ -2069,8 +2082,6 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
-        # statistics cache is pointless when statistics are disabled
-        "use_statistics_cache": "use_statistics",
         # forcing independent DISTINCT is a no-op when the optimization is not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
@@ -2125,8 +2136,9 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
-        # Bytes-vs-Ratio choice is made per test, not per process
-        random_settings.update(randomize_external_sort_group_by())
+        # Bytes-vs-Ratio choice is made per test, not per process. Sets of `IN` make their own choice.
+        random_settings.update(randomize_external_thresholds(["sort", "group_by"]))
+        random_settings.update(randomize_external_thresholds(["set"]))
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         for setting, parent_setting in SettingsRandomizer.conditional_settings.items():
@@ -4146,6 +4158,15 @@ class TestCase:
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
+        else:
+            # Do not execute the test file itself, pass it to its interpreter. On macOS the first exec of every new
+            # or modified executable blocks on a Gatekeeper/XProtect security scan (`syspolicyd`, `XprotectService`).
+            # The CI checkout is fresh in every job, so on the Darwin fast test runners every test paid about 100 ms
+            # for that scan. An interpreter only reads the file, which is not scanned.
+            if self.ext not in TEST_INTERPRETERS:
+                raise TestException(f"Unknown test file extension: {self.case_file}")
+            params["interpreter"] = TEST_INTERPRETERS[self.ext]
+            pattern = "{interpreter} " + pattern
 
         command = pattern.format(**params)
 
@@ -6856,6 +6877,40 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
     return test_names_to_skip
 
 
+# Values that `shell_config.sh` reads with `clickhouse extract-from-config` unless they are already set.
+SHELL_CONFIG_EXTRACTED_VARIABLES = [
+    "CLICKHOUSE_PORT_TCP",
+    "CLICKHOUSE_PORT_TCP_SECURE",
+    "CLICKHOUSE_PORT_TCP_WITH_PROXY",
+    "CLICKHOUSE_PORT_HTTP",
+    "CLICKHOUSE_PORT_PROMTHEUS_PORT",
+    "CLICKHOUSE_PORT_HTTPS",
+    "CLICKHOUSE_PORT_MYSQL",
+    "CLICKHOUSE_PORT_POSTGRESQL",
+    "CLICKHOUSE_PORT_KEEPER",
+    "CLICKHOUSE_PORT_SSH",
+    "CLICKHOUSE_KEEPER_IDENTITY",
+    "CLICKHOUSE_PORT_INTERSERVER",
+]
+
+
+def export_shell_config_ports(queries_dir):
+    """Resolve them once instead of in every `.sh` test: that is a dozen process starts per test."""
+    shell_config = os.path.join(queries_dir, "shell_config.sh")
+    if not os.path.exists(shell_config):
+        return
+    script = '. "$0" >/dev/null 2>&1; for name in "$@"; do printf "%s=%s\\0" "$name" "${!name}"; done'
+    output = subprocess.run(
+        ["bash", "-c", script, shell_config, *SHELL_CONFIG_EXTRACTED_VARIABLES],
+        stdout=PIPE,
+        check=True,
+        text=True,
+    ).stdout
+    for assignment in output.split("\0")[:-1]:
+        name, value = assignment.split("=", 1)
+        os.environ.setdefault(name, value)
+
+
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     stop_testing = multiprocessing.Event()
@@ -6959,6 +7014,8 @@ def main(args):
 
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
+
+    export_shell_config_ports(base_dir)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
