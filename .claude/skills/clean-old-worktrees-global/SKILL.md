@@ -39,12 +39,13 @@ This produces `checkouts.txt`, `wt_old_status.txt`, `build_old.txt`, and `skippe
 
 Checkouts with age `UNKNOWN` and entries in `skipped.txt` are kept; mention them in the report.
 
-Inspect every line of `wt_old_status.txt` that is not `dirty=0 unpushed=0 submodule_commits=0`:
+Inspect every line of `wt_old_status.txt` that is not `dirty=0 unpushed=0 submodule_commits=0 submodule_refs=0`:
 
 - `unpushed>0` on a named branch: safe. The branch lives in the main repo and survives worktree removal. Confirm afterwards that the branch still exists (check all main repos, the worktree may belong to a different repo than its name suggests).
 - `unpushed>0` with `branch=HEAD` (detached): the commits would become unreachable. Ask the user before deleting.
 - `dirty>0`: look at `git -C <dir> status --porcelain`. Test leftovers (parquet files, outputs) are junk. Real source modifications, including modified content or new commits in submodules: ask the user. Submodule working trees and their git directories are deleted with the worktree; the branch in the main repo does not preserve them.
 - `submodule_commits>0`: unpushed commits change submodule pointers. Check that every referenced submodule commit is on a remote branch of the submodule (`git -C <dir>/<submodule> branch -r --contains <commit>`); otherwise ask the user.
+- `submodule_refs>0`: a submodule has local branches with commits that are not on its remote branches, or stash entries. Find them with `git -C <dir> submodule foreach --recursive 'git log --oneline --branches --not --remotes; git stash list'` and ask the user.
 - `ERROR` in any field: the state could not be established. If it is `fatal: not a git repository` (the worktree is orphaned, its metadata already pruned), there is no recoverable git state; treat it as an ordinary old directory. Otherwise keep the worktree.
 
 Build the deletion list (paths relative to root) from old worktrees (minus anything excluded above) plus old build dirs:
@@ -64,7 +65,7 @@ Remove the excluded worktrees from the list (match whole lines, e.g. `grep -vxF`
 
 Use the same root as for the scan. Run it in the background with the maximum timeout (deleting 100+ worktrees took more than an hour). If it is stopped by the time limit, rerun the same command: it is idempotent and also prunes the worktree metadata.
 
-Right before deleting each entry, the script rejects main repositories, symlinks, and paths that are not a direct child of the root or a `build*` directory inside one. It skips (`SKIPPED (<reason>): <dir>`) directories in use by a process (working directory, root, executable, open or mapped file), containing a mount point, or containing a block device file, and deletes with `rm --one-file-system`. If a skipped directory is used only by your own leftover processes (e.g. a timed-out `du`), stop them by PID and rerun; otherwise keep it.
+Right before deleting each entry, the script rejects main repositories, symlinks, and paths that are not a direct child of the root or a `build*` directory inside one. It skips (`SKIPPED (<reason>): <dir>`) directories in use by a process (working directory, root, executable, open or mapped file; the processes are inspected again for every entry), containing a mount point, or containing a block device file, and deletes with `rm --one-file-system`. If a skipped directory is used only by your own leftover processes (e.g. a timed-out `du`), stop them by PID and rerun; otherwise keep it.
 
 Without passwordless sudo, processes of other users (e.g. in Docker containers) cannot be inspected, and the script refuses to run. In that case check `docker ps` and `ps` for processes using the candidates, then rerun with `ALLOW_UNINSPECTED=1`.
 

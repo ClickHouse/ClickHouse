@@ -32,20 +32,23 @@ trap 'rm -rf "$state"' EXIT
 # Mount points, with the octal escapes of /proc/self/mountinfo decoded.
 awk '{print $5}' /proc/self/mountinfo | while read -r m; do printf '%b\n' "$m"; done > "$state/mounts"
 
-# Paths in use by processes. Mapped file names are the sixth and following fields of /proc/<pid>/maps.
-# shellcheck disable=SC2016
-"${sudo_cmd[@]}" bash -c '
+# Prints paths in use by processes. Mapped file names are the sixth and following fields of /proc/<pid>/maps.
+# It runs right before deleting each entry, because processes started during a long deletion run would be missed
+# by a snapshot taken at startup.
+# shellcheck disable=SC2016,SC2089 # The script is run by `bash -c`.
+ACTIVE_PATHS_SCRIPT='
     for p in /proc/[0-9]*; do
         for l in cwd root exe; do readlink "$p/$l"; done
         for f in "$p"/fd/*; do readlink "$f"; done
         sed -n -E "s#^([^ ]+ +){5}(/.*)#\2#p" "$p/maps"
     done 2>/dev/null
-' | sort -u > "$state/active"
+'
 
 # Collect main repos of worktrees before their `.git` files disappear.
 mains=$(while read -r d; do [ -n "$d" ] && [ -f "$d/.git" ] && sed -n 's#^gitdir: \(.*\)/\.git/worktrees/.*#\1#p' "$d/.git"; done < "$list" | sort -u)
 
-export ROOT="$root" STATE="$state"
+# shellcheck disable=SC2090
+export ROOT="$root" STATE="$state" ACTIVE_PATHS_SCRIPT
 export SUDO="${sudo_cmd[*]}"
 
 # shellcheck disable=SC2016
@@ -64,9 +67,9 @@ tr '\n' '\0' < "$list" | xargs -r -0 -P 8 -n1 bash -c '
     [ -L "$p" ] && skip "symlink"
     [ -d "$p" ] || skip "not a directory"
     [ -d "$p/.git" ] && skip "main repository"
-    is_under() { P=$p awk "{ if (\$0 == ENVIRON[\"P\"] || index(\$0, ENVIRON[\"P\"] \"/\") == 1) { found = 1; exit } } END { exit !found }" "$1"; }
+    is_under() { P=$p awk "{ if (\$0 == ENVIRON[\"P\"] || index(\$0, ENVIRON[\"P\"] \"/\") == 1) { found = 1; exit } } END { exit !found }" "$@"; }
     is_under "$STATE/mounts" && skip "contains a mount point"
-    is_under "$STATE/active" && skip "in use by a process"
+    $SUDO bash -c "$ACTIVE_PATHS_SCRIPT" | is_under && skip "in use by a process"
     if ! b=$($SUDO find "$p" -xdev -type b -print -quit 2>/dev/null); then skip "cannot check for block devices"; fi
     [ -n "$b" ] && skip "contains block device $b"
     $SUDO rm -rf --one-file-system "$p"

@@ -5,7 +5,8 @@
 # and are listed in skipped.txt instead):
 #   checkouts.txt     "<wt|main>\t<RECENT|old|UNKNOWN>\t<dir>" for every direct child of root that is a git checkout.
 #                     UNKNOWN means the age could not be established (e.g. unreadable subdirectories): keep it.
-#   wt_old_status.txt "<dir>\tdirty=N\tunpushed=N\tsubmodule_commits=N\tbranch=B" for every old worktree.
+#   wt_old_status.txt "<dir>\tdirty=N\tunpushed=N\tsubmodule_commits=N\tsubmodule_refs=N\tbranch=B" for every old
+#                     worktree.
 #                     Any count that could not be established is ERROR.
 #   build_old.txt     "<dir>" for old build* directories inside checkouts that are kept (recent ones and main repos)
 #   skipped.txt       "<reason>\t<shell-quoted dir>" for directories that were not classified
@@ -56,6 +57,8 @@ find . -mindepth 1 -maxdepth 1 -type d -printf '%P\0' | xargs -r -0 -P "$par" -n
 #    worktree, and nothing else preserves them.
 #    submodule_commits counts submodule pointer changes in unpushed commits: they may refer to commits that exist only
 #    in the worktree's submodules.
+#    submodule_refs counts commits on local branches of submodules that are not on any remote branch, plus submodule
+#    stash entries: they are not visible in the checked-out state, but are deleted with the submodule's git directory.
 # shellcheck disable=SC2016
 awk -F '\t' '$1=="wt" && $2=="old" {print $3}' "$out/checkouts.txt" | xargs -r -d '\n' -P "$par" -n1 bash -c '
     d=$1
@@ -70,8 +73,14 @@ awk -F '\t' '$1=="wt" && $2=="old" {print $3}' "$out/checkouts.txt" | xargs -r -
     else
         subcommits=ERROR
     fi
+    if s=$(git -C "$d" submodule foreach --quiet --recursive "git rev-list --branches --not --remotes && git stash list --format=%H" 2>/dev/null); then
+        subrefs=$(grep -c . <<< "$s")
+    else
+        subrefs=ERROR
+    fi
     br=$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    printf "%s\tdirty=%s\tunpushed=%s\tsubmodule_commits=%s\tbranch=%s\n" "$d" "$dirty" "$unpushed" "$subcommits" "$br"
+    printf "%s\tdirty=%s\tunpushed=%s\tsubmodule_commits=%s\tsubmodule_refs=%s\tbranch=%s\n" \
+        "$d" "$dirty" "$unpushed" "$subcommits" "$subrefs" "$br"
 ' _ | sort > "$out/wt_old_status.txt"
 
 # 3. Old build directories inside checkouts that will be kept (recent checkouts and all main repos).
@@ -87,6 +96,6 @@ awk -F '\t' '$1=="main" || $2!="old" {print $3}' "$out/checkouts.txt" \
     | sort > "$out/build_old.txt"
 
 echo "checkouts: $(wc -l < "$out/checkouts.txt"), recent: $(grep -c $'\tRECENT\t' "$out/checkouts.txt"), unknown age: $(grep -c $'\tUNKNOWN\t' "$out/checkouts.txt")"
-echo "old worktrees: $(wc -l < "$out/wt_old_status.txt"), of them not clean+pushed: $(grep -vc $'\tdirty=0\tunpushed=0\tsubmodule_commits=0\t' "$out/wt_old_status.txt")"
+echo "old worktrees: $(wc -l < "$out/wt_old_status.txt"), of them not clean+pushed: $(grep -vc $'\tdirty=0\tunpushed=0\tsubmodule_commits=0\tsubmodule_refs=0\t' "$out/wt_old_status.txt")"
 echo "old build dirs in kept checkouts: $(wc -l < "$out/build_old.txt")"
 echo "skipped: $(wc -l < "$SKIPPED")"
