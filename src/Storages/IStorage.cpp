@@ -426,6 +426,8 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
     auto current_storage_id = getStorageID();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    const auto & columns = metadata_snapshot->getColumns();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(current_storage_id);
     for (const auto & view_id : view_ids)
     {
@@ -438,7 +440,14 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
             auto query_tree = interpreter.getQueryTree();
             Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
 
+            NameSet required_columns_in_storage;
             for (const auto & col_name : required_columns)
+            {
+                const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col_name);
+                required_columns_in_storage.insert(column ? column->getNameInStorage() : col_name);
+            }
+
+            for (const auto & col_name : required_columns_in_storage)
                 name_deps[col_name].push_back(view_id.table_name);
         }
     }
