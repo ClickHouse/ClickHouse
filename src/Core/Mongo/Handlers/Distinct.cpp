@@ -48,6 +48,22 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     auto & allocator = pipeline.GetAllocator();
     pipeline.SetArray();
 
+    const String key_path(key_it->value.GetString(), key_it->value.GetStringLength());
+
+    /// A document contributes to `distinct` only when it has the field: grouping by the field alone
+    /// would read a document without it as a `NULL` value and answer `[null]` for a field that no
+    /// document has. The field must hold a value, which is what `$exists` asks (a value that is
+    /// absent and a `NULL` are the same thing for a column), and the `query`, if any, is the other
+    /// condition of the same `$match`.
+    rapidjson::Value exists_condition(rapidjson::kObjectType);
+    {
+        rapidjson::Value exists(rapidjson::kObjectType);
+        exists.AddMember("$exists", true, allocator);
+        rapidjson::Value name(key_path.data(), static_cast<rapidjson::SizeType>(key_path.size()), allocator);
+        exists_condition.AddMember(name, exists, allocator);
+    }
+
+    rapidjson::Value filter(rapidjson::kObjectType);
     if (auto query_it = json_representation.FindMember("query"); query_it != json_representation.MemberEnd())
     {
         /// A `query` that is not a document is a malformed request, as it is for a `find` and a
@@ -58,17 +74,26 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
 
         if (query_it->value.MemberCount() > 0)
         {
-            rapidjson::Value match(rapidjson::kObjectType);
-            rapidjson::Value filter;
-            filter.CopyFrom(query_it->value, allocator);
-            match.AddMember("$match", filter, allocator);
-            pipeline.PushBack(match, allocator);
+            rapidjson::Value query;
+            query.CopyFrom(query_it->value, allocator);
+            rapidjson::Value conditions(rapidjson::kArrayType);
+            conditions.PushBack(query, allocator);
+            conditions.PushBack(exists_condition, allocator);
+            filter.AddMember("$and", conditions, allocator);
         }
+    }
+    if (filter.ObjectEmpty())
+        filter = std::move(exists_condition);
+
+    {
+        rapidjson::Value match(rapidjson::kObjectType);
+        match.AddMember("$match", filter, allocator);
+        pipeline.PushBack(match, allocator);
     }
 
     {
         rapidjson::Value path(rapidjson::kStringType);
-        path.SetString(("$" + String(key_it->value.GetString(), key_it->value.GetStringLength())).c_str(), allocator);
+        path.SetString(("$" + key_path).c_str(), allocator);
 
         rapidjson::Value key(rapidjson::kObjectType);
         key.AddMember("_id", path, allocator);
