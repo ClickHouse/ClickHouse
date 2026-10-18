@@ -23,7 +23,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -189,7 +189,7 @@ public:
     void cancel() noexcept;
 
     /// The snapshot the merge read its sources' delete bitmaps at; built for every unique-key merge.
-    const ReadSnapshot & getUniqueKeyReadSnapshot() const
+    const DeleteBitmapSnapshot & getDeleteBitmapSnapshot() const
     {
         chassert(global_ctx->unique_key_read_snapshot);
         return *global_ctx->unique_key_read_snapshot;
@@ -325,7 +325,7 @@ private:
 
         /// Set in `prepare()`.
         bool is_unique_key_merge{false};
-        ReadSnapshotPtr unique_key_read_snapshot;
+        DeleteBitmapSnapshotPtr unique_key_read_snapshot;
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

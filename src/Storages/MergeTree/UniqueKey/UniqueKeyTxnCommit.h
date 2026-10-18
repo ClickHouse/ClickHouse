@@ -16,7 +16,7 @@ namespace DB
 
 class StorageMergeTree;
 class MergedPartOffsets;
-class ReadSnapshot;
+class DeleteBitmapSnapshot;
 
 struct UniqueKeyInsertOutcome
 {
@@ -56,7 +56,7 @@ public:
         const MergeTreeData::DataPartsVector & source_parts;
         MergeTreeMutableDataPartPtr merged_part;
         /// The snapshot the merge's input filter read the sources' bitmaps at.
-        const ReadSnapshot & read_snapshot;
+        const DeleteBitmapSnapshot & read_snapshot;
         /// Where each row the input filter let through landed in `merged_part`.
         const MergedPartOffsets & merged_part_offsets;
     };

@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
-#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/Exception.h>
 
@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
     const MergeTreeDataPartsVector & sources,
-    const ReadSnapshot & read_snapshot,
+    const DeleteBitmapSnapshot & read_snapshot,
     const MergedPartOffsets & merged_part_offsets_)
     : merged_part_offsets(merged_part_offsets_)
     , merged_start(sources.size())

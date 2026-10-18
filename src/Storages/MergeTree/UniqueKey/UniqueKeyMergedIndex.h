@@ -15,7 +15,7 @@ namespace DB
 class IDataPartStorage;
 class IMergeTreeDataPart;
 class MergedPartOffsets;
-class ReadSnapshot;
+class DeleteBitmapSnapshot;
 struct MergeTreeDataPartChecksums;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
@@ -27,7 +27,7 @@ class UniqueKeyMergeRowMap
 public:
     UniqueKeyMergeRowMap(
         const MergeTreeDataPartsVector & sources,
-        const ReadSnapshot & read_snapshot,
+        const DeleteBitmapSnapshot & read_snapshot,
         const MergedPartOffsets & merged_part_offsets);
 
     /// The merged row of `source_row` of source `source_index`, or nullopt if it was dead at the snapshot.

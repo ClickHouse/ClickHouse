@@ -109,6 +109,15 @@ if [ "$cache_policy" != "SLRU" ]; then
     sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
+# Randomize use_real_disk_size in cache
+use_real_disk_size=$((RANDOM % 2))
+
+echo "use_real_disk_size: $use_real_disk_size"
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+| sed "s|<use_real_disk_size>[^<]*</use_real_disk_size>|<use_real_disk_size>$use_real_disk_size</use_real_disk_size>|" \
+> /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 start_server || { echo "Failed to start server"; exit 1; }
 
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
