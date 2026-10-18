@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- Values of all data types are read back from data parts in Parquet format without changes.
 -- The types without a lossless representation in Parquet are stored in the ClickHouse binary format.
 

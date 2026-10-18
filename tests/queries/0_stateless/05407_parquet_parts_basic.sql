@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- Data parts in Parquet format: inserts, reads, merges, and the primary key.
 
 DROP TABLE IF EXISTS t_parquet;

@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: Depends on OpenSSL
+-- Tag no-fasttest: Depends on OpenSSL and Parquet
 
 -- Data parts are not created in Parquet format when an encryption codec applies to some column, explicitly or by default.
 -- Values of DateTime64 with scales 7 and 8 out of the range of Parquet timestamps are read back without changes.

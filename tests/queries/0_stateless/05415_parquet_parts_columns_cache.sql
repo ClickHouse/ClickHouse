@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-fasttest
 -- Tag no-parallel: drops the columns cache.
+-- Tag no-fasttest: Depends on Parquet
 
 -- The columns cache serves the columns of data parts in Parquet format: the whole columns of row groups are cached.
 

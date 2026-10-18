@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- Mutations, lightweight deletes, and ALTERs of data parts in Parquet format, and changes of the format of parts.
 
 SET mutations_sync = 2, alter_sync = 2;

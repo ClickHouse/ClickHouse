@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- A projection in Parquet format inside data parts in another format, and vice versa.
 
 DROP TABLE IF EXISTS t_projection_parquet;

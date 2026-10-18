@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: Depends on Parquet
+
 # The data file of a data part in Parquet format can be read by an external application.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

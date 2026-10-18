@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- Replication of data parts in Parquet format.
 
 DROP TABLE IF EXISTS t_parquet_r1 SYNC;

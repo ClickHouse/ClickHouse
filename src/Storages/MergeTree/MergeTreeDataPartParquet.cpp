@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartParquet.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeReaderParquet.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterParquet.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>

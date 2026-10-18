@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on Parquet
+
 -- Markers of missing columns are kept in data parts in Parquet format,
 -- and the columns with the `Quantized` codec are not stored in Parquet format.
 
