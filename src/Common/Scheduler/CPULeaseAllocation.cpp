@@ -691,12 +691,6 @@ bool CPULeaseAllocation::renew(Lease & lease, bool in_task)
             acquired_increment.sub(1);
 
             bool wait_succeeded = waitForGrant(lock, thread_num, in_task);
-            if (!wait_succeeded && in_task)
-            {
-                // A thread inside a task cannot stop: it runs on a borrowed slot until its holder's next `renew`
-                resetPreempted(thread_num);
-                wait_succeeded = true;
-            }
             if (!wait_succeeded || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
@@ -721,8 +715,9 @@ bool CPULeaseAllocation::renew(Lease & lease, bool in_task)
 
 bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num, bool in_task)
 {
-    auto timeout = thread_num == 0
-        ? std::chrono::milliseconds::max() // Never involuntary stop the master thread - only downscale worker threads
+    // Never involuntary stop the master thread or a thread inside a task (`renewInTask`) - only downscale worker threads
+    auto timeout = thread_num == 0 || in_task
+        ? std::chrono::milliseconds::max()
         : settings.preemption_timeout;
 
     auto predicate = [this, thread_num]
