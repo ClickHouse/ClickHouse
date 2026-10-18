@@ -4256,7 +4256,7 @@ void Reader::initColumnsCache()
         hash.update(cache_options.file_identity);
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
-        hash.update(info.nullable_group);
+        hash.update(info.nullable_group_def);
         bool decoded = true;
         for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
         {
@@ -4268,7 +4268,9 @@ void Reader::initColumnsCache()
             hash.update(primitive.decoded_type->getName());
             hash.update(primitive.output_type->getName());
             hash.update(primitive.output_nullable);
-            hash.update(primitive.group_nullable);
+            hash.update(primitive.nullable_group_defs.size());
+            for (UInt8 group_def : primitive.nullable_group_defs)
+                hash.update(group_def);
         }
         if (!decoded)
             continue;
