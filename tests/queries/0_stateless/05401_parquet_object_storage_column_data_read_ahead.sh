@@ -50,7 +50,8 @@ $CLICKHOUSE_CLIENT --query "
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '${CLICKHOUSE_TEST_UNIQUE_NAME}_')
-    ORDER BY read"
+    ORDER BY read
+    SETTINGS enable_parallel_replicas = 0"
 
 config="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_page_cache.yaml"
 echo "page_cache_max_size: 134217728" > "$config"
