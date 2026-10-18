@@ -763,11 +763,12 @@ See `fsync_after_insert_each_part` for when the fsync happens.
 When the fsync of an `INSERT` happens. Has no effect unless `fsync_after_insert` is enabled.
 
 - `false` (default) - once, when the query finishes, over the set of active parts covering the
-  inserted data. This is cheaper per part (the writeback of the parts written earlier in the
+  inserted data. This is cheaper per part: the writeback of the parts written earlier in the
   query has already happened in the background, and the remaining fsyncs are issued as one
-  batch that the filesystem can coalesce) and cheaper in total: a part that a background merge
-  has already merged away while the query was still running is not synced at all, only the
-  wider part covering it is. A part committed by a still-running `INSERT` is then visible but
+  batch that the filesystem can coalesce. It does not necessarily mean fewer fsyncs in total: a
+  background merge or mutation syncs a source part that is still waiting for this fsync before
+  it reads it, and the query then syncs the wider part covering it as well. A part committed by
+  a still-running `INSERT` is then visible but
   not yet durable - durability is guaranteed when the query completes. The files are reopened
   for this fsync after they were written and closed. Linux reports a background writeback error
   to such a later `fsync` as long as the file stays in the kernel's inode cache, but loses it if
