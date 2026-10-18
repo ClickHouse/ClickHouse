@@ -489,6 +489,23 @@ std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw(size_t buffer_s
     return file_holder->read(buffer_size);
 }
 
+size_t TemporaryDataBuffer::startNewBlock()
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+
+    /// After `next` all written data is compressed into the underlying buffer, so the next block starts at its end.
+    next();
+    return out_compressed_buf.getHolder()->count();
+}
+
+std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readFromPosition(size_t position)
+{
+    auto in = readRaw();
+    in->seek(position, SEEK_SET);
+    return std::make_unique<TemporaryDataReadBuffer>(std::move(in));
+}
+
 CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
 {
     return *out_compressed_buf;
