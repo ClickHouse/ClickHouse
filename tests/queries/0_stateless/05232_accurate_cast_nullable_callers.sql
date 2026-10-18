@@ -73,12 +73,13 @@ DROP TABLE src_05232;
 
 SELECT 'IN with a Nullable set key';
 
--- `transform_null_in = 1` casts the left column with the accurate cast, so a key the set type cannot
--- represent used to become NULL and then match a NULL in the set.
-SELECT materialize('abc') IN (SELECT CAST(NULL, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;   -- { serverError CANNOT_PARSE_TEXT }
-SELECT materialize('abc') IN (SELECT CAST(1, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;   -- { serverError CANNOT_PARSE_TEXT }
-SELECT materialize('abc') IN (SELECT CAST(1, 'Int32')) SETTINGS transform_null_in = 1;   -- { serverError CANNOT_PARSE_TEXT }
-SELECT materialize('999999999999') IN (SELECT CAST(1, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;   -- { serverError CANNOT_PARSE_TEXT }
+-- `transform_null_in = 1` used to cast the left column with the accurate cast, so a key the set type
+-- cannot represent became NULL and then matched a NULL in the set. Such a key is not a member of the
+-- set: it neither matches the NULL in the set nor raises, the same as with `transform_null_in = 0`.
+SELECT materialize('abc') IN (SELECT CAST(NULL, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;
+SELECT materialize('abc') IN (SELECT CAST(1, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;
+SELECT materialize('abc') IN (SELECT CAST(1, 'Int32')) SETTINGS transform_null_in = 1;
+SELECT materialize('999999999999') IN (SELECT CAST(1, 'Nullable(Int32)')) SETTINGS transform_null_in = 1;
 
 -- A key the set type can hold, a genuine NULL key, and the default `transform_null_in = 0` path
 -- (which casts with `accurateCastOrNull`) are unchanged.

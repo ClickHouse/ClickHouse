@@ -3,8 +3,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -52,14 +50,11 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserUseQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUse(StatementFactory & factory)
-{
-    factory.registerStatement("USE",
+    documentation["USE"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -76,7 +71,9 @@ This query can't be made when using the HTTP protocol, since there is no concept
 USE [DATABASE] db
 )",
         .related = {"CREATE DATABASE", "SHOW", "SET"},
-    });
+    };
+
+    return documentation;
 }
 
 }
