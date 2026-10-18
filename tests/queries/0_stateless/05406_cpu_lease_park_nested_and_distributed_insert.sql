@@ -51,12 +51,13 @@ SETTINGS workload = '05406_wl', max_threads = 1, use_concurrency_control = 1, ma
     input_format_parallel_parsing = 0, log_queries = 1, log_comment = '05406_q5';
 
 -- GLOBAL IN / GLOBAL JOIN fill their external table by a nested pipeline on the planning thread
+-- The initiator counts the subquery rows twice (its read and the shard's read of the external table): no row limit.
 SELECT count() FROM remote('127.0.0.2', numbers(100000)) WHERE number GLOBAL IN (SELECT number FROM numbers(15000000))
 SETTINGS workload = '05406_wl', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 60,
-    enable_parallel_replicas = 0, log_queries = 1, log_comment = '05406_q6';
+    enable_parallel_replicas = 0, max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q6';
 SELECT count() FROM remote('127.0.0.2', numbers(100000)) AS l GLOBAL JOIN (SELECT number FROM numbers(15000000)) AS r USING (number)
 SETTINGS workload = '05406_wl', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 60,
-    enable_parallel_replicas = 0, log_queries = 1, log_comment = '05406_q7';
+    enable_parallel_replicas = 0, max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q7';
 
 SELECT count() FROM t_heavy;
 SELECT count() FROM t_local;
