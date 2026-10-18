@@ -2386,50 +2386,50 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         /// RENAME is terminal because it only changes output names after all value transformations are done.
         allowed_transformers = {};
 
-        ASTPtr lambda;
+        ASTPtr first_expression;
+        const bool parenthesized = pos->type == TokenType::OpeningRoundBracket;
         String lambda_arg;
 
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (parenthesized)
         {
-            auto before_open_round_bracket = pos;
             ++pos;
 
-            if (ParserExpression().parse(pos, lambda, expected))
+            if (!ParserExpression().parse(pos, first_expression, expected))
+                return false;
+
+            if (auto * func = first_expression->as<ASTFunction>(); func && func->name == "lambda")
             {
-                if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
-                {
-                    if (!isASTLambdaFunction(*func))
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
+                if (!isASTLambdaFunction(*func))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
 
-                    const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
-                    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "First argument of lambda must be a tuple");
+                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "First argument of lambda must be a tuple");
 
-                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
-                    if (lambda_arg_asts.size() != 1)
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "RENAME column transformer can only accept lambda with one argument");
+                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                if (lambda_arg_asts.size() != 1)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "RENAME column transformer can only accept lambda with one argument");
 
-                    if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
-                        lambda_arg = *opt_arg_name;
-                    else
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                    lambda_arg = *opt_arg_name;
+                else
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
 
-                    if (pos->type != TokenType::ClosingRoundBracket)
-                        return false;
-                    ++pos;
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
 
-                    func->setIsLambdaFunction(true);
+                func->setIsLambdaFunction(true);
 
-                    auto res = make_intrusive<ASTColumnsRenameTransformer>();
-                    res->lambda = lambda;
-                    res->lambda_arg = lambda_arg;
-                    node = std::move(res);
-                    return true;
-                }
+                auto res = make_intrusive<ASTColumnsRenameTransformer>();
+                res->lambda = first_expression;
+                res->lambda_arg = lambda_arg;
+                node = std::move(res);
+                return true;
             }
 
-            lambda = nullptr;
-            pos = before_open_round_bracket;
+            if (!first_expression->as<ASTIdentifier>())
+                return false;
         }
 
         Names source_names;
@@ -2438,8 +2438,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ParserIdentifier target_ident_p;
         auto parse_rename = [&]
         {
-            ASTPtr source;
-            if (!source_ident_p.parse(pos, source, expected))
+            ASTPtr source = std::move(first_expression);
+            if (!source && !source_ident_p.parse(pos, source, expected))
                 return false;
             if (!as.ignore(pos, expected))
                 return false;
@@ -2452,10 +2452,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return true;
         };
 
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (parenthesized)
         {
-            ++pos;
-
             if (!ParserList::parseUtil(pos, expected, parse_rename, false))
                 return false;
 
