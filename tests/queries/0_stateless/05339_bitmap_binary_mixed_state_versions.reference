@@ -1,0 +1,2 @@
+1	1	1	1	[3]	[1,2,3,4]	[1,2,4]	[1,2]
+AggregateFunction(1, groupBitmap, UInt32)	AggregateFunction(1, groupBitmap, UInt32)	[1,2,3,4]	[1,2,3,4]
