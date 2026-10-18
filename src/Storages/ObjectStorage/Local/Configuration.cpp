@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
@@ -20,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int BAD_ARGUMENTS;
+extern const int PATH_ACCESS_DENIED;
 }
 
 void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr)
@@ -54,6 +57,26 @@ ObjectStoragePtr StorageLocalConfiguration::createObjectStorage(
     else
     {
         chassert(context->getApplicationType() == Context::ApplicationType::SERVER);
+
+        /// `LocalObjectStorage` reads and writes through the host filesystem namespace and its
+        /// constructor eagerly creates the key prefix directory. With a non-plain-local
+        /// `user_files_policy` disk (e.g. `s3_plain` or `DiskEncrypted`), `getUserFilesPath` is
+        /// that disk's metadata root or object-key prefix rather than a usable host directory,
+        /// so such a setup is not supported. Reject before constructing the backend, otherwise
+        /// an unsupported configuration would still mutate the local filesystem before failing.
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(
+                        ErrorCodes::PATH_ACCESS_DENIED,
+                        "Local object storage access is not supported with non-plain-local `user_files_policy` disks "
+                        "(disk `{}` is not a plain local filesystem disk)",
+                        disk->getName());
+            }
+        }
+
         path_prefix = context->getUserFilesPath();
         if (path_prefix.empty())
             throw Exception(

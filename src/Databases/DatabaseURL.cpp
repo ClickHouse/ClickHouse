@@ -11,7 +11,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Disks/IVolume.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
 #include <TableFunctions/ITableFunction.h>
@@ -268,13 +270,17 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (classifyURLScheme(url) != URLSchemeTarget::File)
         return true;
 
+    const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+    const VolumePtr user_files_volume = is_local ? VolumePtr{} : context_->getUserFilesVolume();
+
     /// A table name can use the archive path syntax (`archive.tar.zst::data.native`), which the
     /// `file` delegate resolves to a file stored inside the archive. The file that has to exist on
     /// the filesystem is then the archive, not the whole name: probing the name itself would make
-    /// every table inside an archive unresolvable.
+    /// every table inside an archive unresolvable. Archive syntax is not supported with a
+    /// `user_files_policy` volume (the `file` delegate rejects it), so the name is not split there.
     String local_path = getLocalPathFromFileURL(url);
     String path_in_archive;
-    if (context_->getSettingsRef()[Setting::allow_archive_path_syntax])
+    if (!user_files_volume && context_->getSettingsRef()[Setting::allow_archive_path_syntax])
     {
         if (auto [path_to_archive, path_inside] = splitToArchivePathAndPathInArchive(local_path); !path_to_archive.empty())
         {
@@ -286,17 +292,17 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     fs::path fs_path(local_path);
     if (fs_path.is_relative())
         fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
-    const String path = fs::absolute(fs_path).lexically_normal().string();
+
+    /// For a disk-backed `user_files_policy` the user-files path is the disk root, which is not
+    /// necessarily host-absolute - for `s3_plain` it is an object-key prefix. `fs::absolute`
+    /// would prepend the server working directory and break the disk-prefix match in
+    /// `splitUserFilesAbsolutePath`, so in that case normalize only lexically.
+    const String path = user_files_volume
+        ? fs_path.lexically_normal().string()
+        : fs::absolute(fs_path).lexically_normal().string();
 
     /// A path with globs matches a dynamic set of files, possibly empty, so it always "exists".
     if (containsGlobs(path))
-        return true;
-
-    /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
-    /// whether such a file exists through the error message, claim the table and let the `file`
-    /// engine report the access error.
-    const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
     /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
@@ -306,6 +312,48 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
     /// answers what it answers for a remote URL, which is not probed either.
     if (!isFileReadGranted(context_))
+        return true;
+
+    /// When `user_files_policy` is configured, `fs::exists` only checks the local filesystem
+    /// and would reject valid paths that exist on the configured `IDisk`. Route the existence
+    /// check through `IDisk`, mirroring `DatabaseFilesystem::checkTableFilePath`.
+    if (user_files_volume)
+    {
+        auto [disk, disk_relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+
+        /// Do not probe paths outside of user_files: instead of leaking whether such a file
+        /// exists through the error message, claim the table and let the `file` engine report
+        /// the access error.
+        if (!disk || !isDiskRelativePathInsideRoot(disk, disk_relative_path))
+            return true;
+
+        if (!disk->existsFileOrDirectory(disk_relative_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+            return false;
+        }
+
+        if (!disk->existsFile(disk_relative_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
+    /// whether such a file exists through the error message, claim the table and let the `file`
+    /// engine report the access error.
+    ///
+    /// The boundary check must be the same one the delegated `file` storage applies
+    /// (`Context::isUserFilesPath`): on a plain `user_files_path` an admin-managed symlink inside
+    /// the directory is still accepted by the delegate, so resolving the path here would make the
+    /// catalog claim a table (`EXISTS TABLE` answering `1` for a missing file) that the delegate
+    /// resolves and reports as missing only later.
+    if (!is_local && !context_->isUserFilesPath(path))
         return true;
 
     if (!existsOrFileNameTooLong([&] { return fs::exists(path); }))

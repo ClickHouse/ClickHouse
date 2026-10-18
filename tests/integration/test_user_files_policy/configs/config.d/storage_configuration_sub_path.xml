@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <user_files_disk_sub_path>
+                <path>/test_user_files_disk_sub_path/</path>
+            </user_files_disk_sub_path>
+        </disks>
+
+        <policies>
+            <user_files_sub_path>
+                <volumes>
+                    <main>
+                        <disk>user_files_disk_sub_path</disk>
+                    </main>
+                </volumes>
+            </user_files_sub_path>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_sub_path</user_files_policy>
+
+    <!-- With `user_files_policy`, `user_files_path` is a directory inside the disk of the policy:
+         `/test_user_files_disk_sub_path/dev/null/user_files/`. The same path in the local
+         filesystem is unusable (`/dev/null` is a character device), so the server starts only
+         if it does not treat it as a local directory. -->
+    <user_files_path>/dev/null/user_files/</user_files_path>
+</clickhouse>
