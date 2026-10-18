@@ -3063,6 +3063,7 @@ try
             CertificateReloader::instance().tryReloadAll(config());
 #endif
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            global_context->reloadStatelessWorkersConfig(config());
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
 
