@@ -48,6 +48,37 @@ class Eligibility(unittest.TestCase):
         # A sort whose output was closed before it produced any may not have read all of its input.
         self.assertEqual(statuses(graph(0))['ReadFromMergeTree_0'], 'cut_short')
 
+    def test_full_consumer_stream_without_output_is_complete(self):
+        # Only the last aggregating stream to finish produces the result of the step.
+        graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [3], 10),
+                 processor(2, 'MergeTreeSelect', 'ReadFromMergeTree_0', [4], 10),
+                 processor(3, 'AggregatingTransform', 'Aggregating_1', [5], 0, 10),
+                 processor(4, 'AggregatingTransform', 'Aggregating_1', [5], 3, 10),
+                 processor(5, 'Limit', 'Limit_2', [6], 2, 3),
+                 processor(6, 'LazyOutputFormat', '', [], 0, 2)]
+        self.assertEqual(statuses(graph)['ReadFromMergeTree_0'], 'observed')
+
+    def test_sort_stream_without_output_is_complete_under_a_producing_merge(self):
+        # A sort stream that got no rows; the merge of the sort streams starts only after each stream finished.
+        graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [3], 0),
+                 processor(2, 'MergeTreeSelect', 'ReadFromMergeTree_0', [4], 10),
+                 processor(3, 'MergeSortingTransform', 'Sorting_1', [5], 0, 0),
+                 processor(4, 'MergeSortingTransform', 'Sorting_1', [5], 10, 10),
+                 processor(5, 'MergingSortedTransform', 'Sorting_1', [6], 2, 10),
+                 processor(6, 'Limit', 'Limit_2', [7], 2, 2),
+                 processor(7, 'LazyOutputFormat', '', [], 0, 2)]
+        self.assertEqual(statuses(graph)['ReadFromMergeTree_0'], 'observed')
+
+    def test_sort_streams_of_separate_partitions_prove_only_their_own_completion(self):
+        # The streams of a sort of separate partitions are not merged: the second one stopped before its first chunk.
+        graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [3], 10),
+                 processor(2, 'MergeTreeSelect', 'ReadFromMergeTree_0', [4], 100),
+                 processor(3, 'MergeSortingTransform', 'Sorting_1', [5], 10, 10),
+                 processor(4, 'MergeSortingTransform', 'Sorting_1', [5], 0, 100),
+                 processor(5, 'Limit', 'Limit_2', [6], 1, 10),
+                 processor(6, 'LazyOutputFormat', '', [], 0, 1)]
+        self.assertEqual(statuses(graph)['ReadFromMergeTree_0'], 'cut_short')
+
     def test_empty_filter_cuts_short(self):
         graph = [processor(1, 'MergeTreeSelect', 'ReadFromMergeTree_0', [2], 10),
                  processor(2, 'FilterTransform', 'Filter_1', [3], 0, 10),

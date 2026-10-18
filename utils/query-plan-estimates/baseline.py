@@ -61,6 +61,9 @@ REFERENCE_SETTINGS = {
     'max_bytes_in_set': '0',
     'max_rows_in_distinct': '0',
     'max_bytes_in_distinct': '0',
+    # A sort that spills counts its writes to the spill file as output before it has read all of its input.
+    'max_bytes_before_external_sort': '0',
+    'max_bytes_ratio_before_external_sort': '0',
     'use_query_cache': '0',
     # Local execution: no parallel replicas, and a distributed plan runs in this process.
     'allow_experimental_parallel_reading_from_replicas': '0',
@@ -219,21 +222,45 @@ class TaskGraph:
         self.by_key = {(p['query_id'], p['id']): p for p in processors if p['query_id'] in self.complete}
         probe_rows = defaultdict(int)
         output_rows = defaultdict(int)
+        step_output_rows = defaultdict(int)
         for processor in processors:
             if processor['name'] == 'JoiningTransform':
                 probe_rows[processor['step_uniq_id']] += processor['input_rows']
             if processor['name'] in STOP_WHEN_EMPTY:
                 output_rows[(processor['step_uniq_id'], processor['name'])] += processor['output_rows']
+        for processor in self.by_key.values():
+            if all(c['step_uniq_id'] != processor['step_uniq_id'] for c in self.consumers(processor)):
+                step_output_rows[processor['step_uniq_id']] += processor['output_rows']
         self.probing_steps = {step for step, rows in probe_rows.items() if rows > 0}
         self.empty_steps = {key for key, rows in output_rows.items() if rows == 0}
+        self.producing_aggregations = {step for step, rows in step_output_rows.items() if rows > 0}
 
     def read_to_end(self, consumer):
-        """Whether a full consumer is known to have read all of its input: it produced output, or, for a join build,
-        its join started probing. A sort without sort keys would pass chunks through instead; a query does not have
-        one, as the planner drops an `ORDER BY` of constants, and the tool takes that as given."""
+        """Whether a full consumer is known to have read all of its input: it produced output, or its step produced
+        output only after all of its streams finished reading. The last aggregating stream to finish merges the states
+        of all streams of its step, so one aggregating stream without output is normal. A sort stream can get no rows;
+        the merge of the sort streams starts only when each one has sent its first chunk or finished. A join build is
+        read to the end when its join started probing. A sort without sort keys would pass chunks through instead; a
+        query does not have one, as the planner drops an `ORDER BY` of constants, and the tool takes that as given."""
         if consumer['name'] == 'FillingRightJoinSide':
             return consumer['step_uniq_id'] in self.probing_steps
-        return consumer['output_rows'] > 0
+        if consumer['output_rows'] > 0:
+            return True
+        if consumer['name'] == 'AggregatingTransform':
+            return consumer['step_uniq_id'] in self.producing_aggregations
+        return self.feeds_producing_merge(consumer)
+
+    def feeds_producing_merge(self, processor):
+        """Whether `processor` feeds a merge of sorted streams of its own step that produced output. Sort streams of
+        separate partitions have no merge, and each of them proves only its own completion."""
+        for consumer in self.consumers(processor):
+            if consumer['step_uniq_id'] != processor['step_uniq_id']:
+                continue
+            if consumer['name'] == 'MergingSortedTransform' and consumer['output_rows'] > 0:
+                return True
+            if self.feeds_producing_merge(consumer):
+                return True
+        return False
 
     def consumers(self, processor):
         return [self.by_key[(processor['query_id'], c)] for c in processor['parent_ids']]
