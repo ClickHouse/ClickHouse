@@ -436,20 +436,16 @@ public:
 
         /// The pruning of the plan can keep a column meant for a lazy read: a join keeps a column of a side it reads nothing
         /// of, for the number of rows, and that column can be, or be computed from, a column of a read. Such a column stays in
-        /// the main read and crosses the `LIMIT` instead. Carrying it can make the plan keep more, so this goes on until the
-        /// pruning keeps none of the columns read lazily.
-        const auto top_down_nodes = collectNodes();
-        while (true)
-        {
-            if (!collectCarriedValues(sort_key_nodes, kept_by_read))
-                return false;
+        /// the main read and crosses the `LIMIT` instead. One pass is enough: the copy of such a column is made at its own
+        /// read, which only keeps the column it already keeps, and changes nothing above the read or at another read.
+        if (!collectCarriedValues(sort_key_nodes, kept_by_read))
+            return false;
 
-            const auto kept_more = keepColumnsThePruningKeeps(findUnneededColumns(top_down_nodes), kept_by_read);
-            if (!kept_more)
-                return false;
-            if (!*kept_more)
-                break;
-        }
+        if (!keepColumnsThePruningKeeps(findUnneededColumns(collectNodes()), kept_by_read))
+            return false;
+
+        if (!collectCarriedValues(sort_key_nodes, kept_by_read))
+            return false;
 
         return !lazy_by_source.empty();
     }
@@ -497,11 +493,10 @@ public:
     }
 
     /// Moves to the main read the columns meant for a lazy read that the pruning of the plan keeps, `unneeded_of` says
-    /// which. Returns whether it moved any, or nullopt where an object storage read cannot be split for the rest.
-    std::optional<bool> keepColumnsThePruningKeeps(
+    /// which; each read on its own. Returns false where an object storage read cannot be split for the rest.
+    bool keepColumnsThePruningKeeps(
         const std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> & unneeded_of, NodeSet & kept_by_read)
     {
-        bool kept_more = false;
         for (auto it = lazy_by_source.begin(); it != lazy_by_source.end();)
         {
             const auto source = it->first;
@@ -528,7 +523,6 @@ public:
                     }
 
                     kept_by_read.insert(lazy.inputs[index]);
-                    kept_more = true;
                 }
                 lazy.positions.resize(kept_index);
                 lazy.inputs.resize(kept_index);
@@ -546,12 +540,8 @@ public:
                     return true;
                 });
 
-                if (erased != 0)
-                {
-                    kept_more = true;
-                    if (!settleObjectStorageLazyRead(source, lazy, kept_by_read))
-                        return {};
-                }
+                if (erased != 0 && !settleObjectStorageLazyRead(source, lazy, kept_by_read))
+                    return false;
             }
 
             if (lazy.inputs.empty())
@@ -559,7 +549,7 @@ public:
             else
                 ++it;
         }
-        return kept_more;
+        return true;
     }
 
     /// `sorting_node` is the full sorting right below `root`, the `LIMIT`, or null without ORDER BY.
