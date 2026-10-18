@@ -69,11 +69,8 @@ struct RelationProfile
     bool estimate_from_defaults = false;
 };
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -110,12 +107,6 @@ public:
     RelationProfile estimateRelationProfile(
         const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes, Float64 row_fraction = 1.0) const;
     RelationProfile estimateRelationProfile() const;
-
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
-    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -231,18 +222,19 @@ private:
     /// The rows of the parts that lack the statistics of some column.
     UInt64 rows_without_statistics = 0;
     ColumnEstimators column_estimators;
-    Strings parts_names;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
+/// Builds an estimator for a set of data parts by merging their statistics column by column.
+/// The statistics passed in are not modified, so they may come from the statistics cache.
 class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// Starts the next part; the statistics added after it are of this part.
+    void addPart(UInt64 rows);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
-    void incrementRowCount(UInt64 rows);
-    void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

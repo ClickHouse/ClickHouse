@@ -22,8 +22,6 @@
 #include <Interpreters/Set.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/ParseError.h>
 #include <algorithm>
 
@@ -301,32 +299,6 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, getContext()));
-}
-
-bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
-{
-    if (data_parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & data_part : data_parts)
-    {
-        if (parts_names[idx++] != data_part->name)
-            return true;
-    }
-    return false;
-}
-
-bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
-{
-    if (parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & part : parts)
-    {
-        if (parts_names[idx++] != part.data_part->name)
-            return true;
-    }
-    return false;
 }
 
 /// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
@@ -721,38 +693,33 @@ ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(Conte
 {
 }
 
-void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
+void ConditionSelectivityEstimatorBuilder::addPart(UInt64 rows)
 {
     estimator->total_rows += rows;
-}
-
-void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
-{
-    estimator->parts_names.push_back(data_part->name);
-    estimator->total_rows += data_part->rows_count;
-    parts_columns.emplace_back(data_part->rows_count, 0);
+    parts_columns.emplace_back(rows, 0);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
-    if (column_stats != nullptr)
-    {
-        has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
+    if (column_stats == nullptr)
+        return;
 
-        bool merged = true;
-        if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
-            column_estimator.stats->merge(column_stats);
-        /// Incompatible statistics (e.g. a concurrent ALTER changed the column type, shifting the aggregate-function
-        /// state layout). Skip this part's statistics so the estimator still works with the compatible parts instead
-        /// of crashing.
-        else
-            merged = false;
-        if (merged && !parts_columns.empty())
-            ++parts_columns.back().second;
-    }
+    has_data = true;
+    auto & column_estimator = estimator->column_estimators[column_name];
+
+    /// The statistics of a part are shared through the statistics cache, so they are never merged into
+    /// in place: the estimator accumulates the parts into its own copy, starting from an empty one of
+    /// the same structure.
+    if (column_estimator.stats == nullptr)
+        column_estimator.stats = column_stats->cloneEmpty();
+    /// Incompatible statistics (e.g. a concurrent ALTER changed the column type, shifting the aggregate-function
+    /// state layout) are skipped, so the estimator still works with the compatible parts instead of crashing.
+    else if (!column_estimator.stats->structureEquals(*column_stats))
+        return;
+
+    column_estimator.stats->merge(column_stats);
+    if (!parts_columns.empty())
+        ++parts_columns.back().second;
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const

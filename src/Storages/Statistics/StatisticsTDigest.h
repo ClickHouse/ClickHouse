@@ -24,6 +24,7 @@ public:
     bool hasCentroidPerValue(UInt64 distinct_values) const;
 
     String getNameForLogs() const override { return "TDigest"; }
+    size_t allocatedBytes() const override;
 
 private:
     QuantileTDigest<Float64> t_digest;
