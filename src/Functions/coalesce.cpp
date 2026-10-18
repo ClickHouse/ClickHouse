@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -20,6 +21,7 @@ namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace
@@ -47,6 +49,7 @@ public:
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
         , use_variant_as_common_type(use_variant_as_common_type_)
         , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
     {
     }
 
@@ -54,6 +57,9 @@ public:
     {
         return name;
     }
+
+    /// The `multiIf` created from the context follows this setting for a `FixedString` argument converted to `String`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
@@ -251,6 +257,7 @@ private:
     FunctionOverloadResolverPtr multi_if_function;
     bool use_variant_as_common_type = false;
     bool allow_lossy_numeric_supertype = false;
+    bool cast_fixed_string_to_string_strip_trailing_zeros = false;
 };
 
 }

@@ -4,10 +4,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -38,6 +46,7 @@ public:
         , fun_array(FunctionFactory::instance().get("array", context_))
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
+        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
     {
     }
     bool isVariadic() const override { return true; }
@@ -46,6 +55,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
+
+    /// `transform` and `multiIf` created from the context follow this setting for a `FixedString` value converted to `String`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getSignatureString() const override
     {
@@ -262,6 +274,7 @@ private:
     FunctionOverloadResolverPtr fun_array;
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
+    bool cast_fixed_string_to_string_strip_trailing_zeros = false;
 };
 
 }
