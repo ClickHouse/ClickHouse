@@ -223,6 +223,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
 {
     const size_t cache_idx = fuelModeIndex(fuel_mode);
 
+    bool was_registered = false;
     {
         SharedLockGuard lock(modules_mutex);
 
@@ -231,17 +232,14 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
         {
             if (auto module = it->second.ptrs[cache_idx].lock())
                 return {module, it->second.hash};
+            was_registered = true;
         }
     }
 
-    UniqueLock lock(modules_mutex);
-    auto it = modules.find(module_name);
-    if (it != modules.end())
-    {
-        if (auto module = it->second.ptrs[cache_idx].lock())
-            return {module, it->second.hash};
-    }
-
+    /// Reading and compiling a module can take seconds, so it is done without holding `modules_mutex`:
+    /// otherwise every other module operation, including saving and deleting unrelated modules, waits
+    /// for it. Concurrent first loads of the same module may compile it more than once; the result
+    /// published first is kept and the others are discarded.
     auto module_path = getFilePath(module_name);
     if (!user_scripts_disk->existsFile(module_path))
         throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
@@ -250,6 +248,16 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
 
     auto wasm_code = loadModuleImpl(module_name);
     UInt256 local_hash = calculateHash(wasm_code);
+
+    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
+    linkHostFunctions(*local_module);
+
+    UniqueLock lock(modules_mutex);
+    auto it = modules.find(module_name);
+
+    /// The module was deleted while it was being compiled; do not bring its entry back.
+    if (it == modules.end() && was_registered)
+        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
 
     if (it != modules.end())
     {
@@ -260,10 +268,10 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
                 module_name,
                 hashToHex(it->second.hash),
                 hashToHex(local_hash));
-    }
 
-    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
-    linkHostFunctions(*local_module);
+        if (auto module = it->second.ptrs[cache_idx].lock())
+            return {module, it->second.hash};
+    }
 
     if (it == modules.end())
     {
