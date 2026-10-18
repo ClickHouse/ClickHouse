@@ -8,6 +8,7 @@
 #include <fmt/ranges.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
@@ -15,6 +16,7 @@
 #include <Functions/IFunction.h>
 
 #include <algorithm>
+#include <list>
 #include <unordered_set>
 
 namespace DB
@@ -615,49 +617,49 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     auto columns_filled_before_to_reevaluate = reader->getDefaultsDependingOn(candidates_filled_before_patches, columns_patched_in_step);
     columns_to_reevaluate.insert(columns_filled_before_to_reevaluate.begin(), columns_filled_before_to_reevaluate.end());
 
-    while (!columns_to_reevaluate.empty())
+    if (columns_to_reevaluate.empty())
+        return;
+
+    /// The columns read by this step, followed by the ones of the previous steps: a `DEFAULT` may read either.
+    Block block;
+    for (size_t pos = 0; pos < read_columns.size(); ++pos)
     {
-        Block previous;
-        for (size_t pos : positions_filled_by_defaults)
+        const auto & column = result_header.getByPosition(pos);
+        if (read_columns[pos] && !block.has(column.name))
+            block.insert({read_columns[pos], column.type, column.name});
+    }
+
+    if (!previous_header.empty())
+    {
+        for (const auto & column : previous_header.cloneWithColumns(result.columns))
         {
-            const auto & column = result_header.getByPosition(pos);
-            if (columns_to_reevaluate.contains(column.name))
-            {
-                previous.insert({read_columns[pos], column.type, column.name});
-                read_columns[pos] = nullptr;
-            }
+            if (!block.has(column.name))
+                block.insert(column);
         }
+    }
 
-        if (previous.empty())
-            break;
+    for (const auto & column : result.additional_columns)
+    {
+        if (!block.has(column.name))
+            block.insert(column);
+    }
 
-        evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
+    NamesAndTypesList columns_to_evaluate;
+    NameSet added;
+    for (const auto & column : reader->getColumns())
+    {
+        if (columns_to_reevaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+            columns_to_evaluate.push_back(column);
+    }
 
-        Block evaluated;
-        for (size_t pos : positions_filled_by_defaults)
-        {
-            const auto & column = result_header.getByPosition(pos);
-            if (columns_to_reevaluate.contains(column.name))
-                evaluated.insert({read_columns[pos], column.type, column.name});
-        }
+    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, columns_to_evaluate);
 
-        auto columns_with_patched_rows = keepPatchedRows(result, previous, evaluated);
-        if (columns_with_patched_rows.empty())
-            break;
-
-        for (size_t pos : positions_filled_by_defaults)
-        {
-            const auto & name = result_header.getByPosition(pos).name;
-            if (columns_with_patched_rows.contains(name))
-                read_columns[pos] = evaluated.getByName(name).column;
-        }
-
-        /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
-        /// from the patched rows, so they are evaluated again from the combined value. That includes
-        /// the columns with patched rows of their own: for `z DEFAULT a + 100, y DEFAULT z + 1`
-        /// with patched rows in both, `y` was computed from the `DEFAULT` of `z`. A column does not
-        /// depend on itself and `DEFAULT` expressions have no cycles, so this ends.
-        columns_to_reevaluate = reader->getDefaultsDependingOn(columns_to_reevaluate, columns_with_patched_rows);
+    for (size_t pos : positions_filled_by_defaults)
+    {
+        const auto & name = result_header.getByPosition(pos).name;
+        if (added.contains(name))
+            read_columns[pos] = block.getByName(name).column;
     }
 }
 
@@ -704,30 +706,74 @@ void MergeTreeReadersChain::forgetPatchedRows(ReadResult & result, const Block &
     }
 }
 
-NameSet MergeTreeReadersChain::keepPatchedRows(const ReadResult & result, const Block & previous, Block & evaluated)
+void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
+    const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate)
 {
-    NameSet columns_with_patched_rows;
-    for (auto & column : evaluated)
+    std::list<NameAndTypePair> remaining(columns_to_evaluate.begin(), columns_to_evaluate.end());
+    NameSet remaining_names;
+    for (const auto & column : columns_to_evaluate)
+        remaining_names.insert(column.name);
+
+    while (!remaining.empty())
     {
-        const auto * mask = result.rows_filled_by_defaults.findByName(column.name);
+        /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones,
+        /// so a column goes only after all of the others its expression reads. `DEFAULT` expressions have no cycles.
+        auto it = std::find_if(remaining.begin(), remaining.end(), [&](const NameAndTypePair & column)
+        {
+            NameSet others = remaining_names;
+            others.erase(column.name);
+            return reader.getDefaultsDependingOn({column.name}, others).empty();
+        });
+
+        if (it == remaining.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between the DEFAULT expressions of columns {}",
+                fmt::join(remaining_names, ", "));
+
+        const auto * mask = result.rows_filled_by_defaults.findByName(it->name);
         if (!mask)
-            continue;
+        {
+            reader.evaluateDefaults(block, {*it});
+        }
+        else
+        {
+            /// The expression is executed only in the rows that hold its `DEFAULT`. In a patched row,
+            /// it may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
+            const auto & filter = assert_cast<const ColumnUInt8 &>(*mask->column).getData();
+            size_t num_filtered_rows = countBytesInFilter(filter);
 
-        const auto & mask_data = assert_cast<const ColumnUInt8 &>(*mask->column).getData();
-        auto new_values = removeSpecialRepresentations(column.column->convertToFullColumnIfConst());
-        auto old_values = removeSpecialRepresentations(previous.getByName(column.name).column->convertToFullColumnIfConst());
-        chassert(new_values->size() == mask_data.size() && old_values->size() == mask_data.size());
+            Block filtered;
+            for (const auto & column : block)
+            {
+                if (!column.column)
+                    continue;
 
-        auto combined = new_values->cloneEmpty();
-        combined->reserve(mask_data.size());
-        for (size_t row = 0; row < mask_data.size(); ++row)
-            combined->insertFrom(mask_data[row] ? *new_values : *old_values, row);
+                chassert(column.column->size() == filter.size());
+                filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
+            }
 
-        column.column = std::move(combined);
-        columns_with_patched_rows.insert(column.name);
+            reader.evaluateDefaults(filtered, {*it});
+
+            auto & target = block.getByName(it->name);
+            auto new_values = removeSpecialRepresentations(filtered.getByName(it->name).column->convertToFullColumnIfConst());
+            auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
+            chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
+
+            auto combined = new_values->cloneEmpty();
+            combined->reserve(filter.size());
+            for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
+            {
+                if (filter[row])
+                    combined->insertFrom(*new_values, filtered_row++);
+                else
+                    combined->insertFrom(*old_values, row);
+            }
+
+            target.column = std::move(combined);
+        }
+
+        remaining_names.erase(it->name);
+        remaining.erase(it);
     }
-
-    return columns_with_patched_rows;
 }
 
 void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader)
@@ -769,62 +815,30 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
             block.insert(column);
     }
 
-    /// For the `DEFAULT` expressions that read no column at all.
-    addDummyColumnWithRowCount(block, result.num_rows);
-
     /// Only the `DEFAULT` columns that read a patched column change.
     auto names_to_evaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, patched_columns);
-    bool evaluated_any = false;
+    if (names_to_evaluate.empty())
+        return;
 
-    while (!names_to_evaluate.empty())
+    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
+    NamesAndTypesList columns_to_evaluate;
+    NameSet added;
+    for (size_t i = 0; i <= reader_index; ++i)
     {
-        /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
-        NamesAndTypesList columns_to_evaluate;
-        NameSet added;
-        for (size_t i = 0; i <= reader_index; ++i)
+        for (const auto & column : range_readers[i].getReader()->getColumns())
         {
-            for (const auto & column : range_readers[i].getReader()->getColumns())
-            {
-                if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
-                    columns_to_evaluate.push_back(column);
-            }
+            if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+                columns_to_evaluate.push_back(column);
         }
-
-        if (columns_to_evaluate.empty())
-            break;
-
-        LOG_TEST(log, "Evaluating defaults of columns {} again after applying patches to columns {}",
-            columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
-
-        Block previous;
-        for (const auto & column : columns_to_evaluate)
-            previous.insert(block.getByName(column.name));
-
-        reader->evaluateDefaults(block, columns_to_evaluate);
-        evaluated_any = true;
-
-        Block evaluated;
-        for (const auto & column : columns_to_evaluate)
-            evaluated.insert(block.getByName(column.name));
-
-        auto columns_with_patched_rows = keepPatchedRows(result, previous, evaluated);
-        if (columns_with_patched_rows.empty())
-            break;
-
-        for (const auto & column : evaluated)
-        {
-            if (columns_with_patched_rows.contains(column.name))
-                block.getByName(column.name).column = column.column;
-        }
-
-        /// The pass above computed the columns that read one of these from its `DEFAULT` rather than
-        /// from the patched rows, so they are evaluated again from the combined value, also the ones
-        /// with patched rows of their own (see `executeActionsBeforePrewhere`).
-        names_to_evaluate = reader->getDefaultsDependingOn(added, columns_with_patched_rows);
     }
 
-    if (!evaluated_any)
+    if (columns_to_evaluate.empty())
         return;
+
+    LOG_TEST(log, "Evaluating defaults of columns {} again after applying patches to columns {}",
+        columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
+
+    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, columns_to_evaluate);
 
     for (size_t pos = 0; pos < result.columns.size(); ++pos)
         result.columns[pos] = block.getByPosition(pos).column;

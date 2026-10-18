@@ -103,10 +103,12 @@ private:
     /// leaves `result.columns_filled_by_defaults`.
     static void forgetPatchedRows(ReadResult & result, const Block & patched_rows);
 
-    /// Combines the value `evaluated` again from its `DEFAULT` with the `previous` one of a column:
-    /// the rows of `result.rows_filled_by_defaults` take the new value, the patched ones keep the old.
-    /// Returns the names of the columns in which some rows kept the previous value.
-    static NameSet keepPatchedRows(const ReadResult & result, const Block & previous, Block & evaluated);
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate`, present in `block`, once more and replaces
+    /// their values in `block`; the other columns of `block` are the inputs. The expression of a column is executed
+    /// only in its rows of `result.rows_filled_by_defaults` (in every row if it has none there); the patched rows keep
+    /// their values. A column is evaluated after the others of `columns_to_evaluate` its expression reads.
+    static void evaluateDefaultsInRowsFilledByDefaults(
+        const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate);
 
     /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
     /// once more, after patches were applied to `patched_columns` of the result accumulated up to

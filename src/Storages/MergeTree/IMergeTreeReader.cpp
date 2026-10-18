@@ -470,6 +470,9 @@ void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList &
                 inputs.insert(column);
         }
 
+        /// For the `DEFAULT` expressions that read no column at all.
+        addDummyColumnWithRowCount(inputs, block.rows());
+
         /// Defaults are evaluated on full columns to get correct values for subcolumns.
         NameSet full_requested_columns_set;
         NamesAndTypesList full_requested_columns;
