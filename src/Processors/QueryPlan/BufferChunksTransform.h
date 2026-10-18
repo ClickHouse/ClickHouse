@@ -31,6 +31,10 @@ public:
 private:
     Chunk pullChunk(bool & virtual_row);
 
+    /// Emits the oldest buffered chunk, which is the next one in stream order.
+    /// Returns true if it was a virtual row.
+    bool pushBufferedChunk();
+
     InputPort & input;
     OutputPort & output;
 
@@ -42,6 +46,9 @@ private:
     size_t num_buffered_rows = 0;
     size_t num_buffered_bytes = 0;
     size_t num_processed_rows = 0;
+    /// Number of virtual rows in `chunks` that were not yet forwarded downstream.
+    /// While it is non-zero, upstream is kept stopped, see `prepare`.
+    size_t num_buffered_virtual_rows = 0;
 
     /// After a virtual row was delivered downstream, the merge may defer this source
     /// (leave the port NotNeeded) until the merge reaches the key from the virtual row.
