@@ -22,17 +22,23 @@ namespace
 /// from a clause of the enclosing union - the trailing clause of the last operand is query-level for the
 /// union holding it (see `QueryTreeBuilder::buildSelectWithUnionExpression`), so lifting would either
 /// apply it to the arms of the enclosing union or narrow it down to the last arm of the inner one.
+bool hasTrailingSettings(const ASTSelectWithUnionQuery & inner_union)
+{
+    return ASTSelectIntersectExceptQuery::getTrailingSettings(inner_union.list_of_selects->children.back()) != nullptr;
+}
+
 bool canLiftUnionAll(const ASTSelectWithUnionQuery * inner_union)
 {
-    return inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL
-        && !ASTSelectIntersectExceptQuery::getTrailingSettings(inner_union->list_of_selects->children.back());
+    return inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL && !hasTrailingSettings(*inner_union);
 }
 
 }
 
 void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr ast_select, ASTs & selects)
 {
-    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
+    /// Same as in `canLiftUnionAll`: a union whose last operand carries a trailing `SETTINGS` clause stays
+    /// a separate operand of the `UNION DISTINCT` list, so that the clause keeps applying to it alone.
+    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>(); inner_union && !hasTrailingSettings(*inner_union))
     {
         for (const auto & child : inner_union->list_of_selects->children)
             getSelectsFromUnionListNode(child, selects);

@@ -67,6 +67,27 @@ SELECT n FROM
     (SELECT NULL IN (NULL) AS n UNION ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
 )
 ORDER BY n NULLS FIRST;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION DISTINCT
+    (SELECT NULL IN (NULL) AS n INTERSECT ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION DISTINCT
+    (SELECT NULL IN (NULL) AS n EXCEPT ALL SELECT 0 AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
+SELECT n FROM
+(
+    SELECT NULL IN (NULL) AS n
+    UNION DISTINCT
+    (SELECT NULL IN (NULL) AS n UNION ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
+)
+ORDER BY n NULLS FIRST;
 SET transform_null_in = DEFAULT;
 
 -- Both query-level clauses of a union bind query parameters for every arm, in the order they are applied.
