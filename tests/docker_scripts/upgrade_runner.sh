@@ -474,8 +474,9 @@ then
         fi
         timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
             && continue
-        # Only the server refusing the filter shows that it cannot be applied, a timeout or a lost connection does not.
-        if ! grep -q '^Received exception from server' /tmp/row_policy_check_errors.txt
+        # Only the server failing to resolve the filter shows that it cannot be applied: an unknown column, table or
+        # function, or a wrong type. A resource limit, a timeout or a lost connection does not.
+        if ! grep -qE '^Code: (43|46|47|59|60|386)\. DB::Exception: Received from ' /tmp/row_policy_check_errors.txt
         then
             cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
             row_policy_check_failed=1
