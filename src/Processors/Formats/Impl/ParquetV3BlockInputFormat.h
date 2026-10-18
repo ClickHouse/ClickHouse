@@ -68,6 +68,9 @@ public:
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
+    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
+    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
+
 private:
     Chunk read() override;
 
