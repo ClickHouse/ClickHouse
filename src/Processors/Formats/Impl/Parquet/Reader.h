@@ -202,9 +202,6 @@ struct Reader
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
-        /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
-        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
-        bool decode_dictionary_as_replicated = false;
 
         /// A filter extracted from a substring search condition on this column in PREWHERE.
         /// String values that do not match it are decoded as empty strings (they are guaranteed
@@ -346,6 +343,9 @@ struct Reader
         bool use_dictionary_filter = false;
         bool use_column_index = false;
         bool need_null_map = false;
+        /// The output column this primitive column belongs to is served from the columns cache in
+        /// this row group, so its data is neither prefetched nor decoded.
+        bool served_from_cache = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -391,8 +391,6 @@ struct Reader
         /// zero when the dictionary is decoded later on the throttled data-read path instead.
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
-        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
-        ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -420,9 +418,6 @@ struct Reader
         /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
         /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
         MutableColumnPtr group_null_map;
-
-        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
-        ColumnPtr dictionary_values;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -505,6 +500,29 @@ struct Reader
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
+        /// Columns cache. Both are parallel to extended_sample_block, or empty when not used.
+        /// The whole output columns of the row group found in the cache.
+        std::vector<ColumnPtr> cached_columns;
+        /// The output columns to write to the cache: their rows are accumulated as the row subgroups
+        /// are read, and written once the whole row group is read, see `addToColumnsCacheWrite`.
+        /// The copy of a column being written to the columns cache. It goes to the shared cache, so
+        /// it is allocated and released outside the memory tracker of the query, like the marks in
+        /// the mark cache: otherwise warming the cache could exceed `max_memory_usage` of a query
+        /// that fits without it.
+        struct ColumnsCacheWrite
+        {
+            bool active = false;
+            MutableColumnPtr column;
+
+            ColumnsCacheWrite() = default;
+            ColumnsCacheWrite(ColumnsCacheWrite &&) noexcept = default;
+            ColumnsCacheWrite & operator=(ColumnsCacheWrite &&) = delete;
+            ~ColumnsCacheWrite();
+
+            /// Ends the write and releases the copy.
+            void reset();
+        };
+        std::vector<ColumnsCacheWrite> columns_cache_writes;
 
         /// Fields below are used only by ReadManager.
         std::atomic<size_t> read_ptr {0};
@@ -606,6 +624,14 @@ struct Reader
     /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
     bool row_groups_ordered_by_top_k = false;
 
+    /// Columns cache, see `ReadOptions::columns_cache` and `initColumnsCache`.
+    /// The identity of each output column in the cache, parallel to extended_sample_block;
+    /// zero for a column that does not use the cache. Empty if the cache is not used.
+    std::vector<UInt128> columns_cache_identities;
+    bool columns_cache_writes_possible = false;
+    /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
+    UInt64 columns_cache_generation = 0;
+
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
@@ -693,7 +719,7 @@ struct Reader
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;
 
-    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
+    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
@@ -701,7 +727,11 @@ struct Reader
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
-    ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
+    ColumnPtr & getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block);
+
+    /// Write the columns of the row group accumulated for the columns cache, once all its row
+    /// subgroups are read.
+    void flushColumnsCacheWrites(RowGroup & row_group);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
@@ -741,6 +771,11 @@ private:
     bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
+    /// Look up the row groups in the columns cache and decide which columns to write to it.
+    void initColumnsCache();
+    bool canWriteToColumnsCache() const;
+    void addToColumnsCacheWrite(
+        RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, const IColumn & column, bool has_substituted_defaults);
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
@@ -752,7 +787,6 @@ private:
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
-    const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 };
 
 }
