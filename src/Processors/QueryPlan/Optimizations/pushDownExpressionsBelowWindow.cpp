@@ -1,5 +1,6 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -29,14 +30,6 @@ namespace
 
 using Node = ActionsDAG::Node;
 using NodeSet = std::unordered_set<const Node *>;
-
-const Node * resolveAliases(const Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-        node = node->children.front();
-
-    return node;
-}
 
 /// A lower bound of the number of bytes a value of the column takes, for the types the optimization supports.
 /// As in `pushDownVolumeReducingFunctions`, composite types are not supported: a path of a composite type can share
@@ -150,10 +143,43 @@ const ExpressionInfo & getExpressionInfo(const Node * node, std::unordered_map<c
     return cache.emplace(node, info).first->second;
 }
 
+/// Whether a function with the result of type `result_type` may return its argument of type `argument_type`
+/// (or a part of it) as is, without copying, like an identity `CAST`, `toNullable`, `assumeNotNull` or `tupleElement`.
+bool mayReturnArgumentAsIs(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    auto argument = removeLowCardinalityAndNullable(argument_type);
+    if (argument->equals(*removeLowCardinalityAndNullable(result_type)))
+        return true;
+
+    /// A part of a composite value, like an element of a tuple or the keys of a map.
+    return !argument->isValueRepresentedByNumber() && !isStringOrFixedString(argument);
+}
+
+/// The nodes whose results the result of `node` may be: itself, and the arguments that the functions on the way
+/// may return as is. Two columns can share memory only if they have a common such node.
+void collectStorageNodes(const Node * node, NodeSet & storage_nodes)
+{
+    std::vector<const Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        /// Constants are not carried through the steps.
+        if (current->type == ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        if (!storage_nodes.insert(current).second)
+            continue;
+
+        for (const auto * child : current->children)
+            if (current->type == ActionsDAG::ActionType::ALIAS || mayReturnArgumentAsIs(child->result_type, current->result_type))
+                stack.push_back(child);
+    }
+}
+
 /// Whether the column `column_name` of the output of `node` does not share memory with another column of it.
-/// An expression can return its argument as is (an identity `CAST`, `toNullable`, an alias), so two columns can
-/// share memory only if they are computed from a common column. The steps that are not known to keep
-/// the columns separate are not accepted.
+/// The steps that are not known to keep the columns separate are not accepted.
 bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size_t depth = 0)
 {
     static constexpr size_t max_depth = 100;
@@ -184,33 +210,35 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
         if (!column_output)
             return false;
 
-        NodeSet column_nodes;
-        collectSubtree(resolveAliases(column_output), column_nodes);
-        std::erase_if(column_nodes, [](const Node * column_node) { return column_node->type == ActionsDAG::ActionType::COLUMN; });
+        NodeSet column_storage_nodes;
+        collectStorageNodes(column_output, column_storage_nodes);
 
         for (const auto * output : actions->getOutputs())
         {
             if (output == column_output)
                 continue;
 
-            NodeSet output_nodes;
-            collectSubtree(output, output_nodes);
-            for (const auto * output_node : output_nodes)
-                if (column_nodes.contains(output_node))
+            NodeSet output_storage_nodes;
+            collectStorageNodes(output, output_storage_nodes);
+            for (const auto * output_storage_node : output_storage_nodes)
+                if (column_storage_nodes.contains(output_storage_node))
                     return false;
         }
 
         if (node.children.size() != 1)
             return false;
 
-        for (const auto * column_node : column_nodes)
-            if (column_node->type == ActionsDAG::ActionType::INPUT && !hasOwnMemory(*node.children.front(), column_node->result_name, depth + 1))
+        /// An input column may share memory with another column of the step below.
+        for (const auto * storage_node : column_storage_nodes)
+            if (storage_node->type == ActionsDAG::ActionType::INPUT
+                && !hasOwnMemory(*node.children.front(), storage_node->result_name, depth + 1))
                 return false;
 
         return true;
     }
 
-    if (typeid_cast<const ISourceStep *>(step) || typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+    /// `typeid_cast` does not match derived classes.
+    if (dynamic_cast<const ISourceStep *>(step) || typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
         return true;
 
     if (typeid_cast<const UnionStep *>(step))
@@ -219,6 +247,15 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
             if (!hasOwnMemory(*child, column_name, depth + 1))
                 return false;
         return true;
+    }
+
+    /// A window step adds its results to the columns it passes through.
+    if (const auto * window = typeid_cast<const WindowStep *>(step))
+    {
+        for (const auto & window_function : window->getWindowFunctions())
+            if (window_function.column_name == column_name)
+                return true;
+        return node.children.size() == 1 && hasOwnMemory(*node.children.front(), column_name, depth + 1);
     }
 
     /// Steps like `Limit` and `Offset` pass the columns through.
@@ -262,15 +299,26 @@ void addColumnNames(const SortDescription & description, NameSet & names)
 void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto * parent_node = stack.back().node;
-    auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get());
-    if (!expression_step || parent_node->children.size() != 1)
+    if (parent_node->children.size() != 1)
+        return;
+
+    /// A `Filter` keeps the rows for which the condition is true after the window functions as well, so the
+    /// expressions it computes are computed for the same rows below them. With `QUALIFY`, the projection is
+    /// a separate step above the `Filter` and is not changed.
+    ActionsDAG * parent_actions_ptr = nullptr;
+    if (auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get()))
+        parent_actions_ptr = &expression_step->getExpression();
+    else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()))
+        parent_actions_ptr = &filter_step->getExpression();
+
+    if (!parent_actions_ptr)
         return;
 
     auto * window_node = parent_node->children.front();
     if (!typeid_cast<const WindowStep *>(window_node->step.get()))
         return;
 
-    auto & parent_actions = expression_step->getExpression();
+    auto & parent_actions = *parent_actions_ptr;
     if (parent_actions.hasArrayJoin())
         return;
 
@@ -302,9 +350,10 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
                         for (const auto & name : actions->getRequiredColumnsNames())
                             columns_read_by_chain.insert(name);
         }
-        else if (const auto * sorting = typeid_cast<const SortingStep *>(node->step.get()); sorting && !sorting->hasPartitions() && !sorting->getLimit())
+        else if (const auto * sorting = typeid_cast<const SortingStep *>(node->step.get()); sorting && !sorting->getLimit())
         {
             addColumnNames(sorting->getSortDescription(), columns_read_by_chain);
+            addColumnNames(sorting->getPartitionByDescription(), columns_read_by_chain);
         }
         else
         {
@@ -325,10 +374,10 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     for (const auto & column : bottom_header)
         ++bottom_column_counts[column.name];
 
-    /// The largest expressions that can be computed below the chain, grouped by the column they read.
+    /// The expressions that can be computed below the chain, grouped by the column they read.
     const auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
     std::unordered_map<const Node *, ExpressionInfo> expression_info_cache;
-    std::unordered_map<const Node *, const Node *> input_of_candidate;
+    std::unordered_map<const Node *, std::vector<const Node *>> candidates_by_input;
     for (const auto & node : parent_actions.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || maybe_lazily_executed_nodes.contains(&node))
@@ -343,29 +392,59 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
             || node.result_type->getMaximumSizeOfValueInMemory() > *minimum_size_of_input)
             continue;
 
-        input_of_candidate.emplace(&node, info.input);
+        candidates_by_input[info.input].push_back(&node);
     }
 
-    if (input_of_candidate.empty())
+    if (candidates_by_input.empty())
         return;
-
-    NodeSet nodes_below_candidates;
-    for (const auto & [candidate, _] : input_of_candidate)
-        for (const auto * child : candidate->children)
-            collectSubtree(child, nodes_below_candidates);
-
-    std::unordered_map<const Node *, std::vector<const Node *>> candidates_by_input;
-    for (const auto & [candidate, input] : input_of_candidate)
-        if (!nodes_below_candidates.contains(candidate))
-            candidates_by_input[input].push_back(candidate);
 
     NodeSet outputs;
     for (const auto * output : parent_actions.getOutputs())
         outputs.insert(output);
 
+    NameSet result_names;
+
+    /// Whether computing `candidates` below the chain replaces the column `input` there: nothing but them reads it,
+    /// and their results are not larger than its smallest value.
+    const auto can_replace_column = [&](const Node * input, const std::vector<const Node *> & candidates)
+    {
+        /// An internal node of a candidate is not allowed to be read from outside, otherwise it would be computed
+        /// below the chain and carried through it. Constants are not carried, so they can be shared.
+        NodeSet candidate_nodes;
+        for (const auto * candidate : candidates)
+            collectSubtree(candidate, candidate_nodes);
+        std::erase_if(candidate_nodes, [](const Node * node) { return node->type == ActionsDAG::ActionType::COLUMN; });
+
+        const NodeSet candidate_roots(candidates.begin(), candidates.end());
+        for (const auto & node : parent_actions.getNodes())
+        {
+            if (candidate_nodes.contains(&node))
+            {
+                if (!candidate_roots.contains(&node) && outputs.contains(&node))
+                    return false;
+                continue;
+            }
+
+            for (const auto * child : node.children)
+                if (candidate_nodes.contains(child) && !candidate_roots.contains(child))
+                    return false;
+        }
+
+        size_t size_of_results = 0;
+        NameSet names;
+        for (const auto * candidate : candidates)
+        {
+            size_of_results += candidate->result_type->getMaximumSizeOfValueInMemory();
+            if (window_header.has(candidate->result_name) || result_names.contains(candidate->result_name)
+                || !names.insert(candidate->result_name).second)
+                return false;
+        }
+
+        return size_of_results <= *getMinimumSizeOfValue(input->result_type);
+    };
+
     NodeSet split_nodes;
     NameSet replaced_columns;
-    NameSet result_names;
     for (const auto & [input, candidates] : candidates_by_input)
     {
         const auto & column_name = input->result_name;
@@ -376,49 +455,41 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         if (!bottom_column || !bottom_column->type->equals(*input->result_type))
             continue;
 
-        /// The column is freed only if nothing but the candidates reads it. An internal node of a candidate
-        /// is not allowed to be read from outside either, otherwise it would be computed below the chain and
-        /// carried through it. Constants are not carried, so they can be shared.
-        NodeSet candidate_nodes;
+        /// The highest candidates have the smallest results in most cases, like `toUInt8(length(s))`. But if an
+        /// intermediate result is read by something else, like `v` in `v > 0` (both a projection column and
+        /// the condition of the `Filter`), only the lowest candidates can replace the column.
+        const NodeSet candidate_set(candidates.begin(), candidates.end());
+        NodeSet nodes_below_candidates;
         for (const auto * candidate : candidates)
-            collectSubtree(candidate, candidate_nodes);
-        std::erase_if(candidate_nodes, [](const Node * node) { return node->type == ActionsDAG::ActionType::COLUMN; });
+            for (const auto * child : candidate->children)
+                collectSubtree(child, nodes_below_candidates);
 
-        NodeSet candidate_roots(candidates.begin(), candidates.end());
-        bool is_read_by_others = false;
-        for (const auto & node : parent_actions.getNodes())
-        {
-            if (candidate_nodes.contains(&node))
-            {
-                if (!candidate_roots.contains(&node) && outputs.contains(&node))
-                    is_read_by_others = true;
-                continue;
-            }
-
-            for (const auto * child : node.children)
-                if (candidate_nodes.contains(child) && !candidate_roots.contains(child))
-                    is_read_by_others = true;
-        }
-
-        if (is_read_by_others)
-            continue;
-
-        /// The results must not be larger than the smallest possible value of the column.
-        size_t size_of_results = 0;
-        bool has_name_conflicts = false;
+        std::vector<const Node *> highest_candidates;
+        std::vector<const Node *> lowest_candidates;
         for (const auto * candidate : candidates)
         {
-            size_of_results += candidate->result_type->getMaximumSizeOfValueInMemory();
-            has_name_conflicts |= window_header.has(candidate->result_name) || !result_names.insert(candidate->result_name).second;
+            if (!nodes_below_candidates.contains(candidate))
+                highest_candidates.push_back(candidate);
+
+            NodeSet subtree;
+            for (const auto * child : candidate->children)
+                collectSubtree(child, subtree);
+            if (std::none_of(subtree.begin(), subtree.end(), [&](const Node * node) { return candidate_set.contains(node); }))
+                lowest_candidates.push_back(candidate);
         }
 
-        if (has_name_conflicts || size_of_results > *getMinimumSizeOfValue(input->result_type))
+        const std::vector<const Node *> * replacing_candidates = nullptr;
+        if (can_replace_column(input, highest_candidates))
+            replacing_candidates = &highest_candidates;
+        else if (can_replace_column(input, lowest_candidates))
+            replacing_candidates = &lowest_candidates;
+
+        if (!replacing_candidates || !hasOwnMemory(*bottom_node, column_name))
             continue;
 
-        if (!hasOwnMemory(*bottom_node, column_name))
-            continue;
-
-        split_nodes.insert(candidates.begin(), candidates.end());
+        for (const auto * candidate : *replacing_candidates)
+            result_names.insert(candidate->result_name);
+        split_nodes.insert(replacing_candidates->begin(), replacing_candidates->end());
         replaced_columns.insert(column_name);
     }
 
