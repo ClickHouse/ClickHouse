@@ -3,7 +3,7 @@
 -- clears all caches of the server, including the statistics cache, which turns the expected hits into misses.
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only.
 
--- The statistics of a data part are cached per part and column, loaded by the first query that needs
+-- The statistics of a data part are cached per part, loaded by the first query that needs
 -- them, and merged on the fly for the parts of every query. So a query over the parts left after
 -- partition pruning hits the cache as well, a new part is the only miss of the next query, and the
 -- statistics are never loaded in the background.

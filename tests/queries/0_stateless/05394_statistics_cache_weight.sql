@@ -26,7 +26,7 @@ SYSTEM DROP STATISTICS CACHE;
 
 SELECT count() FROM t_05394 WHERE c = 1 AND id < 5 FORMAT Null;
 
--- 10 parts, 2 columns.
+-- 10 parts, one entry per part.
 SELECT
     (SELECT value FROM system.metrics WHERE metric = 'StatisticsCacheCells') AS cells,
     (SELECT value FROM system.metrics WHERE metric = 'StatisticsCacheBytes') / cells >= 4096 AS weight_includes_arena;

@@ -14,14 +14,14 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Statistics of one column of one data part, as read from disk.
+/// Statistics of all columns of one data part, as read from disk.
 ///
-/// `stats` is nullptr when the part stores statistics for the column that cannot be used because they
-/// were built for a different column type (a `MODIFY COLUMN` mutation is pending). That is cached too,
-/// so every query does not re-read the part until the mutation replaces it.
+/// The statistics of a column are absent when the part stores statistics for the column that cannot be used
+/// because they were built for a different column type (a `MODIFY COLUMN` mutation is pending), or when the
+/// part has no statistics for the column.
 struct StatisticsCacheCell
 {
-    ColumnStatisticsPtr stats;
+    ColumnsStatistics stats;
     /// The memory retained by `stats` (see `ColumnStatistics::allocatedBytes`).
     size_t memory_bytes = 0;
 };
@@ -36,12 +36,13 @@ struct StatisticsCacheWeightFunction
 
 extern template class CacheBase<UInt128, StatisticsCacheCell, UInt128TrivialHash, StatisticsCacheWeightFunction>;
 
-/** Cache of column statistics of the data parts of MergeTree tables, one entry per part and column.
+/** Cache of column statistics of the data parts of MergeTree tables, one entry per part.
   *
-  * A data part is immutable, so an entry never becomes stale: a new part is a miss, and a removed part
-  * has its entries removed. A query merges the cached statistics of its parts on the fly, which is cheap,
-  * so the merged statistics are never cached. The cached objects are shared between queries and must
-  * not be modified: merge them into a fresh copy.
+  * The statistics of a part are small, so all of them are read at once. A data part is immutable, so an
+  * entry never becomes stale: a new part is a miss, and a removed part has its entry removed. A query
+  * merges the cached statistics of its parts on the fly, which is cheap, so the merged statistics are
+  * never cached. The cached objects are shared between queries and must not be modified: merge them
+  * into a fresh copy.
   */
 class StatisticsCache : public CacheBase<UInt128, StatisticsCacheCell, UInt128TrivialHash, StatisticsCacheWeightFunction>
 {
@@ -51,8 +52,8 @@ private:
 public:
     StatisticsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// The key of the statistics of a column of the part stored at `part_path`.
-    static UInt128 hash(const String & part_path, const String & column_name);
+    /// The key of the statistics of the part stored at `part_path`.
+    static UInt128 hash(const String & part_path);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
