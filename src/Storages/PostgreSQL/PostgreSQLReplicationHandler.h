@@ -76,6 +76,8 @@ private:
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
+    void logPublishedButNotMaterialized(const std::set<String> & published_but_not_materialized) const;
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);

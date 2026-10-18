@@ -3406,10 +3406,23 @@ def test_whole_schema_database_restart_after_new_postgresql_table(started_cluste
     )
     assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
 
-    # Both tables are added to replication with `ATTACH TABLE`.
-    for table in (new_table, published_table):
-        instance.query(f"ATTACH TABLE test_database.{table}")
-        check_tables_are_synchronized(instance, table)
+    # `ATTACH TABLE` of another table persists the list of the replicated tables, which does not contain
+    # the published table without a nested table. It must still be remembered after the next restart.
+    instance.query(f"ATTACH TABLE test_database.{new_table}")
+    check_tables_are_synchronized(instance, new_table)
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, new_table)
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # The published table is added to replication with `ATTACH TABLE`.
+    instance.query(f"ATTACH TABLE test_database.{published_table}")
+    check_tables_are_synchronized(instance, published_table)
 
     pg_manager.drop_materialized_db()
     for table in (new_table, published_table):
