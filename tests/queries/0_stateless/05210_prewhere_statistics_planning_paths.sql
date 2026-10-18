@@ -4,6 +4,8 @@ SET materialize_statistics_on_insert = 1, max_threads = 1;
 -- `optimize_move_to_prewhere` is pinned because the test harness randomizes it off, and the
 -- probe below counts the part-statistics loads that the plan-level `PREWHERE` optimization performs.
 SET optimize_move_to_prewhere = 1, enable_parallel_replicas = 0;
+-- The probe counts the statistics collected by each planning path, which reuse within a query would share.
+SET statistics_cache_max_entries = 0;
 
 CREATE TABLE prewhere_planning_statistics (p UInt64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
