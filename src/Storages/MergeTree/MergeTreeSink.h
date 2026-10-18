@@ -4,6 +4,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/DeferredPartsSync.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
@@ -75,6 +76,10 @@ protected:
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
+
+    /// See `DeferredPartsSync`.
+    bool defer_fsync = false;
+    DeferredPartsSync parts_to_sync;
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
