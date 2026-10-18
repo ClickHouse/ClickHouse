@@ -759,6 +759,11 @@ std::string dumpState(const DB::MetadataStorageInMemory & metadata, const std::v
 /// files and directories it had already erased and the `BlobGroup` snapshot it was copying.
 TEST_F(MetadataInMemoryTest, TestRollbackOnAllocationFailureRestoresEverything)
 {
+#if defined(SANITIZER)
+    /// The sanitizer runtime provides its own `operator new`, so allocations do not reach the memory tracker
+    /// and the limit below never makes the commit fail (see also `gtest_allocation_interceptors.cpp`).
+    GTEST_SKIP() << "Allocations are not tracked by the memory tracker under sanitizers";
+#else
     DB::MainThreadStatus::getInstance();
 
     const std::vector<std::string> paths
@@ -852,6 +857,7 @@ TEST_F(MetadataInMemoryTest, TestRollbackOnAllocationFailureRestoresEverything)
 
     EXPECT_TRUE(committed);
     EXPECT_GT(failed_commits, 0);
+#endif
 }
 
 /// A `DiskObjectStorage` over `MetadataStorageInMemory`, to exercise inline-only files through the
