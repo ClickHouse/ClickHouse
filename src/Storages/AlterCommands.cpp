@@ -2141,7 +2141,7 @@ static String removePropertyHint(ColumnDefaultKind kind, const String & column_n
             /// neither stored nor readable, it exists only as an input to other columns' default
             /// expressions at `INSERT` time. Name the two operations that do exist instead.
             return "EPHEMERAL is not removable as a property: use DROP COLUMN " + backQuote(column_name)
-                + " to delete the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression";
+                + " to delete the column, or MODIFY COLUMN to replace it with a DEFAULT, MATERIALIZED or ALIAS expression";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }

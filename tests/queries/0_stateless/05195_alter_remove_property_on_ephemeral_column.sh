@@ -22,7 +22,7 @@ for property in DEFAULT MATERIALIZED ALIAS
 do
     expected="Cannot remove ${property} from column \`value\`, because column default type is EPHEMERAL."
     expected="${expected} EPHEMERAL is not removable as a property: use DROP COLUMN \`value\` to delete"
-    expected="${expected} the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression"
+    expected="${expected} the column, or MODIFY COLUMN to replace it with a DEFAULT, MATERIALIZED or ALIAS expression"
 
     echo "-- REMOVE ${property} on an EPHEMERAL column"
     error=$(${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ephemeral_remove MODIFY COLUMN value REMOVE ${property}" 2>&1)
@@ -40,14 +40,17 @@ echo "-- DROP COLUMN on an EPHEMERAL column, then columns left named value"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ephemeral_remove DROP COLUMN value"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 't_ephemeral_remove' AND name = 'value'"
 
-echo "-- MODIFY COLUMN replacing EPHEMERAL, then its default_kind"
-${CLICKHOUSE_CLIENT} -q "
-DROP TABLE t_ephemeral_remove;
-CREATE TABLE t_ephemeral_remove (id UInt64, value UInt64 EPHEMERAL id) ENGINE = MergeTree ORDER BY id;
-ALTER TABLE t_ephemeral_remove MODIFY COLUMN value UInt64 DEFAULT 7;
-SELECT default_kind FROM system.columns WHERE database = currentDatabase() AND table = 't_ephemeral_remove' AND name = 'value';
-DROP TABLE t_ephemeral_remove;
-"
+for kind in DEFAULT MATERIALIZED ALIAS
+do
+    echo "-- MODIFY COLUMN replacing EPHEMERAL with ${kind}, then its default_kind"
+    ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_ephemeral_remove;
+    CREATE TABLE t_ephemeral_remove (id UInt64, value UInt64 EPHEMERAL id) ENGINE = MergeTree ORDER BY id;
+    ALTER TABLE t_ephemeral_remove MODIFY COLUMN value UInt64 ${kind} 7;
+    SELECT default_kind FROM system.columns WHERE database = currentDatabase() AND table = 't_ephemeral_remove' AND name = 'value';
+    DROP TABLE t_ephemeral_remove;
+    "
+done
 
 # the three kinds `REMOVE` does accept: their advice is right, and the fix must leave it verbatim
 echo "-- the three kinds REMOVE accepts keep their advice"
