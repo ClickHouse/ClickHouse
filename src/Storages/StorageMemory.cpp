@@ -786,6 +786,12 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         }
     }
 
+    /// `RESTORE` holds only a shared table lock, so it can overlap an `INSERT`. Serialize the clone,
+    /// append and publication with the inserts: otherwise an insert published in between would be lost,
+    /// and the restore would publish different blocks under the same `version` as that insert, leaving
+    /// `getModificationHash` unchanged although the data changed.
+    std::lock_guard lock(mutex);
+
     /// Append old blocks with the new ones.
     auto old_and_new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
     old_and_new_data->blocks.insert(
