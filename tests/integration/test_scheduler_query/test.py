@@ -72,25 +72,25 @@ def test_create() -> None:
     def do_checks() -> None:
         common_select_part = "select count() from system.scheduler where path ilike"
 
-        assert node.query(f"{common_select_part} '%/admin/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/admin/%' and type='allocation_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/production/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/production/%' and type='allocation_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/development/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/development/%' and type='allocation_queue'") == "1\n"
 
         assert (
             node.query(
-                f"{common_select_part} '%/all/%' and type='inflight_limit' and "
-                "resource='query' and max_requests=20"
+                f"{common_select_part} '%/all/%' and type='allocation_limit' and "
+                "resource='query' and max_cost=20"
             )
             == "1\n"
         )
@@ -155,8 +155,8 @@ def ensure_total_concurrency(limit: int) -> None:
 def inflight_queries(workload) -> int:
     return int(
         node.query(
-            f"select inflight_requests from system.scheduler where "
-            f"path like '%/{workload}/semaphore' and resource='query'"
+            f"select allocations from system.scheduler where "
+            f"path like '%/{workload}/limit' and resource='query'"
         ).strip()
     )
 
@@ -173,7 +173,7 @@ def queued_queries(workload) -> int:
     return int(
         node.query(
             f"select queue_length from system.scheduler where "
-            f"path like '%/{workload}/%' and type='request_queue' and resource='query'"
+            f"path like '%/{workload}/%' and type='allocation_queue' and resource='query'"
         ).strip()
     )
 
@@ -229,7 +229,7 @@ def test_max_waiting_queries_reached() -> None:
     ensure_total_concurrency(1)
     ensure_workload_concurrency("all", 1)
     pool_all.stop()
-    assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
+    assert "Workload 'all' limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
 def test_max_waiting_queries_updated() -> None:
@@ -289,7 +289,7 @@ def test_max_waiting_queries_updated() -> None:
         error = node.query_and_get_error(
             "select 1 settings workload='all', workload_admission_timeout_ms=10000"
         )
-        assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in error, error
+        assert "Workload 'all' limit `max_waiting_queries` has been reached: 3 of 3" in error, error
     finally:
         node.query("kill query where query_id = 'max_waiting_updated_holder' sync")
         holder.join()
@@ -349,3 +349,35 @@ def test_admission_timeout_query_slot() -> None:
         holder.join()
 
 
+def test_max_queries_per_second() -> None:
+    node.query(
+        """
+        create resource query (query);
+        create workload all settings max_queries_per_second=2, max_burst_queries=1;
+        """
+    )
+
+    assert (
+        node.query(
+            "select max_speed, max_burst from system.scheduler where "
+            "resource='query' and type='allocation_rate_limit'"
+        )
+        == "2\t1\n"
+    )
+
+    # The bucket admits while it is not in debt: two queries start at once, then one every 500ms
+    start = time.time()
+    for _ in range(5):
+        node.query("select 1 settings workload='all'")
+    elapsed = time.time() - start
+    assert elapsed >= 1.4, f"queries were not throttled: {elapsed}s"
+
+    assert (
+        int(
+            node.query(
+                "select throttling_us from system.scheduler where "
+                "resource='query' and type='allocation_rate_limit'"
+            )
+        )
+        > 0
+    )

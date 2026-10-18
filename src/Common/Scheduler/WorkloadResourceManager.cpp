@@ -49,7 +49,7 @@ namespace
     }
 }
 
-WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name)
+WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name, bool admission_uses_priority)
 {
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
@@ -58,6 +58,11 @@ WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, 
     // We ignore unknown settings here for forward-compatibility.
     // There is no way to report error at this point other than stop server.
     settings.initFromChanges(create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
+    // Query slots are space-shared, so sibling workloads are ordered by `precedence`. Query slots are never
+    // evicted, so it only affects the order of admission, which used to be driven by `priority`. In the
+    // compatibility mode `priority` keeps driving it.
+    if (unit == CostUnit::QuerySlot && admission_uses_priority)
+        settings.precedence = settings.priority;
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
@@ -225,7 +230,7 @@ WorkloadResourceManager::Workload::Workload(WorkloadResourceManager * resource_m
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->createNode(NodeInfo(resource->getUnit(), workload_entity, resource_name));
+            resource->createNode(NodeInfo(resource->getUnit(), workload_entity, resource_name, resource_manager->query_slot_admission_uses_priority));
     }
     catch (...)
     {
@@ -239,7 +244,7 @@ WorkloadResourceManager::Workload::~Workload()
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->deleteNode(NodeInfo(resource->getUnit(), workload_entity, resource_name));
+            resource->deleteNode(NodeInfo(resource->getUnit(), workload_entity, resource_name, resource_manager->query_slot_admission_uses_priority));
     }
     catch (...)
     {
@@ -253,7 +258,7 @@ void WorkloadResourceManager::Workload::updateWorkload(const ASTPtr & new_entity
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->updateNode(NodeInfo(resource->getUnit(), workload_entity, resource_name), NodeInfo(resource->getUnit(), new_entity, resource_name));
+            resource->updateNode(NodeInfo(resource->getUnit(), workload_entity, resource_name, resource_manager->query_slot_admission_uses_priority), NodeInfo(resource->getUnit(), new_entity, resource_name, resource_manager->query_slot_admission_uses_priority));
         workload_entity = new_entity;
     }
     catch (...)
@@ -268,8 +273,9 @@ String WorkloadResourceManager::Workload::getParent() const
     return assert_cast<ASTCreateWorkloadQuery *>(workload_entity.get())->getWorkloadParent();
 }
 
-WorkloadResourceManager::WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_)
+WorkloadResourceManager::WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_, bool query_slot_admission_uses_priority_)
     : storage(std::move(storage_))
+    , query_slot_admission_uses_priority(query_slot_admission_uses_priority_)
     , log{getLogger("WorkloadResourceManager")}
 {
     subscription = storage->getAllEntitiesAndSubscribe(
@@ -339,7 +345,7 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
         // Add all workloads into the new resource
         auto resource = std::make_shared<Resource>(ast);
         for (Workload * workload : topologicallySortedWorkloads())
-            resource->createNode(NodeInfo(resource->getUnit(), workload->workload_entity, resource_name));
+            resource->createNode(NodeInfo(resource->getUnit(), workload->workload_entity, resource_name, query_slot_admission_uses_priority));
 
         // Attach the resource
         resources.emplace(resource_name, resource);

@@ -8,12 +8,14 @@ namespace DB
 {
 
 /// Limits the total amount of allocated resource by all the children nodes.
+/// If `evict` is true, an increase that would violate the limit initiates eviction of a running allocation.
+/// Otherwise, the increase is blocked until enough resource is released (e.g. query slots are never evicted).
 class AllocationLimit final : public ISpaceSharedNode
 {
     static constexpr ResourceCost default_max_allocated = std::numeric_limits<ResourceCost>::max();
 public:
     AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
-        ResourceCost soft_limit_ = default_max_allocated);
+        ResourceCost soft_limit_ = default_max_allocated, bool evict_ = true);
     ~AllocationLimit() override;
     void updateLimit(UInt64 new_max_allocated);
     ResourceCost getLimit() const;
@@ -46,6 +48,9 @@ private:
     ResourceCost max_allocated = default_max_allocated;
     ResourceCost soft_limit = default_max_allocated; /// Spill threshold; `>= max_allocated` means disabled.
     bool checking_soft_limit = false; /// Synchronous spill registration can reenter this limit.
+
+    /// Whether running allocations may be evicted to satisfy an increase that would violate the limit
+    const bool evict = true;
 
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
