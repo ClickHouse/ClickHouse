@@ -2775,7 +2775,19 @@ void IMergeTreeDataPart::loadExistingRowsCount()
         existing_rows_count = readExistingRowsCount();
 }
 
-UInt64 IMergeTreeDataPart::readExistingRowsCount()
+bool IMergeTreeDataPart::hasExistingRows() const
+{
+    if (!rows_count)
+        return false;
+    if (!hasLightweightDelete())
+        return true;
+    /// `loadExistingRowsCount` may store `rows_count` without reading the mask, so only a smaller value is exact.
+    if (existing_rows_count.has_value() && *existing_rows_count < rows_count)
+        return *existing_rows_count > 0;
+    return readExistingRowsCount() > 0;
+}
+
+UInt64 IMergeTreeDataPart::readExistingRowsCount() const
 {
     const size_t total_mark = getMarksCount();
     if (!total_mark)
