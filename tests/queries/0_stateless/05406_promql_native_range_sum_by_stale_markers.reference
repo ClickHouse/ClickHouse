@@ -1,0 +1,15 @@
+physical_markers	1
+parallel	1	1	1	1	1
+serial	1	1	1	1	1
+sql	1	1	1	1	1
+sql_minus_serial	1
+serial_minus_sql	1
+sql_minus_parallel	1
+parallel_minus_sql	1
+serial_native_step	1
+parallel_native_step	1
+parallel_physical_ids	1
+parallel_partial_merge	1
+parallel_shared_group	1
+lanes_sql_minus_native	1
+lanes_native_minus_sql	1

@@ -2,10 +2,12 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/Transforms/PromQLRangeRateTransform.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Common/Exception.h>
@@ -131,6 +133,10 @@ void PromQLRangeSumByTransform::consume(Chunk chunk)
             "PromQL native range sum received incompatible {} column {}",
             TimeSeriesColumnNames::TimeSeries,
             time_series_column->getName());
+    const auto * tuple_samples = typeid_cast<const ColumnTuple *>(&time_series_array->getData());
+    if (!tuple_samples || tuple_samples->tupleSize() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native range sum expects Array(Tuple(timestamp, value))");
+    const auto & values = *tuple_samples->getColumnPtr(1);
     const IColumn * rate_arguments[] = {time_series_column.get()};
 
     collector->getGroupByID(columns[id_position], full_groups);
@@ -163,7 +169,14 @@ void PromQLRangeSumByTransform::consume(Chunk chunk)
                 "PromQL native range sum exceeded its limit of {} samples for one physical series",
                 max_samples_per_series);
 
-        rate_function->add(rate_place.data(), rate_arguments, row, nullptr);
+        if (PromQLRangeRateHelpers::containsStaleMarker(values, row_begin, row_begin + row_samples))
+        {
+            auto filtered_samples = PromQLRangeRateHelpers::filterStaleMarkers(*time_series_array, row);
+            const IColumn * filtered_rate_arguments[] = {filtered_samples.get()};
+            rate_function->add(rate_place.data(), filtered_rate_arguments, 0, nullptr);
+        }
+        else
+            rate_function->add(rate_place.data(), rate_arguments, row, nullptr);
         current_series_samples += row_samples;
     }
 }
