@@ -1287,14 +1287,15 @@ KeyMetadata::iterator FileCache::addFileSegment(
     return file_segment_metadata_it;
 }
 
-bool FileCache::tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete)
+bool FileCache::tryIncreasePriority(FileSegment & file_segment)
 {
     /// Skipped while a dynamic resize holds `dynamic_resize_lock` exclusively
     /// (see the comment on `dynamic_resize_lock`). Policies which cannot resize never take it.
     std::shared_lock lock(dynamic_resize_lock, std::defer_lock);
     if (supports_dynamic_resize && !lock.try_lock())
         return false;
-    return main_priority->tryIncreasePriority(iterator, is_space_reservation_complete, cache_state_guard);
+    return main_priority->tryIncreasePriority(
+        *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_state_guard);
 }
 
 bool FileCache::tryReserve(
