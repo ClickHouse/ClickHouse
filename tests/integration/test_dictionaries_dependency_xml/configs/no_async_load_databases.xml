@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Attach the tables before the server starts, so a table is never attached after the dictionaries are loaded by chance. -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
