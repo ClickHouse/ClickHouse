@@ -7,7 +7,7 @@ delimited, bot-owned section into the PR body, e.g.:
 
     <!-- ch-version-info:start -->
     ### Version info
-    - Merged into: `26.6.1.1` (included in `26.6` and later)
+    - Merged into: `26.6.1.1-master` (included in `26.6` and later)
     - Backported to: `25.12.1.100`, `25.8.1.200`
     <!-- ch-version-info:end -->
 
@@ -17,8 +17,10 @@ commits, so such a version is not a `release/26.6` build and is not comparable
 with release-branch build numbers. What it does mean is that the change landed
 on master before the `release/26.6` branch was cut, so it is present in `26.6`
 from the branch's first build and in every later release -- the annotation
-spells that out. Backport PRs get a bare version -- theirs is a real
-release-branch build.
+spells that out. The version gets a `-master` suffix, the same one the private
+repo uses for Docker image tags of master builds (`<version>-master`), so it
+is not mistaken for a release-branch build with the same number. Backport PRs
+get a bare version -- theirs is a real release-branch build.
 
 The version is taken from the CIDB `version_history` table, populated per build
 by `ci/jobs/scripts/workflow_hooks/version_log.py`. Each build stores the
@@ -169,17 +171,21 @@ def render_section(
     is not a `release/26.2` build. It means the change landed before the
     `release/26.2` branch was cut, so it is included in `26.2` from the
     branch's first build and in every later release -- which is what the
-    annotation says. Backport PRs pass ``False``: their version is a real
-    release-branch build and is rendered bare.
+    annotation says. Such a version is rendered with a `-master` suffix, as in
+    the private repo's Docker image tags of master builds. Backport PRs pass
+    ``False``: their version is a real release-branch build and is rendered
+    bare.
     """
     lines = ["### Version info"]
     if merged_into:
+        version = merged_into
         note = ""
         if from_default_branch:
+            version = f"{merged_into}-master"
             series = release_series(merged_into)
             if series:
                 note = f" (included in `{series}` and later)"
-        lines.append(f"- Merged into: `{merged_into}`{note}")
+        lines.append(f"- Merged into: `{version}`{note}")
     if backported_to:
         versions = ", ".join(f"`{v}`" for v in backported_to)
         lines.append(f"- Backported to: {versions}")

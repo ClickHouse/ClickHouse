@@ -20,13 +20,13 @@ import platform
 import shutil
 import subprocess
 import time
-import xml.etree.ElementTree as ET
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import test_discovery
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -346,32 +346,6 @@ def install_perf_python_deps():
     )
 
 
-def performance_test_skip_reason(test_path):
-    """Why a performance test cannot collect profiles, or `None` if it can.
-
-    Profile collection runs every `tests/performance/*.xml` against a single,
-    instrumented server started with only `--tcp_port` (its perf config removes
-    `<http_port>`), and it invokes `perf.py` without `--binary` / `--http-port`.
-    Shell-script queries (`<query type="shell">`) rely on exactly those: they build
-    `$CLICKHOUSE_BINARY` / `$CLICKHOUSE_LOCAL` from `--binary` and `$CLICKHOUSE_URL`
-    from `--http-port`. Here they would pick up whatever `clickhouse` is in `PATH`
-    (not the instrumented binary) and hit an HTTP endpoint that is not listening, so
-    such tests are skipped for profile collection rather than collecting profiles for
-    the wrong executable or failing the pass. Tests that require S3 are also skipped
-    because this runner does not start object storage. A parse error is not skipped,
-    so `perf.py` reports the real error.
-    """
-    try:
-        root = ET.parse(test_path).getroot()
-    except ET.ParseError:
-        return None
-    if root.get("requires_s3") == "1":
-        return "requires S3, not available during profile collection"
-    if any(q.get("type") == "shell" for q in root.findall("query")):
-        return "shell-script query test, not used for profile collection"
-    return None
-
-
 def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     """Run performance tests against a single server to exercise code paths.
 
@@ -391,9 +365,7 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
       * small `--max-query-seconds` / `--prewarm-max-query-seconds` passed to
                               `perf.py`, so individual queries return quickly.
     """
-    test_files = sorted(
-        f for f in os.listdir(f"{repo_path}/tests/performance/") if f.endswith(".xml")
-    )
+    test_files = test_discovery.list_test_files(f"{repo_path}/tests/performance/")
     print(
         f"Running up to {len(test_files)} performance tests "
         f"(runs={runs}, max_queries={max_queries}, budget={time_budget_s:.0f}s, "
@@ -405,9 +377,17 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     # For profile collection we run against a single server (left=right on same port)
     for i, test_file in enumerate(test_files):
         test_name = test_file.removesuffix(".xml")
-        skip_reason = performance_test_skip_reason(f"{repo_path}/tests/performance/{test_file}")
-        if skip_reason:
-            print(f"  Skipping {test_name}: {skip_reason}")
+        # Shell-script queries need the instrumented `--binary` and an HTTP port,
+        # neither of which profile collection passes; they exercise startup / HTTP
+        # timing rather than query code paths, so they are useless for PGO/BOLT
+        # profiles. Skip them here (logged, never silently dropped).
+        if test_discovery.test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
+        # This job provisions no S3 endpoint, so suites requiring it cannot work here.
+        # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
+        if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:

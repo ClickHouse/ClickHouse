@@ -11,9 +11,7 @@ doc_type: 'reference'
 Движок таблицы ArrowFlight позволяет ClickHouse выполнять запросы к удалённым наборам данных и вставку в них по протоколу [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
 Эта интеграция позволяет ClickHouse с высокой производительностью взаимодействовать с внешними серверами с поддержкой Flight в столбцовом формате Apache Arrow.
 
-<div id="creating-a-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 Список столбцов необязателен — если он не указан, схема определяется автоматически на удалённом сервере Arrow Flight через `GetSchema`.
 
-<div id="named-collections">
-  ## Именованные коллекции
-</div>
+## Именованные коллекции {#named-collections}
 
 Движок поддерживает [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections) для хранения параметров подключения:
 
@@ -56,15 +52,12 @@ CREATE TABLE remote_flight_data
 | `ssl_ca`                   | Нет                          | `""`         | Путь к файлу CA‑сертификата для проверки TLS.            |
 | `ssl_override_hostname`    | Нет                          | `""`         | Переопределяет имя хоста, используемое при проверке TLS. |
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
 * `arrow_flight_request_descriptor_type` — Определяет, как имя набора данных отправляется на сервер Flight. Возможные значения: `path` (по умолчанию, отправляется как дескриптор PATH) или `command` (отправляется как дескриптор CMD с `SELECT * FROM <dataset>`). Используйте `command` для серверов Flight, которые ожидают SQL-команды (например, Dremio).
+* `arrow_flight_request_timeout_sec` — Тайм-аут в секундах для одного запроса Arrow Flight, по умолчанию `300`. Он распространяется на весь запрос целиком: для `SELECT` это весь поток результатов, а не только ожидание первого батча записей. `0` означает отсутствие тайм-аута; в этом случае сервер Flight, принявший запрос, но так и не ответивший на него, блокирует выполнение запроса до закрытия соединения.
 
-<div id="usage-example">
-  ## Пример использования
-</div>
+## Пример использования {#usage-example}
 
 Чтение данных с удалённого сервера Arrow Flight:
 
@@ -93,18 +86,14 @@ SELECT * FROM remote_flight_data ORDER BY id;
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## Примечания
-</div>
+## Примечания {#notes}
 
 * Если в операторе `CREATE TABLE` указаны столбцы, они должны соответствовать схеме, возвращаемой сервером Flight.
 * Если столбцы не указаны, схема автоматически определяется на основе данных удалённого сервера.
 * Поддерживаются как чтение (`SELECT`), так и запись (`INSERT`).
 * Параметр `arrow_flight_request_descriptor_type` определяет, будет ли имя набора данных отправлено как дескриптор PATH или как дескриптор CMD, содержащий запрос `SELECT *`.
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * [Табличная функция arrowFlight](/ru/reference/functions/table-functions/arrowflight)
 * [Интерфейс Arrow Flight](/ru/concepts/features/interfaces/arrowflight)

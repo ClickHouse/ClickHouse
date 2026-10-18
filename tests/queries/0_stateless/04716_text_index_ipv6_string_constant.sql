@@ -69,3 +69,18 @@ SELECT '-- a FixedString column keeps pruning for a constant wider than the colu
 CREATE TABLE t_fixed (s FixedString(8), INDEX idx s TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_fixed VALUES ('needle');
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_fixed WHERE s = 'waytoolongvalue') WHERE explain ILIKE '%Granules: 0/1%';
+
+-- `multiSearchAny` takes a list of needles, not a single value, so it cannot be compared with the map
+-- value type's default the way the equality above is. A key the row does not have reads as the empty
+-- string, and no needle is ever found in that, so the granule can still be skipped.
+SELECT '-- a list of needles over a map element still uses the index';
+CREATE TABLE t_map_values_search (m Map(String, String), INDEX idx mapValues(m) TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_map_values_search VALUES (map('a', 'needle_value')), (map('a', 'other_value'));
+SELECT count() FROM t_map_values_search WHERE multiSearchAny(m['a'], ['needle']) SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_map_values_search WHERE multiSearchAny(m['a'], ['needle']) SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_map_values_search WHERE multiSearchAny(m['a'], ['needle']) SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_search WHERE multiSearchAny(m['a'], ['needle'])) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() FROM t_map_values_search WHERE multiSearchAny(m['missing'], ['needle']) SETTINGS force_data_skipping_indices = 'idx';
+CREATE TABLE t_map_values_search_token (m Map(String, String), INDEX idx mapValues(m) TYPE tokenbf_v1(512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_map_values_search_token VALUES (map('a', 'needle_value'));
+SELECT count() FROM t_map_values_search_token WHERE multiSearchAny(m['a'], ['needle']) SETTINGS force_data_skipping_indices = 'idx';
