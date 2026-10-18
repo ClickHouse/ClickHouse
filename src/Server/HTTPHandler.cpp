@@ -137,11 +137,10 @@ namespace
 /// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
 /// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
 /// "external data for query processing". Such a body must come with a length on a non-chunked request.
+/// Media types are case-insensitive, so the check must not depend on the header casing.
 bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
-    const auto & content_type = request.getContentType();
-    return startsWith(content_type, "application/x-www-form-urlencoded")
-        || startsWith(content_type, "multipart/form-data");
+    return isContentType(request, "application/x-www-form-urlencoded") || isMultipartFormData(request);
 }
 
 /// Only table paths with a known format and no path filters can be used as upload destinations.
@@ -1949,7 +1948,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
             params.load(request, body, handler);
         body_fields_loaded = true;
     }
-    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    else if (unlikely(isContentType(request, "application/x-www-form-urlencoded")))
     {
         /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
         /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
