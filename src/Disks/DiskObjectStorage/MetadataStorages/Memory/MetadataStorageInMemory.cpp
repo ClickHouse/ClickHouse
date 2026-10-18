@@ -617,6 +617,10 @@ void MetadataStorageInMemoryTransaction::createDirectoryRecursive(const std::str
                 accumulated = "/";
                 continue;
             }
+            /// A trailing slash yields an empty last component (`a/` iterates as `a`, ``), which
+            /// would otherwise create a bogus `a//` entry: an empty-named child of `a/`.
+            if (component.empty())
+                continue;
             accumulated += component.string() + "/";
 
             /// Match `DiskLocal::createDirectories` semantics: refuse to traverse a path component

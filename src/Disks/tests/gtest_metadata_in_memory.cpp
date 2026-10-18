@@ -197,6 +197,36 @@ TEST_F(MetadataInMemoryTest, TestRootPathSemantics)
     EXPECT_EQ(iter_paths, std::vector<std::string>({"a", "top_file"}));
 }
 
+/// A trailing slash must not create an empty-named child: `DataPartStorageOnDiskBase::clonePart`
+/// passes such a path to `createDirectories`, and the bogus child made the directory look like it
+/// contained itself (endless recursion in `IDisk::asyncCopy`) and non-empty for `removeDirectory`.
+TEST_F(MetadataInMemoryTest, TestCreateDirectoryRecursiveWithTrailingSlash)
+{
+    auto metadata = getMetadataStorage();
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectoryRecursive("a/b/");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("a"));
+    EXPECT_TRUE(metadata->existsDirectory("a/b"));
+    EXPECT_EQ(metadata->listDirectory("a/"), std::vector<std::string>({"b"}));
+    EXPECT_TRUE(metadata->listDirectory("a/b/").empty());
+    EXPECT_FALSE(metadata->iterateDirectory("a/b/")->isValid());
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->removeDirectory("a/b/");
+        transaction->removeDirectory("a/");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("a"));
+    EXPECT_TRUE(metadata->listDirectory("/").empty());
+}
+
 /// The root path above is just a placeholder, not a real host directory: callers that need to do
 /// raw filesystem I/O outside the `IMetadataStorage` API (e.g. `StorageDistributed`'s local insert
 /// queue) must check `isPathOnLocalFilesystem` and fail closed instead of using `getPath()` as one.
@@ -725,7 +755,7 @@ namespace
 {
 
 /// Everything observable about the given paths, to compare the whole state before and after a transaction.
-std::string dumpState(const DB::MetadataStorageInMemory & metadata, const std::vector<std::string> & paths, bool with_mtime = true)
+[[maybe_unused]] std::string dumpState(const DB::MetadataStorageInMemory & metadata, const std::vector<std::string> & paths, bool with_mtime = true)
 {
     std::string result;
     for (const auto & path : paths)
