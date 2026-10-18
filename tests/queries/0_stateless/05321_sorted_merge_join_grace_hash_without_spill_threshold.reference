@@ -1,0 +1,10 @@
+--- grace_hash,sorted_merge: merge join, no runtime filter ---
+        Algorithm: FullSortingMergeJoin
+1000
+--- grace_hash,full_sorting_merge: merge join, no runtime filter ---
+        Algorithm: FullSortingMergeJoin
+1000
+--- grace_hash,hash: hash with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+1000
