@@ -34,13 +34,14 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_05261 ENGIN
 
 # Simulate a writer that crashed in the middle of a transaction: a tiny page cache makes SQLite spill modified pages
 # into the database file (syncing the journal header first), then the process is killed before `COMMIT`.
-(printf 'PRAGMA cache_size = 2;\nBEGIN;\nUPDATE tbl SET v = v + 10;\nINSERT INTO tbl SELECT 100, printf("%%.1000c", "x") FROM tbl, tbl, tbl, tbl, tbl, tbl, tbl;\n.shell kill -9 $PPID\n' \
+# Take the exclusive lock up front: a spill that cannot get it (a reader holds a shared lock) leaves a cold journal.
+(printf '.timeout 10000\nPRAGMA cache_size = 2;\nBEGIN EXCLUSIVE;\nUPDATE tbl SET v = v + 10;\nINSERT INTO tbl SELECT 100, printf("%%.1000c", "x") FROM tbl, tbl, tbl, tbl, tbl, tbl, tbl;\n.shell kill -9 $PPID\n' \
     | sqlite3 "${DB_PATH}") > /dev/null 2>&1
 
 # The server may run under another user: let it write the directory, so that a write can delete the journal.
 chmod -R ugo+rwX "${BASE}"
 
-[ -s "${JOURNAL_PATH}" ] && echo "hot journal created"
+[ -s "${JOURNAL_PATH}" ] && [ "$(od -An -tu1 -N1 "${JOURNAL_PATH}" | tr -d ' ')" != 0 ] && echo "hot journal created"
 
 function journal_state()
 {
