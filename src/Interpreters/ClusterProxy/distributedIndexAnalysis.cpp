@@ -59,6 +59,7 @@ namespace DB::Setting
 {
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 connections_with_failover_max_tries;
+    extern const SettingsDateTimeInputFormat date_time_input_format;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_hedged_requests;
@@ -231,7 +232,8 @@ ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & index
         /*projection_names=*/ indexes_column_names,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
-        context);
+        context,
+        context->getSettingsRef()[Setting::date_time_input_format]);
     if (!predicate)
         return nullptr;
 
