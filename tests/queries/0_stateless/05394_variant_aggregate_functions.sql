@@ -45,6 +45,10 @@ SELECT argMax(number, number::Variant(UInt64)), argMin(number, number::Variant(U
 SELECT anyArgMax(number, number::Variant(UInt64)), anyArgMin(number, number::Variant(UInt64)) FROM numbers(10);
 SELECT min(v), max(v) FROM (SELECT '2020-01-01'::Date::Variant(Date, DateTime) AS v UNION ALL SELECT '2021-01-01 00:00:00'::DateTime::Variant(Date, DateTime));
 
+-- Nullable condition of -If with native and converted aggregate functions.
+SELECT uniqIf(number::Variant(UInt64), toNullable(number % 2 = 0)), anyIf(number::Variant(UInt64), toNullable(number % 2 = 1)), sumIf(number::Variant(UInt64), toNullable(number % 2 = 0)) FROM numbers(4);
+SELECT sumIf(number::Variant(UInt64), if(number = 2, NULL, toNullable(number % 2 = 0))) FROM numbers(5);
+
 -- No common supertype.
 SELECT sum(v) FROM values('v Variant(String, UInt64)', 'a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT min([1]::Array(UInt8)::Variant(Array(UInt8), Array(UInt16))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

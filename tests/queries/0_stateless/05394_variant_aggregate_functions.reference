@@ -25,3 +25,5 @@ Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UI
 9	0
 9	0
 2020-01-01 00:00:00	2021-01-01 00:00:00
+2	1	2
+4

@@ -513,18 +513,30 @@ bool AggregateFunctionFactory::needsVariantArgumentsConversion(const String & na
     if (!combinator || combinator->isForInternalUsageOnly())
         return false;
 
-    if (combinator->needsVariantArgumentsConversion(argument_types))
+    /// The combinator receives the arguments with Nullable removed, as `get` applies the "Null" combinator
+    /// before constructing the function with this combinator (ex: the condition of -If can be Nullable(UInt8)).
+    DataTypes combinator_arguments = argument_types;
+    if (std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return type->isNullable(); }))
+    {
+        AggregateFunctionCombinatorPtr null_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
+        if (!null_combinator)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
+                            "to apply a function to Nullable arguments.");
+        combinator_arguments = null_combinator->transformArguments(argument_types);
+    }
+
+    if (combinator->needsVariantArgumentsConversion(combinator_arguments))
         return true;
 
     String nested_name = name.substr(0, name.size() - combinator->getName().size());
     if (combinator->transformsMultipleNestedFunctions())
     {
-        auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
+        auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(combinator_arguments);
         return std::any_of(nested_arguments_list.begin(), nested_arguments_list.end(),
             [&](const auto & nested_arguments) { return needsVariantArgumentsConversion(nested_name, action, nested_arguments); });
     }
 
-    return needsVariantArgumentsConversion(nested_name, action, combinator->transformArguments(argument_types));
+    return needsVariantArgumentsConversion(nested_name, action, combinator->transformArguments(combinator_arguments));
 }
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
