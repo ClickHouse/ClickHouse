@@ -1692,8 +1692,21 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
             /// only afterwards. So cost it over the rows of the blocks it was wrapped into `ColumnFunction`s for.
             auto input_rows = state.current_round_block_rows;
             auto estimated_full_execution_elapsed = round_per_row_elapsed * static_cast<double>(input_rows);
-            if (estimated_full_execution_elapsed < static_cast<double>(round_profile.execution_elapsed))
+            if (estimated_full_execution_elapsed >= static_cast<double>(round_profile.execution_elapsed))
             {
+                state.non_beneficial_rounds = 0;
+                continue;
+            }
+
+            /// The time is measured by the wall clock and a round may consist of just a few measurements,
+            /// so a single preemption of the thread can make the lazy execution look expensive. A wrong
+            /// switch to the eager execution is hard to undo: the check above compares the per-row costs,
+            /// which do not reflect the rows saved by the short circuit. Require two rounds in a row.
+            static constexpr size_t non_beneficial_rounds_to_switch = 2;
+            ++state.non_beneficial_rounds;
+            if (state.non_beneficial_rounds >= non_beneficial_rounds_to_switch)
+            {
+                state.non_beneficial_rounds = 0;
                 LOG_TRACE(
                     getLogger("AdaptiveExpressionActions"),
                     "Lazy execution is not beneficial for {}: round input rows {}, executed rows {}, "

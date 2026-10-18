@@ -279,6 +279,10 @@ private:
         /// The number of rows of the blocks at the position of the action, which were wrapped into lazily
         /// executed `ColumnFunction`s in the current round. The eager execution would run on all of them.
         size_t current_round_block_rows = 0;
+        /// The number of consecutive rounds in which the lazy execution was measured to be not beneficial.
+        /// The measurements of a single round are few and can be distorted by noise such as a preemption
+        /// of the thread, so the lazy execution is turned off only if several rounds in a row agree.
+        size_t non_beneficial_rounds = 0;
         /// The execution profile of all the rounds.
         FunctionExecutionProfile total_profile;
     };
