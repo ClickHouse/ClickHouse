@@ -19,6 +19,7 @@ public:
     EmptyDataPartInfoForReader() : IMergeTreeDataPartInfoForReader(ContextPtr{}) { }
 
     bool isCompactPart() const override { unexpectedCall(); }
+    bool isParquetPart() const override { unexpectedCall(); }
     bool isWidePart() const override { unexpectedCall(); }
     bool isProjectionPart() const override { unexpectedCall(); }
     bool hasLightweightDelete() const override { unexpectedCall(); }

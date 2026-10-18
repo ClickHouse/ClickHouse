@@ -224,8 +224,10 @@ namespace ProfileEvents
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
     extern const Event InsertedCompactParts;
+    extern const Event InsertedParquetParts;
     extern const Event MergedIntoWideParts;
     extern const Event MergedIntoCompactParts;
+    extern const Event MergedIntoParquetParts;
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
@@ -399,6 +401,17 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_parquet_part;
+    extern const MergeTreeSettingsUInt32 min_level_for_parquet_part;
+    extern const MergeTreeSettingsUInt64 min_rows_for_parquet_part;
+}
+
+/// The `Parquet` part format is used only when at least one of its thresholds is set.
+static bool isParquetPartFormatEnabled(const MergeTreeSettings & settings)
+{
+    return settings[MergeTreeSetting::min_bytes_for_parquet_part] != 0
+        || settings[MergeTreeSetting::min_rows_for_parquet_part] != 0
+        || settings[MergeTreeSetting::min_level_for_parquet_part] != 0;
 }
 
 namespace ServerSetting
@@ -7122,6 +7135,31 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    if (isParquetPartFormatEnabled(*settings)
+        && !satisfies((*settings)[MergeTreeSetting::min_bytes_for_parquet_part], (*settings)[MergeTreeSetting::min_rows_for_parquet_part], (*settings)[MergeTreeSetting::min_level_for_parquet_part]))
+    {
+        /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
+        /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
+        StorageMetadataHandle table_metadata;
+        if (!projection)
+            table_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
+
+        bool has_encrypted_columns = false;
+        for (const auto & column : columns)
+        {
+            if (column.codec
+                && CompressionCodecFactory::instance().get(column.codec, column.type, CompressionCodecFactory::instance().getDefaultCodec())->isEncryption())
+            {
+                has_encrypted_columns = true;
+                break;
+            }
+        }
+
+        if (!has_encrypted_columns)
+            part_type = PartType::Parquet;
+    }
 
     /// TODO(unique-key): support Packed storage; SSTIndexWriter needs Full parts.
     auto storage_type = PartStorageType::Full;
@@ -14218,6 +14256,18 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
                 ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
                 settings[MergeTreeSetting::min_rows_for_wide_part].value, settings[MergeTreeSetting::min_bytes_for_wide_part].value);
         }
+        else if (isParquetPartFormatEnabled(settings))
+        {
+            out_reason = fmt::format(
+                "Table can't create parts with adaptive granularity, but settings"
+                " min_rows_for_parquet_part = {}"
+                ", min_bytes_for_parquet_part = {}"
+                ", min_level_for_parquet_part = {}"
+                ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
+                settings[MergeTreeSetting::min_rows_for_parquet_part].value,
+                settings[MergeTreeSetting::min_bytes_for_parquet_part].value,
+                settings[MergeTreeSetting::min_level_for_parquet_part].value);
+        }
 
         return false;
     }
@@ -15001,6 +15051,9 @@ void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType typ
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::InsertedCompactParts);
             break;
+        case MergeTreeDataPartType::Parquet:
+            ProfileEvents::increment(ProfileEvents::InsertedParquetParts);
+            break;
         default:
             break;
     }
@@ -15015,6 +15068,9 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
             break;
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::MergedIntoCompactParts);
+            break;
+        case MergeTreeDataPartType::Parquet:
+            ProfileEvents::increment(ProfileEvents::MergedIntoParquetParts);
             break;
         default:
             break;

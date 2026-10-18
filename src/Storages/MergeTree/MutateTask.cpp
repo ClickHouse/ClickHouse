@@ -3479,8 +3479,12 @@ private:
         }
 
         MergeTreeIndexGranularityPtr index_granularity_ptr;
-        /// Reuse source part granularity if mutation does not change number of rows
-        if (!affects_all_columns && ctx->execute_ttl_type == ExecuteTTLType::NONE)
+        /// Reuse source part granularity if mutation does not change number of rows.
+        /// The granules of a parquet part are its row groups, which are sized differently, so the granularity
+        /// is not reused when the mutation changes the part type to or from parquet.
+        bool same_kind_of_granularity = (ctx->source_part->getType() == MergeTreeDataPartType::Parquet)
+            == (ctx->new_data_part->getType() == MergeTreeDataPartType::Parquet);
+        if (!affects_all_columns && ctx->execute_ttl_type == ExecuteTTLType::NONE && same_kind_of_granularity)
         {
             index_granularity_ptr = ctx->source_part->index_granularity;
         }

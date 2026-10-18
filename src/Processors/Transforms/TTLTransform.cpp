@@ -254,7 +254,8 @@ TTLTransform::TTLTransform(
             name,
             default_expression,
             default_column_name,
-            isCompactPart(data_part)));
+            /// The columns of Compact and Parquet parts are stored in one file and are not removed when expired.
+            isCompactPart(data_part) || isParquetPart(data_part)));
     };
 
     /// The TTL of a column that nothing recomputes goes first: a dependent has to read the value that

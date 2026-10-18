@@ -205,9 +205,10 @@ static bool constantGranularityUsesBytes(
 {
     bool use_adaptive_granularity = info.mark_type.adaptive;
     bool use_const_adaptive_granularity = settings[MergeTreeSetting::use_const_adaptive_granularity];
-    bool is_compact_part = info.mark_type.part_type == MergeTreeDataPartType::Compact;
+    bool is_compact_part = info.mark_type.part_type == MergeTreeDataPartType::Compact
+        || info.mark_type.part_type == MergeTreeDataPartType::Parquet;
 
-    /// Compact parts cannot work without adaptive granularity.
+    /// Compact and Parquet parts cannot work without adaptive granularity.
     /// If part is empty create adaptive granularity because constant granularity doesn't support this corner case.
     return !(rows == 0 || blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity));
 }

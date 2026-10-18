@@ -20,6 +20,8 @@ public:
 
     bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
+    bool isParquetPart() const override { return DB::isParquetPart(data_part); }
+
     bool isWidePart() const override { return DB::isWidePart(data_part); }
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }

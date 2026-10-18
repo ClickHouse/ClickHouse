@@ -15,6 +15,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartParquet.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
@@ -88,6 +89,10 @@ protected:
                 MergeTreeDataPartCompact::DATA_FILE_NAME,
                 part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
                                                                        : part->getColumns().size());
+        }
+        else if (with_marks && isParquetPart(part))
+        {
+            marks_loader = createMarksLoader(part, MergeTreeDataPartParquet::DATA_FILE_NAME, part->getColumns().size());
         }
 
         size_t num_columns = header->columns();
@@ -247,6 +252,16 @@ private:
                     col_idx = *col_idx_opt;
                     has_marks_in_part = true;
                 }
+            }
+        }
+        else if (isParquetPart(part))
+        {
+            /// The marks of a Parquet part are the offsets and the sizes of the data of the columns in the row groups.
+            auto unescaped_name = unescapeForFileName(column_name);
+            if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+            {
+                col_idx = *col_idx_opt;
+                has_marks_in_part = true;
             }
         }
         else

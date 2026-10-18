@@ -106,6 +106,7 @@ namespace CurrentMetrics
 
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
+    extern const Metric PartsParquet;
 }
 
 namespace ProfileEvents
@@ -596,6 +597,9 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::add(CurrentMetrics::PartsCompact);
             return;
+        case MergeTreeDataPartType::Parquet:
+            CurrentMetrics::add(CurrentMetrics::PartsParquet);
+            return;
         case MergeTreeDataPartType::Unknown:
             return;
     }
@@ -610,6 +614,9 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
             return;
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::sub(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::Parquet:
+            CurrentMetrics::sub(CurrentMetrics::PartsParquet);
             return;
         case MergeTreeDataPartType::Unknown:
             return;
@@ -908,8 +915,13 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        /// A copy, so that the part does not keep objects the writer was charged for.
-        serialization_infos = new_infos.clone();
+        /// The Parquet file stores the columns in its own format, the serializations of the columns
+        /// (e.g. sparse) are not used, so the columns of a Parquet part always have default serializations.
+        if (part_type == MergeTreeDataPartType::Parquet)
+            serialization_infos = SerializationInfoByName(new_columns, SerializationInfo::Settings{});
+        else
+            /// A copy, so that the part does not keep objects the writer was charged for.
+            serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
@@ -2618,7 +2630,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
 void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
 {
-    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || part_type == Type::Parquet || parent_part)
     {
         if (auto buf = readFileIfExists("count.txt"))
         {
@@ -2652,7 +2664,7 @@ void IMergeTreeDataPart::loadRowsCount()
     {
         rows_count = 0;
     }
-    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
+    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || part_type == Type::Parquet || parent_part)
     {
         if (auto buf = readFileIfExists("count.txt"))
             read_rows_count(buf);
@@ -2923,8 +2935,8 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     /// If there is no column.txt or it's empty, try to recover it from the metadata.
     else
     {
-        /// We can get list of columns only from columns.txt in compact parts.
-        if (part_type == Type::Compact || info.isPatch())
+        /// We can get list of columns only from columns.txt in compact and parquet parts.
+        if (part_type == Type::Compact || part_type == Type::Parquet || info.isPatch())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
@@ -3108,7 +3120,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_colu
 
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
-    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact);
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact || part_type == MergeTreeDataPartType::Parquet);
 }
 
 bool IMergeTreeDataPart::hasLightweightDelete() const
@@ -4102,6 +4114,11 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Compact);
+}
+
+bool isParquetPart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::Parquet);
 }
 
 bool isWidePart(const MergeTreeDataPartPtr & data_part)

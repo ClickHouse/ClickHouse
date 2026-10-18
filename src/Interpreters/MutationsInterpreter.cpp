@@ -530,6 +530,11 @@ bool MutationsInterpreter::Source::isCompactPart() const
     return part && part->getType() == MergeTreeDataPartType::Compact;
 }
 
+bool MutationsInterpreter::Source::isParquetPart() const
+{
+    return part && part->getType() == MergeTreeDataPartType::Parquet;
+}
+
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot)
 {
     auto all_columns = metadata_snapshot->columns.getNamesOfPhysical();
@@ -1263,8 +1268,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             emit_materialized_recompute_stages(affected_materialized, command.mutation_version);
 
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
-            /// the part granularity, so we need to rebuild indexes
+            /// the part granularity, so we need to rebuild indexes. The row groups of a parquet part are always adaptive.
             if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
+                need_rebuild_indexes = true;
+            if (source.isParquetPart())
                 need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)

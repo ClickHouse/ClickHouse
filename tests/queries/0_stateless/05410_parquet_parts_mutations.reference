@@ -1,0 +1,29 @@
+update
+749000	1000
+delete
+499001	666
+lightweight delete
+399996	533
+add column
+x7
+x7
+rename column
+7
+modify column
+UInt64	399996
+drop column
+7	7	7
+skip index
+701
+Parquet	666
+1
+to Wide
+Wide	533
+399996	533	1541
+to Parquet
+Parquet	534
+399996	534	1542
+detach and attach
+Parquet	534
+399996	534	1542
+1
