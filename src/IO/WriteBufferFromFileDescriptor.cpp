@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -82,7 +83,8 @@ void WriteBufferFromFileDescriptor::initializeResponsiveWriteState()
         {
             const bool is_tty = (0 != ::isatty(fd));
             cancellation_fd_is_socket = S_ISSOCK(stat_buf.st_mode);
-            cancellation_fd_can_block = S_ISFIFO(stat_buf.st_mode) || cancellation_fd_is_socket || is_tty;
+            cancellation_fd_is_pipe = S_ISFIFO(stat_buf.st_mode);
+            cancellation_fd_can_block = cancellation_fd_is_pipe || cancellation_fd_is_socket || is_tty;
 
             /// For a terminal, poll() + a blocking write capped at PIPE_BUF is not enough to stay
             /// responsive: POLLOUT only promises *some* room, and a blocking tty write() sleeps
@@ -126,6 +128,34 @@ void WriteBufferFromFileDescriptor::initializeResponsiveWriteState()
 }
 
 
+int WriteBufferFromFileDescriptor::openTransientNonblockingPipeDescriptor() const
+{
+    /// After poll() reports a pipe writable, a blocking write of at most PIPE_BUF bytes cannot
+    /// block only as long as nobody else writes to the pipe: PIPE_BUF guarantees atomicity, not
+    /// that the room observed by poll() is still there. When another writer shares the pipe (e.g.
+    /// `2>&1` into a pipe, with server logs written from another thread), it can take the room
+    /// between our poll() and write(), and the blocking write then sleeps until the reader drains,
+    /// possibly forever. So write through a non-blocking descriptor, which fails with EAGAIN
+    /// instead. As for a terminal, O_NONBLOCK must not be set on `fd` itself (it is shared with
+    /// other writers through the open file description), but on Linux re-opening a pipe or a FIFO
+    /// via /proc/self/fd creates an independent open file description of the same pipe.
+    ///
+    /// Unlike the terminal descriptor, this one is not kept for the lifetime of the buffer: an
+    /// extra write end keeps the pipe open, so a reader waiting for EOF (e.g. a pager after
+    /// ShellCommand closes its stdin) would wait for this buffer to be destroyed. It is opened per
+    /// flush and closed before returning. If the re-open fails (e.g. ENXIO when the pipe has no
+    /// reader), the caller falls back to `fd`, whose write then reports the error as usual.
+#if defined(OS_LINUX)
+    if (!cancellation_fd_is_pipe || nonblocking_write_fd >= 0)
+        return -1;
+    const std::string proc_fd_path = "/proc/self/fd/" + toString(fd);
+    return ::open(proc_fd_path.c_str(), O_WRONLY | O_CLOEXEC | O_NONBLOCK);
+#else
+    return -1;
+#endif
+}
+
+
 void WriteBufferFromFileDescriptor::nextImpl()
 {
     if (!offset())
@@ -166,10 +196,24 @@ void WriteBufferFromFileDescriptor::nextImpl()
     /// in between, issue writes that cannot sleep indefinitely, and discard the rest of the buffer
     /// once cancellation is requested - or, on the first interrupt signal of a query that stops
     /// only on a later one, as soon as the sink turns out to have no room at all (see below).
-    /// A terminal is written through a private non-blocking
-    /// descriptor of the same sink (see setCancellationHook), so the write fails with EAGAIN
-    /// instead of sleeping when the terminal stops draining.
-    const int write_fd = (responsive_writes && nonblocking_write_fd >= 0) ? nonblocking_write_fd : fd;
+    /// A terminal or a pipe is written through a private non-blocking
+    /// descriptor of the same sink (see initializeResponsiveWriteState and
+    /// openTransientNonblockingPipeDescriptor), so the write fails with EAGAIN instead of
+    /// sleeping when the sink stops draining.
+    const int transient_pipe_fd = responsive_writes ? openTransientNonblockingPipeDescriptor() : -1;
+    SCOPE_EXIT({
+        if (transient_pipe_fd >= 0)
+        {
+            [[maybe_unused]] int err = ::close(transient_pipe_fd);
+            chassert(!(err && errno == EBADF));
+        }
+    });
+
+    int write_fd = fd;
+    if (responsive_writes && nonblocking_write_fd >= 0)
+        write_fd = nonblocking_write_fd;
+    else if (transient_pipe_fd >= 0)
+        write_fd = transient_pipe_fd;
 
     size_t bytes_written = 0;
     const auto preserve_unwritten_data = [&]
@@ -242,15 +286,14 @@ void WriteBufferFromFileDescriptor::nextImpl()
                 continue;
             }
 
-            /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
-            /// guaranteed not to block on a pipe, so a blocking write bounded this way stays
-            /// responsive for pipes/FIFOs. No chunk size gives that guarantee for a terminal or a
-            /// socket (poll() only promises that *some* space is available, and their blocking
-            /// write sleeps until the whole chunk is accepted), which is why those do not rely on
-            /// it: a terminal goes through the private non-blocking descriptor and a socket is
-            /// written with MSG_DONTWAIT - both fail with EAGAIN instead of sleeping when the sink
-            /// has no room, handled below like a poll() timeout. The cap is kept as a fallback for
-            /// a terminal without a private non-blocking descriptor: not a full guarantee there,
+            /// A blocking write is not responsive by itself: poll() only promises that *some*
+            /// space is available, a blocking terminal or socket write sleeps until the whole
+            /// chunk is accepted, and even a write of at most PIPE_BUF bytes to a pipe can sleep
+            /// if another writer takes the room first (see openTransientNonblockingPipeDescriptor).
+            /// So a terminal and a pipe go through a private non-blocking descriptor and a socket
+            /// is written with MSG_DONTWAIT - all fail with EAGAIN instead of sleeping when the
+            /// sink has no room, handled below like a poll() timeout. The PIPE_BUF cap is kept as a
+            /// fallback for a sink without a private non-blocking descriptor: not a full guarantee,
             /// but it bounds how much a single write() can wait for.
             if (write_fd == fd && !cancellation_fd_is_socket)
                 bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
@@ -268,7 +311,8 @@ void WriteBufferFromFileDescriptor::nextImpl()
         }
 
         /// In the responsive path the write cannot sleep (a private non-blocking descriptor for a
-        /// terminal, MSG_DONTWAIT for a socket), so a sink without room fails with EAGAIN instead.
+        /// terminal or a pipe, MSG_DONTWAIT for a socket), so a sink without room fails with
+        /// EAGAIN instead.
         /// Treat it like a poll() timeout: wait for writability again, checking the cancellation
         /// hook in between.
         if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
@@ -359,6 +403,7 @@ void WriteBufferFromFileDescriptor::setFD(int fd_)
     responsive_write_state_initialized = false;
     cancellation_fd_can_block = false;
     cancellation_fd_is_socket = false;
+    cancellation_fd_is_pipe = false;
     fd = fd_;
 }
 
@@ -371,9 +416,23 @@ void WriteBufferFromFileDescriptor::writeBestEffort(std::string_view data, UInt6
     /// blocking tty write() waits for the whole chunk to be accepted.
     initializeResponsiveWriteState();
 
-    /// Prefer the private non-blocking descriptor (present when the sink is a terminal, unless
-    /// the re-open failed) so this cannot sleep in write() at all.
-    const int write_fd = nonblocking_write_fd >= 0 ? nonblocking_write_fd : fd;
+    /// Prefer a private non-blocking descriptor (present when the sink is a terminal or a pipe,
+    /// unless the re-open failed) so this cannot sleep in write() at all - for a pipe, another
+    /// writer could otherwise take the room between poll() and write().
+    const int transient_pipe_fd = openTransientNonblockingPipeDescriptor();
+    SCOPE_EXIT({
+        if (transient_pipe_fd >= 0)
+        {
+            [[maybe_unused]] int err = ::close(transient_pipe_fd);
+            chassert(!(err && errno == EBADF));
+        }
+    });
+
+    int write_fd = fd;
+    if (nonblocking_write_fd >= 0)
+        write_fd = nonblocking_write_fd;
+    else if (transient_pipe_fd >= 0)
+        write_fd = transient_pipe_fd;
 
     Stopwatch watch;
     size_t bytes_written = 0;
@@ -393,7 +452,8 @@ void WriteBufferFromFileDescriptor::writeBestEffort(std::string_view data, UInt6
 
         size_t bytes_to_write = data.size() - bytes_written;
         /// Without a non-blocking descriptor, cap the chunk at PIPE_BUF: after POLLOUT such a
-        /// write cannot block on a pipe (and for other sinks it at least bounds the wait).
+        /// write cannot block on a pipe without other writers (and otherwise it at least bounds
+        /// the wait).
         if (write_fd == fd && !cancellation_fd_is_socket)
             bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
 

@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <thread>
 #include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <base/types.h>
@@ -244,6 +247,83 @@ TEST(ForkWriteBuffer, DoesNotReplayPreservedPrimarySuffixToSecondary)
 
     EXPECT_EQ(preserved + appended, mirrored);
 
+    ASSERT_EQ(0, ::close(pipe_fds[0]));
+    ASSERT_EQ(0, ::close(pipe_fds[1]));
+}
+
+/// Another writer of the same pipe (e.g. server logs written from another thread with `2>&1`)
+/// can take the room reported by poll() before the buffer writes. The responsive path must not
+/// then sleep in a blocking write(): once cancellation is requested and the reader stops, next()
+/// has to return promptly. The shared descriptor must not be switched to non-blocking mode.
+TEST(WriteBufferFromFileDescriptor, DoesNotBlockWhenAnotherWriterTakesRoom)
+{
+    std::array<int, 2> pipe_fds{};
+    ASSERT_EQ(0, ::pipe(pipe_fds.data()));
+    ASSERT_GT(::fcntl(pipe_fds[1], F_SETPIPE_SZ, 4096), 0);
+
+    /// The competing writer uses its own non-blocking open file description of the same pipe and
+    /// refills the pipe as soon as any room appears.
+    const std::string proc_fd_path = "/proc/self/fd/" + std::to_string(pipe_fds[1]);
+    const int competitor_fd = ::open(proc_fd_path.c_str(), O_WRONLY | O_CLOEXEC | O_NONBLOCK);
+    ASSERT_GE(competitor_fd, 0);
+
+    std::atomic<bool> stop_competitor = false;
+    std::thread competitor([&]
+    {
+        const String chunk(4096, 'c');
+        while (!stop_competitor)
+        {
+            pollfd poll_fd{.fd = competitor_fd, .events = POLLOUT, .revents = 0};
+            if (::poll(&poll_fd, 1, 10) > 0)
+            {
+                [[maybe_unused]] ssize_t res = ::write(competitor_fd, chunk.data(), chunk.size());
+            }
+        }
+    });
+
+    std::atomic<bool> cancelled = false;
+    std::atomic<bool> flushed = false;
+    const String data(64 * 1024, 'd');
+    WriteBufferFromFileDescriptor out(pipe_fds[1], data.size());
+    out.setCancellationHook([&] { return cancelled.load(); });
+    writeString(data, out);
+
+    std::thread flusher([&]
+    {
+        out.next();
+        flushed = true;
+    });
+
+    /// Let the reader free some room repeatedly, so that the buffer and the competitor race for it.
+    std::array<char, 4096> drained{};
+    for (size_t i = 0; i < 50; ++i)
+    {
+        EXPECT_GT(::read(pipe_fds[0], drained.data(), drained.size()), 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    /// The reader stops: the pipe stays full from now on.
+    cancelled = true;
+    Stopwatch watch;
+    while (!flushed && watch.elapsedMilliseconds() < 10000)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    const bool returned_promptly = flushed;
+
+    /// Unblock the flusher if it is stuck in write(), so the test can finish.
+    stop_competitor = true;
+    competitor.join();
+    while (!flushed)
+    {
+        pollfd poll_fd{.fd = pipe_fds[0], .events = POLLIN, .revents = 0};
+        if (::poll(&poll_fd, 1, 10) > 0)
+            EXPECT_GT(::read(pipe_fds[0], drained.data(), drained.size()), 0);
+    }
+    flusher.join();
+
+    EXPECT_TRUE(returned_promptly);
+    EXPECT_EQ(0, ::fcntl(pipe_fds[1], F_GETFL) & O_NONBLOCK);
+
+    ASSERT_EQ(0, ::close(competitor_fd));
     ASSERT_EQ(0, ::close(pipe_fds[0]));
     ASSERT_EQ(0, ::close(pipe_fds[1]));
 }

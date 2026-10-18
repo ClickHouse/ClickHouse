@@ -130,6 +130,16 @@ protected:
     /// which is non-blocking per call without touching the open file description flags.
     bool cancellation_fd_is_socket = false;
 
+    /// Whether the descriptor is a pipe or a FIFO. The responsive and best-effort paths then
+    /// write through a transient private non-blocking descriptor of the same pipe (see
+    /// openTransientNonblockingPipeDescriptor).
+    bool cancellation_fd_is_pipe = false;
+
+    /// Opens a private non-blocking descriptor for the pipe behind `fd`, to be closed by the
+    /// caller before it returns. -1 if `fd` is not a pipe, a terminal descriptor is used instead,
+    /// the platform cannot re-open a pipe, or the re-open failed.
+    int openTransientNonblockingPipeDescriptor() const;
+
     /// A private non-blocking descriptor for the same terminal, used by the responsive write path
     /// when the sink is a tty. O_NONBLOCK cannot simply be set on `fd`: the flag is a property of
     /// the open file description, which a terminal fd shares with fd 2 and the parent shell, so
@@ -138,7 +148,8 @@ protected:
     /// fcntl(F_GETPATH) (Darwin) or ttyname_r() (elsewhere, e.g. FreeBSD) - yields an independent
     /// open file description, so O_NONBLOCK on it affects nobody else. -1 when unavailable (not a
     /// terminal, or the re-open failed) - the responsive path then falls back to poll() + a
-    /// blocking write capped at PIPE_BUF.
+    /// blocking write capped at PIPE_BUF. A pipe gets a similar descriptor, but only for the
+    /// duration of one flush (see openTransientNonblockingPipeDescriptor).
     int nonblocking_write_fd = -1;
 
     /// See setBestEffortFlushBudget.
