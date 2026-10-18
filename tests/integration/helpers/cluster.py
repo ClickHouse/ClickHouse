@@ -5934,16 +5934,25 @@ class ClickHouseInstance:
             )
         )
 
-    def capture_clickhouse_exit(self):
-        """Record the exit code of the server exec before its id, the only handle on the
-        finished exec, is dropped."""
+    def capture_clickhouse_exit(self, timeout_sec=10):
+        """Record the exit code of the server exec. Docker fills it in asynchronously, so the
+        process can be gone while the exec still reads as running: wait for it, bounded."""
         if not self.clickhouse_exec_id:
             return
-        try:
-            info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
-            self.clickhouse_last_exit_code = info["ExitCode"]
-        except Exception as e:
-            logging.warning(f"Could not inspect exec of {self.name}: {e}")
+        deadline = time.time() + timeout_sec
+        while True:
+            try:
+                info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            except Exception as e:
+                logging.warning(f"Could not inspect exec of {self.name}: {e}")
+                return
+            if not info["Running"] and info["ExitCode"] is not None:
+                self.clickhouse_last_exit_code = info["ExitCode"]
+                return
+            if time.time() >= deadline:
+                logging.warning(f"Exec of {self.name} has no exit code after {timeout_sec}s")
+                return
+            time.sleep(0.2)
 
     def dump_backtrace(self, occasion: str) -> bool:
         """Append `thread apply all backtrace` of the running server to gdb.log, headed by
@@ -6014,7 +6023,9 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
                     self.capture_clickhouse_exit()
-                    self.clickhouse_exec_id = ""  # old exec is no longer valid
+                    # Kept until a code is recorded, so a later capture can still read it
+                    if self.clickhouse_last_exit_code is not None:
+                        self.clickhouse_exec_id = ""
                     return True
                 else:
                     time.sleep(1)
