@@ -45,6 +45,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -67,6 +68,40 @@ namespace DB::Iceberg
 static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path";
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+
+/// True if a data manifest of the current snapshot was written under a spec id other than the default one.
+static bool existingDataUsesDifferentPartitionSpec(
+    Poco::JSON::Object::Ptr metadata,
+    Int64 default_spec_id,
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    if (!metadata->has(Iceberg::f_current_snapshot_id))
+        return false;
+    Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    if (current_snapshot_id < 0 || !metadata->has(Iceberg::f_snapshots))
+        return false;
+
+    auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) != current_snapshot_id)
+            continue;
+
+        auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
+            snapshot->getValue<String>(Iceberg::f_manifest_list));
+        for (const auto & manifest : getManifestList(object_storage, persistent_table_components, context, manifest_list, log))
+        {
+            if (manifest.content_type == Iceberg::ManifestFileContentType::DATA && manifest.partition_spec_id != default_spec_id)
+                return true;
+        }
+        return false;
+    }
+    return false;
+}
 
 struct DeleteFileWriteResult
 {
@@ -307,6 +342,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
+                /// Drive the write and stats from this partition's rows only; the full `chunk`
+                /// spans every partition and would duplicate rows into each per-partition file.
+                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
+
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
@@ -325,15 +364,15 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
                     FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);
+                        write_format, *data_write_buffer, partition_block, context, format_settings, data_format_filter_info);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
-                update_data_result[partition_key].total_rows += data_block.rows();
-                it->second->write(data_block);
-                update_data_statistics.at(partition_key).update(chunk);
+                update_data_result[partition_key].total_rows += partition_block.rows();
+                it->second->write(partition_block);
+                update_data_statistics.at(partition_key).update(partition_chunk);
             }
         }
 
@@ -748,6 +787,30 @@ void mutate(
             }
         }
 
+        /// Reject a malformed table for every mutation kind before dereferencing current_schema.
+        if (!current_schema)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no schema matching current-schema-id {}",
+                current_schema_id);
+
+        /// partititon_spec is dereferenced below for every mutation kind (UPDATE and DELETE).
+        if (!partititon_spec)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                partition_spec_id);
+
+        /// Position deletes carry the default spec id, and readers apply them only to data files of the
+        /// same spec id, even when another spec id has an identical layout.
+        if (existingDataUsesDifferentPartitionSpec(
+                metadata, partition_spec_id, object_storage, persistent_table_components, context, log))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot mutate an Iceberg table whose data was written under a partition spec other "
+                "than the current default-spec-id {}: partition-spec evolution is not supported for mutations",
+                partition_spec_id);
+
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
@@ -768,6 +831,17 @@ void mutate(
         fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
 
         const auto sample_block = std::make_shared<const Block>(fresh_storage_metadata->getSampleBlock());
+
+        /// UPDATE writes data files through the positional INSERT-sink mapping, and both UPDATE and
+        /// DELETE build ChunkPartitioner from the current schema against this (possibly stale) header,
+        /// so guard every mutation against stale-schema drift.
+        validateInputSchemaMatchesCurrentIcebergSchema(
+            persistent_table_components.schema_processor,
+            current_schema,
+            static_cast<Int32>(current_schema_id),
+            sample_block->getNamesAndTypesList(),
+            /*allow_missing_fields=*/false);
+
         std::optional<ChunkPartitioner> chunk_partitioner;
         if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
             chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context, sample_block);

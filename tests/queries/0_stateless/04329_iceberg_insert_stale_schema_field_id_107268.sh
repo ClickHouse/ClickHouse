@@ -57,7 +57,9 @@ PY
 
 # A synchronous INSERT shaped by the stale schema (column c0) while the sink force-reads the latest
 # schema {c9, c1}. Before the fix this aborted the server with a std::out_of_range logical error in
-# Parquet::prepareColumnRecursive (unordered_map::at). After the fix it must be a clean query error.
+# Parquet::prepareColumnRecursive (unordered_map::at). The sink now compares the full current schema
+# (names + types) against the input header, so this same-width rename is rejected up front with a
+# clean BAD_ARGUMENTS before any data file is written.
 insert_outcome "INSERT INTO ${TABLE} (c0, c1) SELECT 2, 'b'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
