@@ -3,12 +3,14 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <fmt/format.h>
 #include <cmath>
 #include <limits>
@@ -16,8 +18,32 @@
 namespace DB
 {
 
+namespace
+{
+
+/// A partial result (a partial aggregation, a preliminary `DISTINCT`, a partial top-N) emits more rows than its group's
+/// logical result, as `GroupExpression::physical_copies` counts them, so the group's statistics do not size it.
+bool isPartialResult(const Group & group)
+{
+    if (group.logical_expressions.empty())
+        return false;
+    const auto * step = group.logical_expressions.front()->getQueryPlanStep();
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+        return !aggregating_step->isFinal() && !aggregating_step->getParams().only_merge;
+    if (const auto * distinct_step = typeid_cast<const DistinctStep *>(step))
+        return distinct_step->isPreliminary();
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
+        return sorting_step->isPartialTopN();
+    return false;
+}
+
+}
+
 ReplicationDecision decideReplicationOf(const Group & group, const OptimizerContext & context, const String & rule_name, bool repeats_scan)
 {
+    if (isPartialResult(group))
+        return ReplicationDecision{.allowed = false, .reason = "a partial result, whose physical size is not checked"};
+
     /// Without statistics the size is unknown and has no bound.
     ReplicationSize size;
     if (group.statistics)

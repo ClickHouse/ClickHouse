@@ -143,10 +143,10 @@ struct CostInputs
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.
     Float64 node_count = 1.0;
-    /// Rows the selected input emits when they differ from its group statistics: a partial top-N emits up
-    /// to L rows per node, a preliminary `DISTINCT` a value once per node. Resolved by the caller from the
-    /// selected input for an exchange, which moves these rows, and for a final `DISTINCT`, which inserts them.
-    std::optional<Float64> input_physical_rows;
+    /// Copies of the logical rows each selected input emits, aligned with `input_stats`, and of the output
+    /// (`GroupExpression::physical_copies`); one when absent.
+    std::vector<Float64> input_copies;
+    Float64 output_copies = 1.0;
     /// Rows a gather or scatter of an unknown join result is priced on when the result has no bound
     /// below it: the largest known leaf of the query. Without it funnelling such a result through
     /// one node looks free, its search value being a product of stand-in selectivities.
@@ -155,6 +155,9 @@ struct CostInputs
     /// A sorted gather reads the stream layout from it: a sender with several streams per
     /// node merges them before shipping, which costs like a sort's final merge.
     const ExpressionProperties * first_input_properties = nullptr;
+    /// Step of the first input's selected implementation, null when none is resolved. A sorted gather over a
+    /// partial top-N funnels only the rows the limit above consumes.
+    const IQueryPlanStep * first_input_step = nullptr;
     const CostConfig & config;
 };
 

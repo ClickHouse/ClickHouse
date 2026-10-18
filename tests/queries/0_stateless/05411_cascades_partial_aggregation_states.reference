@@ -1,0 +1,8 @@
+-- the partial aggregation and the exchange above it: unknown; the merge: 10 groups
+MergingAggregated rows: ~10.0
+GatherExchange rows: <unknown>
+Aggregating rows: <unknown>
+-- keyless: unknown as well, the merge emits 1 row
+MergingAggregated rows: ~1.0
+GatherExchange rows: <unknown>
+Aggregating rows: <unknown>

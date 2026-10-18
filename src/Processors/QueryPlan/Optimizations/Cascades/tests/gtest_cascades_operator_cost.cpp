@@ -44,7 +44,7 @@ TEST(CascadesOperatorCost, BroadcastJoinBuildsFullTablePerNode)
         .input_stats = {&left, &right},
         .parallelism = 4.0,
         .node_count = 4.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .config = config,
     };
 
@@ -79,7 +79,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -104,7 +104,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -121,7 +121,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -135,7 +135,7 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
@@ -182,11 +182,62 @@ TEST(CascadesOperatorCost, DistinctOverUnknownJoinGatheredOnItsOwnSearchValue)
         .input_stats = {},
         .parallelism = 1.0,
         .node_count = 3.0,
-        .input_physical_rows = {},
+        .input_copies = {},
         .unknown_exchange_rows = 100000,
         .config = config,
     };
     EXPECT_DOUBLE_EQ(
         estimateOperatorCost(inputs, nullptr).sequential,
         config.exchange_fixed_overhead + config.funnel_sequential_cost_per_row * distinct_stats.estimated_row_count);
+}
+
+/// The copies of the logical rows an input emits (a partial aggregation emits a state per group on each node) are the
+/// rows that the operators above it read and move: each cost below doubles its row terms with two copies.
+TEST(CascadesOperatorCost, ConsumersPriceCopiedRows)
+{
+    CostConfig config;
+    auto left = makeStats(1'000, 10);
+    auto right = makeStats(100, 10);
+    auto output = makeStats(1'000, 20);
+    const auto with_copies = [&](std::vector<Float64> input_copies, Float64 output_copies)
+    {
+        return CostInputs{
+            .step = nullptr,
+            .output_stats = output,
+            .input_stats = {&left, &right},
+            .parallelism = 4.0,
+            .node_count = 4.0,
+            .input_copies = std::move(input_copies),
+            .output_copies = output_copies,
+            .config = config,
+        };
+    };
+
+    /// A join reads its probe and build sides and emits its output physically.
+    const Cost join = ShuffleJoinStrategy{}.estimateOperatorCost(with_copies({1.0, 1.0}, 1.0));
+    const Cost copied_join = ShuffleJoinStrategy{}.estimateOperatorCost(with_copies({2.0, 2.0}, 2.0));
+    EXPECT_DOUBLE_EQ(copied_join.work, 2 * join.work);
+
+    /// A partial aggregation holds and emits its states, and reads its input physically.
+    const Cost partial = PartialAggregationStrategy{}.estimateOperatorCost(with_copies({1.0}, 1.0));
+    const Cost copied_partial = PartialAggregationStrategy{}.estimateOperatorCost(with_copies({2.0}, 2.0));
+    EXPECT_DOUBLE_EQ(copied_partial.work, 2 * partial.work);
+
+    /// A preliminary `DISTINCT` stores the copies it emits.
+    auto header = std::make_shared<const Block>(Block{{DataTypeUInt64().createColumn(), std::make_shared<DataTypeUInt64>(), "x"}});
+    DistinctStep preliminary(header, DistinctStep::Settings{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/true);
+    auto distinct_inputs = with_copies({2.0}, 2.0);
+    distinct_inputs.step = &preliminary;
+    auto single_distinct_inputs = with_copies({1.0}, 1.0);
+    single_distinct_inputs.step = &preliminary;
+    EXPECT_DOUBLE_EQ(estimateOperatorCost(distinct_inputs, nullptr).work, 2 * estimateOperatorCost(single_distinct_inputs, nullptr).work);
+
+    /// An exchange moves the copies its input emits, which it passes on.
+    GatherExchangeStep gather(header, 4);
+    auto exchange_inputs = with_copies({1.0}, 1.0);
+    exchange_inputs.step = &gather;
+    auto copied_exchange_inputs = with_copies({2.0}, 2.0);
+    copied_exchange_inputs.step = &gather;
+    EXPECT_DOUBLE_EQ(estimateOperatorCost(copied_exchange_inputs, nullptr).network,
+        2 * estimateOperatorCost(exchange_inputs, nullptr).network);
 }

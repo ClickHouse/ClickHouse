@@ -615,12 +615,14 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             /// the join order optimizer stored for another order (or none, for a join made by a rewrite).
             if (auto * join_step = typeid_cast<JoinStepLogical *>(step.get()); join_step && frame.expression->inputs.size() == 2)
             {
+                /// The rows the selected input implementation emits, as its plan reports them: unknown when its physical
+                /// output is unknown, such as a partial aggregation's states.
                 auto input_rows = [&](size_t input) -> std::optional<UInt64>
                 {
-                    const auto & input_statistics = *memo.getGroup(frame.expression->inputs[input].group_id)->statistics;
-                    if (input_statistics.rows_unknown)
+                    const auto & estimate = frame.child_plans.at(input)->getRootNode()->cost_estimation;
+                    if (!estimate || !estimate->rows)
                         return std::nullopt;
-                    return roundToRowCount(input_statistics.estimated_row_count);
+                    return roundToRowCount(*estimate->rows);
                 };
                 join_step->setChosenInputRowsEstimation(input_rows(0), input_rows(1));
             }
@@ -631,15 +633,21 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         }
 
         const auto & group_statistics = *memo.getGroup(frame.group_id)->statistics;
+        /// The step emits the copies of the logical rows of its group (a partial aggregation a state per group on each
+        /// node); the bound of the group is a bound of the logical rows only.
+        const Float64 copies = frame.expression->physical_copies;
+        const bool copied = copies != 1.0 || frame.expression->physical_copies_unknown;
+        const bool rows_unknown = group_statistics.rows_unknown || frame.expression->physical_copies_unknown;
+        const Float64 rows = group_statistics.estimated_row_count * copies;
         result->getRootNode()->cost_estimation = CostEstimationInfo
             {
-                .rows = group_statistics.rows_unknown ? std::nullopt : std::optional<Float64>(group_statistics.estimated_row_count),
+                .rows = rows_unknown ? std::nullopt : std::optional<Float64>(rows),
                 .cost = frame.expression->cost->subtree_cost.total(cost_config),
                 .source = group_statistics.source,
-                .max_rows = group_statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max())
+                .max_rows = !copied && group_statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max())
                     ? std::optional<Float64>(group_statistics.max_row_count) : std::nullopt,
                 .estimate_from_defaults = group_statistics.estimate_from_defaults,
-                .search_rows = group_statistics.rows_unknown ? std::optional<Float64>(group_statistics.estimated_row_count) : std::nullopt,
+                .search_rows = rows_unknown ? std::optional<Float64>(rows) : std::nullopt,
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
 
