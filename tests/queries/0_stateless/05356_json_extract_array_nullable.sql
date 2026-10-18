@@ -45,5 +45,10 @@ SELECT JSONExtractKeys('{"a":{"b":1}}', x) FROM (SELECT arrayJoin([NULL, 'a']::A
 SELECT JSONExtractKeys(nullIf(materialize('{"a":1}'), materialize('{"a":1}')));
 SELECT JSONExtractKeysAndValuesRaw(nullIf(materialize('{"a":1}'), materialize('{"a":1}')));
 
+-- LowCardinality cannot be inside Nullable either
+SELECT JSONExtract(j, 'LowCardinality(Nullable(String))') AS r, toTypeName(r) FROM values('j Nullable(String)', '"x"', NULL);
+SELECT JSONExtract(j, 'LowCardinality(String)') AS r, toTypeName(r) FROM values('j Nullable(String)', '"x"', NULL);
+SELECT JSONExtract(j, 'Array(LowCardinality(String))') AS r, toTypeName(r) FROM values('j Nullable(String)', '["x"]', NULL);
+
 -- A NULL constant still returns NULL
 SELECT JSONExtractKeys(NULL), toTypeName(JSONExtractKeys(NULL));

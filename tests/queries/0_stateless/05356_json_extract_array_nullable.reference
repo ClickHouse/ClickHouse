@@ -19,4 +19,10 @@ Nullable(Tuple(a Int64))
 ['b']
 []
 []
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+x	LowCardinality(String)
+	LowCardinality(String)
+['x']	Array(LowCardinality(String))
+[]	Array(LowCardinality(String))
 \N	Nullable(Nothing)
