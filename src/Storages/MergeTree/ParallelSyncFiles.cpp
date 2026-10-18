@@ -40,7 +40,10 @@ void syncPath(const std::string & path)
     if (fd == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} to fsync", path);
 
-    SCOPE_EXIT({ ::close(fd); });
+    SCOPE_EXIT({
+        /// The file is only read, and the result of the sync is checked below, so a failed `close` loses nothing.
+        [[maybe_unused]] int err = ::close(fd);
+    });
 
     ProfileEvents::increment(ProfileEvents::FileSync);
     Stopwatch watch;
