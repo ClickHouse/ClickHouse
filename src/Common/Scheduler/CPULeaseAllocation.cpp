@@ -100,9 +100,15 @@ void CPULeaseAllocation::Lease::startConsumption()
 bool CPULeaseAllocation::Lease::renew()
 {
     if (parent)
-        return parent->renew(*this);
+        return parent->renew(*this, /* in_task = */ false);
     else
         return false;
+}
+
+void CPULeaseAllocation::Lease::renewInTask()
+{
+    if (parent)
+        parent->renew(*this, /* in_task = */ true);
 }
 
 bool CPULeaseAllocation::Lease::park()
@@ -605,7 +611,7 @@ void CPULeaseAllocation::setMax(SlotCount new_max)
     }
 }
 
-bool CPULeaseAllocation::renew(Lease & lease)
+bool CPULeaseAllocation::renew(Lease & lease, bool in_task)
 {
     UInt64 thread_time_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
     chassert(thread_time_ns >= lease.last_report_ns); // This is guaranteed on Linux for thread clock
@@ -684,7 +690,13 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            bool wait_succeeded = waitForGrant(lock, thread_num);
+            bool wait_succeeded = waitForGrant(lock, thread_num, in_task);
+            if (!wait_succeeded && in_task)
+            {
+                // A thread inside a task cannot stop: it runs on a borrowed slot until its holder's next `renew`
+                resetPreempted(thread_num);
+                wait_succeeded = true;
+            }
             if (!wait_succeeded || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
@@ -694,7 +706,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
                 return false;
             }
 
-            if (settings.on_resume)
+            if (settings.on_resume && !in_task)
                 settings.on_resume(thread_num);
 
             if (exception) // Stop the query
@@ -707,7 +719,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     return true;
 }
 
-bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num)
+bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num, bool in_task)
 {
     auto timeout = thread_num == 0
         ? std::chrono::milliseconds::max() // Never involuntary stop the master thread - only downscale worker threads
@@ -720,7 +732,7 @@ bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_
 
     // It is important to call on_preempt w/o lock to avoid deadlock due to recursive locking:
     // renew() -> ExecutorTasks::preempt() -> ExecutorTasks::finish() -> free()
-    if (settings.on_preempt)
+    if (settings.on_preempt && !in_task)
     {
         lock.unlock();
         try

@@ -64,6 +64,7 @@ struct WorkloadResources
     // CPU slots lease
     ISlotLease * lease;
     UInt64 last_renew_ns = 0;
+    bool renews_outer_lease = false; // `lease` is the lease of the outer executor's task running this pipeline
 
     // Memory reservation
     MemoryReservation * reservation;
@@ -77,7 +78,18 @@ struct WorkloadResources
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
         , tracker(status ? status->getMemoryTracker() : nullptr)
+        , prev_cpu_lease(getCurrentCPULease())
     {
+        // Renew the lease the outer executor published on this thread, it is already consuming
+        if (keep_outer_lease)
+        {
+            chassert(!lease);
+            lease = prev_cpu_lease;
+            renews_outer_lease = lease != nullptr;
+            last_renew_ns = clock_gettime_ns();
+            return;
+        }
+
         if (lease)
         {
             lease->startConsumption();
@@ -85,14 +97,13 @@ struct WorkloadResources
         }
 
         // Publish own lease, or hide the outer executor's lease from a nested executor
-        // that does not park (it may have no lease at all), unless it runs on the outer lease
-        prev_cpu_lease = getCurrentCPULease();
+        // that does not park (it may have no lease at all)
         if (lease && lease->isParkingEnabled())
         {
             setCurrentCPULease(lease);
             publishes_lease = true;
         }
-        else if (prev_cpu_lease && !keep_outer_lease)
+        else if (prev_cpu_lease)
         {
             setCurrentCPULease(nullptr);
             publishes_lease = true;
@@ -102,6 +113,7 @@ struct WorkloadResources
     WorkloadResources(WorkloadResources && other) noexcept
         : lease(other.lease)
         , last_renew_ns(other.last_renew_ns)
+        , renews_outer_lease(other.renews_outer_lease)
         , reservation(other.reservation)
         , tracker(other.tracker)
         , prev_cpu_lease(other.prev_cpu_lease)
@@ -130,7 +142,10 @@ struct WorkloadResources
     bool renewCPULease() const
     {
         chassert(lease);
-        return lease->renew();
+        if (!renews_outer_lease)
+            return lease->renew();
+        lease->renewInTask(); // The outer executor stops the thread at its own `renew`
+        return true;
     }
 
     size_t getCPULeaseSlotId() const
