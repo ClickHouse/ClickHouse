@@ -4,10 +4,13 @@
 
 #if USE_AVRO
 
+#include <filesystem>
+
 #include <Common/Exception.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 
@@ -205,6 +208,26 @@ TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
     EXPECT_EQ(
         metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
         metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
+}
+
+TEST(IcebergFileNamesGenerator, ContinuesCurrentMetadataNaming)
+{
+    auto next_name = [](const String & current)
+    {
+        FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
+        generator.continueMetadataChain("s3://bucket/table/metadata/" + current, 4);
+        return String(std::filesystem::path(generator.generateMetadataPathWithInfo().path.serialize()).filename());
+    };
+    EXPECT_EQ(next_name("v4.metadata.json"), "v5.metadata.json");
+    const String numbered = next_name("00004-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json");
+    EXPECT_TRUE(numbered.starts_with("00005-") && numbered.ends_with(".metadata.json") && numbered.size() == 56) << numbered;
+    EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(numbered));
+    /// Without a catalog the name is the commit's compare-and-set: every writer of version 5 must aim at it.
+    EXPECT_EQ(numbered, next_name("00004-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
+    const String versioned = next_name("v4-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json");
+    EXPECT_TRUE(versioned.starts_with("v5-") && versioned.ends_with(".metadata.json") && versioned.size() == 53) << versioned;
+    EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(versioned));
+    EXPECT_EQ(versioned, next_name("v4-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
 }
 
 #endif
