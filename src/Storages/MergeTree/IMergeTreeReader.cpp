@@ -608,7 +608,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         return {missed_column, IDataType::getSerialization(missed_column)};
     }
 
-    /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
+    /// The `Quantized` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
     /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
     /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
     /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion

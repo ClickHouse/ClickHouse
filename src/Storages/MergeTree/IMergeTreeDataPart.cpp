@@ -918,7 +918,14 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// The Parquet file stores the columns in its own format, the serializations of the columns
         /// (e.g. sparse) are not used, so the columns of a Parquet part always have default serializations.
         if (part_type == MergeTreeDataPartType::Parquet)
-            serialization_infos = SerializationInfoByName(new_columns, SerializationInfo::Settings{});
+        {
+            /// Keep the other properties of the serialization infos, such as the markers of missing columns.
+            auto settings = new_infos.getSettings();
+            settings.ratio_of_defaults_for_sparse = 1.0;
+            settings.choose_kind = false;
+            serialization_infos = SerializationInfoByName(new_columns, settings);
+            serialization_infos.setMissingColumns(new_infos.getMissingColumns());
+        }
         else
             /// A copy, so that the part does not keep objects the writer was charged for.
             serialization_infos = new_infos.clone();

@@ -7141,23 +7141,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     {
         /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
         /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
+        /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
         StorageMetadataHandle table_metadata;
         if (!projection)
             table_metadata = getInMemoryMetadataPtr(getContext(), false);
         const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
 
-        bool has_encrypted_columns = false;
+        bool has_unsupported_codecs = false;
         for (const auto & column : columns)
         {
             if (column.codec
-                && CompressionCodecFactory::instance().get(column.codec, column.type, CompressionCodecFactory::instance().getDefaultCodec())->isEncryption())
+                && (tryExtractQuantizedCodecParams(column.codec)
+                    || CompressionCodecFactory::instance().get(column.codec, column.type, CompressionCodecFactory::instance().getDefaultCodec())->isEncryption()))
             {
-                has_encrypted_columns = true;
+                has_unsupported_codecs = true;
                 break;
             }
         }
 
-        if (!has_encrypted_columns)
+        if (!has_unsupported_codecs)
             part_type = PartType::Parquet;
     }
 
