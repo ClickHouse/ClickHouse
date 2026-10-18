@@ -448,6 +448,11 @@ void MergeTreeTemporaryPart::cancel()
         stream.finalizer.cancel();
     }
 
+    /// A started finalization may have already uploaded the archive; only the transaction knows
+    /// its blobs. A no-op for a part whose transaction was already committed.
+    if (finalization_started)
+        part->getDataPartStorage().undoTransaction();
+
     /// The part is trying to delete leftovers here
     part.reset();
 }
