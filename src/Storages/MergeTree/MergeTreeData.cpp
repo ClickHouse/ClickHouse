@@ -9248,6 +9248,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     column_sizes.clear();
     secondary_index_sizes.clear();
     primary_index_size = {};
+    parts_with_unaccounted_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -9260,11 +9261,21 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & /*sizes_lock*/) const
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
+    {
+        /// Account for the parts committed since the last call. Pop a part only after its contribution
+        /// is added: if computing its sizes throws, it stays pending and the next reader retries it.
+        while (!parts_with_unaccounted_sizes.empty())
+        {
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(parts_with_unaccounted_sizes.back());
+            parts_with_unaccounted_sizes.pop_back();
+        }
         return;
+    }
 
     column_sizes.clear();
     secondary_index_sizes.clear();
     primary_index_size = {};
+    parts_with_unaccounted_sizes.clear();
 
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
 
@@ -9302,6 +9313,7 @@ void MergeTreeData::invalidateColumnAndSecondaryIndexSizesUnlocked() const
     column_sizes.clear();
     secondary_index_sizes.clear();
     primary_index_size = {};
+    parts_with_unaccounted_sizes.clear();
     are_columns_and_secondary_indices_sizes_calculated = false;
 }
 
@@ -9312,9 +9324,13 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    /// Computing the sizes of the part reads its storage, which must not happen here (see
+    /// `invalidateColumnAndSecondaryIndexSizesUnlocked`). Defer the part to the next reader instead of
+    /// dropping the aggregates: rebuilding them walks every active part under the parts lock, and a
+    /// replica that only fetches parts (they are loaded without sizes) would do that after every fetch.
     if (!part->areColumnAndSecondaryIndexSizesCalculated())
     {
-        invalidateColumnAndSecondaryIndexSizesUnlocked();
+        parts_with_unaccounted_sizes.push_back(part);
         return;
     }
 
@@ -9406,6 +9422,10 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    /// A part that is still pending has not contributed anything yet.
+    if (std::erase(parts_with_unaccounted_sizes, part))
         return;
 
     if (!part->areColumnAndSecondaryIndexSizesCalculated())

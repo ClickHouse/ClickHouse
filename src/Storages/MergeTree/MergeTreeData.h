@@ -1771,6 +1771,9 @@ private:
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
     mutable IndexSize primary_index_size;
+    /// Active parts committed without computed sizes, not yet added to the sizes above.
+    /// The next reader adds them, see `calculateColumnAndSecondaryIndexSizesLazily`.
+    mutable DataPartsVector parts_with_unaccounted_sizes;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
@@ -1785,6 +1788,7 @@ protected:
         column_sizes.clear();
         secondary_index_sizes.clear();
         primary_index_size = {};
+        parts_with_unaccounted_sizes.clear();
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
