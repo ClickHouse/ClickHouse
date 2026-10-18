@@ -862,7 +862,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
-    const NameSet consulted_columns = statistics_pruner.getColumnsConsultedByEstimates();
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     for (const auto & part : parts)
     {
@@ -887,8 +887,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
             auto is_consulted = [&](const String & name)
             {
-                for (const auto & consulted : consulted_columns)
-                    if (columnNamesOverlap(name, consulted))
+                for (const auto & required : required_columns)
+                    if (columnNamesOverlap(name, required))
                         return true;
                 return false;
             };
@@ -904,7 +904,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             }
         }
 
-        auto estimates = part.data_part->getEstimates();
+        auto estimates = part.data_part->getEstimates(required_columns);
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)

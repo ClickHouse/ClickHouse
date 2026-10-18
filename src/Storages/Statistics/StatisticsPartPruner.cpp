@@ -326,6 +326,16 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     }
 }
 
+NameSet StatisticsPartPruner::getRequiredColumns() const
+{
+    NameSet result;
+    for (const auto & [col_name, _] : stats_column_name_to_type_map)
+        result.insert(col_name);
+    for (const auto & [col_name, _] : null_predicates)
+        result.insert(col_name);
+    return result;
+}
+
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns, bool record_used_columns)
 {
     const auto column_names = columns.getNames();
@@ -367,16 +377,6 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     }
 
     return key_condition_ptr;
-}
-
-NameSet StatisticsPartPruner::getColumnsConsultedByEstimates() const
-{
-    NameSet res;
-    for (const auto & [column, _] : null_predicates)
-        res.insert(column);
-    for (const auto & [column, _] : stats_column_name_to_type_map)
-        res.insert(column);
-    return res;
 }
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
