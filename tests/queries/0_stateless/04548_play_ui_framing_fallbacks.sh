@@ -126,7 +126,9 @@ echo "$page" | grep -q -F 'tokens[i + 1].type === TT.QuotedIdentifier' && echo '
 # `src/Parsers/tests/gtest_play_detect_framing_setting.cpp` / `gtest_play_detect_explicit_format.cpp`
 # (every case runs through both tokenizations).
 echo "$page" | grep -q -F 'function fallbackTokenize(text)' && echo 'fallback tokenizer present: OK'
-[ "$(echo "$page" | grep -c 'await tokenizeWithFallback(')" -eq 2 ] && echo 'both detectors use the fallback tokenizer: OK'
+[[ "$(sed -n '/^async function detectFramingSetting(/,/^}/p' <<< "$page")" == *'await tokenizeWithFallback('* ]] && \
+    [[ "$(sed -n '/^async function detectExplicitFormatClause(/,/^}/p' <<< "$page")" == *'await tokenizeWithFallback('* ]] && \
+    echo 'both detectors use the fallback tokenizer: OK'
 # The embedded SQL lexer must not hang or truncate on a large query: its buffers live at the
 # module's `__heap_base` (below it, the module's own shadow stack overwrote them - the cause of an
 # infinite tokenize loop on a ~64 KiB query), the memory grows to fit the text, the lexer is
