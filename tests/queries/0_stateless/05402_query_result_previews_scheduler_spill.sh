@@ -41,7 +41,8 @@ SELECT number AS k, count() AS c FROM numbers_mt(10000000) GROUP BY k ORDER BY c
 FORMAT JSONCompactEachRow")
 
 if [ "$(echo "${RESPONSE}" | grep -c '"packet":"preview"')" -ge 1 ]; then echo "has previews"; else echo "no previews: ${RESPONSE}"; fi
-echo "${RESPONSE}" | grep '"packet":"data"'
+# The result may be split into several `data` packets; their payloads concatenated are the result.
+echo "${RESPONSE}" | grep '"packet":"data"' | sed -e 's/^{"packet":"data","data":"//' -e 's/"}$//' | tr -d '\n' | sed -e 's/\\n/\n/g'
 
 # The `query_log` entry is written after the HTTP response is sent, so retry until it appears.
 for _ in {1..60}; do
