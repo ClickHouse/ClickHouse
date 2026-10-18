@@ -215,10 +215,7 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$concatArrays", "arrayConcat"},
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
-    {"$not", "not"},
     {"$concat", "concat"},
-    {"$and", "and"},
-    {"$or", "or"},
     {"$eq", "equals"},
     {"$ne", "notEquals"},
     {"$lt", "less"},
@@ -537,9 +534,12 @@ ASTPtr makeToDecimal(ASTPtr argument)
 /** The lowering of `$toDate`. Mongo reads a numeric argument as Unix *milliseconds*, while
   * `toDateTime64` reads a number as seconds - `{"$toDate": 1546300800000}` is 2019 in Mongo,
   * not the year 2282 - so a numeric argument goes through `fromUnixTimestamp64Milli` instead.
-  * A literal carries its type here; any other argument dispatches on `toTypeName`, which the
-  * analyzer folds into a constant, so exactly one of the branches survives the analysis.
+  * A literal carries its type here; any other argument dispatches on the type of the value it holds
+  * in each row (see `makeRowType`), which sees through a `Nullable` column and a `Dynamic` path of a
+  * stored document - the type of either as a whole names no number.
   */
+ASTPtr makeRowType(const ASTPtr & value);
+
 ASTPtr makeToDate(ASTPtr argument)
 {
     const auto parsed = [](ASTPtr arg)
@@ -568,8 +568,7 @@ ASTPtr makeToDate(ASTPtr argument)
         "fromUnixTimestamp64Milli",
         makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
         makeLiteral(Field(String("UTC"))));
-    auto is_a_number
-        = makeASTFunction("match", makeASTFunction("toTypeName", argument->clone()), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
+    auto is_a_number = makeASTFunction("match", makeRowType(argument), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
@@ -613,6 +612,50 @@ ASTPtr makeToBool(ASTPtr argument)
             makeASTFunction("match", type->clone(), makeLiteral(Field(String("^(U?Int|Float|Decimal|Bool)")))),
             std::move(is_true_number),
             makeLiteral(Field(UInt64(1)))));
+}
+
+/** Whether a value counts as true where Mongo asks for a boolean - in `$and`, `$or`, `$not` and the
+  * conditions of `$cond`, `$switch` and `$filter`. It is what `$toBool` converts the value to, except
+  * that `null` and a missing value are false rather than `null`: SQL's three-valued logic would make
+  * `{$not: [null]}` a `NULL` rather than `true`. A comparison or a boolean operator is a boolean
+  * already, and only its `NULL` has to be turned into `false`.
+  */
+ASTPtr makeTruth(ASTPtr argument)
+{
+    static const std::unordered_set<std::string_view> boolean_functions{
+        "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull"};
+
+    if (argument->as<ASTLiteral>())
+    {
+        auto converted = makeToBool(std::move(argument));
+        if (const auto * literal = converted->as<ASTLiteral>(); literal && literal->value.isNull())
+            return makeLiteral(Field(false));
+        if (converted->as<ASTLiteral>())
+            return converted;
+        return makeASTFunction("ifNull", std::move(converted), makeLiteral(Field(false)));
+    }
+
+    if (const auto * function = argument->as<ASTFunction>(); function && boolean_functions.contains(function->name))
+        return makeASTFunction("ifNull", std::move(argument), makeLiteral(Field(false)));
+
+    return makeASTFunction("ifNull", makeToBool(std::move(argument)), makeLiteral(Field(false)));
+}
+
+/// `$and` and `$or` over the truth of each argument. Mongo answers `true` for an `$and` of nothing and
+/// `false` for an `$or` of nothing, while the functions `and` and `or` take at least two arguments.
+ASTPtr makeLogical(std::string_view name, std::vector<ASTPtr> arguments)
+{
+    const bool is_and = name == "$and";
+    if (arguments.empty())
+        return makeLiteral(Field(is_and));
+
+    std::vector<ASTPtr> truths;
+    truths.reserve(arguments.size());
+    for (auto & argument : arguments)
+        truths.push_back(makeTruth(std::move(argument)));
+    if (truths.size() == 1)
+        return std::move(truths.front());
+    return makeFunction(is_and ? "and" : "or", std::move(truths));
 }
 
 /** The BSON type of a value is the type it holds in each row, which `dynamicType` names for a value
@@ -690,6 +733,9 @@ ASTPtr makeToInteger(ASTPtr argument, bool is_long)
     auto type = makeRowType(argument);
     auto text = makeASTFunction("toString", argument->clone());
     auto truncated = makeASTFunction("toString", makeASTFunction("trunc", makeASTFunction("toFloat64OrZero", text->clone())));
+    /// A decimal is truncated in its text rather than through a `Float64`, which would round an
+    /// integer above 2^53 before `accurateCast` could check it: the digits after the point go.
+    auto truncated_decimal = makeASTFunction("replaceRegexpOne", text->clone(), makeLiteral(Field(String("\\.[0-9]*$"))), makeLiteral(Field(String())));
     /// A date has no `int` in Mongo, and the text that says so is what `accurateCast` refuses.
     ASTPtr of_date = is_long ? makeASTFunction("toString", makeMillisecondsOfDate(argument))
                              : makeLiteral(Field(String("a date cannot be converted to an int")));
@@ -703,8 +749,10 @@ ASTPtr makeToInteger(ASTPtr argument, bool is_long)
             makeASTFunction("equals", text, makeLiteral(Field(String("true")))),
             makeLiteral(Field(String("1"))),
             makeLiteral(Field(String("0")))),
-        makeASTFunction("match", type->clone(), makeLiteral(Field(String("^(Float|Decimal)")))),
+        makeASTFunction("match", type->clone(), makeLiteral(Field(String("^Float")))),
         std::move(truncated),
+        makeASTFunction("match", type->clone(), makeLiteral(Field(String("^Decimal")))),
+        std::move(truncated_decimal),
         makeASTFunction("match", type->clone(), makeLiteral(Field(String("^Date")))),
         std::move(of_date),
         text->clone());
@@ -861,6 +909,16 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         return makeToBool(arguments[0]);
     }
 
+    if (name == "$and" || name == "$or")
+        return makeLogical(name, parseArguments(argument));
+
+    if (name == "$not")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeASTFunction("not", makeTruth(std::move(arguments[0])));
+    }
+
     if (name == "$toInt" || name == "$toLong")
     {
         auto arguments = parseArguments(argument);
@@ -987,6 +1045,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         else
             arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 3);
+        arguments[0] = makeTruth(std::move(arguments[0]));
         return makeFunction("if", std::move(arguments));
     }
 
@@ -998,7 +1057,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         std::vector<ASTPtr> arguments;
         for (const auto & branch : branches.GetArray())
         {
-            arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "case", name)));
+            arguments.push_back(makeTruth(parseMongoAggregateExpression(requireMember(branch, "case", name))));
             arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "then", name)));
         }
         auto default_it = argument.FindMember("default");
@@ -1152,6 +1211,9 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             BoundVariableScope scope(variable);
             body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
         }
+        /// The condition of a `$filter` keeps an element when it is true the way Mongo means it.
+        if (name == "$filter")
+            body = makeTruth(std::move(body));
         auto mapped = makeASTFunction(
             name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variableIdentifier(variable), std::move(body)), std::move(input));
         if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
