@@ -11,9 +11,7 @@ import CloudUnsupportedFeatures from '/snippets/ja/_cloud_unsupported_features.m
 
 このガイドでは、ClickHouse Cloud の機能面および運用面で想定される違いの概要を説明します。ClickHouse Cloud はオープンソース版の ClickHouse をベースにしていますが、アーキテクチャや実装にはいくつか違いがある場合があります。背景情報として、[ClickHouse Cloud をどのように構築したか](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year)を紹介するこちらのブログも、興味深く参考になるでしょう。
 
-<div id="clickhouse-cloud-architecture">
-  ## ClickHouse Cloud アーキテクチャ
-</div>
+## ClickHouse Cloud アーキテクチャ {#clickhouse-cloud-architecture}
 
 ClickHouse Cloud は、運用負荷を大幅に軽減し、大規模な ClickHouse 運用にかかるコストを削減します。デプロイメントのサイジングを事前に行ったり、高可用性のためにレプリケーションを設定したり、データを手動で分片化したり、ワークロードの増加に応じてサーバーをスケールアップしたり、使用していないときにスケールダウンしたりする必要はありません。これらは ClickHouse Cloud が対応します。
 
@@ -26,15 +24,11 @@ ClickHouse Cloud は、運用負荷を大幅に軽減し、大規模な ClickHou
 * 断続的なワークロード向けのシームレスな休止機能もデフォルトで有効になっています。一定期間アクティビティがない場合、コンピュートリソースは自動的に一時停止され、新しいクエリが到着すると透過的に再開されるため、アイドル状態のリソースに料金を支払う必要がありません。
 * 高度なスケーリング制御により、追加コストを抑えるために自動スケーリングの上限を設定したり、特別なパフォーマンス要件を持つアプリケーション向けにコンピュートリソースを確保するため自動スケーリングの下限を設定したりできます。
 
-<div id="capabilities">
-  ## 機能
-</div>
+## 機能 {#capabilities}
 
 ClickHouse Cloud では、オープンソース版の ClickHouse で提供されている機能のうち、厳選された一部の機能を利用できます。以下の表では、現時点で ClickHouse Cloud で無効になっている機能の一部を示します。
 
-<div id="database-and-table-engines">
-  ### データベースおよびテーブルエンジン
-</div>
+### データベースおよびテーブルエンジン {#database-and-table-engines}
 
 ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastructure/shared-merge-tree) テーブルエンジンファミリーを基盤とする、高可用かつデフォルトでレプリケーション構成のサービスです。標準的な MergeTree ファミリーのエンジンでテーブルを作成すると、Cloud は対応する `Shared*` エンジンに自動的に置き換えます。`Shared` または `Replicated` のプレフィックスを自分で付ける必要はありません。
 
@@ -72,21 +66,15 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 
 実験的な `PaimonS3` および `PaimonAzure` テーブルエンジンは、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。
 
-<div id="interfaces">
-  ### インターフェイス
-</div>
+### インターフェイス {#interfaces}
 
 ClickHouse Cloud は、HTTPS、ネイティブインターフェイス、[MySQL wire protocol](/ja/concepts/features/interfaces/mysql) をサポートしています。Postgres など、さらに多くのインターフェイスにも近日対応予定です。
 
-<div id="dictionaries">
-  ### Dictionaries
-</div>
+### Dictionaries {#dictionaries}
 
 Dictionaries は、ClickHouse におけるルックアップを高速化する一般的な方法です。ClickHouse Cloud は現在、PostgreSQL、MySQL、リモートおよびローカルの ClickHouse サーバー、Redis、MongoDB、HTTP ソースの Dictionaries をサポートしています。
 
-<div id="federated-queries">
-  ### フェデレーテッドクエリ
-</div>
+### フェデレーテッドクエリ {#federated-queries}
 
 クラウド内でのクラスター間通信、および外部のセルフマネージド ClickHouse クラスターとの通信向けに、フェデレーテッド ClickHouse クエリをサポートしています。現在、ClickHouse Cloud では、以下のインテグレーションエンジンを使用したフェデレーテッドクエリをサポートしています。
 
@@ -103,15 +91,11 @@ Dictionaries は、ClickHouse におけるルックアップを高速化する�
 
 SQLite、ODBC、JDBC、Redis、HDFS、Hive など、一部の外部データベースエンジンおよびテーブルエンジンを使用するフェデレーテッドクエリは、まだサポートされていません。
 
-<div id="user-defined-functions">
-  ### ユーザー定義関数
-</div>
+### ユーザー定義関数 {#user-defined-functions}
 
-ClickHouse Cloud のユーザー定義関数は、[パブリックベータ](/ja/reference/functions/regular-functions/udf)です。
+SQL ユーザー定義関数と実行可能ユーザー定義関数は、ClickHouse Cloud で一般提供されています。詳しくは [Cloud のユーザー定義関数](/ja/products/cloud/features/sql-console-features/user-defined-functions)を参照してください。
 
-<div id="udf-settings-behavior">
-  #### Settings の挙動
-</div>
+#### Settings の挙動 {#udf-settings-behavior}
 
 <Warning>
   **重要**
@@ -125,67 +109,45 @@ ClickHouse Cloud のユーザー定義関数は、[パブリックベータ](/ja
 * ユーザープロファイル設定は UDFs に継承されません
 * クエリレベルの設定は、UDF の実行中には適用されません
 
-<div id="experimental-features">
-  ### 実験的機能
-</div>
+### 実験的機能 {#experimental-features}
 
 サービスのデプロイの安定性を確保するため、ClickHouse Cloud サービスでは実験的機能は無効化されています。
 
-<div id="named-collections">
-  ### 名前付きコレクション
-</div>
+### 名前付きコレクション {#named-collections}
 
 DDL で作成された[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)は、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。ClickHouse Cloud ではユーザーがサーバー設定ファイルを変更できないため、設定ファイルで定義された名前付きコレクションは利用できません。
 
-<div id="operational-defaults-and-considerations">
-  ## 運用上のデフォルト設定と考慮事項
-</div>
+## 運用上のデフォルト設定と考慮事項 {#operational-defaults-and-considerations}
 
 以下は ClickHouse Cloud サービスのデフォルト設定です。これらの設定には、サービスを正しく動作させるために固定されているものもあれば、調整可能なものもあります。
 
-<div id="operational-limits">
-  ### 運用上の制限
-</div>
+### 運用上の制限 {#operational-limits}
 
-<div id="max_parts_in_total-10000">
-  #### `max_parts_in_total: 10,000`
-</div>
+#### `max_parts_in_total: 10,000` {#max_parts_in_total-10000}
 
 MergeTree テーブルにおける `max_parts_in_total` 設定のデフォルト値は、100,000 から 10,000 に引き下げられました。この変更の理由は、データパーツ数が多いと Cloud 上のサービスの起動時間が長くなりやすいことが確認されたためです。パーツ数が多い場合、通常はパーティションキーの粒度が細かすぎることを示しており、これは多くの場合意図せず設定されるものであるため、避けるべきです。デフォルト値を変更することで、このようなケースをより早い段階で検出できるようになります。
 
-<div id="max_concurrent_queries-1000">
-  #### `max_concurrent_queries: 1,000`
-</div>
+#### `max_concurrent_queries: 1,000` {#max_concurrent_queries-1000}
 
 同時実行数を増やすため、このサーバー設定をデフォルトの `100` から `1000` に引き上げています。
 これにより、サービスで実行できる同時クエリ数は `レプリカ数 * 1,000` になります。単一レプリカのサービスでは、ティアにかかわらず最大 `1000` の同時クエリがサポートされます。Scale および Enterprise tier の複数レプリカのサービスでは、レプリカごとに最大 `1000` の同時クエリがサポートされます。
 
-<div id="max_table_size_to_drop-1000000000000">
-  #### `max_table_size_to_drop: 1,000,000,000,000`
-</div>
+#### `max_table_size_to_drop: 1,000,000,000,000` {#max_table_size_to_drop-1000000000000}
 
 この設定を50GBから引き上げ、最大1TBまでのテーブル／パーティションを削除できるようにしました。
 
-<div id="system-settings">
-  ### システム設定
-</div>
+### システム設定 {#system-settings}
 
 ClickHouse Cloud は変動するワークロードに対応できるよう調整されているため、現時点ではほとんどのシステム設定を変更できません。ほとんどのユーザーにとってシステム設定の調整は不要と考えていますが、高度なシステムチューニングについてご質問がある場合は、ClickHouse Cloud Support までお問い合わせください。
 
-<div id="advanced-security-administration">
-  ### 高度なセキュリティ管理
-</div>
+### 高度なセキュリティ管理 {#advanced-security-administration}
 
 ClickHouse service の作成時に、デフォルトのデータベースと、そのデータベースに対して広範な権限を持つ default user が作成されます。この初期ユーザーは、追加のユーザーを作成し、そのデータベースに対する権限を付与できます。これに加えて、Kerberos、LDAP、または SSL X.509 証明書認証を使用して、データベース内で以下のセキュリティ機能を有効にすることは、現時点ではサポートされていません。
 
-<div id="list-of-unsupported-features">
-  ## サポート対象外の機能一覧
-</div>
+## サポート対象外の機能一覧 {#list-of-unsupported-features}
 
 <CloudUnsupportedFeatures />
 
-<div id="roadmap">
-  ## ロードマップ
-</div>
+## ロードマップ {#roadmap}
 
 ClickHouse Cloud では、ほかにも多くの機能について需要を見極めています。ご意見がある場合や、特定の機能をリクエストしたい場合は、[こちらからお知らせください](https://console.clickhouse.cloud/support)。

@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，由 ClickHouse 源代码自动生成。
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-后台内存工作线程是否应根据 jemalloc 和 cgroups 等外部来源的信息校正内部内存跟踪器
+控制后台内存工作线程是否在每个 tick 根据进程实际内存使用量的外部测量值来校正全局内存跟踪器：当 cgroups 可用时 (参见 `memory_worker_use_cgroup`) 使用 cgroup 的内存使用量，否则使用 jemalloc 的 `stats.resident`。
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+全局内存跟踪器是一个计数器：内存分配使其增加，内存释放使其减少。由于没有其他机制能够降低它，任何记账上的不对称都会在进程的整个生命周期内一直保留；向上的漂移也永远不会被抵消，因为它所对应的内存早已被释放。一旦仅漂移量就超过 `max_server_memory_usage`，所有内存分配都会失败，甚至连建立连接时的零字节检查也无法通过，此时服务器实际只用了其内存限制的一小部分，却会拒绝所有查询。基于测量值进行校正，可将此类漂移的存续时间限制在工作线程的一个 tick 以内 (由 `memory_worker_period_ms` 指定，从 cgroups 读取时默认为 50 ms，从 jemalloc 读取时默认为 100 ms) 。
+
+校正并不会掩盖漂移。`MemoryTrackingUncorrected` 保存了跟踪器在未经任何校正时应有的值 (即原始计数器的快照，在工作线程的每个 tick 刷新) ，因此 `MemoryTrackingUncorrected - MemoryTracking` 即为迄今为止累积的漂移量。
+
+将此设置设为 `0` 可恢复旧版本的行为：跟踪器仅在工作线程的第一个 tick 以及其值变为负数时才会被校正。
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 动态调整 jemalloc 的 `dirty_decay_ms` 之前，内存压力必须持续的时长 (以毫秒为单位) 。当内存使用量在这段时间内持续高于清理阈值时，会禁用自动脏页衰减 (`dirty_decay_ms=0`) ，以更积极地回收内存。当内存使用量在这段时间内持续低于该阈值时，则恢复默认的衰减行为。将其设为 0 可禁用动态调整，并使用 jemalloc 的默认衰减设置。
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 当 `max_server_memory_usage_to_ram_ratio` 为 `0` 时，此设置不起作用。
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 后台内存工作线程的 tick 周期；该工作线程会在内存使用较高时修正内存跟踪器的内存使用量，并清理未使用的页。如果设置为 0，则会根据内存使用来源采用默认值
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 用于表示 jemalloc 脏页相对于 ClickHouse server 可用内存的阈值比率。当脏页大小超过该比率时，后台内存工作线程会强制清理脏页。如果设置为 0，则会禁用基于脏页比率的强制清理。
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 按 ClickHouse server 可用内存计算的 jemalloc 清理阈值比率。当总内存使用量超过该比率时，后台内存工作线程会强制清理脏页。如果设为 0，则会禁用基于总内存的强制清理。
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -85,9 +77,7 @@ sanitizers (`ASan`、`UBSan`、`MSan`、`TSan`) 下，默认值为 `0`，因为
 `resident - tracked` 的 gap 主要来自 sanitizer 的 shadow / runtime overhead，
 而不是 tracker bookkeeping 的 lag。
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />使用当前 cgroup 的内存使用信息来修正内存跟踪数据。
 
