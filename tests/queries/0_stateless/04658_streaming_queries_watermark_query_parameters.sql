@@ -12,10 +12,10 @@ SELECT * FROM t_streaming_watermark_params STREAM WATERMARK FOR ts AS {wm:DateTi
 
 -- Parameters are substituted into the watermark expression; bounded reads terminate after the first snapshot.
 SET param_delay = 5;
-SELECT count(), min(_watermark), max(_watermark) FROM t_streaming_watermark_params STREAM BOUNDED WATERMARK FOR ts AS ts - toIntervalSecond({delay:UInt64});
+SELECT count(), min(_time_attribute), max(_time_attribute) FROM t_streaming_watermark_params STREAM BOUNDED WATERMARK FOR ts AS ts - toIntervalSecond({delay:UInt64});
 
 SET param_wm = '2020-01-01 00:00:00.000';
-SELECT count(), min(_watermark), max(_watermark) FROM t_streaming_watermark_params STREAM BOUNDED WATERMARK FOR ts AS {wm:DateTime64(3)};
+SELECT count(), min(_time_attribute), max(_time_attribute) FROM t_streaming_watermark_params STREAM BOUNDED WATERMARK FOR ts AS {wm:DateTime64(3)};
 
 SET param_bad = 42;
 SELECT * FROM t_streaming_watermark_params STREAM WATERMARK FOR ts AS {bad:UInt64}; -- { serverError ILLEGAL_STREAM }

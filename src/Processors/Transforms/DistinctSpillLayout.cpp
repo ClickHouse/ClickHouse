@@ -100,15 +100,31 @@ DistinctSpillLayout::DistinctSpillLayout(
         key_sort_description.emplace_back(column.name, 1, 1);
 
     auto flag_type = std::make_shared<DataTypeUInt8>();
-    const auto flag_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
-    ordinary.insert({flag_type->createColumn(), flag_type, flag_name});
+    flag_column_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
+    ordinary.insert({flag_type->createColumn(), flag_type, flag_column_name});
     suppression.insert(ordinary.getByPosition(ordinary.columns() - 1));
 
-    /// Order suppression rows before ordinary rows with equal keys, independently of run registration.
-    run_sort_description = key_sort_description;
-    run_sort_description.emplace_back(flag_name, -1, 1);
     input_run_header = std::make_shared<const Block>(std::move(ordinary));
     suppression_run_header = std::make_shared<const Block>(std::move(suppression));
+}
+
+size_t DistinctSpillLayout::estimateServiceColumnsMemory(
+    size_t num_rows, DistinctKeyRepresentation key_representation, bool preserve_input_order)
+{
+    /// These columns are constructed at their final size, so allocation includes padding but no
+    /// power-of-two capacity rounding.
+    size_t bytes = 0;
+    if (preserve_input_order)
+    {
+        using Array = ColumnUInt64::Container;
+        bytes += PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(UInt64), Array::pad_left, Array::pad_right);
+    }
+    if (key_representation == DistinctKeyRepresentation::Hash128)
+    {
+        using Array = ColumnUInt128::Container;
+        bytes += PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(UInt128), Array::pad_left, Array::pad_right);
+    }
+    return bytes;
 }
 
 Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const

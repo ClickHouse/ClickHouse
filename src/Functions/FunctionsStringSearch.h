@@ -73,8 +73,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 enum class ExecutionErrorPolicy : uint8_t
@@ -89,7 +87,7 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
 
-/// Detects whether `Impl` is a LIKE-style search implementation that supports the ESCAPE clause.
+/// Detects whether `Impl` is a LIKE-style search implementation.
 /// Uses a trait detection on `Impl::is_like` rather than a partial specialization on `MatchImpl`,
 /// so this header does not need to pull in the heavy `MatchImpl` machinery.
 template <typename T, typename = void>
@@ -97,6 +95,17 @@ struct ImplIsLike : std::false_type {};
 
 template <typename T>
 struct ImplIsLike<T, std::void_t<decltype(T::is_like)>> : std::bool_constant<T::is_like> {};
+
+/// Detects whether `Impl` is a SIMILAR TO-style search implementation (same trait-detection approach).
+template <typename T, typename = void>
+struct ImplIsSimilarTo : std::false_type {};
+
+template <typename T>
+struct ImplIsSimilarTo<T, std::void_t<decltype(T::is_similar_to)>> : std::bool_constant<T::is_similar_to> {};
+
+/// Both LIKE and SIMILAR TO accept an optional trailing ESCAPE character argument.
+template <typename T>
+struct ImplSupportsEscape : std::bool_constant<ImplIsLike<T>::value || ImplIsSimilarTo<T>::value> {};
 
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
@@ -136,13 +145,13 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return Impl::supports_start_pos || ImplIsLike<Impl>::value; }
+    bool isVariadic() const override { return Impl::supports_start_pos || ImplSupportsEscape<Impl>::value; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
-        if (Impl::supports_start_pos || ImplIsLike<Impl>::value)
+        if (Impl::supports_start_pos || ImplSupportsEscape<Impl>::value)
             return 0;
         return 2;
     }
@@ -154,55 +163,23 @@ public:
         return Impl::getArgumentsThatAreAlwaysConstant();
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), arguments.size());
-
-        const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
-        const auto & needle_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1] : arguments[0];
-
-        if (!(isStringOrFixedString(haystack_type) || isEnum(haystack_type)))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                haystack_type->getName(), getName());
-
-        if (!isString(needle_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                needle_type->getName(), getName());
-
-        if (arguments.size() >= 3)
-        {
-            if constexpr (ImplIsLike<Impl>::value)
-            {
-                /// 3rd argument for LIKE is the ESCAPE character (String)
-                if (!isString(arguments[2]))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of the ESCAPE argument of function {}",
-                        arguments[2]->getName(), getName());
-            }
-            else
-            {
-                if (!isUInt(arguments[2]))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument of function {}",
-                        arguments[2]->getName(), getName());
-            }
-        }
-
-        auto return_type = std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
-        if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
-            return makeNullable(return_type);
-
-        return return_type;
+        const String elem = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        const String ret = (execution_error_policy == ExecutionErrorPolicy::Null)
+            ? ("Nullable(" + elem + ")")
+            : elem;
+        const String haystack = (argument_order == ArgumentOrder::HaystackNeedle)
+            ? "StringOrFixedString | Enum, String"
+            : "String, StringOrFixedString | Enum";
+        if constexpr (ImplSupportsEscape<Impl>::value)
+            /// The optional 3rd argument for LIKE / SIMILAR TO is the ESCAPE character. `executeImpl`
+            /// requires it to be a `ColumnConst`, so it is a constant option.
+            return "(" + haystack + ", [const String]) -> " + ret;
+        else if constexpr (Impl::supports_start_pos)
+            return "(" + haystack + ", [UInt]) -> " + ret;
+        else
+            return "(" + haystack + ") -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -254,7 +231,9 @@ public:
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
         ColumnPtr column_start_pos = nullptr;
-        if constexpr (!ImplIsLike<Impl>::value)
+        /// For the implementations that accept an ESCAPE character, the third argument is that character,
+        /// not a start position - it is consumed by the needle rewrite below.
+        if constexpr (!ImplSupportsEscape<Impl>::value)
         {
             if (arguments.size() >= 3)
                 column_start_pos = arguments[2].column;
@@ -349,8 +328,18 @@ public:
 
         ColumnPtr column_needle_rewritten;
 
-        if constexpr (ImplIsLike<Impl>::value)
+        if constexpr (ImplSupportsEscape<Impl>::value)
         {
+            /// Rewrite the needle from its custom escape character to the standard backslash escape,
+            /// so the downstream translator (LIKE or SIMILAR TO) only ever sees the standard escape.
+            const auto rewrite_needle = [](std::string_view needle, char escape_char) -> String
+            {
+                if constexpr (ImplIsSimilarTo<Impl>::value)
+                    return similarToPatternWithCustomEscapeToSimilarToPattern(needle, escape_char);
+                else
+                    return likePatternWithCustomEscapeToLikePattern(needle, escape_char);
+            };
+
             /// Is there an ESCAPE argument? Rewrite the needle with escape character into one without escape character.
             if (arguments.size() >= 3)
             {
@@ -372,7 +361,7 @@ public:
                 /// Rewrite the needle from custom escape to standard backslash escape
                 if (const auto * col_needle_const = typeid_cast<const ColumnConst *>(column_needle.get()))
                 {
-                    String rewritten_needle = likePatternWithCustomEscapeToLikePattern(col_needle_const->getValue<String>(), escape_char);
+                    String rewritten_needle = rewrite_needle(col_needle_const->getValue<String>(), escape_char);
                     auto rewritten_needle_col = ColumnString::create();
                     rewritten_needle_col->insertData(rewritten_needle.data(), rewritten_needle.size());
                     column_needle_rewritten = ColumnConst::create(std::move(rewritten_needle_col), col_needle_const->size());
@@ -383,7 +372,7 @@ public:
                     for (size_t i = 0; i < col_needle_nonconst->size(); ++i)
                     {
                         auto needle = col_needle_nonconst->getDataAt(i);
-                        String rewritten = likePatternWithCustomEscapeToLikePattern({needle.data(), needle.size()}, escape_char);
+                        String rewritten = rewrite_needle({needle.data(), needle.size()}, escape_char);
                         rewritten_needle_col->insertData(rewritten.data(), rewritten.size());
                     }
                     column_needle_rewritten = std::move(rewritten_needle_col);
