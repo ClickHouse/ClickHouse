@@ -157,20 +157,76 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
 }
 
 
-void MergeTreeDataPartParquet::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
+void MergeTreeDataPartParquet::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
-    auto data_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
-    if (data_checksum != checksums.files.end())
-    {
-        /// The Parquet file has its own compression inside, so its size is accounted as compressed size.
-        /// The uncompressed size of the data is not known.
-        total_size.data_compressed += data_checksum->second.file_size;
-        total_size.data_uncompressed += data_checksum->second.file_size;
-    }
+    String marks_file_name = DATA_FILE_NAME + getMarksFileExtension();
 
-    auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
+    auto mrk_checksum = checksums.files.find(marks_file_name);
     if (mrk_checksum != checksums.files.end())
         total_size.marks += mrk_checksum->second.file_size;
+
+    auto data_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
+    if (data_checksum == checksums.files.end())
+        return;
+
+    /// The whole file, including the metadata and the indices of the Parquet file.
+    total_size.data_compressed += data_checksum->second.file_size;
+
+    if (written_column_sizes)
+    {
+        for (const auto & [name, size] : *written_column_sizes)
+        {
+            total_size.data_uncompressed += size.data_uncompressed;
+            each_columns_size[name] = size;
+        }
+        return;
+    }
+
+    /// The marks contain the sizes of the data of each column in each row group,
+    /// and the final mark contains the uncompressed sizes of the columns (see `MergeTreeDataPartWriterParquet`).
+    size_t marks_count = index_granularity ? index_granularity->getMarksCount() : 0;
+    const auto & columns = getColumns();
+    if (marks_count == 0 || columns.empty() || mrk_checksum == checksums.files.end() || !index_granularity->hasFinalMark())
+    {
+        total_size.data_uncompressed += data_checksum->second.file_size;
+        return;
+    }
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader marks_loader(
+        info_for_read,
+        /*mark_cache=*/ nullptr,
+        marks_file_name,
+        marks_count,
+        index_granularity_info,
+        /*save_marks_in_cache=*/ false,
+        storage.getContext()->getReadSettings(),
+        /*load_marks_threadpool=*/ nullptr,
+        columns.size(),
+        storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]);
+    auto marks = marks_loader.loadMarks();
+
+    std::vector<ColumnSize> sizes(columns.size());
+    for (size_t mark = 0; mark < marks_count; ++mark)
+    {
+        bool is_final_mark = mark + 1 == marks_count;
+        for (size_t column = 0; column < columns.size(); ++column)
+        {
+            const auto & range = marks->getMark(mark, column);
+            if (is_final_mark)
+                sizes[column].data_uncompressed += range.offset_in_decompressed_block;
+            else
+                sizes[column].data_compressed += range.offset_in_decompressed_block;
+        }
+    }
+
+    size_t column = 0;
+    for (const auto & name_and_type : columns)
+    {
+        total_size.data_uncompressed += sizes[column].data_uncompressed;
+        each_columns_size[name_and_type.name] = sizes[column];
+        ++column;
+    }
 }
 
 void MergeTreeDataPartParquet::loadIndexGranularity()
@@ -330,7 +386,9 @@ void MergeTreeDataPartParquet::doCheckConsistency(bool require_part_metadata) co
                 auto marks = marks_loader.loadMarks();
 
                 UInt64 data_file_size = getDataPartStorage().getFileSize(DATA_FILE_NAME_WITH_EXTENSION);
-                for (size_t mark = 0; mark < marks_count; ++mark)
+                /// The final mark has the uncompressed sizes of the columns instead of the sizes of the data.
+                size_t marks_with_data = index_granularity->hasFinalMark() ? marks_count - 1 : marks_count;
+                for (size_t mark = 0; mark < marks_with_data; ++mark)
                 {
                     for (size_t column = 0; column < num_columns; ++column)
                     {

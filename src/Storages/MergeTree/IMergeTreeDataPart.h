@@ -140,6 +140,11 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+
+    /// The sizes of the columns calculated by the writer of the part. Used by the formats which calculate
+    /// the sizes of columns from the files of the part, which can't be read yet when the part is being written
+    /// (e.g. with packed storage).
+    virtual void setWrittenColumnSizes(ColumnSizeByName /*sizes*/) {}
     using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
     using NameToNumber = SharedPartColumns::NameToNumber;
 

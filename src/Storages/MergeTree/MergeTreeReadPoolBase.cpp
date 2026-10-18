@@ -267,8 +267,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
 {
-    /// For compact and parquet parts we don't know individual column sizes, let's use whole part size as approximation
-    if (part.getType() == MergeTreeDataPartType::Compact || part.getType() == MergeTreeDataPartType::Parquet)
+    /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
+    if (part.getType() == MergeTreeDataPartType::Compact)
         return part.getBytesOnDisk();
 
     size_t data_compressed_size = 0;
@@ -308,7 +308,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 /// cache, so their size is only a safety net.
 static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
 {
-    if (part.getType() == MergeTreeDataPartType::Compact || part.getType() == MergeTreeDataPartType::Parquet)
+    if (part.getType() == MergeTreeDataPartType::Compact)
         return part.getBytesUncompressedOnDisk();
 
     size_t data_uncompressed_size = 0;

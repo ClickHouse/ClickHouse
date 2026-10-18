@@ -11,6 +11,7 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -83,7 +84,6 @@ bool canStoreTypeInParquetImpl(const IDataType & type)
         case TypeIndex::Date:
         case TypeIndex::Date32:
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
         case TypeIndex::String:
         case TypeIndex::FixedString:
         case TypeIndex::Enum8:
@@ -96,6 +96,13 @@ bool canStoreTypeInParquetImpl(const IDataType & type)
         case TypeIndex::IPv4:
         case TypeIndex::IPv6:
             return true;
+        case TypeIndex::DateTime64:
+        {
+            /// Parquet timestamps have milli-, micro- or nanosecond units. The values with scales 7 and 8 are stored
+            /// as nanoseconds, which don't cover the whole range of `DateTime64` with these scales.
+            UInt32 scale = assert_cast<const DataTypeDateTime64 &>(type).getScale();
+            return scale != 7 && scale != 8;
+        }
         case TypeIndex::Nullable:
         {
             const auto & nested = assert_cast<const DataTypeNullable &>(type).getNestedType();
@@ -506,6 +513,8 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Unexpected offset in Parquet file after writing column {}: {}, expected {}", name, end, file_state.offset);
 
+    columns_to_write[column_idx].compressed_bytes += end - start;
+
     MarkInCompressedFile mark{start, end - start};
     writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
     writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
@@ -526,6 +535,7 @@ void MergeTreeDataPartWriterParquet::writeRowGroups(const Block & block, const G
             if (granule.start_row != 0 || granule.rows_to_write != column->size())
                 column = column->cut(granule.start_row, granule.rows_to_write);
 
+            columns_to_write[i].uncompressed_bytes += column->byteSize();
             writeColumnChunks(i, column, marks_out);
         }
 
@@ -557,9 +567,12 @@ void MergeTreeDataPartWriterParquet::finalizeIndexGranularity()
 
     if (with_final_mark && data_written)
     {
-        MarkInCompressedFile mark{data_hashing->count(), 0};
-        for (size_t i = 0; i < columns_to_write.size(); ++i)
+        /// The final mark points to the end of the data, and there is no data after it.
+        /// Instead of the size of the data, it has the uncompressed size of the column (in memory),
+        /// see `MergeTreeDataPartParquet::calculateEachColumnSizes`.
+        for (const auto & column : columns_to_write)
         {
+            MarkInCompressedFile mark{data_hashing->count(), column.uncompressed_bytes};
             writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
             writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
@@ -618,6 +631,18 @@ void MergeTreeDataPartWriterParquet::finishDataSerialization(bool sync)
     /// see the comment in `MergeTreeDataPartWriterCompact::finishDataSerialization`.
     data_file = nullptr;
     marks_file = nullptr;
+}
+
+std::optional<std::unordered_map<String, ColumnSize>> MergeTreeDataPartWriterParquet::getWrittenColumnSizes() const
+{
+    std::unordered_map<String, ColumnSize> sizes;
+    for (const auto & column : columns_to_write)
+    {
+        auto & size = sizes[column.name_and_type.name];
+        size.data_compressed = column.compressed_bytes;
+        size.data_uncompressed = column.uncompressed_bytes;
+    }
+    return sizes;
 }
 
 void MergeTreeDataPartWriterParquet::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)

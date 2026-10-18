@@ -2423,8 +2423,9 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
     /// `MergeTree` it stays 0), and a legacy part with no version recorded on disk had it fabricated
     /// from the current metadata in `loadColumns` (`old_part_with_no_metadata_version_on_disk`), so
     /// in both cases a mismatch is undetectable and the proof is kept, as before.
-    bool column_data_proves_default_codec = old_part_with_no_metadata_version_on_disk
-        || metadata_version == metadata_snapshot->getMetadataVersion();
+    /// The data file of a Parquet part has no frames of ClickHouse codecs.
+    bool column_data_proves_default_codec = getType() != MergeTreeDataPartType::Parquet
+        && (old_part_with_no_metadata_version_on_disk || metadata_version == metadata_snapshot->getMetadataVersion());
 
     /// In a Compact part all columns share a single data file, and `getCompressionCodecForFile`
     /// reads that file's first frame, which belongs to whichever column was written first - not

@@ -7142,21 +7142,41 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
         /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
         /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
-        StorageMetadataHandle table_metadata;
-        if (!projection)
-            table_metadata = getInMemoryMetadataPtr(getContext(), false);
+        /// The codecs of the columns without explicit codecs are resolved against all default codecs that
+        /// may apply to the part: the `default_compression_codec` setting or the `<compression>` section of
+        /// the server config, and the codecs of `RECOMPRESS` TTL rules.
+        auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
         const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
+        auto & codec_factory = CompressionCodecFactory::instance();
+
+        std::vector<CompressionCodecPtr> default_codecs;
+        if (const auto & codec_setting = (*settings)[MergeTreeSetting::default_compression_codec].value; !codec_setting.empty())
+            default_codecs.push_back(codec_factory.get(codec_setting));
+        else
+            default_codecs.push_back(getContext()->chooseCompressionCodec(bytes_uncompressed, 0.0));
+        for (const auto & ttl : table_metadata->getRecompressionTTLs())
+            default_codecs.push_back(codec_factory.get(ttl.recompression_codec, {}));
 
         bool has_unsupported_codecs = false;
+        for (const auto & default_codec : default_codecs)
+            has_unsupported_codecs |= default_codec->isEncryption();
+
         for (const auto & column : columns)
         {
-            if (column.codec
-                && (tryExtractQuantizedCodecParams(column.codec)
-                    || CompressionCodecFactory::instance().get(column.codec, column.type, CompressionCodecFactory::instance().getDefaultCodec())->isEncryption()))
+            if (has_unsupported_codecs)
+                break;
+
+            if (column.codec && tryExtractQuantizedCodecParams(column.codec))
             {
                 has_unsupported_codecs = true;
                 break;
             }
+
+            if (!column.codec)
+                continue;
+
+            for (const auto & default_codec : default_codecs)
+                has_unsupported_codecs |= codec_factory.get(column.codec, column.type, default_codec)->isEncryption();
         }
 
         if (!has_unsupported_codecs)

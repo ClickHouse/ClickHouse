@@ -18,6 +18,8 @@ namespace DB
   * For Parquet parts, `MarkInCompressedFile::offset_in_compressed_file` is the offset of the data of the column in
   * the row group (the column chunks of all its Parquet leaf columns, which are contiguous) in `data.parquet`,
   * and `MarkInCompressedFile::offset_in_decompressed_block` is the size of this data in bytes.
+  * The final mark points to the end of the data, and instead of the size of the data it has the size of
+  * the column in memory (the uncompressed size), so the sizes of the columns can be calculated from the marks.
   *
   * The data types of the columns are mapped to similar Parquet types. A column of a type that does not have
   * a lossless representation in Parquet is stored as a `BYTE_ARRAY` column with values in the ClickHouse
@@ -63,6 +65,8 @@ public:
 
     std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
+    void setWrittenColumnSizes(ColumnSizeByName sizes) override { written_column_sizes = std::move(sizes); }
+
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 
@@ -75,8 +79,10 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    /// Parquet parts don't support per column size, only total size
+    /// The sizes of columns are calculated from the marks, or provided by the writer.
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+
+    std::optional<ColumnSizeByName> written_column_sizes;
 };
 
 }

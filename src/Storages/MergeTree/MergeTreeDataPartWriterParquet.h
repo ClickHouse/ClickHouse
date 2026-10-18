@@ -39,6 +39,8 @@ public:
 
     size_t getNumberOfOpenStreams() const override { return 1; }
 
+    std::optional<std::unordered_map<String, ColumnSize>> getWrittenColumnSizes() const override;
+
     /// Whether values of the type can be stored in a Parquet column of a similar type and read back without loss.
     /// Otherwise, the values are stored in the ClickHouse binary format in a `BYTE_ARRAY` column.
     static bool canStoreTypeInParquet(const DataTypePtr & type);
@@ -70,6 +72,10 @@ private:
         bool binary = false;
         /// Includes the compression method and the encoding for the codec of the column.
         Parquet::WriteOptions options;
+        /// The size of the written values in memory.
+        UInt64 uncompressed_bytes = 0;
+        /// The size of the written data of the column in the file.
+        UInt64 compressed_bytes = 0;
     };
 
     std::vector<ColumnToWrite> columns_to_write;
