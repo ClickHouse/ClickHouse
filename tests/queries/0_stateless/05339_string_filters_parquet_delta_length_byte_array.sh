@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `apply_string_filters_during_scan` on `DELTA_LENGTH_BYTE_ARRAY` string pages, which ClickHouse does not write.
+# Non-matching values are padded so that the filter skips enough bytes per checked value to stay enabled.
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 trap 'rm -f "$DATA_FILE"' EXIT
 
@@ -15,8 +16,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 n = 30000
-s = ['value with needle %d' % i if i % 10 == 0 else ('' if i % 7 == 0 else 'ordinary value %d' % i) for i in range(n)]
-v = [None if i % 13 == 0 else ('nullable needle %d' % i if i % 10 == 0 else 'plain value %d' % i) for i in range(n)]
+s = ['value with needle %d' % i if i % 10 == 0 else ('' if i % 7 == 0 else 'ordinary value %032d' % i) for i in range(n)]
+v = [None if i % 13 == 0 else ('nullable needle %d' % i if i % 10 == 0 else 'plain value %032d' % i) for i in range(n)]
 schema = pa.schema([pa.field('id', pa.uint32(), nullable=False), pa.field('s', pa.string(), nullable=False), pa.field('n', pa.string())])
 table = pa.table({'id': list(range(n)), 's': s, 'n': v}, schema=schema)
 pq.write_table(table, '$DATA_FILE', use_dictionary=False, row_group_size=10000,
