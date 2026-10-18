@@ -201,6 +201,8 @@ public:
         ContextPtr local_context) const override;
 
     void drop(ContextPtr context) override;
+    /// With `iceberg_delete_data_on_drop`, `drop` removes the files of the table.
+    bool dropMayDeleteData() const override { return true; }
 
     static DataLakeMetadataPtr createWithDeserialization(
         const ObjectStoragePtr & object_storage,

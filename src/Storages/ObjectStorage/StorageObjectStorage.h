@@ -179,6 +179,18 @@ public:
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageID & storage_id);
 
+    /// Whether `drop` may delete the data of the table rather than only forget it: a catalog may
+    /// delete the data together with the table, and so may the configuration (an Iceberg table with
+    /// `iceberg_delete_data_on_drop`). Shared with `StorageObjectStorageCluster`.
+    static bool dropMayDeleteData(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const std::shared_ptr<DataLake::ICatalog> & catalog)
+    {
+        return catalog || configuration->dropMayDeleteData();
+    }
+
+    bool dropMayDeleteData() const { return dropMayDeleteData(configuration, catalog); }
+
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();

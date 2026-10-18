@@ -199,6 +199,8 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+    /// Whether `drop` may delete the data of the table rather than only forget it.
+    virtual bool dropMayDeleteData() const { return false; }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

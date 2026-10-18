@@ -65,6 +65,7 @@ public:
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
     void drop() override;
+    bool dropMayDeleteData() const { return StorageObjectStorage::dropMayDeleteData(configuration, catalog); }
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,

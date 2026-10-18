@@ -380,6 +380,13 @@ public:
             metadata->drop(local_context);
     }
 
+    /// Without the metadata `drop` above does nothing.
+    bool dropMayDeleteData() const override
+    {
+        auto metadata = tryGetMetadata();
+        return metadata && metadata->dropMayDeleteData();
+    }
+
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
