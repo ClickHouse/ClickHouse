@@ -893,7 +893,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoCountsAttemptsFailedBeforeSending)
 
     {
         DB::HTTPConnectionInfoScope scope(true);
-        DB::beginHTTPConnectionInfoTransportAttempt();
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
         echoRequest("Hello", *connection);
         auto info = DB::takeCurrentHTTPConnectionInfo();
         ASSERT_TRUE(info.has_value);
@@ -902,10 +902,58 @@ TEST_F(ConnectionPoolTest, ConnectionInfoCountsAttemptsFailedBeforeSending)
 
     {
         DB::HTTPConnectionInfoScope scope(true);
-        DB::beginHTTPConnectionInfoTransportAttempt(); /// fails while connecting, then retried
-        DB::beginHTTPConnectionInfoTransportAttempt();
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true); /// fails while connecting, then retried
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
         echoRequest("Hello", *connection);
         ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+}
+
+/// A credential's token request can be the only request that reaches the wire inside the scope of a
+/// logged one: when the token endpoint rejects it, the SDK throws before the object request is sent,
+/// and the read path still writes an error row for the blob. That row must not carry the identity
+/// service's connection, whether the token request came through a helper transport or as a raw
+/// request made by a credentials provider. A helper request still counts towards the requests the
+/// entry spans, so a logged request that follows it is not attributed either.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresHelperRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        {
+            DB::HTTPConnectionInfoHelperRequests helper_requests;
+            echoRequest("Hello", *connection);
+        }
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// The helper status ends with the guard: the next logged request is recorded as usual.
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(4, info.requests_served);
     }
 }
 

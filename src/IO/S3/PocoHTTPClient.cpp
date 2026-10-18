@@ -236,6 +236,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
+    , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
@@ -566,7 +567,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             latency_recorded = false;
 
             /// Count the attempt before the connection is set up, which can fail on its own.
-            beginHTTPConnectionInfoTransportAttempt();
+            beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
 
             auto session = makeHTTPSession(
                 group,
@@ -928,6 +929,9 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
 {
+    /// The token request can go out inside the scope of a logged request, but is not that request.
+    HTTPConnectionInfoHelperRequests helper_requests;
+
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 

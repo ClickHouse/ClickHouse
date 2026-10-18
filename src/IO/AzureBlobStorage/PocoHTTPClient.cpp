@@ -297,6 +297,7 @@ PocoAzureHTTPClient::PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration 
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , for_disk_azure(client_configuration.for_disk_azure)
+    , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {}
@@ -387,7 +388,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         /// Count this attempt before anything can fail: an attempt that times out while connecting
         /// never reaches the pooled session, but the SDK still retries it inside the logged entry.
-        DB::beginHTTPConnectionInfoTransportAttempt();
+        DB::beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
 
         /// Test-only: raise a real Poco timeout so the TimeoutException -> TransportException path is what's tested.
         fiu_do_on(DB::FailPoints::azure_inject_poco_timeout,
@@ -645,6 +646,9 @@ std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport
             .for_disk_azure = false,
             .request_throttler = {},
             .extra_headers = {},
+            /// Only the credentials' token requests go through here. They may share a scope with a
+            /// logged blob request, but must never be reported as its connection.
+            .publish_connection_info = false,
         });
     return transport;
 }

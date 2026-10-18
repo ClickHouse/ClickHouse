@@ -23,6 +23,14 @@ static thread_local size_t requests_in_scope = 0;
 /// connection setup is not counted again when the pooled session sends it.
 static thread_local bool transport_attempt_pending = false;
 
+/// Whether the request being issued may publish its connection. False for helper traffic - a token or
+/// credential request made on the way to the logged one - which counts towards `requests_in_scope`
+/// but must never be reported as the connection of the logged request.
+static thread_local bool current_request_publishes = true;
+
+/// Set while an `HTTPConnectionInfoHelperRequests` is alive on this thread.
+static thread_local bool helper_requests = false;
+
 UInt64 nextHTTPConnectionId()
 {
     static std::atomic<UInt64> counter{0};
@@ -33,11 +41,15 @@ HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
     : previously_enabled(capture_connection_info)
     , previous_requests_in_scope(requests_in_scope)
     , previous_transport_attempt_pending(transport_attempt_pending)
+    , previous_current_request_publishes(current_request_publishes)
+    , previous_helper_requests(helper_requests)
 {
     capture_connection_info = enabled;
     current_connection_info = {};
     requests_in_scope = 0;
     transport_attempt_pending = false;
+    current_request_publishes = true;
+    helper_requests = false;
 }
 
 HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
@@ -49,6 +61,19 @@ HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
     current_connection_info = {};
     requests_in_scope = previous_requests_in_scope;
     transport_attempt_pending = previous_transport_attempt_pending;
+    current_request_publishes = previous_current_request_publishes;
+    helper_requests = previous_helper_requests;
+}
+
+HTTPConnectionInfoHelperRequests::HTTPConnectionInfoHelperRequests()
+    : previous_helper_requests(helper_requests)
+{
+    helper_requests = true;
+}
+
+HTTPConnectionInfoHelperRequests::~HTTPConnectionInfoHelperRequests()
+{
+    helper_requests = previous_helper_requests;
 }
 
 bool isHTTPConnectionInfoCaptureEnabled()
@@ -56,7 +81,7 @@ bool isHTTPConnectionInfoCaptureEnabled()
     return capture_connection_info;
 }
 
-void beginHTTPConnectionInfoTransportAttempt()
+void beginHTTPConnectionInfoTransportAttempt(bool logged_request)
 {
     if (!capture_connection_info)
         return;
@@ -64,6 +89,7 @@ void beginHTTPConnectionInfoTransportAttempt()
     ++requests_in_scope;
     current_connection_info = {};
     transport_attempt_pending = true;
+    current_request_publishes = logged_request && !helper_requests;
 }
 
 void beginHTTPConnectionInfoRequest()
@@ -73,7 +99,8 @@ void beginHTTPConnectionInfoRequest()
 
     current_connection_info = {};
 
-    /// Already counted by the transport before it set up the connection.
+    /// Already counted by the transport before it set up the connection, which also decided
+    /// whether the request may publish it.
     if (transport_attempt_pending)
     {
         transport_attempt_pending = false;
@@ -83,11 +110,12 @@ void beginHTTPConnectionInfoRequest()
     /// Counted per request rather than per socket: a dead keep-alive socket replaced by a reconnect
     /// inside one `sendRequest` is still one request, and does not make the entry ambiguous.
     ++requests_in_scope;
+    current_request_publishes = !helper_requests;
 }
 
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)
 {
-    if (!capture_connection_info)
+    if (!capture_connection_info || !current_request_publishes)
         return;
 
     current_connection_info = info;

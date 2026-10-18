@@ -97,6 +97,26 @@ private:
     bool previously_enabled;
     size_t previous_requests_in_scope;
     bool previous_transport_attempt_pending;
+    bool previous_current_request_publishes;
+    bool previous_helper_requests;
+};
+
+/// Marks the requests issued on the current thread while it is alive as helper traffic: a credential
+/// or token request that an SDK makes on its own on the way to the logged request. Such requests still
+/// count towards the requests the entry spans, but never publish their connection. Without this, when
+/// the token request is the only one that reaches the wire - because it fails and the logged request
+/// is never sent - the entry would report the identity service's connection under the blob's path.
+class HTTPConnectionInfoHelperRequests
+{
+public:
+    HTTPConnectionInfoHelperRequests();
+    ~HTTPConnectionInfoHelperRequests();
+
+    HTTPConnectionInfoHelperRequests(const HTTPConnectionInfoHelperRequests &) = delete;
+    HTTPConnectionInfoHelperRequests & operator=(const HTTPConnectionInfoHelperRequests &) = delete;
+
+private:
+    bool previous_helper_requests;
 };
 
 /// Whether the current thread is inside an enabled `HTTPConnectionInfoScope`. The pooled session checks it
@@ -110,7 +130,12 @@ bool isHTTPConnectionInfoCaptureEnabled();
 /// towards the requests the entry spans. The pooled session's `beginHTTPConnectionInfoRequest` for
 /// the same attempt then does not count it a second time. Does nothing outside of an
 /// `HTTPConnectionInfoScope`.
-void beginHTTPConnectionInfoTransportAttempt();
+///
+/// `logged_request` is false for a transport that only carries helper traffic - the default transport
+/// of the Azure SDK, which its credentials use to fetch tokens, or an S3 client created for a
+/// credentials provider. Such an attempt counts like any other, but its connection is never published,
+/// see `HTTPConnectionInfoHelperRequests`.
+void beginHTTPConnectionInfoTransportAttempt(bool logged_request);
 
 /// Note that a request is about to be issued on this thread, and drop whatever was published for
 /// the previous one. Called by the pooled session before it tries to send the request, so that an
@@ -119,7 +144,8 @@ void beginHTTPConnectionInfoTransportAttempt();
 void beginHTTPConnectionInfoRequest();
 
 /// Publish the connection that has just carried a request on this thread. Called by the pooled
-/// session once the request has been sent; does nothing outside of an `HTTPConnectionInfoScope`.
+/// session once the request has been sent; does nothing outside of an `HTTPConnectionInfoScope`, and
+/// for helper requests.
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 
 /// Return the info for the request made on this thread, and clear it. Clearing is deliberate: a
