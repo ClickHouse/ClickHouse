@@ -896,6 +896,8 @@ void ReadManager::readAheadColumnData()
         budget = std::min(budget, size_t(static_cast<double>(*available) * SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, stage.memory_target_fraction)));
 
     MemoryUsageDiff diff(ReadStage::ColumnData);
+    /// Row groups this pass cannot read ahead. It stops after `depth` of them, so passes do not rescan long runs of them.
+    size_t skipped = 0;
     std::lock_guard lock(column_data_prefetch_mutex);
     for (auto row_group_idx = stage.schedulable_row_groups.findNext(0); row_group_idx.has_value();
          row_group_idx = stage.schedulable_row_groups.findNext(*row_group_idx + 1))
@@ -914,7 +916,11 @@ void ReadManager::readAheadColumnData()
             {
                 return task.column_idx != UINT64_MAX && !reader.row_groups[i].columns.at(task.column_idx).offset_index.page_locations.empty();
             }))
+        {
+            if (++skipped == depth)
+                break;
             continue;
+        }
 
         size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
         if (memory_usage >= budget)
@@ -924,13 +930,21 @@ void ReadManager::readAheadColumnData()
         for (const Task & task : tasks)
             addColumnDataPrefetches(task, prefetches);
         if (prefetches.empty())
+        {
+            if (++skipped == depth)
+                break;
             continue;
+        }
 
         auto charged = reader.prefetcher.startPrefetchWithinLimit(prefetches, &diff, budget - memory_usage);
         if (!charged)
             break;
         if (*charged == 0)
+        {
+            if (++skipped == depth)
+                break;
             continue;
+        }
 
         column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
         column_data_read_ahead_count.fetch_add(1, std::memory_order_relaxed);
