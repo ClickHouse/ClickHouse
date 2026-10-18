@@ -13,6 +13,8 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -210,21 +212,43 @@ static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & con
 /// wrappers only removes the wrapper and leaves its inner tables (and their rows) in place, so a
 /// detached wrapper holds no rows of its own.
 /// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target only when it
-/// runs. Check it before the emptiness probe of `IF EMPTY` looks at the target (and loads it), and
-/// probe the authorized target itself. This applies to temporary aliases as well. An `Alias` is never
-/// a `lazy_load_tables` stand-in, and its target is never an `Alias`.
+/// runs, and so on along a chain of aliases (an `Alias` can refer to another `Alias`). Check the grant
+/// on every hop before the emptiness probe of `IF EMPTY` looks at the final target (and loads it), and
+/// probe the authorized final target itself. This applies to temporary aliases as well. An `Alias` is
+/// never a `lazy_load_tables` stand-in. A cyclic chain has no final target to probe, so it returns
+/// nothing, which refuses `IF EMPTY`.
 static StoragePtr getTableToProbeIfEmpty(const StoragePtr & table, ASTDropQuery::Kind kind, const ContextPtr & context)
 {
-    if (kind == ASTDropQuery::Kind::Truncate)
+    if (kind != ASTDropQuery::Kind::Truncate)
+        return table;
+
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    StoragePtr target = table;
+    while (const auto * alias = dynamic_cast<const StorageAlias *>(target.get()))
     {
-        if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
-            return alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::TRUNCATE});
+        if (!visited.emplace(target->getStorageID()).second)
+            return {};
+        target = alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::TRUNCATE});
     }
-    return table;
+    return target;
+}
+
+/// Whether dropping the storage may delete its data rather than only forget it: an Iceberg table
+/// with `iceberg_delete_data_on_drop`, or a table in a catalog. The other data lakes (`Hudi`,
+/// `Paimon`, ...) keep their data on drop.
+static bool dropMayDeleteData(const StoragePtr & storage)
+{
+    if (const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(storage.get()))
+        return object_storage->dropMayDeleteData();
+    if (const auto * object_storage_cluster = dynamic_cast<const StorageObjectStorageCluster *>(storage.get()))
+        return object_storage_cluster->dropMayDeleteData();
+    return false;
 }
 
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
 {
+    if (!table_or_proxy)
+        return false;
     const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
     if (kind != ASTDropQuery::Kind::Truncate
         && (dynamic_cast<const StorageAlias *>(table.get()) || dynamic_cast<const StorageMerge *>(table.get())))
@@ -249,16 +273,16 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
     /// start it up. `TRUNCATE` would resolve it and truncate the external storage, and the unknown
     /// row count refuses that. Detaching a resolved table function also leaves the rows it reads
     /// untouched, and so does dropping it, except that the drop is forwarded to the resolved
-    /// storage: a data lake storage may delete the data on drop (an Iceberg table with
-    /// `iceberg_delete_data_on_drop`), so dropping a resolved data lake table function is judged as
-    /// that storage. Other storages behind a table function (`url`, `postgresql`, `merge`, ...) keep
-    /// the data on drop, so dropping them only removes the table from the catalog.
+    /// storage: an Iceberg storage may delete the data on drop (with `iceberg_delete_data_on_drop`),
+    /// so dropping a resolved table function whose storage may do that is judged as that storage.
+    /// Other storages behind a table function (`url`, `postgresql`, `merge`, `hudi`, `paimon`, ...)
+    /// keep the data on drop, so dropping them only removes the table from the catalog.
     if (const auto * table_function = typeid_cast<const StorageTableFunctionProxy *>(table.get()))
     {
         const StoragePtr nested = table_function->tryGetNested();
         if (!nested)
             return kind != ASTDropQuery::Kind::Truncate;
-        if (kind == ASTDropQuery::Kind::Detach || (kind == ASTDropQuery::Kind::Drop && !nested->isDataLake()))
+        if (kind == ASTDropQuery::Kind::Detach || (kind == ASTDropQuery::Kind::Drop && !dropMayDeleteData(nested)))
             return true;
         return isTableEmpty(nested, kind);
     }

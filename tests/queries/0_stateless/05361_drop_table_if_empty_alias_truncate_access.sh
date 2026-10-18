@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `TRUNCATE TABLE ... IF EMPTY` of an `Alias` truncates its target, so it checks the privilege to
 # truncate the target before it looks at the target's row count: otherwise a user who may truncate
 # the alias but not the target could tell an empty target (`ACCESS_DENIED`) from a non-empty one
-# (`TABLE_NOT_EMPTY`).
+# (`TABLE_NOT_EMPTY`). An `Alias` can refer to another `Alias` (created while its target name was
+# absent), and then the privilege is checked on every hop of the chain, including the final table.
 
 user="user_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
@@ -19,13 +20,21 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_full VALUES (1);
     CREATE TABLE a_full ENGINE = Alias('t_full');
     CREATE TABLE a_empty ENGINE = Alias('t_empty');
+    CREATE TABLE c_full ENGINE = Alias(currentDatabase(), 'c_full_inner');
+    CREATE TABLE c_full_inner ENGINE = Alias(currentDatabase(), 't_full');
+    CREATE TABLE c_empty ENGINE = Alias(currentDatabase(), 'c_empty_inner');
+    CREATE TABLE c_empty_inner ENGINE = Alias(currentDatabase(), 't_empty');
     CREATE USER ${user} IDENTIFIED WITH no_password;
     GRANT SHOW TABLES ON ${db}.* TO ${user};
     GRANT TRUNCATE ON ${db}.a_full TO ${user};
     GRANT TRUNCATE ON ${db}.a_empty TO ${user};
+    GRANT TRUNCATE ON ${db}.c_full TO ${user};
+    GRANT TRUNCATE ON ${db}.c_full_inner TO ${user};
+    GRANT TRUNCATE ON ${db}.c_empty TO ${user};
+    GRANT TRUNCATE ON ${db}.c_empty_inner TO ${user};
 "
 
-for table in a_full a_empty
+for table in a_full a_empty c_full c_empty
 do
     ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.${table}" 2>&1 \
         | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
@@ -39,6 +48,9 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.a_full" 2>&1 \
     | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.a_empty"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.c_full" 2>&1 \
+    | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
+${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.c_empty"
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM t_full;
