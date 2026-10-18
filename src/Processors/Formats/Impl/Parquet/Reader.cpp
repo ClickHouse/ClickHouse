@@ -1836,6 +1836,10 @@ void Reader::preparePrewhere()
         || output_info.primitive_start + 1 != output_info.primitive_end)
         return;
     PrimitiveColumnInfo & pc = primitive_columns.at(output_info.primitive_start);
+    /// A column that can be written to the columns cache is decoded as a full column,
+    /// so that the cache does not get a `ColumnReplicated`.
+    if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+        return;
     if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
         && isLazyReplicationUseful(pc.decoded_type->createColumn()))
         pc.decode_dictionary_as_replicated = true;
