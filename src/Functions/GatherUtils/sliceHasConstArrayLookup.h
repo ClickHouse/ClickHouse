@@ -18,7 +18,7 @@
 /// constant array, so that a row costs a lookup per element instead of a search of the constant array for each element.
 ///
 /// The table is built for every block. The rows of a block are first searched as in `sliceHasImplAnyAll`, and the table is built
-/// only when the search has compared about as many elements as building the table and looking up the searched rows would cost. So
+/// only when the search has taken about as long as building the table and looking up the searched rows would take. So
 /// a block where the search settles each row with a few comparisons does not pay for the table, and a block that builds it takes at
 /// most about twice as long as with the table from the start.
 ///
@@ -91,15 +91,20 @@ constexpr size_t minConstSize(Operation operation)
         return 384 / sizeof(T);
 }
 
-/// Building the table costs about as much as comparing this many elements in a search, per element of the constant array. A lookup
-/// of an element of a row is measured in the same unit, as `lookup_work` of the tables.
+/// The work of the search and of the table, in units of about 10 ps, measured on x86 with AVX2 with values that are not found:
+/// - The search compares an element of 1 to 4 bytes with vectors in 1 unit, of 8 bytes in 3, and one by one in about 22. Each
+///   searched part of an array takes another 40 units with vectors, as a call of `sliceContains`, or 10 one by one.
+/// - A bitmap or an array is tested in about 24 units, a hash table is probed in about 200, or 600 for a 32-byte value.
+/// - The table is built in about 200 to 300 units per element of the constant array, 800 for a 32-byte value, 85 for a bitmap.
 template <typename T>
-constexpr size_t search_work_per_const_element = is_vector_searched<T> ? 64 : 8;
-
-/// A bitmap or an array is tested about as fast as two elements are compared. A hash table is probed about as fast as 8 elements are
-/// compared with vectors, or 2 one by one.
+constexpr size_t compare_work = is_vector_searched<T> ? (sizeof(T) == 8 ? 3 : 1) : 22;
 template <typename T>
-constexpr size_t hash_table_lookup_work = is_vector_searched<T> ? 8 : 2;
+constexpr size_t search_call_work = is_vector_searched<T> ? 40 : 10;
+constexpr size_t bitmap_lookup_work = 24;
+template <typename T>
+constexpr size_t hash_table_lookup_work = sizeof(T) > 16 ? 600 : 200;
+template <typename T>
+constexpr size_t build_work_per_const_element = uses_bitmap<T> ? 85 : (sizeof(T) > 16 ? 800 : (sizeof(T) > 8 ? 320 : 220));
 
 /// Lookups mostly miss, and a miss probes until an empty cell, so a small hash table is kept at most 1/8 full: at 1/4 to 1/2, a
 /// miss took twice as long because of mispredicted branches. A large table is kept at most 1/2 full: it does not fit in the cache
@@ -139,8 +144,8 @@ ALWAYS_INLINE bool contains(const T * data, const UInt8 * null_map, size_t size,
     }
 }
 
-/// Searches a value, and adds the number of compared elements to `work`. The elements are searched in parts that grow from
-/// `first_part_size` to 1024, so that a value found early is counted as about the work that the search did.
+/// Searches a value, and adds the work of the search to `work`. The elements are searched in parts that grow from `first_part_size`
+/// to 1024, so that a value found early is counted as about the work that the search did.
 template <bool has_null_map, typename T>
 ALWAYS_INLINE bool countedContains(const T * data, const UInt8 * null_map, size_t size, T value, size_t first_part_size, size_t & work)
 {
@@ -148,7 +153,7 @@ ALWAYS_INLINE bool countedContains(const T * data, const UInt8 * null_map, size_
     for (size_t begin = 0; begin < size; begin += part_size, part_size = std::min(2 * part_size, size_t(1024)))
     {
         const size_t part = std::min(part_size, size - begin);
-        work += part;
+        work += search_call_work<T> + part * compare_work<T>;
         if (contains<has_null_map>(data + begin, has_null_map ? null_map + begin : nullptr, part, value))
             return true;
     }
@@ -162,17 +167,20 @@ template <typename T>
 constexpr size_t const_first_part_size = is_vector_searched<T> ? std::max<size_t>(32, 128 / sizeof(T)) : 1;
 constexpr size_t row_first_part_size = 256;
 
-/// The first vector of the constant array, or its first element if it is compared one by one. A value there is found about as fast as
-/// by a lookup, so that search is not counted in the work. A constant size lets the compiler drop the checks of the size from the loop.
+/// A value in the first vector of an array, or in its first 8 elements if it is compared one by one, is found faster than by a lookup.
+/// So the search of the head of the constant array is not counted in the work, as counting it would take about as long as the search.
+/// A constant size lets the compiler drop the checks of the size from the loop.
 template <typename T>
-constexpr size_t const_head_size = is_vector_searched<T> ? std::min(32 / sizeof(T), minConstSize<T>(Operation::SearchElementsInConst)) : 1;
+constexpr size_t head_size = is_vector_searched<T> ? 32 / sizeof(T) : 8;
+template <typename T>
+constexpr size_t const_head_size = std::min(head_size<T>, minConstSize<T>(Operation::SearchElementsInConst));
 
 /// The set of the non-NULL values of the constant array.
 template <typename T>
 class ValueSet
 {
 public:
-    static constexpr size_t lookup_work = uses_bitmap<T> ? 2 : hash_table_lookup_work<T>;
+    static constexpr size_t lookup_work = uses_bitmap<T> ? bitmap_lookup_work : hash_table_lookup_work<T>;
 
     explicit ValueSet(const Elements<T> & array)
         : table(makeTable(array.size))
@@ -221,7 +229,7 @@ template <typename T>
 class LastRows
 {
 public:
-    static constexpr size_t lookup_work = sizeof(T) == 1 ? 2 : hash_table_lookup_work<T>;
+    static constexpr size_t lookup_work = sizeof(T) == 1 ? bitmap_lookup_work : hash_table_lookup_work<T>;
 
     explicit LastRows(size_t size)
         : table(makeTable(size))
@@ -297,43 +305,30 @@ private:
     size_t count = 0;
 };
 
-/// The number of elements compared by the search of the rows so far, and an estimate in the same unit of building the table and
-/// looking up the elements of these rows.
+/// The work of the search of the rows so far, and an estimate of the work of building the table and looking up the elements of these
+/// rows.
 struct Work
 {
     size_t search = 0;
     size_t table = 0;
+    /// The search may take `table >> table_shift`. A search after the table is built is wasted if it does not settle the row, so it
+    /// is given a part of the work of the lookup.
+    size_t table_shift = 0;
 
+    size_t allowed() const { return table >> table_shift; }
     /// The table would have been faster for the rows searched so far.
-    bool exceeded() const { return search > table; }
+    bool exceeded() const { return search > allowed(); }
 };
 
-/// Searches the non-NULL values of the array from `first_value` in a row of at most `row_first_part_size` elements, as
-/// `sliceHasImplAnyAll` does, until one is found. Returns false without `found` when the work is exceeded first. In its own function,
-/// as the search is slower when it is inlined into the loops of the lookup.
+/// Returns the position of the first of the non-NULL values of the array in `[begin, end)` that is in the row, or `end`. The search
+/// of `sliceHasImplAnyAll`, in its own function, as it is slower when it is inlined into the loops of the lookup.
 template <bool has_null_map, typename T>
-NO_INLINE bool searchValuesInShortRow(
-    const T * data, const UInt8 * null_map, size_t size, const Elements<T> & array, size_t first_value, Work & work, bool & found)
+NO_INLINE size_t findValue(const T * data, const UInt8 * null_map, size_t size, const Elements<T> & array, size_t begin, size_t end)
 {
-    if (work.exceeded())
-        return false;
-    /// Each value is searched in one part, so the number of values searched before the work is exceeded is known.
-    const size_t value_work = size + 1;
-    const size_t end = std::min(array.size, first_value + (work.table - work.search) / value_work + 1);
-    const T * values = array.data;
-    const UInt8 * values_null_map = array.null_map;
-    for (size_t j = first_value; j < end; ++j)
-    {
-        if (!(values_null_map && values_null_map[j]) && contains<has_null_map>(data, null_map, size, values[j]))
-        {
-            work.search += (j + 1 - first_value) * value_work;
-            found = true;
-            return true;
-        }
-    }
-    work.search += (end - first_value) * value_work;
-    found = false;
-    return end == array.size;
+    for (size_t j = begin; j < end; ++j)
+        if (!(array.null_map && array.null_map[j]) && contains<has_null_map>(data, null_map, size, array.data[j]))
+            return j;
+    return end;
 }
 
 template <typename T>
@@ -363,7 +358,7 @@ NO_INLINE bool searchElementsInConst(
             if (work.exceeded())
                 return false;
             work.table += ValueSet<T>::lookup_work;
-            work.search += head;
+            work.search += search_call_work<T> + head * compare_work<T>;
             in_const = countedContains<const_has_null_map>(
                 array.data + head, rest_null_map, array.size - head, data[i], const_first_part_size<T>, work.search);
         }
@@ -377,6 +372,10 @@ NO_INLINE bool searchElementsInConst(
     return true;
 }
 
+/// A row after the table is built is searched within a quarter of the work of its lookup. That settles the rows that the first values
+/// of the constant settle, and takes a quarter longer for the others.
+constexpr size_t search_after_build_table_shift = 2;
+
 /// The searches of the rows after the table is built may take `1 / lookup_work_per_wasted_search_work` of the work of the lookups
 /// more than they saved.
 constexpr Int64 lookup_work_per_wasted_search_work = 32;
@@ -384,8 +383,8 @@ constexpr Int64 lookup_work_per_wasted_search_work = 32;
 /// Calls `search_row` for the rows until the work is exceeded, then `lookup_rows` for the rest. `search_row` returns false without a
 /// result when the work is exceeded in the middle of the row, so that a long row does not take much longer than the lookup.
 ///
-/// With `search_after_build`, a row after the table is built is still searched first, within the work of its lookup, as a long row
-/// can be settled by one scan for the first value of the constant. It is searched while the searches saved more work than the ones
+/// With `search_after_build`, a row after the table is built is still searched first, within a part of the work of its lookup, as a
+/// long row can be settled by one scan for the first value of the constant. It is searched while the searches saved more work than the ones
 /// that did not settle their row took, plus a fraction of the work of the lookups. `lookup_rows` calls `try_search(row)`, which returns
 /// whether the search settled the row, and `add_lookup_work(work)` for each row that it looks up.
 template <typename SearchRow, typename LookupRows>
@@ -406,7 +405,7 @@ void searchThenLookup(
     {
         if (!search_after_build || allowed_search_work < 0)
             return false;
-        Work row_work;
+        Work row_work{.table_shift = search_after_build_table_shift};
         const bool searched = search_row(searched_row, offsets[searched_row - 1], offsets[searched_row], row_work);
         const Int64 saved_work = (searched ? static_cast<Int64>(row_work.table) : 0) - static_cast<Int64>(row_work.search);
         allowed_search_work += lookup_work_per_wasted_search_work * saved_work;
@@ -470,16 +469,40 @@ void lookupElements(
             work.table += ValueSet<T>::lookup_work * row_size;
             if (row_size <= row_first_part_size)
             {
-                /// The first value is searched here, as it often settles the row.
+                const size_t value_work = search_call_work<T> + row_size * compare_work<T>;
+                /// The first value often settles the row, and is searched here, as that is faster than the call: in a row of up to one
+                /// block of `sliceContains`, and otherwise in the first vector of the row, which the call searches again.
+                size_t first_value = 0;
                 if (!(array.null_map && array.null_map[0]))
                 {
                     if (work.exceeded())
                         return false;
-                    work.search += row_size + 1;
-                    settled = contains<has_null_map>(elements.data + begin, null_map, row_size, array.data[0]);
+                    if (row_size * sizeof(T) <= 128 || row_size <= head_size<T>)
+                    {
+                        first_value = 1;
+                        work.search += value_work;
+                        settled = contains<has_null_map>(elements.data + begin, null_map, row_size, array.data[0]);
+                    }
+                    else if (is_vector_searched<T>)
+                        settled = contains<has_null_map>(elements.data + begin, null_map, head_size<T>, array.data[0]);
                 }
-                if (!settled && !searchValuesInShortRow<has_null_map>(elements.data + begin, null_map, row_size, array, 1, work, settled))
-                    return false;
+                if (!settled)
+                {
+                    /// Each value is searched in one part, so the number of values searched before the work is exceeded is known.
+                    /// It is usually all of them, which does not need a division.
+                    if (work.exceeded())
+                        return false;
+                    const size_t allowed_work = work.allowed() - work.search;
+                    const size_t end_value = (array.size - first_value) * value_work <= allowed_work
+                        ? array.size
+                        : std::min(array.size, first_value + allowed_work / value_work + 1);
+                    const size_t found
+                        = findValue<has_null_map>(elements.data + begin, null_map, row_size, array, first_value, end_value);
+                    settled = found < end_value;
+                    work.search += ((settled ? found + 1 : end_value) - first_value) * value_work;
+                    if (!settled && end_value < array.size)
+                        return false;
+                }
             }
             else
             {
@@ -489,7 +512,6 @@ void lookupElements(
                         continue;
                     if (work.exceeded())
                         return false;
-                    ++work.search;
                     settled = countedContains<has_null_map>(
                         elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
                 }
@@ -518,7 +540,7 @@ void lookupElements(
 
     /// The search of an element in the constant is not faster than its lookup, and the lookup goes through the same elements of the
     /// row.
-    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, !const_is_first, search_row, lookup_rows);
+    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, !const_is_first, search_row, lookup_rows);
 }
 
 /// The first values are searched as in `sliceHasImplAnyAll` before the lookup. A missing value is usually one of them, and the search
@@ -562,11 +584,11 @@ void lookupAllOfConst(
             if (work.exceeded())
                 return false;
             const size_t search_before = work.search;
-            ++work.search;
             all = countedContains<has_null_map>(elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
             if (looked_up && num_found < num_searched_values)
             {
-                work.table += work.search - search_before;
+                /// The lookup searches this value too.
+                work.search = search_before;
                 if (all && ++num_found == num_searched_values)
                     work.table += LastRows<T>::lookup_work * row_size;
             }
@@ -638,7 +660,7 @@ void lookupAllOfConst(
         }
     };
 
-    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, true, search_row, lookup_rows);
+    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, true, search_row, lookup_rows);
 }
 
 template <typename T>
