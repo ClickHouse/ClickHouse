@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -675,9 +676,9 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         file_stat.st_size);
 }
 
-/// Whether the version token of a file can be trusted to change on a rewrite, see the settle-window
-/// comment at the call site in `StorageFileSource::generate`.
-bool isFileCacheVersionSettled(const struct stat & file_stat)
+/// Whether the version token of the file proves a rewrite: the last modification is far enough in
+/// the past that any further write changes the token, see the settle-window comment at the call site.
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
     const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
@@ -2038,7 +2039,7 @@ Chunk StorageFileSource::generate()
                 /// recently - or with an mtime in the future, e.g. due to clock skew on a
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
-                current_file_version_settled = isFileCacheVersionSettled(file_stat);
+                current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
                 /// The buckets of a split file describe the version of the file that was split.
                 if (split_file && *current_file_cache_version != split_file->file_cache_version)
@@ -2109,7 +2110,18 @@ Chunk StorageFileSource::generate()
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
+                /// The token identifies the content only once it has settled. The format metadata
+                /// cache uses it regardless (see above), but the content caches, such as the columns
+                /// cache, check `isEtagUsableAsCacheKey`.
+                md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The path of a local file is absolute, so it identifies the file on the server.
+                if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                {
+                    object_with_metadata->path_for_content_cache = current_path;
+                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                    object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                }
             }
 
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
@@ -2989,7 +3001,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFil
 
     /// Consult the query condition cache once for the whole file, rather than in every source, and drop
     /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
-    if (format_filter_info->condition_hash && isFileCacheVersionSettled(file_stat) && storage->getStorageID().uuid != UUIDHelpers::Nil)
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && storage->getStorageID().uuid != UUIDHelpers::Nil)
     {
         if (auto query_condition_cache = context->getQueryConditionCache())
         {
@@ -3214,7 +3226,14 @@ public:
                     md.size_bytes = file_stat.st_size;
                     md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
                     md.etag = file.file.version_token;
+                    md.etag_is_strong = isFileCacheVersionTokenSettled(file_stat);
                     object_with_metadata.emplace(path, std::move(md));
+                    if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                    {
+                        object_with_metadata->path_for_content_cache = path;
+                        object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                        object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                    }
                 }
 
                 /// The rows of a file must be returned in ascending order, otherwise
