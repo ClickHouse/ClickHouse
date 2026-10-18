@@ -1519,6 +1519,13 @@ BlockIO InterpreterInsertQuery::execute()
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
 
+        /// The RETURNING query reads the inserted data instead of the table, so the access checks and the row policies
+        /// of the tables a table like `Alias` or `Distributed` reads from would not be applied.
+        if (table->readsFromOtherTables())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "RETURNING is not supported for INSERT into a table with the engine {}, which reads from other tables",
+                table->getName());
+
         if (query.select)
         {
             ASTPtr input_function;
@@ -1686,7 +1693,21 @@ void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StorageP
     /// The RETURNING query reads the inserted data instead of the table,
     /// the same way as a materialized view reads the inserted blocks instead of its source table.
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    auto inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(inserted_data));
+    std::shared_ptr<StorageValues> inserted_data_storage;
+
+    /// `EXPLAIN PIPELINE` only prints the pipeline, which is not executed. Building the RETURNING query must not run the insert
+    /// (e.g. to build a set for the index analysis), so the query reads an empty block, and the insert is added as a separate pipeline.
+    std::optional<Pipe> insert_for_explain;
+    if (explain_only)
+    {
+        auto empty_block = inserted_data.getHeader().cloneEmpty();
+        insert_for_explain = std::move(inserted_data);
+        inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(empty_block));
+    }
+    else
+    {
+        inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(inserted_data));
+    }
 
     auto select_context = Context::createCopy(context);
     select_context->addViewSource(inserted_data_storage);
@@ -1696,11 +1717,19 @@ void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StorageP
     select_context->setSetting("implicit_table_at_top_level",
         backQuote(inserted_data_storage_id.getDatabaseName()) + "." + backQuote(inserted_data_storage_id.getTableName()));
 
+    /// A scalar subquery is executed during the analysis. If it read the inserted data, the insert would run
+    /// before the rest of the query is built, and a later error would fail the query after the data is written.
+    inserted_data_storage->setPreparedPipeReadAllowed(false);
     InterpreterSelectQueryAnalyzer interpreter(query.returning->clone(), select_context, SelectQueryOptions(), inserted_data_storage);
+    inserted_data_storage->setPreparedPipeReadAllowed(true);
     res.pipeline = QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
 
     /// If the RETURNING query does not read the table, the data still has to be inserted.
-    if (auto unread_data = inserted_data_storage->extractPreparedPipe())
+    auto unread_data = inserted_data_storage->extractPreparedPipe();
+    if (insert_for_explain)
+        unread_data = std::move(insert_for_explain);
+
+    if (unread_data)
     {
         QueryPipeline insert_pipeline(std::move(*unread_data));
         insert_pipeline.complete(std::make_shared<EmptySink>(insert_pipeline.getSharedHeader()));

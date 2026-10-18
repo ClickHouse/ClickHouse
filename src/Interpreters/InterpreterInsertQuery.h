@@ -66,6 +66,9 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// The pipeline is built only to be printed by `EXPLAIN PIPELINE` and is not executed.
+    void setExplainOnly(bool value) { explain_only = value; }
+
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -124,6 +127,7 @@ private:
 
     /// For INSERT ... RETURNING: the processor with the copy of the data written into the table.
     ProcessorPtr returning_output;
+    bool explain_only = false;
     void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
