@@ -122,8 +122,6 @@ private:
         ParentKind parent_kind,
         SchemaResult & result);
 
-    void collectBinaryColumns(size_t list_idx, const std::string & parent_name, DB::NameSet & binary_columns);
-
     struct Field
     {
         Field(
@@ -486,20 +484,7 @@ SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
     chassert(result.names_and_types.size() == type_lists[0]->size());
     for (const auto & path : result.timestamp_writer_paths)
         result.timestamp_ntz_paths.erase(path);
-    collectBinaryColumns(0, "", result.binary_columns);
     return result;
-}
-
-void SchemaVisitorData::collectBinaryColumns(size_t list_idx, const std::string & parent_name, DB::NameSet & binary_columns)
-{
-    for (const auto & field : *type_lists[list_idx])
-    {
-        const std::string name = parent_name.empty() ? field.name : parent_name + "." + field.name;
-        if (field.is_binary)
-            binary_columns.insert(name);
-        else if (field.type == DB::TypeIndex::Tuple)
-            collectBinaryColumns(field.child_list_id, name, binary_columns);
-    }
 }
 
 DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
@@ -614,6 +599,8 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
             result.timestamp_writer_paths.insert(field_writer_path);
+        if (field.is_binary)
+            result.binary_columns.insert(field_writer_path);
 
         if (!field.physical_name.empty())
         {
