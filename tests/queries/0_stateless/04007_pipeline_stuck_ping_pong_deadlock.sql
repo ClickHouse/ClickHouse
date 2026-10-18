@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 -- Regression test for pipeline stuck with PingPongProcessor (ReadHeadBalancedProcessor)
 -- deadlock when used in a full_sorting_merge join with FilterBySetOnTheFly optimization.
 --

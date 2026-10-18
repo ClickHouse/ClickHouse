@@ -7,6 +7,7 @@ keywords: ['alternative query languages', 'query dialects', 'MySQL dialect', 'Po
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Besides standard SQL, ClickHouse supports various alternative query languages for querying data.
@@ -15,6 +16,7 @@ The currently supported dialects are:
 - `clickhouse`: The default [SQL dialect](/chdb/reference/sql-reference) of ClickHouse
 - `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
 - `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+- `logsql`: [LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/), the query language of VictoriaLogs
 - `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 Which query language is used is controlled by setting `dialect`.
@@ -52,7 +54,7 @@ Under the hood, ClickHouse uses transpilation from PRQL to SQL to run PRQL queri
 
 ## Kusto query language (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 To enable KQL:
 
@@ -82,9 +84,32 @@ numbers(10) | project number
 
 Note that KQL queries may not be able to access all functions defined in ClickHouse.
 
-## Trino SQL {#trino-sql}
+## LogsQL {#logsql}
 
 <ExperimentalBadge/>
+
+LogsQL is the query language of [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/).
+ClickHouse translates a LogsQL query to a `SELECT` query over a configured log table.
+To enable it and point it at a table with a time column and a message column:
+
+```sql
+SET enable_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+See the [LogsQL dialect guide](/guides/clickhouse/logsql) for the supported subset and the differences from VictoriaLogs.
+
+## Trino SQL {#trino-sql}
+
+<BetaBadge/>
 
 To enable the Trino dialect:
 

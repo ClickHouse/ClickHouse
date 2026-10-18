@@ -1,0 +1,15 @@
+<test>
+    <!-- Wide spill blocks keep decoded columns resident in every merge reader. The byte target
+         exercises smaller blocks, and explicit thresholds force spilling on machines with ample RAM. -->
+    <settings>
+        <max_threads>16</max_threads>
+        <max_memory_usage>4294967296</max_memory_usage>
+        <max_bytes_ratio_before_external_distinct>0</max_bytes_ratio_before_external_distinct>
+        <optimize_distinct_in_order>0</optimize_distinct_in_order>
+        <prefer_external_sort_block_bytes>1048576</prefer_external_sort_block_bytes>
+    </settings>
+    <query>SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, toFixedString(toString(number), 1024) AS payload FROM numbers(524288)) SETTINGS max_block_size = 65536, max_bytes_before_external_distinct = 67108864</query>
+    <query>SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat('x', if(number % 8 = 0, 8192, 32)) AS payload FROM numbers(524288)) SETTINGS max_block_size = 65536, max_bytes_before_external_distinct = 67108864</query>
+    <query>SELECT count(), sum(length(k)) FROM (SELECT DISTINCT toFixedString(toString(number % 65536), 4096) AS k FROM numbers(131072)) SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 167772160</query>
+    <query>SELECT count(), sum(k) FROM (SELECT DISTINCT number AS k FROM numbers(4000000)) SETTINGS max_block_size = 65536, max_bytes_before_external_distinct = 16777216</query>
+</test>
