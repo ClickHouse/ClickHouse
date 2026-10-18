@@ -954,6 +954,11 @@ struct ToWeekImpl
     static constexpr auto name = "toWeek";
     static constexpr bool value_may_be_string = true;
 
+    static UInt8 execute(UInt64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
+    }
     static UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         // TODO: ditch conversion to DayNum, since it doesn't support extended range.
