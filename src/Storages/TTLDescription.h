@@ -216,6 +216,12 @@ struct TTLTableDescription
 /// offset from UTC, because `addDays` preserves the local wall-clock time across DST transitions and
 /// is not a constant number of seconds otherwise.
 ///
+/// `old_ttl_min` and `old_ttl_max` are the part's stored bounds of the old rows TTL. The arithmetic of the
+/// date/time types is only a plain addition of seconds within their domain - `DateTime` and `Date` wrap
+/// around, `DateTime64` ticks overflow, and day/week arithmetic saturates at the boundary of the calendar -
+/// so the delta is accepted only when every intermediate result of both expressions provably stays within
+/// that domain for every row of the part.
+///
 /// Returns the constant delta in seconds, or `std::nullopt` when the delta is not provably constant
 /// (several referenced columns, calendar month/year intervals, non-literal intervals, arbitrary
 /// functions, DST-sensitive day/week intervals, or an unsupported result type). A `std::nullopt` result
@@ -224,7 +230,8 @@ struct TTLTableDescription
 /// that does throw is a fingerprint that does not parse, which is not an unoptimizable TTL but a corrupt
 /// part.
 std::optional<time_t> tryComputeConstantTTLDelta(
-    const String & old_ttl_expression, const TTLDescription & new_ttl, const DateLUTImpl & date_lut);
+    const String & old_ttl_expression, const TTLDescription & new_ttl, const DateLUTImpl & date_lut,
+    time_t old_ttl_min, time_t old_ttl_max);
 
 /// The rows-TTL expression a part's stored TTL timestamps were computed under, as recorded next to them in
 /// `ttl.txt` (see `MergeTreeDataPartTTLInfos::table_ttl_expression`). Since the only reader is the fast

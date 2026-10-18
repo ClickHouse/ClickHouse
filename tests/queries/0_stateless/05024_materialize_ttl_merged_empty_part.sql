@@ -10,7 +10,7 @@ SET alter_sync = 2;
 
 DROP TABLE IF EXISTS t_ttl_merged_empty_part;
 CREATE TABLE t_ttl_merged_empty_part (d DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple()
-    TTL d + INTERVAL 6311520000 SECOND
+    TTL d + INTERVAL 2000000000 SECOND
     SETTINGS min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0, remove_empty_parts = 0;
 
 INSERT INTO t_ttl_merged_empty_part VALUES ('2020-01-01 00:00:00');

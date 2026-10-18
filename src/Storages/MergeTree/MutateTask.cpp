@@ -4776,7 +4776,9 @@ bool MutateTask::prepare()
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
             new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::instance());
-            delta = tryComputeConstantTTLDelta(source_ttl_infos.table_ttl_expression, rows_ttl, DateLUT::instance());
+            delta = tryComputeConstantTTLDelta(
+                source_ttl_infos.table_ttl_expression, rows_ttl, DateLUT::instance(),
+                source_ttl_infos.table_ttl.min, source_ttl_infos.table_ttl.max);
 
             /// A successful proof references exactly one source column (checked inside the proof).
             /// The part must physically store that column with exactly its current type. Otherwise
