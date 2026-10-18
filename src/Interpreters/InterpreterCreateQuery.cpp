@@ -3948,26 +3948,35 @@ BlockIO InterpreterCreateQuery::execute()
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
             {
-                /// a worker resolves a name without a database in its own database, so set ours, as
-                /// the UUIDs above do
-                create.as_database = getContext()->resolveDatabase(create.as_database);
+                /// a worker resolves a name without a database in its own database, so resolve ours
+                /// the same way, as the UUIDs above do
+                const String as_database_on_initiator = getContext()->resolveDatabase(create.as_database);
 
-                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
-                /// what the worker builds, not what our settings give
-                auto preflight_context = Context::createCopy(getContext());
-                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                /// The initiator can read the source definition only when it holds the source. A
+                /// cross-replication cluster keeps each shard in a database the initiator does not
+                /// have, and there the query ships as written for the worker to resolve, the way it
+                /// did before this check existed.
+                if (DatabaseCatalog::instance().isTableExist({as_database_on_initiator, create.as_table}, getContext()))
                 {
-                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
-                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                    create.as_database = as_database_on_initiator;
+
+                    /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
+                    /// what the worker builds, not what our settings give
+                    auto preflight_context = Context::createCopy(getContext());
+                    if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                    {
+                        preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                        preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                    }
+
+                    ASTPtr inherited_query = query_ptr->clone();
+                    auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                    InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+
+                    /// getRequiredAccess sees no engine, because this query holds none of its own
+                    if (inherited.storage && inherited.storage->engine)
+                        getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
                 }
-
-                ASTPtr inherited_query = query_ptr->clone();
-                auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
-
-                /// getRequiredAccess sees no engine, because this query holds none of its own
-                if (inherited.storage && inherited.storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
