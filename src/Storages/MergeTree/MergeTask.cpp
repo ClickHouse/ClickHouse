@@ -811,6 +811,50 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             missing_columns_to_materialize.insert(name);
     }
 
+    /// The rows-TTL bounds aggregated above are carried over from the source parts unless the merge
+    /// recalculates them, but the merge may write different values of the columns the rows TTL reads
+    /// than the ones those bounds were computed from: it applies patch parts and renames, and fills a
+    /// column a source part does not store from its current DEFAULT. The merged part then physically
+    /// stores the new values with no outstanding conversions, so a later metadata-only `MATERIALIZE TTL`
+    /// could not tell that its bounds are stale. Drop the rows-TTL provenance in that case, so that the
+    /// next materialization rescans the part instead of shifting the bounds.
+    if (global_ctx->metadata_snapshot->hasRowsTTL())
+    {
+        const auto & rows_ttl = global_ctx->metadata_snapshot->getRowsTTL();
+        bool rows_ttl_source_may_change = false;
+        for (size_t i = 0; i < global_ctx->future_part->parts.size() && !rows_ttl_source_may_change; ++i)
+        {
+            const auto & part = global_ctx->future_part->parts[i];
+            if (part->rows_count == 0)
+                continue;
+
+            const auto & conversions = global_ctx->alter_conversions[i];
+            if (conversions->hasPatches() || conversions->hasMutations() || !conversions->getRenameMap().empty())
+            {
+                rows_ttl_source_may_change = true;
+                break;
+            }
+
+            for (const auto & column : rows_ttl.expression_source_columns)
+            {
+                auto part_column = part->tryGetColumn(column.name);
+                if (!part_column || !part_column->type->equals(*column.type))
+                {
+                    rows_ttl_source_may_change = true;
+                    break;
+                }
+            }
+        }
+
+        if (rows_ttl_source_may_change)
+        {
+            auto & ttl_infos = global_ctx->new_data_part->ttl_infos;
+            ttl_infos.table_ttl_expression.clear();
+            ttl_infos.table_ttl_timezone.clear();
+            ttl_infos.has_unknown_rows_ttl_provenance = true;
+        }
+    }
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
