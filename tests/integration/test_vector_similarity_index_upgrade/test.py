@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 # Accepts HNSW parameters that newer versions refuse to declare.
@@ -25,10 +26,12 @@ def started_cluster():
         cluster.shutdown()
 
 
+def index_count_query(database, table):
+    return f"SELECT count() FROM system.data_skipping_indices WHERE database = '{database}' AND table = '{table}'"
+
+
 def index_count(database, table):
-    return new_node.query(
-        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{database}' AND table = '{table}'"
-    ).strip()
+    return new_node.query(index_count_query(database, table)).strip()
 
 
 def test_replicated_merge_tree_applies_index_added_by_older_replica():
@@ -67,7 +70,8 @@ def test_replicated_database_applies_index_added_by_older_replica():
     )
     statuses = [line.split("\t")[2] for line in output.strip().split("\n")]
     assert statuses == ["OK", "OK"], output
-    assert index_count("rdb", "m") == "1"
+    # A replica reports OK at its Keeper commit, before it applies the ALTER to the table in memory.
+    assert_eq_with_retry(new_node, index_count_query("rdb", "m"), "1")
     assert new_node.query("SELECT count() FROM rdb.m").strip() == "1"
 
     assert "must not be greater than 512" in new_node.query_and_get_error(
