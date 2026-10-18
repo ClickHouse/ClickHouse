@@ -16,3 +16,4 @@ time_parts	6
 timeout_fails_delete 1
 time_after_timeout	300
 db_survivors	1
+cte_survivors	2

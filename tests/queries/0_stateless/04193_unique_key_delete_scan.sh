@@ -8,6 +8,7 @@
 #   5. read limit: under break-mode `max_rows_to_read`, every matching row still dies
 #   6. time limit: a soft timeout fails the DELETE instead of committing part of it
 #   7. database: an unqualified table in the predicate is read from the deleted table's database
+#   8. CTE: a CTE in the predicate is read, not a table of the same name
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -167,3 +168,18 @@ $CLICKHOUSE_CLIENT --query "SELECT 'db_survivors', id FROM uk_del_db ORDER BY id
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_db"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_keys"
 $CLICKHOUSE_CLIENT --query "DROP DATABASE ${OTHER_DB}"
+
+# 8. CTE: red if the predicate reads the physical `uk_cte_keys` instead of the CTE of that name,
+# so id 2 dies (`cte_survivors 1`).
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_cte"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_cte_keys"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_cte (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_cte_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_cte VALUES (1), (2)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_cte_keys VALUES (2)"
+
+$CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_cte WHERE id IN (WITH uk_cte_keys AS (SELECT toUInt64(1) AS id) SELECT id FROM uk_cte_keys)"
+$CLICKHOUSE_CLIENT --query "SELECT 'cte_survivors', id FROM uk_del_cte ORDER BY id"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_cte"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_cte_keys"
