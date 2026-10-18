@@ -1894,7 +1894,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    setProperties(new_metadata, old_metadata, /*attach=*/false, /*local_context=*/nullptr, /*replay=*/true);
 
     try
     {
@@ -1903,7 +1903,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        setProperties(old_metadata, new_metadata, /*attach=*/false, /*local_context=*/nullptr, /*replay=*/true);
         throw;
     }
 }

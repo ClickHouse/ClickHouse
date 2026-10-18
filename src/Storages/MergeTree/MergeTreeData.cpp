@@ -1254,7 +1254,8 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings) const
+    const MergeTreeSettings * alter_effective_settings,
+    bool replay) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1399,6 +1400,7 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        const bool replayed = replay || (local_context && isSecondaryDDLReplay(local_context));
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1425,8 +1427,9 @@ void MergeTreeData::checkProperties(
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
 
-                /// An index the table already has passes the checks of its type as on ATTACH while their inputs are unchanged.
-                const bool retained = !attach && old_index && hasSameTypeCheckInputs(*old_index, index);
+                /// An index the table already has passes the checks of its type as on ATTACH while their inputs are unchanged,
+                /// and so does every index of replayed metadata.
+                const bool retained = !attach && (replayed || (old_index && hasSameTypeCheckInputs(*old_index, index)));
                 if (retained)
                     MergeTreeIndexFactory::validateExpression(index);
                 MergeTreeIndexFactory::instance().validate(index, attach || retained, *getSettings());
@@ -1707,7 +1710,8 @@ void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool replay)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1721,7 +1725,9 @@ void MergeTreeData::setProperties(
         attach,
         false,
         allow_nullable_key,
-        local_context);
+        local_context,
+        /*alter_effective_settings=*/nullptr,
+        replay);
 
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
@@ -6835,15 +6841,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
 
     /// An index this ALTER drops and adds again is a new declaration, which `checkProperties` cannot tell from one it keeps.
-    NameSet dropped_indices;
-    for (const auto & command : commands)
+    if (!is_secondary_replay)
     {
-        if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
-            dropped_indices.insert(command.index_name);
-        else if (command.type == AlterCommand::ADD_INDEX && dropped_indices.contains(command.index_name)
-                 && new_metadata.secondary_indices.has(command.index_name))
-            MergeTreeIndexFactory::instance().validate(
-                new_metadata.secondary_indices.getByName(command.index_name), /* attach = */ false, *getSettings());
+        NameSet dropped_indices;
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+                dropped_indices.insert(command.index_name);
+            else if (command.type == AlterCommand::ADD_INDEX && dropped_indices.contains(command.index_name)
+                     && new_metadata.secondary_indices.has(command.index_name))
+                MergeTreeIndexFactory::instance().validate(
+                    new_metadata.secondary_indices.getByName(command.index_name), /* attach = */ false, *getSettings());
+        }
     }
 
     checkTTLExpressions(new_metadata, old_metadata);
