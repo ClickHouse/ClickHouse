@@ -3604,7 +3604,12 @@ void ClientBase::printErrorReport(std::string_view message) const
     {
         /// Keep the report ordered after anything still buffered in the streams on `stderr`.
         error_stream.flush();
-        std::fflush(stderr);
+        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+        /// The flush is best-effort: a failure here must not prevent the report below.
+        (void)std::fflush(stderr);
+#pragma clang diagnostic pop
         WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
         stderr_buf.writeBestEffort(message, /*timeout_ms*/ 1000);
         stderr_buf.finalize();
