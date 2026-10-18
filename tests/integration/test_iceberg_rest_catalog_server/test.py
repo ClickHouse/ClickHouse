@@ -8,6 +8,7 @@ import uuid
 
 import pytest
 import requests
+import urllib3
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
@@ -22,6 +23,10 @@ node = cluster.add_instance(
     main_configs=[
         "configs/iceberg_rest_catalog.xml",
         "configs/named_collections.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
     ],
     user_configs=["configs/users.xml"],
     with_minio=True,
@@ -43,6 +48,7 @@ node_aux = cluster.add_instance(
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
+CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
 FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
 BUCKET = "warehouse"
@@ -344,29 +350,35 @@ def test_not_found_shape(started_cluster):
     assert_error_shape(response, "NotFoundException")
 
 
+def wait_listening(url, expected):
+    for _ in range(100):
+        try:
+            requests.get(url, timeout=1, verify=False)
+            listening = True
+        except requests.exceptions.ConnectionError:
+            listening = False
+        if listening == expected:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"{url} listening={listening}, expected {expected}")
+
+
 def test_stop_start_listen(started_cluster):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     ns = f"persistent_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
 
+    plain_url = catalog_url("/v1/config")
+    secure_url = f"https://{node.ip_address}:{CATALOG_SECURE_PORT}/v1/config"
+
+    # Both listeners share one server type, so one command stops both.
     node.query("SYSTEM STOP LISTEN ICEBERG REST CATALOG")
-    for _ in range(100):
-        try:
-            requests.get(catalog_url("/v1/config"), timeout=1)
-        except requests.exceptions.ConnectionError:
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("Catalog port is still accepting connections")
+    wait_listening(plain_url, False)
+    wait_listening(secure_url, False)
 
     node.query("SYSTEM START LISTEN ICEBERG REST CATALOG")
-    for _ in range(100):
-        try:
-            requests.get(catalog_url("/v1/config"), timeout=1)
-            break
-        except requests.exceptions.ConnectionError:
-            time.sleep(0.1)
-    else:
-        raise AssertionError("Catalog port did not start accepting connections")
+    wait_listening(plain_url, True)
+    wait_listening(secure_url, True)
 
     assert [ns] in list_namespaces()
 
@@ -762,9 +774,8 @@ def test_malformed_create_table(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
-def test_pyiceberg_client(started_cluster):
-    ns = f"pyiceberg_{uuid.uuid4().hex[:8]}"
-    catalog = load_catalog(
+def pyiceberg_catalog():
+    return load_catalog(
         "ch",
         **{
             "uri": catalog_url(""),
@@ -776,6 +787,11 @@ def test_pyiceberg_client(started_cluster):
             "s3.secret-access-key": minio_secret_key,
         },
     )
+
+
+def test_pyiceberg_client(started_cluster):
+    ns = f"pyiceberg_{uuid.uuid4().hex[:8]}"
+    catalog = pyiceberg_catalog()
 
     catalog.create_namespace(ns)
     assert (ns,) in catalog.list_namespaces()
@@ -799,6 +815,36 @@ def test_pyiceberg_client(started_cluster):
     catalog.drop_table(f"{ns}.events")
     assert catalog.list_tables(ns) == []
     assert not catalog.table_exists(f"{ns}.events")
+
+
+def test_names_with_slash(started_cluster):
+    # pyiceberg sends `/` inside a name as `%2F`.
+    catalog = pyiceberg_catalog()
+    ns = f"slash_{uuid.uuid4().hex[:8]}"
+    catalog.create_namespace((ns, "x/y"))
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=True))
+
+    for identifier in [(ns, "a/b"), (ns, "x/y", "a/b")]:
+        catalog.create_table(identifier, schema=schema)
+        assert catalog.table_exists(identifier)
+        assert catalog.load_table(identifier).schema().as_struct() == schema.as_struct()
+        assert catalog.list_tables(identifier[:-1]) == [identifier]
+        catalog.drop_table(identifier)
+        assert catalog.list_tables(identifier[:-1]) == []
+
+    assert catalog.namespace_exists((ns, "x/y"))
+    assert catalog.load_namespace_properties((ns, "x/y")) == {}
+
+
+def test_slash_at_name_edge_does_not_retarget(started_cluster):
+    # An encoded `/` at the edge of a name must not address the table without it.
+    ns = f"edge_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "a")
+    for name in ["a%2F", "%2Fa"]:
+        response = drop_table(ns, name, expected_code=404)
+        assert_error_shape(response, "NoSuchTableException")
+    assert table_exists(ns, "a")
 
 
 def test_unsupported_format_is_refused(started_cluster):
@@ -843,3 +889,24 @@ def test_auxiliary_keeper(started_cluster):
     zk = get_keeper()
     assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
     assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
+
+
+def test_secure_port(started_cluster):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    path = "/v1/config?warehouse=my_warehouse"
+    secure_url = f"https://{node.ip_address}:{CATALOG_SECURE_PORT}{path}"
+
+    response = requests.get(secure_url, auth=DEFAULT_AUTH, verify=False)
+    assert response.status_code == 200
+    assert response.json() == catalog_request("GET", path).json()
+
+    # Authentication runs on the TLS listener too.
+    response = requests.get(secure_url, auth=("default", "wrong"), verify=False)
+    assert response.status_code == 401
+    assert_error_shape(response, "NotAuthorizedException")
+
+    # Plain HTTP to the TLS port is refused.
+    with pytest.raises(requests.exceptions.ConnectionError):
+        requests.get(
+            f"http://{node.ip_address}:{CATALOG_SECURE_PORT}{path}", auth=DEFAULT_AUTH
+        )

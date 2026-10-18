@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -37,6 +38,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
@@ -1255,16 +1257,6 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         file_stat.st_size);
 }
 
-/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
-/// local-file read (once right after opening, once right before trusting the read for the Query
-/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
-/// and either checkpoint is caught instead of silently pinning a mismatched generation.
-bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
-{
-    struct stat current_stat{};
-    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
-}
-
 /// The version token proves a rewrite only after the file has settled. Filesystem timestamps
 /// are coarser than the wall clock (one clock tick of ~1-10 ms on most Linux filesystems, a
 /// full second on ext3, two seconds on FAT), so a rewrite that keeps the inode and the byte
@@ -1274,7 +1266,7 @@ bool fileCacheVersionTokenStillHolds(const String & path, const String & expecte
 /// row groups based on this token, so for files modified more recently - or with an mtime
 /// in the future, e.g. due to clock skew on a network mount - it fails close and stays
 /// bypassed (see the gates at the call sites) rather than risking stale results.
-bool computeFileCacheVersionSettled(const struct stat & file_stat)
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
     const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
@@ -1283,6 +1275,16 @@ bool computeFileCacheVersionSettled(const struct stat & file_stat)
 #endif
     static constexpr Int64 file_version_settle_seconds = 3;
     return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
+/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
+/// local-file read (once right after opening, once right before trusting the read for the Query
+/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
+/// and either checkpoint is caught instead of silently pinning a mismatched generation.
+bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
+{
+    struct stat current_stat{};
+    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
 }
 
 /// Records in the query condition cache that the row groups of a file other than `matched_row_groups`
@@ -1674,17 +1676,23 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
                     is_first = false;
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                         return {nullptr, cached_schema, format};
                 }
                 else
                 {
                     if (last_read_buffer)
+                    {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                    }
                     else
+                    {
                         file_enumerator = archive_reader->firstFile();
+                        entry_positions.reset();
+                    }
 
                     if (!file_enumerator)
                     {
@@ -1693,6 +1701,7 @@ namespace
                     }
 
                     const auto * filename = &file_enumerator->getFileName();
+                    auto entry_position = entry_positions.onEntry(*filename);
                     while (!archive_info.filter(*filename))
                     {
                         if (!file_enumerator->nextFile())
@@ -1702,6 +1711,7 @@ namespace
                         }
 
                         filename = &file_enumerator->getFileName();
+                        entry_position = entry_positions.onEntry(*filename);
                     }
 
                     if (!archive_reader)
@@ -1711,6 +1721,7 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1722,7 +1733,7 @@ namespace
                             format = format_from_file;
                     }
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
@@ -1751,7 +1762,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1763,7 +1774,7 @@ namespace
             /// For union mode, schema can be different for different files in archive, so we need to
             /// cache last inferred schema only for last processed file.
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
         }
 
@@ -1847,8 +1858,10 @@ namespace
         bool is_first = true;
 
         std::string last_read_file_path;
+        std::string last_read_file_cache_key;
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+        ArchiveEntryPositions entry_positions;
         std::unique_ptr<ReadBuffer> last_read_buffer;
 
         std::optional<String> format;
@@ -2529,7 +2542,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
-    auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
+    auto num_rows_from_cache = tryGetNumRowsFromCache(current_archive_entry_cache_key.value_or(current_path), file_stat.st_mtime);
     if (!num_rows_from_cache)
         return false;
 
@@ -2586,6 +2599,7 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -2609,6 +2623,7 @@ Chunk StorageFileSource::generate()
                     }
                     else
                     {
+                        std::optional<size_t> entry_position;
                         while (true)
                         {
                             if (file_enumerator == nullptr)
@@ -2631,10 +2646,12 @@ Chunk StorageFileSource::generate()
 
                                 archive_reader = createArchiveReader(archive);
                                 file_enumerator = archive_reader->firstFile();
+                                entry_positions.reset();
                                 continue;
                             }
 
                             bool file_found = true;
+                            entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             while (!files_iterator->validFileInArchive(file_enumerator->getFileName()))
                             {
                                 if (!file_enumerator->nextFile())
@@ -2642,6 +2659,7 @@ Chunk StorageFileSource::generate()
                                     file_found = false;
                                     break;
                                 }
+                                entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             }
 
                             if (file_found)
@@ -2655,6 +2673,7 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -2676,6 +2695,7 @@ Chunk StorageFileSource::generate()
                 else
                 {
                     current_path = files_iterator->next();
+                    current_archive_entry_cache_key.reset();
                     if (current_path.empty())
                         return {};
 
@@ -2742,7 +2762,7 @@ Chunk StorageFileSource::generate()
                     {
                         file_stat = getFileStat(current_path, /*use_table_fd=*/false, /*table_fd=*/-1, storage->getName());
                         current_file_cache_version = computeFileCacheVersionToken(*file_stat);
-                        current_file_version_settled = computeFileCacheVersionSettled(*file_stat);
+                        current_file_version_settled = isFileCacheVersionTokenSettled(*file_stat);
                     }
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
@@ -2786,7 +2806,7 @@ Chunk StorageFileSource::generate()
                     /// second that keeps the file size unchanged would otherwise reuse a stale entry.
                     current_file_cache_version = computeFileCacheVersionToken(file_stat);
 
-                    current_file_version_settled = computeFileCacheVersionSettled(file_stat);
+                    current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     {
@@ -2848,7 +2868,18 @@ Chunk StorageFileSource::generate()
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
+                /// The token identifies the content only once it has settled. The format metadata
+                /// cache uses it regardless (see above), but the content caches, such as the columns
+                /// cache, check `isEtagUsableAsCacheKey`.
+                md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The path of a local file is absolute, so it identifies the file on the server.
+                if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                {
+                    object_with_metadata->path_for_content_cache = current_path;
+                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                    object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                }
             }
 
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
@@ -3144,7 +3175,7 @@ Chunk StorageFileSource::generate()
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
-            addNumRowsToCache(current_path, total_rows_in_file);
+            addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -3776,7 +3807,14 @@ public:
                     md.size_bytes = file_stat.st_size;
                     md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
                     md.etag = file.file.version_token;
+                    md.etag_is_strong = isFileCacheVersionTokenSettled(file_stat);
                     object_with_metadata.emplace(path, std::move(md));
+                    if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                    {
+                        object_with_metadata->path_for_content_cache = path;
+                        object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                        object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                    }
                 }
 
                 /// The rows of a file must be returned in ascending order, otherwise
