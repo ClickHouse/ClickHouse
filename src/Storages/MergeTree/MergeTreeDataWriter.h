@@ -49,6 +49,10 @@ struct MergeTreeTemporaryPart
 
     bool finalization_started = false;
 
+    /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
+    /// Empty when the part keeps the block's row order.
+    IColumn::Permutation sort_permutation;
+
     void cancel();
     void startFinalization();
     void finalize();
@@ -90,12 +94,15 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
+      * `txn`, when set, stamps the part's `creation_tid` instead of the context's transaction: an
+      * INSERT commits each partition under its own, and for `INSERT ... SELECT` the context's is the SELECT's.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
-        bool may_have_leftover = true);
+        bool may_have_leftover = true,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
@@ -150,7 +157,8 @@ private:
         std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
         UInt64 block_number,
-        bool may_have_leftover);
+        bool may_have_leftover,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,

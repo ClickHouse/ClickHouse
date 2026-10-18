@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB
@@ -79,8 +80,9 @@ void MergeTreeSinkPatch::finishDelayedChunk()
     delayed_chunk.reset();
 }
 
-TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)
+TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn)
 {
+    chassert(!txn, fmt::format("a patch part reached the writer under unique-key transaction {}", txn->tid));
     storage.throwLightweightUpdateIfNeeded(block.block->bytes());
 
     auto partition_id = getPartitionIdForPatch(block.partition);

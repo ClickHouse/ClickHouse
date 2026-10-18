@@ -16,11 +16,19 @@ from ci.workflows.pull_request import REGULAR_BUILD_NAMES
 # On master the plain (non-sanitizer) stateless suite runs against the optimized
 # release binary instead of the plain `binary` build that PRs use. Drop the
 # `arm_binary` jobs from `functional_tests_jobs` and add the `arm_release` and
-# `amd_release` full-suite jobs. The `amd_release` full suite also supersedes the
-# `amd_binary` excluded-from-llvm job, which is therefore not run on master.
-MASTER_FUNCTIONAL_TESTS_JOBS = [
-    job for job in JobConfigs.functional_tests_jobs if "arm_binary" not in job.name
-] + JobConfigs.functional_tests_master_release_jobs
+# `amd_release` full-suite jobs. Master does not run the LLVM coverage jobs (the scheduled
+# coverage workflow does), so the `amd_llvm_coverage` jobs of `functional_tests_jobs` are
+# dropped too and the `DBReplicated`, `ParallelReplicas` and `AsyncInsert` configurations run
+# on the `arm_binary` build, exactly as in pull requests (see `ci/workflows/pull_request.py`).
+MASTER_FUNCTIONAL_TESTS_JOBS = (
+    [
+        job
+        for job in JobConfigs.functional_tests_jobs
+        if "arm_binary" not in job.name and "llvm_coverage" not in job.name
+    ]
+    + JobConfigs.functional_tests_master_release_jobs
+    + JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+)
 
 clickhouse_binaries_with_tags = with_long_retention_tags(
     ArtifactConfigs.clickhouse_binaries
@@ -34,7 +42,6 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
-        *JobConfigs.build_llvm_coverage_job,
         *JobConfigs.release_build_jobs_with_examples,
         *JobConfigs.sccache_warmup_build_jobs,
         *[
@@ -45,18 +52,15 @@ workflow = Workflow.Config(
         ],
         *JobConfigs.wasm_parser_build_jobs,
         *JobConfigs.unittest_jobs,
-        *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
         *MASTER_FUNCTIONAL_TESTS_JOBS,
-        *JobConfigs.functional_test_llvm_coverage_jobs,
         *JobConfigs.functional_tests_jobs_azure,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.integration_test_llvm_coverage_jobs,
-        *JobConfigs.integration_test_excluded_from_llvm_job,
+        *JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
@@ -67,7 +71,6 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
         JobConfigs.docs_examples_job,
-        JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -81,8 +84,6 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
-        *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_info_file,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
