@@ -102,8 +102,8 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
 
     /// The body-carrying methods. SQL-defined HTTP handlers (CREATE HANDLER) accept form bodies over DELETE as
     /// well, matching the set of methods the HTTP layer treats as carrying a body (see `HTTPHandler`).
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_QUERY
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
     {
         std::string media_type;
         NameValueCollection params;
