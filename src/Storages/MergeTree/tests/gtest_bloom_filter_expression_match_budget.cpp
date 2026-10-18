@@ -8,11 +8,13 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
@@ -138,6 +140,69 @@ bool canPruneDecimalToStringIn(const DataTypePtr & query_decimal_type, const Dat
     return !condition.alwaysUnknownOrTrue();
 }
 
+bool canPruneLambdaInWithFunctionCount(size_t function_count)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto array_type = std::make_shared<DataTypeArray>(uint64_type);
+
+    const auto add_mapped_array = [&](ActionsDAG & dag, const String & prefix) -> const ActionsDAG::Node &
+    {
+        ActionsDAG lambda_dag;
+        const auto & lambda_argument = lambda_dag.addInput("v", uint64_type);
+        const auto & one = lambda_dag.addColumn(
+            uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "one", true);
+        const auto plus = FunctionFactory::instance().get("plus", context);
+
+        /// Keep the returned expression small while storing more body DAG nodes than the matcher's
+        /// shared work budget can admit. Every node must be budgeted, including nodes not in outputs.
+        const ActionsDAG::Node * output = nullptr;
+        for (size_t i = 0; i < function_count; ++i)
+            output = &lambda_dag.addFunction(plus, {&lambda_argument, &one}, "unused_" + std::to_string(i));
+        lambda_dag.getOutputs().clear();
+        lambda_dag.getOutputs().push_back(output);
+        const auto return_name = output->result_name;
+
+        const auto lambda_capture = std::make_shared<FunctionCaptureOverloadResolver>(
+            std::move(lambda_dag),
+            ExpressionActionsSettings(context),
+            Names{},
+            NamesAndTypesList{{"v", uint64_type}},
+            uint64_type,
+            return_name,
+            /* allow_constant_folding= */ true);
+
+        const auto & array_input = dag.addInput("a", array_type);
+        const auto & lambda = dag.addFunction(lambda_capture, {}, prefix + "lambda");
+        return dag.addFunction(
+            FunctionFactory::instance().get("arrayMap", context), {&lambda, &array_input}, prefix + "mapped");
+    };
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_mapped = add_mapped_array(query_dag, "query_");
+    const auto & index_mapped = add_mapped_array(index_dag, "index_");
+    const auto index_name = RPNBuilderTreeNode(&index_mapped, context).getColumnName();
+    const auto & index_output = index_dag.addAlias(index_mapped, index_name);
+    index_dag.getOutputs().clear();
+    index_dag.getOutputs().push_back(&index_output);
+
+    auto set_value = array_type->createColumn();
+    set_value->insert(Field(Array{Field(UInt64(4))}));
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), array_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node = query_dag.addColumn(
+        ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate = query_dag.addFunction(
+        FunctionFactory::instance().get("in", context), {&query_mapped, &set_node}, "predicate");
+
+    Block header(ColumnsWithTypeAndName{{array_type->createColumn(), array_type, index_name}});
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
 }
 
 TEST(MergeTreeIndexBloomFilter, SharesExpressionMatchBudgetAcrossTupleINComponents)
@@ -158,4 +223,10 @@ TEST(MergeTreeIndexBloomFilter, MatchesDecimalParametersForToStringIN)
         std::make_shared<DataTypeDecimal64>(18, 2), std::make_shared<DataTypeDecimal64>(10, 2)));
     EXPECT_FALSE(canPruneDecimalToStringIn(
         std::make_shared<DataTypeDecimal64>(10, 3), std::make_shared<DataTypeDecimal64>(10, 2)));
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesLambdaBodyWhenSharedExpressionMatchBudgetIsExceeded)
+{
+    EXPECT_TRUE(canPruneLambdaInWithFunctionCount(1));
+    EXPECT_FALSE(canPruneLambdaInWithFunctionCount(4090));
 }

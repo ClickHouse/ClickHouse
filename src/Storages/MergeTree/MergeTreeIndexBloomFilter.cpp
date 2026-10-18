@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -47,6 +48,7 @@
 #include <Functions/FunctionConversionMatching.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/array/emptyArrayToSingle.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
@@ -210,6 +212,8 @@ struct ExpressionNodePair
 {
     const ActionsDAG::Node * query_node;
     const ActionsDAG::Node * index_node;
+    bool is_lambda_carrier = false;
+    bool inside_lambda_body = false;
 
     bool operator==(const ExpressionNodePair &) const = default;
 };
@@ -220,7 +224,9 @@ struct ExpressionNodePairHash
     {
         const auto query_hash = std::hash<const ActionsDAG::Node *>{}(pair.query_node);
         const auto index_hash = std::hash<const ActionsDAG::Node *>{}(pair.index_node);
-        return query_hash ^ (index_hash + 0x9e3779b9 + (query_hash << 6) + (query_hash >> 2));
+        const auto pair_hash = query_hash ^ (index_hash + 0x9e3779b9 + (query_hash << 6) + (query_hash >> 2));
+        const auto lambda_hash = pair_hash ^ (static_cast<size_t>(pair.is_lambda_carrier) + 0x9e3779b9 + (pair_hash << 6) + (pair_hash >> 2));
+        return lambda_hash ^ (static_cast<size_t>(pair.inside_lambda_body) + 0x9e3779b9 + (lambda_hash << 6) + (lambda_hash >> 2));
     }
 };
 
@@ -587,6 +593,32 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
     return true;
 }
 
+bool sameFunctionType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget)
+{
+    const auto * left_function = left ? typeid_cast<const DataTypeFunction *>(left.get()) : nullptr;
+    const auto * right_function = right ? typeid_cast<const DataTypeFunction *>(right.get()) : nullptr;
+    if (!left_function || !right_function)
+        return false;
+
+    const auto & left_arguments = left_function->getArgumentTypes();
+    const auto & right_arguments = right_function->getArgumentTypes();
+    const auto & left_result = left_function->getReturnType();
+    const auto & right_result = right_function->getReturnType();
+    if (left_arguments.size() != right_arguments.size() || !left_result || !right_result
+        || !budget.consume(left_arguments.size()) || !sameType(left_result, right_result, budget))
+        return false;
+
+    for (size_t i = 0; i < left_arguments.size(); ++i)
+    {
+        if (typeid_cast<const DataTypeFunction *>(left_arguments[i].get())
+            || typeid_cast<const DataTypeFunction *>(right_arguments[i].get())
+            || !sameType(left_arguments[i], right_arguments[i], budget))
+            return false;
+    }
+
+    return true;
+}
+
 bool isStringType(const DataTypePtr & type)
 {
     return type && typeid_cast<const DataTypeString *>(type.get());
@@ -747,29 +779,17 @@ bool compareSupportedNumericConstant(
     return false;
 }
 
-bool compareSupportedConstant(
-    const ActionsDAG::Node & left,
-    const ActionsDAG::Node & right,
+bool compareSupportedConstantValues(
+    const DataTypePtr & left_type,
+    const IColumn & left_data,
+    const DataTypePtr & right_type,
+    const IColumn & right_data,
     ExpressionMatchBudget & budget)
 {
-    if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
-        || left.is_masked_secret || right.is_masked_secret
-        || !left.is_deterministic_constant || !right.is_deterministic_constant)
-        return false;
-
-    const auto * left_constant = typeid_cast<const ColumnConst *>(left.column.get());
-    const auto * right_constant = typeid_cast<const ColumnConst *>(right.column.get());
-    if (!left_constant || !right_constant)
-        return false;
-
-    /// ActionsDAG stores ColumnConst values at size 0; compare the single underlying value instead.
-    const IColumn & left_data = left_constant->getDataColumn();
-    const IColumn & right_data = right_constant->getDataColumn();
-
-    if (compareSupportedNumericConstant(left.result_type, right.result_type, left_data, right_data, budget))
+    if (compareSupportedNumericConstant(left_type, right_type, left_data, right_data, budget))
         return true;
 
-    if (isStringType(left.result_type) && isStringType(right.result_type))
+    if (isStringType(left_type) && isStringType(right_type))
     {
         const auto * left_string = typeid_cast<const ColumnString *>(&left_data);
         const auto * right_string = typeid_cast<const ColumnString *>(&right_data);
@@ -777,7 +797,7 @@ bool compareSupportedConstant(
             && compareColumnStringStorage(*left_string, *right_string, 1, budget);
     }
 
-    if (isArrayOfStringType(left.result_type) && isArrayOfStringType(right.result_type))
+    if (isArrayOfStringType(left_type) && isArrayOfStringType(right_type))
     {
         const auto * left_array = typeid_cast<const ColumnArray *>(&left_data);
         const auto * right_array = typeid_cast<const ColumnArray *>(&right_data);
@@ -796,10 +816,222 @@ bool compareSupportedConstant(
             && compareColumnStringStorage(*left_strings, *right_strings, left_size, budget);
     }
 
-    if (compareFixedWidthArrayStorage(left.result_type, right.result_type, left_data, right_data, budget))
+    if (compareFixedWidthArrayStorage(left_type, right_type, left_data, right_data, budget))
         return true;
 
     return false;
+}
+
+bool compareSupportedConstant(
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget)
+{
+    if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
+        || left.is_masked_secret || right.is_masked_secret
+        || !left.is_deterministic_constant || !right.is_deterministic_constant)
+        return false;
+
+    const auto * left_constant = typeid_cast<const ColumnConst *>(left.column.get());
+    const auto * right_constant = typeid_cast<const ColumnConst *>(right.column.get());
+    if (!left_constant || !right_constant)
+        return false;
+
+    /// ActionsDAG stores ColumnConst values at size 0; compare the single underlying value instead.
+    return compareSupportedConstantValues(
+        left.result_type, left_constant->getDataColumn(), right.result_type, right_constant->getDataColumn(), budget);
+}
+
+bool sameBoundedName(const String & left, const String & right, ExpressionMatchBudget & budget)
+{
+    return left.size() == right.size() && budget.consume(left.size()) && budget.consume(right.size()) && left == right;
+}
+
+enum class LambdaCarrierKind : UInt8
+{
+    FunctionCapture,
+    ColumnFunction,
+};
+
+struct LambdaCarrierView
+{
+    LambdaCarrierKind kind;
+    const LambdaCapture * capture;
+    const ActionsDAG * body;
+    const ActionsDAG::Node * node;
+    const ColumnFunction * column_function = nullptr;
+};
+
+bool getLambdaCarrierView(const ActionsDAG::Node & node, LambdaCarrierView & view)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION && !node.is_function_compiled && node.function_base)
+    {
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (!function_capture)
+            return false;
+
+        view = {LambdaCarrierKind::FunctionCapture, &function_capture->getCapture(), &function_capture->getAcionsDAG(), &node};
+        return true;
+    }
+
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.column && node.children.empty())
+    {
+        if (node.is_runtime_filter_id || node.is_masked_secret || !node.is_deterministic_constant)
+            return false;
+
+        const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+        const auto * column_function = column_const ? typeid_cast<const ColumnFunction *>(&column_const->getDataColumn()) : nullptr;
+        const auto * function_expression = column_function
+            ? typeid_cast<const FunctionExpression *>(column_function->getFunction().get())
+            : nullptr;
+        if (!column_function || !function_expression)
+            return false;
+
+        view = {LambdaCarrierKind::ColumnFunction,
+            &function_expression->getCapture(), &function_expression->getAcionsDAG(), &node, column_function};
+        return true;
+    }
+
+    return false;
+}
+
+bool sameLambdaMetadata(const LambdaCapture & left, const LambdaCapture & right, ExpressionMatchBudget & budget)
+{
+    if (left.captured_names.size() != right.captured_names.size()
+        || left.captured_types.size() != right.captured_types.size()
+        || left.captured_names.size() != left.captured_types.size()
+        || right.captured_names.size() != right.captured_types.size()
+        || left.lambda_arguments.size() != right.lambda_arguments.size()
+        || !budget.consume(left.captured_names.size()) || !budget.consume(right.captured_names.size())
+        || !budget.consume(left.lambda_arguments.size()) || !budget.consume(right.lambda_arguments.size())
+        || left.allow_constant_folding != right.allow_constant_folding
+        || !sameBoundedName(left.return_name, right.return_name, budget)
+        || !sameType(left.return_type, right.return_type, budget))
+        return false;
+
+    for (size_t i = 0; i < left.captured_names.size(); ++i)
+    {
+        if (!sameBoundedName(left.captured_names[i], right.captured_names[i], budget)
+            || typeid_cast<const DataTypeFunction *>(left.captured_types[i].get())
+            || typeid_cast<const DataTypeFunction *>(right.captured_types[i].get())
+            || !sameType(left.captured_types[i], right.captured_types[i], budget))
+            return false;
+    }
+
+    auto left_argument = left.lambda_arguments.begin();
+    auto right_argument = right.lambda_arguments.begin();
+    for (; left_argument != left.lambda_arguments.end() && right_argument != right.lambda_arguments.end();
+         ++left_argument, ++right_argument)
+    {
+        if (!sameBoundedName(left_argument->name, right_argument->name, budget)
+            || typeid_cast<const DataTypeFunction *>(left_argument->type.get())
+            || typeid_cast<const DataTypeFunction *>(right_argument->type.get())
+            || !sameType(left_argument->type, right_argument->type, budget))
+            return false;
+    }
+
+    return true;
+}
+
+bool compareLambdaCarriers(
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget,
+    std::vector<ExpressionNodePair> & pending)
+{
+    LambdaCarrierView left_view{};
+    LambdaCarrierView right_view{};
+    if (!getLambdaCarrierView(left, left_view) || !getLambdaCarrierView(right, right_view)
+        || left_view.kind != right_view.kind
+        || !sameFunctionType(left.result_type, right.result_type, budget)
+        || !sameLambdaMetadata(*left_view.capture, *right_view.capture, budget))
+        return false;
+
+    const auto * left_signature = typeid_cast<const DataTypeFunction *>(left.result_type.get());
+    const auto * right_signature = typeid_cast<const DataTypeFunction *>(right.result_type.get());
+    if (!left_signature || !right_signature
+        || left_signature->getArgumentTypes().size() != left_view.capture->lambda_arguments.size()
+        || right_signature->getArgumentTypes().size() != right_view.capture->lambda_arguments.size())
+        return false;
+
+    auto left_lambda_argument = left_view.capture->lambda_arguments.begin();
+    auto right_lambda_argument = right_view.capture->lambda_arguments.begin();
+    for (size_t i = 0; i < left_view.capture->lambda_arguments.size();
+         ++i, ++left_lambda_argument, ++right_lambda_argument)
+    {
+        if (!sameType(left_signature->getArgumentTypes()[i], left_lambda_argument->type, budget)
+            || !sameType(right_signature->getArgumentTypes()[i], right_lambda_argument->type, budget))
+            return false;
+    }
+    if (!sameType(left_signature->getReturnType(), left_view.capture->return_type, budget)
+        || !sameType(right_signature->getReturnType(), right_view.capture->return_type, budget))
+        return false;
+
+    if (left_view.kind == LambdaCarrierKind::FunctionCapture)
+    {
+        const auto * left_capture = typeid_cast<const FunctionCapture *>(left.function_base.get());
+        const auto * right_capture = typeid_cast<const FunctionCapture *>(right.function_base.get());
+        if (!left_capture || !right_capture
+            || left.children.size() != left_view.capture->captured_names.size()
+            || right.children.size() != right_view.capture->captured_names.size()
+            || left_capture->getArgumentTypes().size() != left_view.capture->captured_types.size()
+            || right_capture->getArgumentTypes().size() != right_view.capture->captured_types.size()
+            || !budget.consume(left.children.size()) || !budget.consume(right.children.size()))
+            return false;
+
+        for (size_t i = 0; i < left.children.size(); ++i)
+        {
+            if (!left.children[i] || !right.children[i]
+                || !sameType(left_view.capture->captured_types[i], left.children[i]->result_type, budget)
+                || !sameType(right_view.capture->captured_types[i], right.children[i]->result_type, budget)
+                || !sameType(left_capture->getArgumentTypes()[i], left_view.capture->captured_types[i], budget)
+                || !sameType(right_capture->getArgumentTypes()[i], right_view.capture->captured_types[i], budget))
+                return false;
+            pending.emplace_back(left.children[i], right.children[i], false, true);
+        }
+    }
+    else
+    {
+        const auto & left_captured = left_view.column_function->getCapturedColumns();
+        const auto & right_captured = right_view.column_function->getCapturedColumns();
+        if (left_captured.size() != left_view.capture->captured_names.size()
+            || right_captured.size() != right_view.capture->captured_names.size()
+            || !budget.consume(left_captured.size()) || !budget.consume(right_captured.size()))
+            return false;
+
+        for (size_t i = 0; i < left_captured.size(); ++i)
+        {
+            const auto & left_column = left_captured[i];
+            const auto & right_column = right_captured[i];
+            const auto * left_constant = left_column.column ? typeid_cast<const ColumnConst *>(left_column.column.get()) : nullptr;
+            const auto * right_constant = right_column.column ? typeid_cast<const ColumnConst *>(right_column.column.get()) : nullptr;
+            if (!left_constant || !right_constant
+                || !sameType(left_view.capture->captured_types[i], left_column.type, budget)
+                || !sameType(right_view.capture->captured_types[i], right_column.type, budget)
+                || !compareSupportedConstantValues(left_column.type, left_constant->getDataColumn(),
+                    right_column.type, right_constant->getDataColumn(), budget))
+                return false;
+        }
+    }
+
+    const auto & left_nodes = left_view.body->getNodes();
+    const auto & right_nodes = right_view.body->getNodes();
+    const auto & left_outputs = left_view.body->getOutputs();
+    const auto & right_outputs = right_view.body->getOutputs();
+    if (left_nodes.size() != right_nodes.size() || left_outputs.size() != 1 || right_outputs.size() != 1
+        || !left_outputs.front() || !right_outputs.front()
+        || !sameBoundedName(left_outputs.front()->result_name, left_view.capture->return_name, budget)
+        || !sameBoundedName(right_outputs.front()->result_name, right_view.capture->return_name, budget)
+        || !budget.consume(left_nodes.size()) || !budget.consume(left_outputs.size()))
+        return false;
+
+    auto left_node = left_nodes.begin();
+    auto right_node = right_nodes.begin();
+    for (; left_node != left_nodes.end() && right_node != right_nodes.end(); ++left_node, ++right_node)
+        pending.emplace_back(&*left_node, &*right_node, false, true);
+    pending.emplace_back(left_outputs.front(), right_outputs.front(), false, true);
+
+    return true;
 }
 
 const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_name)
@@ -809,10 +1041,12 @@ const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_
         const auto distinct = FunctionFactory::instance().tryGet("arrayDistinct", {});
         const auto concat = FunctionFactory::instance().tryGet("arrayConcat", {});
         const auto empty_array_to_single = FunctionFactory::instance().tryGet("emptyArrayToSingle", {});
-        return std::array<const FunctionCreator *, 3>{
+        const auto array_map = FunctionFactory::instance().tryGet("arrayMap", {});
+        return std::array<const FunctionCreator *, 4>{
             distinct ? distinct->getFactoryHandle() : nullptr,
             concat ? concat->getFactoryHandle() : nullptr,
-            empty_array_to_single ? empty_array_to_single->getFactoryHandle() : nullptr};
+            empty_array_to_single ? empty_array_to_single->getFactoryHandle() : nullptr,
+            array_map ? array_map->getFactoryHandle() : nullptr};
     }();
 
     if (function_name == "arrayDistinct")
@@ -821,6 +1055,8 @@ const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_
         return handles[1];
     if (function_name == "emptyArrayToSingle")
         return handles[2];
+    if (function_name == "arrayMap")
+        return handles[3];
     return nullptr;
 }
 
@@ -914,7 +1150,11 @@ bool isSupportedArrayFunctionPair(
 }
 
 bool isSupportedDirectFunctionPair(
-    const ActionsDAG::Node & left, const ActionsDAG::Node & right, ExpressionMatchBudget & budget)
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget,
+    bool inside_lambda_body,
+    std::vector<ExpressionNodePair> & pending)
 {
     if (!left.function_base || !right.function_base || left.is_function_compiled || right.is_function_compiled)
         return false;
@@ -929,17 +1169,34 @@ bool isSupportedDirectFunctionPair(
         || left_name != right_name)
         return false;
 
-    if (left.function_base->isStateful() || right.function_base->isStateful()
-        || !left.function_base->isDeterministic() || !right.function_base->isDeterministic()
-        || !left.function_base->isDeterministicInScopeOfQuery() || !right.function_base->isDeterministicInScopeOfQuery()
-        || left.function_base->hasObservableSideEffects() || right.function_base->hasObservableSideEffects())
-        return false;
-
     const auto & left_argument_types = left.function_base->getArgumentTypes();
     const auto & right_argument_types = right.function_base->getArgumentTypes();
     if (left_argument_types.size() != right_argument_types.size()
         || left_argument_types.size() != left.children.size() || right_argument_types.size() != right.children.size()
         || !budget.consume(left_argument_types.size()) || !budget.consume(right_argument_types.size()))
+        return false;
+
+    bool has_lambda_argument = false;
+    for (size_t i = 0; i < left_argument_types.size(); ++i)
+    {
+        const bool left_is_lambda = typeid_cast<const DataTypeFunction *>(left_argument_types[i].get());
+        const bool right_is_lambda = typeid_cast<const DataTypeFunction *>(right_argument_types[i].get());
+        if (left_is_lambda != right_is_lambda)
+            return false;
+        has_lambda_argument |= left_is_lambda;
+    }
+
+    /// Only the registered arrayMap wrapper has bounded static safety hooks for a lambda argument.
+    /// Other higher-order wrappers can inspect the closure body in these virtual methods.
+    if (has_lambda_argument
+        && (inside_lambda_body || left_name != "arrayMap"
+            || left_handle != getCanonicalArrayFunctionHandle("arrayMap")))
+        return false;
+
+    if (left.function_base->isStateful() || right.function_base->isStateful()
+        || !left.function_base->isDeterministic() || !right.function_base->isDeterministic()
+        || !left.function_base->isDeterministicInScopeOfQuery() || !right.function_base->isDeterministicInScopeOfQuery()
+        || left.function_base->hasObservableSideEffects() || right.function_base->hasObservableSideEffects())
         return false;
 
     if (!sameType(left.function_base->getResultType(), right.function_base->getResultType(), budget)
@@ -952,14 +1209,32 @@ bool isSupportedDirectFunctionPair(
         const auto * left_child = left.children[i];
         const auto * right_child = right.children[i];
         if (!left_child || !right_child
-            || !sameType(left_argument_types[i], right_argument_types[i], budget)
-            || !sameType(left_argument_types[i], left_child->result_type, budget)
-            || !sameType(right_argument_types[i], right_child->result_type, budget))
+            || (has_lambda_argument && typeid_cast<const DataTypeFunction *>(left_argument_types[i].get())
+                ? (!sameFunctionType(left_argument_types[i], right_argument_types[i], budget)
+                    || !sameFunctionType(left_argument_types[i], left_child->result_type, budget)
+                    || !sameFunctionType(right_argument_types[i], right_child->result_type, budget))
+                : (!sameType(left_argument_types[i], right_argument_types[i], budget)
+                    || !sameType(left_argument_types[i], left_child->result_type, budget)
+                    || !sameType(right_argument_types[i], right_child->result_type, budget))))
             return false;
+
+        if (typeid_cast<const DataTypeFunction *>(left_argument_types[i].get()))
+        {
+            if (!budget.consume())
+                return false;
+            pending.emplace_back(left_child, right_child, true, inside_lambda_body);
+        }
     }
 
+    /// arrayMap has no per-call parameters: its authenticated factory, matching signature and
+    /// bounded lambda body/captures fully identify this wrapper. Avoid updateHash on an adaptor
+    /// that may inspect a FunctionExpression argument recursively.
+    if (has_lambda_argument)
+        return true;
+
     /// IFunctionBase::updateHash is the semantic-context hook for captured value-affecting state.
-    if (areCastsEquivalentForBloomFilterExpressionMatching(*left.function_base, *right.function_base))
+    if (areCastsEquivalentForBloomFilterExpressionMatching(*left.function_base, *right.function_base)
+        || areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left.function_base, *right.function_base))
         return true;
 
     SipHash left_hash;
@@ -970,13 +1245,17 @@ bool isSupportedDirectFunctionPair(
 }
 
 bool isSupportedArrayJoinFunctionPair(
-    const ActionsDAG::Node & left, const ActionsDAG::Node & right, ExpressionMatchBudget & budget)
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget,
+    bool inside_lambda_body,
+    std::vector<ExpressionNodePair> & pending)
 {
     if (!left.function_base || !right.function_base)
         return false;
 
     if (left.function_base->getFactoryHandle() && right.function_base->getFactoryHandle())
-        return isSupportedDirectFunctionPair(left, right, budget);
+        return isSupportedDirectFunctionPair(left, right, budget, inside_lambda_body, pending);
 
     /// ArrayJoinStep creates emptyArrayToSingle outside FunctionFactory. When either handle is absent,
     /// only the existing exact native-function bridge may authenticate the pair.
@@ -1017,8 +1296,20 @@ bool structurallyMatchesIndexedExpression(
         const auto * right = normalizeExpressionNode(pair.index_node, budget);
         if (!left || !right)
             return false;
-        if (!visited.emplace(ExpressionNodePair{left, right}).second)
+        if (!visited.emplace(ExpressionNodePair{left, right, pair.is_lambda_carrier, pair.inside_lambda_body}).second)
             continue;
+
+        const bool left_is_function_type = left->result_type
+            && typeid_cast<const DataTypeFunction *>(left->result_type.get());
+        const bool right_is_function_type = right->result_type
+            && typeid_cast<const DataTypeFunction *>(right->result_type.get());
+        if (left_is_function_type || right_is_function_type || pair.is_lambda_carrier)
+        {
+            if (!left_is_function_type || !right_is_function_type || !pair.is_lambda_carrier || pair.inside_lambda_body
+                || left->type != right->type || !compareLambdaCarriers(*left, *right, budget, pending))
+                return false;
+            continue;
+        }
 
         if (!sameType(left->result_type, right->result_type, budget) || left->type != right->type)
             return false;
@@ -1039,14 +1330,29 @@ bool structurallyMatchesIndexedExpression(
             case ActionsDAG::ActionType::FUNCTION:
                 if (left->children.size() != right->children.size()
                     || (mode == ExpressionMatchMode::DirectIN
-                        ? !isSupportedDirectFunctionPair(*left, *right, budget)
-                        : !isSupportedArrayJoinFunctionPair(*left, *right, budget)))
+                        ? !isSupportedDirectFunctionPair(*left, *right, budget, pair.inside_lambda_body, pending)
+                        : !isSupportedArrayJoinFunctionPair(*left, *right, budget, pair.inside_lambda_body, pending)))
                     return false;
                 for (size_t i = 0; i < left->children.size(); ++i)
                 {
+                    if (!left->children[i] || !right->children[i])
+                        return false;
+
+                    /// The direct function helper already queued function-typed arguments as lambda carriers.
+                    const bool left_is_function_argument = left->children[i]->result_type
+                        && typeid_cast<const DataTypeFunction *>(left->children[i]->result_type.get());
+                    const bool right_is_function_argument = right->children[i]->result_type
+                        && typeid_cast<const DataTypeFunction *>(right->children[i]->result_type.get());
+                    if (left_is_function_argument || right_is_function_argument)
+                    {
+                        if (!left_is_function_argument || !right_is_function_argument)
+                            return false;
+                        continue;
+                    }
+
                     if (!budget.consume())
                         return false;
-                    pending.emplace_back(left->children[i], right->children[i]);
+                    pending.emplace_back(left->children[i], right->children[i], false, pair.inside_lambda_body);
                 }
                 break;
             case ActionsDAG::ActionType::ALIAS:

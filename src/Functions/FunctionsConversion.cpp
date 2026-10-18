@@ -1,5 +1,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionConversionMatching.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -3524,6 +3525,72 @@ bool isAuditedCastTypePair(const IDataType & from_type, const IDataType & to_typ
     return false;
 }
 
+template <typename DecimalType>
+bool haveEqualConcreteDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    if (!isConcreteDataType<DecimalType>(left) || !isConcreteDataType<DecimalType>(right)
+        || !hasNoCustomConversionSerialization(left) || !hasNoCustomConversionSerialization(right))
+        return false;
+
+    const auto & left_decimal = assert_cast<const DecimalType &>(left);
+    const auto & right_decimal = assert_cast<const DecimalType &>(right);
+    return left_decimal.getPrecision() == right_decimal.getPrecision()
+        && left_decimal.getScale() == right_decimal.getScale();
+}
+
+bool isConcreteDecimalType(const IDataType & type)
+{
+    return isConcreteDataType<DataTypeDecimal32>(type)
+        || isConcreteDataType<DataTypeDecimal64>(type)
+        || isConcreteDataType<DataTypeDecimal128>(type)
+        || isConcreteDataType<DataTypeDecimal256>(type);
+}
+
+bool haveEqualConcreteDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    return haveEqualConcreteDecimalTypes<DataTypeDecimal32>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal64>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal128>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal256>(left, right);
+}
+
+bool isAuditedDecimalScaleType(const IDataType & type)
+{
+    return isConcreteDataType<DataTypeUInt8>(type)
+        || isConcreteDataType<DataTypeUInt16>(type)
+        || isConcreteDataType<DataTypeUInt32>(type)
+        || isConcreteDataType<DataTypeUInt64>(type);
+}
+
+bool haveEqualConcreteNonDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    return typeid(left) == typeid(right)
+        && hasNoCustomConversionSerialization(left)
+        && hasNoCustomConversionSerialization(right)
+        && left.equals(right);
+}
+
+bool isFunctionToDecimal(const IFunction & function, const IDataType & result_type)
+{
+    if (typeid(function) == typeid(detail::FunctionToDecimal32))
+        return isConcreteDataType<DataTypeDecimal32>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal64))
+        return isConcreteDataType<DataTypeDecimal64>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal128))
+        return isConcreteDataType<DataTypeDecimal128>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal256))
+        return isConcreteDataType<DataTypeDecimal256>(result_type);
+    return false;
+}
+
+bool isFunctionToDecimal(const IFunction & function)
+{
+    return typeid(function) == typeid(detail::FunctionToDecimal32)
+        || typeid(function) == typeid(detail::FunctionToDecimal64)
+        || typeid(function) == typeid(detail::FunctionToDecimal128)
+        || typeid(function) == typeid(detail::FunctionToDecimal256);
+}
+
 bool haveEqualExplicitConversionSettings(const FunctionConvertSettings & left, const FunctionConvertSettings & right)
 {
     return left.date_time_overflow_behavior == right.date_time_overflow_behavior
@@ -3586,6 +3653,64 @@ bool areCastsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & le
     const auto * left_cast = dynamic_cast<const detail::FunctionCast *>(&left);
     const auto * right_cast = dynamic_cast<const detail::FunctionCast *>(&right);
     return left_cast && right_cast && left_cast->isEquivalentForBloomFilterExpressionMatching(*right_cast);
+}
+
+bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
+{
+    const auto * left_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&left);
+    const auto * right_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&right);
+    if (!left_adaptor || !right_adaptor)
+        return false;
+
+    const auto & left_function_ptr = left_adaptor->getFunction();
+    const auto & right_function_ptr = right_adaptor->getFunction();
+    if (!left_function_ptr || !right_function_ptr)
+        return false;
+
+    const auto & left_function = *left_function_ptr;
+    const auto & right_function = *right_function_ptr;
+    if (typeid(left_function) != typeid(right_function))
+        return false;
+
+    const auto & left_arguments = left_adaptor->getArgumentTypes();
+    const auto & right_arguments = right_adaptor->getArgumentTypes();
+    const auto & left_result = left_adaptor->getResultType();
+    const auto & right_result = right_adaptor->getResultType();
+    if (!left_result || !right_result)
+        return false;
+
+    if (isFunctionToDecimal(left_function))
+    {
+        if (left_arguments.size() != 2 || right_arguments.size() != 2
+            || !left_arguments[0] || !left_arguments[1] || !right_arguments[0] || !right_arguments[1]
+            || !isFunctionToDecimal(left_function, *left_result)
+            || !isFunctionToDecimal(right_function, *right_result)
+            || !haveEqualConcreteDecimalTypes(*left_result, *right_result)
+            || !isAuditedPrimitiveNumericType(*left_arguments[0])
+            || !isAuditedPrimitiveNumericType(*right_arguments[0])
+            || !haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0])
+            || !isAuditedDecimalScaleType(*left_arguments[1])
+            || !isAuditedDecimalScaleType(*right_arguments[1])
+            || !haveEqualConcreteNonDecimalTypes(*left_arguments[1], *right_arguments[1]))
+            return false;
+
+        return true;
+    }
+
+    if (typeid(left_function) == typeid(detail::FunctionToString))
+    {
+        return left_arguments.size() == 1 && right_arguments.size() == 1
+            && left_arguments[0] && right_arguments[0]
+            && isConcreteDecimalType(*left_arguments[0])
+            && isConcreteDecimalType(*right_arguments[0])
+            && haveEqualConcreteDecimalTypes(*left_arguments[0], *right_arguments[0])
+            && isConcreteDataType<DataTypeString>(*left_result)
+            && isConcreteDataType<DataTypeString>(*right_result)
+            && hasNoCustomConversionSerialization(*left_result)
+            && hasNoCustomConversionSerialization(*right_result);
+    }
+
+    return false;
 }
 
 
