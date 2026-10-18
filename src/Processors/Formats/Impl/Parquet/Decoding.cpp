@@ -26,6 +26,11 @@ namespace
 template <typename T, size_t bit_width>
 void unpackBitsImpl(const UInt8 * in, size_t bit_offset, T * out, size_t count)
 {
+    if constexpr (bit_width == 0)
+    {
+        std::fill(out, out + count, T(0));
+        return;
+    }
     static constexpr UInt64 mask = []
     {
         if constexpr (bit_width == 64)
@@ -55,14 +60,39 @@ constexpr auto makeUnpackBitsTable(std::index_sequence<widths...>)
 
 /// Unpacks `count` values of `bit_width` bits each, stored back to back starting at bit
 /// `bit_offset` of `in`, least significant bits first, as in Parquet's bit-packed encodings.
-/// Reads up to 9 bytes past the byte that holds the last bit of the last value, so the input must
-/// be padded.
+/// The values must lie within [`in`, `in_end`). The input does not have to be padded: the values
+/// whose 9-byte loads would cross `in_end` are unpacked from a zero-padded copy of the tail.
 template <typename T>
-void unpackBits(const UInt8 * in, size_t bit_offset, size_t bit_width, T * out, size_t count)
+void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_t bit_width, T * out, size_t count)
 {
     static constexpr auto table = makeUnpackBitsTable<T>(std::make_index_sequence<sizeof(T) * 8 + 1>());
     chassert(bit_width < table.size());
-    table[bit_width](in, bit_offset, out, count);
+    chassert(count == 0 || bit_offset + count * bit_width <= size_t(in_end - in) * 8);
+    const auto unpack = table[bit_width];
+
+    /// The value starting at bit `b` loads 9 bytes from byte `b / 8`; that is in bounds if `b < (in_size - 8) * 8`.
+    static constexpr size_t load_size = 9;
+    const size_t in_size = in_end - in;
+    size_t fast_count = 0;
+    if (bit_width == 0)
+        fast_count = count;
+    else if (in_size >= load_size)
+    {
+        const size_t safe_bits = (in_size - load_size + 1) * 8;
+        if (bit_offset < safe_bits)
+            fast_count = std::min(count, (safe_bits - bit_offset + bit_width - 1) / bit_width);
+    }
+    unpack(in, bit_offset, out, fast_count);
+    if (fast_count == count)
+        return;
+
+    /// The remaining values start in the last `load_size - 1` bytes of the input.
+    const size_t tail_bit = bit_offset + fast_count * bit_width;
+    const size_t tail_byte = tail_bit / 8;
+    chassert(in_size - tail_byte < load_size);
+    UInt8 tail[2 * load_size] = {};
+    memcpy(tail, in + tail_byte, in_size - tail_byte);
+    unpack(tail, tail_bit % 8, out + fast_count, count - fast_count);
 }
 
 template <size_t num_streams>
@@ -974,8 +1004,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             size_t bits_per_delta = miniblock_bit_widths[miniblock_idx];
             if (bits_per_delta > sizeof(T) * 8)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED bit width {} is too big for {}-byte values", bits_per_delta, sizeof(T));
-            /// The page data is padded, and `nextMiniblock` made sure that the values themselves are in bounds.
-            unpackBits(miniblock_data, miniblock_bit_offset, bits_per_delta, out_values, n);
+            /// `nextMiniblock` made sure that the values are in bounds.
+            unpackBits(miniblock_data, reinterpret_cast<const UInt8 *>(end), miniblock_bit_offset, bits_per_delta, out_values, n);
             miniblock_bit_offset += n * bits_per_delta;
 
             /// Locals, because `out_values` may alias the members.
