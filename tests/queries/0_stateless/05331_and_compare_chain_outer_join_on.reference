@@ -85,3 +85,11 @@ derived bounds
 1
 2
 2
+hint for the non-preserved side
+0	0
+1	1
+2	2
+1
+1
+hint in a subquery in ON
+1
