@@ -111,6 +111,59 @@ void incrementTriggeredWatchProfileEvent(Coordination::Event event_type, size_t 
     }
 }
 
+/// The children filter of a list request that returns children stats or data.
+std::optional<Coordination::ListRequestType> getListWithDataFilter(const Coordination::ZooKeeperRequest & request)
+{
+    bool with_stat = false;
+    bool with_data = false;
+    auto filter = Coordination::ListRequestType::ALL;
+    switch (request.getOpNum())
+    {
+        case Coordination::OpNum::FilteredListWithStatsAndData:
+        {
+            const auto & list_request = static_cast<const Coordination::ZooKeeperListRequest &>(request);
+            with_stat = list_request.with_stat.value_or(false);
+            with_data = list_request.with_data.value_or(false);
+            filter = list_request.list_request_type.value_or(Coordination::ListRequestType::ALL);
+            break;
+        }
+        case Coordination::OpNum::ListWithOptions:
+        {
+            const auto & list_request = static_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+            with_stat = list_request.options.with_stat;
+            with_data = list_request.options.with_data;
+            filter = list_request.options.filter;
+            break;
+        }
+        default:
+            break;
+    }
+
+    if (!with_stat && !with_data)
+        return std::nullopt;
+    return filter;
+}
+
+/// As the list requests do, leaves out only the children the two filters exclude.
+bool passesFilter(Coordination::ListRequestType filter, bool is_ephemeral)
+{
+    return filter != (is_ephemeral ? Coordination::ListRequestType::PERSISTENT_ONLY : Coordination::ListRequestType::EPHEMERAL_ONLY);
+}
+
+/// A node removed by a later request of the same multi reads as persistent; its removal fires the watch anyway.
+bool isCommittedEphemeral(KeeperNodesStorage & nodes, std::string_view path)
+{
+    SharedLockGuard storage_lock(*nodes.storage_mutex);
+    KeeperNodeStats stats;
+    return nodes.getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr) && stats.isEphemeral();
+}
+
+bool hasWatch(const KeeperStorage::ListWithDataWatches & watch_map, std::string_view path, int64_t session_id)
+{
+    auto it = watch_map.find(path);
+    return it != watch_map.end() && it->second.contains(session_id);
+}
+
 }
 
 void unregisterEphemeralPath(KeeperStorage::Ephemerals & ephemerals, int64_t session_id, const std::string & path, bool throw_if_missing)
@@ -131,22 +184,25 @@ void unregisterEphemeralPath(KeeperStorage::Ephemerals & ephemerals, int64_t ses
         ephemerals.erase(ephemerals_it);
 }
 
-std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
-    std::string_view path,
-    Coordination::Event event_type)
+namespace
 {
-    KeeperResponsesForSessions result;
-    Int64 removed_watches = 0;
-    std::vector<int64_t> sessions;
 
-    const auto collect = [&](const Watches & watch_map, std::string_view watch_path)
+class WatchEvents
+{
+public:
+    explicit WatchEvents(KeeperStorage::SessionAndWatcher & sessions_and_watchers_)
+        : sessions_and_watchers(sessions_and_watchers_)
+    {
+    }
+
+    void collect(const KeeperStorage::Watches & watch_map, std::string_view watch_path)
     {
         auto watch_it = watch_map.find(watch_path);
         if (watch_it != watch_map.end())
             sessions.insert(sessions.end(), watch_it->second.begin(), watch_it->second.end());
-    };
+    }
 
-    const auto collect_and_remove = [&](Watches & watch_map, std::string_view watch_path, WatchType watch_type)
+    void collectAndRemove(KeeperStorage::Watches & watch_map, std::string_view watch_path, KeeperStorage::WatchType watch_type)
     {
         auto watch_it = watch_map.find(watch_path);
         if (watch_it == watch_map.end())
@@ -154,16 +210,52 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
 
         for (auto session_id : watch_it->second)
         {
-            [[maybe_unused]] auto erased = sessions_and_watchers[session_id].erase(WatchInfo{.path = watch_path, .type = watch_type});
+            [[maybe_unused]] auto erased = sessions_and_watchers[session_id].erase(
+                KeeperStorage::WatchInfo{.path = watch_path, .type = watch_type});
             chassert(erased);
             sessions.push_back(session_id);
         }
         removed_watches += watch_it->second.size();
         watch_map.erase(watch_it);
-    };
+    }
+
+    void collectAndRemoveIf(
+        KeeperStorage::ListWithDataWatches & watch_map,
+        std::string_view watch_path,
+        std::invocable<Coordination::ListRequestType> auto && fires)
+    {
+        auto watch_it = watch_map.find(watch_path);
+        if (watch_it == watch_map.end())
+            return;
+
+        auto & path_watches = watch_it->second;
+        for (auto it = path_watches.begin(); it != path_watches.end();)
+        {
+            if (!fires(it->second))
+            {
+                ++it;
+                continue;
+            }
+
+            [[maybe_unused]] auto erased = sessions_and_watchers[it->first].erase(
+                KeeperStorage::WatchInfo{.path = watch_path, .type = KeeperStorage::WatchType::LIST_WITH_DATA_WATCH});
+            chassert(erased);
+            sessions.push_back(it->first);
+            ++removed_watches;
+            it = path_watches.erase(it);
+        }
+
+        if (path_watches.empty())
+            watch_map.erase(watch_it);
+    }
+
+    void collectAndRemove(KeeperStorage::ListWithDataWatches & watch_map, std::string_view watch_path)
+    {
+        collectAndRemoveIf(watch_map, watch_path, [](Coordination::ListRequestType) { return true; });
+    }
 
     /// As in ZooKeeper, a session gets each event once, however many of its watches match it.
-    const auto notify = [&](std::string_view event_path, Coordination::Event event)
+    void notify(std::string_view event_path, Coordination::Event event)
     {
         if (sessions.empty())
             return;
@@ -183,15 +275,32 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
 
         incrementTriggeredWatchProfileEvent(event, sessions.size());
         sessions.clear();
-    };
+    }
 
-    collect_and_remove(watches, path, WatchType::WATCH);
-    collect(persistent_watches, path);
+    std::pair<KeeperResponsesForSessions, Int64> finish() { return {std::move(result), removed_watches}; }
+
+private:
+    KeeperStorage::SessionAndWatcher & sessions_and_watchers;
+    KeeperResponsesForSessions result;
+    Int64 removed_watches = 0;
+    std::vector<int64_t> sessions;
+};
+
+}
+
+std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
+    std::string_view path,
+    Coordination::Event event_type)
+{
+    WatchEvents events(sessions_and_watchers);
+
+    events.collectAndRemove(watches, path, WatchType::WATCH);
+    events.collect(persistent_watches, path);
     if (!persistent_recursive_watches.empty())
     {
         for (std::string_view current_path = path;; current_path = Coordination::parentNodePath(current_path))
         {
-            collect(persistent_recursive_watches, current_path);
+            events.collect(persistent_recursive_watches, current_path);
             if (current_path == "/")
                 break;
         }
@@ -200,20 +309,47 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
     /// The child watches of a removed node get the same `DELETED` event.
     if (event_type == Coordination::Event::DELETED)
     {
-        collect_and_remove(list_watches, path, WatchType::LIST_WATCH);
-        collect(persistent_list_watches, path);
+        events.collectAndRemove(list_watches, path, WatchType::LIST_WATCH);
+        events.collectAndRemove(list_with_data_watches, path);
+        events.collect(persistent_list_watches, path);
     }
-    notify(path, event_type);
+    events.notify(path, event_type);
 
-    if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
+    if (path != "/")
     {
         auto parent_path = Coordination::parentNodePath(path);
-        collect_and_remove(list_watches, parent_path, WatchType::LIST_WATCH);
-        collect(persistent_list_watches, parent_path);
-        notify(parent_path, Coordination::Event::CHILD);
+        if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
+        {
+            events.collectAndRemove(list_watches, parent_path, WatchType::LIST_WATCH);
+            events.collect(persistent_list_watches, parent_path);
+            events.collectAndRemove(list_with_data_watches, parent_path);
+        }
+        else if (list_with_data_watches.contains(parent_path))
+        {
+            const bool is_ephemeral = isCommittedEphemeral(*nodes_storage, path);
+            events.collectAndRemoveIf(
+                list_with_data_watches,
+                parent_path,
+                [&](Coordination::ListRequestType filter) { return passesFilter(filter, is_ephemeral); });
+        }
+        events.notify(parent_path, Coordination::Event::CHILD);
     }
 
-    return {result, removed_watches};
+    return events.finish();
+}
+
+std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processACLChangeWatchesImpl(std::string_view path)
+{
+    WatchEvents events(sessions_and_watchers);
+    if (path != "/")
+    {
+        auto parent_path = Coordination::parentNodePath(path);
+        /// A list request with children stats or data checks the ACL of every child, whatever its filter,
+        /// so a change of any child's ACL can alter its result.
+        events.collectAndRemove(list_with_data_watches, parent_path);
+        events.notify(parent_path, Coordination::Event::CHILD);
+    }
+    return events.finish();
 }
 
 KeeperStorage::~KeeperStorage() = default;
@@ -728,6 +864,7 @@ void KeeperStorage::finalize()
 
     watches.clear();
     list_watches.clear();
+    list_with_data_watches.clear();
     sessions_and_watchers.clear();
 
     session_expiry_queue.clear();
@@ -968,6 +1105,9 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             case WatchType::PERSISTENT_RECURSIVE_WATCH:
                 erase_session_from_map(persistent_recursive_watches, watch_path);
                 break;
+            case WatchType::LIST_WITH_DATA_WATCH:
+                erase_session_from_map(list_with_data_watches, watch_path);
+                break;
         }
     }
 
@@ -1000,6 +1140,12 @@ void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 
     write_watches(watches);
     write_watches(list_watches);
+    for (const auto & [watch_path, path_watches] : list_with_data_watches)
+    {
+        buf << watch_path << "\n";
+        for (const auto & [session_id, _] : path_watches)
+            buf << "\t0x" << getHexUIntLowercase(session_id) << "\n";
+    }
     write_watches(persistent_watches);
     write_watches(persistent_list_watches);
     write_watches(persistent_recursive_watches);
@@ -1046,11 +1192,49 @@ void KeeperStorage::updateWatches(
                 Coordination::OpNum::FilteredListWithStatsAndData,
                 Coordination::OpNum::ListWithOptions};
 
-            auto watch_type = std::ranges::contains(list_requests, req->getOpNum()) ? WatchType::LIST_WATCH : WatchType::WATCH;
+            std::optional<Coordination::ListRequestType> list_with_data_filter;
+            auto watch_type = WatchType::WATCH;
+            if (std::ranges::contains(list_requests, req->getOpNum()))
+            {
+                list_with_data_filter = getListWithDataFilter(*req);
+                watch_type = list_with_data_filter ? WatchType::LIST_WITH_DATA_WATCH : WatchType::LIST_WATCH;
+            }
 
-            auto & watches_type = watch_type == WatchType::LIST_WATCH ? list_watches : watches;
+            const String path = req->getPath();
+            /// Clients keep both kinds of list watches of a path as one children watch, so a session has at most one of them.
+            if (watch_type == WatchType::LIST_WATCH)
+            {
+                if (hasWatch(list_with_data_watches, path, session_id))
+                    return;
+            }
+            else if (watch_type == WatchType::LIST_WITH_DATA_WATCH)
+            {
+                if (auto it = list_watches.find(path); it != list_watches.end() && it->second.erase(session_id))
+                {
+                    [[maybe_unused]] auto erased = sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .type = WatchType::LIST_WATCH});
+                    chassert(erased);
+                    if (it->second.empty())
+                        list_watches.erase(it);
+                    --total_watches_count;
+                }
 
-            auto [watch_it, path_inserted] = watches_type.try_emplace(req->getPath());
+                auto [watch_it, path_inserted] = list_with_data_watches.try_emplace(path);
+                auto [session_it, session_inserted] = watch_it->second.try_emplace(session_id, *list_with_data_filter);
+                if (session_inserted)
+                {
+                    ++total_watches_count;
+                    sessions_and_watchers[session_id].emplace(WatchInfo{.path = watch_it->first, .type = watch_type});
+                }
+                else if (session_it->second != *list_with_data_filter)
+                {
+                    /// The watch covers the children any of the requests that set it returned.
+                    session_it->second = Coordination::ListRequestType::ALL;
+                }
+                return;
+            }
+
+            auto & watches_type = watch_type == WatchType::WATCH ? watches : list_watches;
+            auto [watch_it, path_inserted] = watches_type.try_emplace(path);
             auto [path_it, session_inserted] = watch_it->second.emplace(session_id);
             if (session_inserted)
             {
@@ -1139,7 +1323,7 @@ bool KeeperStorage::containsWatch(const String & path, Coordination::CheckWatchR
         case DATA:
             return watches.contains(path);
         case CHILDREN:
-            return list_watches.contains(path);
+            return list_watches.contains(path) || list_with_data_watches.contains(path);
         case PERSISTENT:
             return persistent_watches.contains(path) || persistent_list_watches.contains(path);
         case PERSISTENT_RECURSIVE:
@@ -1224,7 +1408,10 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
         if (!nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr))
             add_watch_response(path, Coordination::Event::DELETED);
         else if (stats.pzxid <= last_zxid)
-            add_watch(path, list_watches, WatchType::LIST_WATCH);
+        {
+            if (!hasWatch(list_with_data_watches, path, session_id))
+                add_watch(path, list_watches, WatchType::LIST_WATCH);
+        }
         else
             add_watch_response(path, Coordination::Event::CHANGED);
     }
@@ -1294,7 +1481,8 @@ bool KeeperStorage::removePersistentWatch(const String & path, Coordination::Rem
         }
         case Coordination::RemoveWatchRequest::WatchType::CHILDREN:
         {
-            removed = erase_watch_for_session(list_watches, WatchType::LIST_WATCH);
+            removed |= erase_watch_for_session(list_watches, WatchType::LIST_WATCH);
+            removed |= erase_watch_for_session(list_with_data_watches, WatchType::LIST_WITH_DATA_WATCH);
             break;
         }
         case Coordination::RemoveWatchRequest::WatchType::PERSISTENT:
@@ -1326,8 +1514,8 @@ KeeperStorageStats KeeperStorage::getStorageStats() const
     KeeperStorageStats res
     {
         .total_watches_count = getTotalWatchesCount(),
-        .watched_paths_count = watches.size() + list_watches.size() + persistent_watches.size() + persistent_list_watches.size()
-        + persistent_recursive_watches.size(),
+        .watched_paths_count = watches.size() + list_watches.size() + list_with_data_watches.size() + persistent_watches.size()
+        + persistent_list_watches.size() + persistent_recursive_watches.size(),
         .sessions_with_watches_count = sessions_and_watchers.size(),
         .session_with_ephemeral_nodes_count = committed_ephemerals.size(),
         .total_emphemeral_nodes_count = committed_ephemeral_nodes,
