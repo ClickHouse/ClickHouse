@@ -30,8 +30,12 @@ SELECT sum(f.v)
 FROM (SELECT k, v FROM t_rf_late_fact PREWHERE sleepEachRow(0.0004) = 0) AS f
 RIGHT JOIN (SELECT k, name FROM t_rf_late_dim PREWHERE sleepEachRow(0.00005) = 0) AS d ON f.k = d.k
 WHERE d.name = 'keep'
+-- The granules are pruned again when a read task starts, so the tasks are kept small also in the prefetching read pool
+-- of a remote disk, where the task size follows its own settings.
 SETTINGS log_comment = '05405_late', max_threads = 2, max_block_size = 100,
-    merge_tree_min_rows_for_concurrent_read = 100, merge_tree_min_bytes_for_concurrent_read = 1;
+    merge_tree_min_rows_for_concurrent_read = 100, merge_tree_min_bytes_for_concurrent_read = 1,
+    filesystem_prefetch_step_marks = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1, merge_tree_min_read_task_size = 1,
+    merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
 SELECT sum(f.v) FROM t_rf_late_fact AS f RIGHT JOIN t_rf_late_dim AS d ON f.k = d.k WHERE d.name = 'keep'
 SETTINGS make_distributed_plan = 0;
 

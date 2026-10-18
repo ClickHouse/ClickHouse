@@ -7,11 +7,14 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET any_join_distinct_right_table_keys = 1;
+-- The estimate uses the distinct counts of the keys.
+SET use_statistics = 1;
+SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS t_fra_left;
 DROP TABLE IF EXISTS t_fra_right;
-CREATE TABLE t_fra_left (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE t_fra_right (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_fra_left (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE t_fra_right (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 INSERT INTO t_fra_left SELECT number % 5 FROM numbers(1000);
 INSERT INTO t_fra_right SELECT number FROM numbers(100);
 
