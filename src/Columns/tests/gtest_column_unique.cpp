@@ -10,9 +10,19 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/scope_guard_safe.h>
 #include <vector>
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
 
 TEST(ColumnUnique, InsertRange)
 {
@@ -212,3 +222,51 @@ TEST(ColumnVector, CorrectnessOfReplicate)
         ++it;
     }
 }
+
+/// Sanitizers replace `operator new`, so its allocations are not tracked and cannot hit the memory limit.
+#if !defined(SANITIZER)
+TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
+{
+    auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
+    column_unique->uniqueInsert(Field(String("a")));
+    const size_t size = column_unique->size();
+
+    {
+        /// Drain deferred allocations so the clamp below is exact; a no-op with no thread status.
+        CurrentThread::flushUntrackedMemory();
+        const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
+        SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(prev_hard_limit));
+        /// Let `operator new` refuse allocations of any size, as with a small
+        /// `min_allocation_size_to_throw_on_memory_limit` server setting.
+        const UInt64 prev_min_allocation_size_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+        SCOPE_EXIT_SAFE(CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(prev_min_allocation_size_to_throw));
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+
+        /// The callback itself succeeds, but every allocation after it fails, so the
+        /// re-creation of the nullable view after the callback hits the memory limit.
+        /// The exception must propagate instead of calling `std::terminate`.
+        int error_code = 0;
+        try
+        {
+            column_unique->forEachMutableSubcolumn([](IColumn::WrappedPtr &)
+            {
+                total_memory_tracker.setHardLimit(total_memory_tracker.get());
+            });
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        ASSERT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    /// The nullable view and `reverse_index` must be valid after the exception.
+    ASSERT_NE(column_unique->getNestedColumn(), nullptr);
+    ASSERT_EQ(column_unique->getNestedColumn()->size(), size);
+    ASSERT_TRUE(column_unique->getNestedColumn()->isNullAt(column_unique->getNullValueIndex()));
+    ASSERT_EQ(column_unique->uniqueInsert(Field(String("a"))), size - 1);
+    ASSERT_EQ(column_unique->uniqueInsert(Field(String("b"))), size);
+    ASSERT_EQ(column_unique->getNestedColumn()->size(), size + 1);
+}
+#endif

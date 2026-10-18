@@ -105,7 +105,7 @@ void CombinedPatchBuilder::build()
     }
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
-        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
+        versions[i] = &getColumnUInt64Data(std::as_const(all_patch_blocks[i]), PartDataVersionColumn::name);
 
     enum class RowOp
     {
@@ -224,7 +224,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
         IColumn::Patch::Source source =
         {
             .column = *source_col,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
+            .versions = getColumnUInt64Data(std::as_const(patch_block), PartDataVersionColumn::name),
         };
 
         sources.push_back(std::move(source));
@@ -294,8 +294,8 @@ PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesMergeMicroseconds);
 
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
-    const auto & patch_offset_data = getColumnUInt64Data(patch_block, "_part_offset");
-    const auto & result_offset_data = getColumnUInt64Data(result_block, "_part_offset");
+    const auto & patch_offset_data = getColumnUInt64Data(std::as_const(patch_block), "_part_offset");
+    const auto & result_offset_data = getColumnUInt64Data(std::as_const(result_block), "_part_offset");
 
     UInt64 first_result_offset = result_offset_data[0];
     UInt64 last_result_offset = result_offset_data[num_rows - 1];
