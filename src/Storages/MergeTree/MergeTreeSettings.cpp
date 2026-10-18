@@ -419,6 +419,10 @@ Possible values:
 - `v1`
 - `v2`
 - `v3`
+- `v4` (experimental): adds single-type narrowing. When part-level statistics show a Dynamic
+  column holds rows of exactly one variant type (possibly with NULLs), the on-disk layout is
+  collapsed to `Nullable(T)` instead of full Variant streams. Other parts continue to use the
+  `v3` layout. Reading remains compatible with `v3` parts.
 )", 0, \
         {"25.12", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"}, \
         {"25.8", "v2", "v2", "Add a setting to control Dynamic serialization versions"}) \
