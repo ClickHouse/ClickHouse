@@ -1,0 +1,4 @@
+Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+100	4950
+JoinSpillingHashJoinSwitchedToGraceJoin: 1
+ExternalJoinUncompressedBytes > 0
