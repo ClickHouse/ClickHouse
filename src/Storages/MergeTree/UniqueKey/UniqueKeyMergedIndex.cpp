@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
 #if USE_ROCKSDB
@@ -87,6 +88,8 @@ UniqueKeyMergedIndexBuilder::UniqueKeyMergedIndexBuilder(
 #if USE_ROCKSDB
 namespace
 {
+    constexpr size_t CANCELLATION_CHECK_INTERVAL = 65536;
+
     /// One source's index, read in key order.
     struct SourceCursor
     {
@@ -163,8 +166,11 @@ void UniqueKeyMergedIndexBuilder::build(MergeTreeDataPartChecksums & out_checksu
         heap.push(c);
 
     SSTIndexWriter writer(merged_part_storage, context);
-    while (!heap.empty())
+    for (size_t entries_read = 0; !heap.empty(); ++entries_read)
     {
+        if (entries_read % CANCELLATION_CHECK_INTERVAL == 0)
+            CurrentThread::checkIfNotCancelled();
+
         const size_t c = heap.top();
         heap.pop();
         SourceCursor & cursor = cursors[c];
