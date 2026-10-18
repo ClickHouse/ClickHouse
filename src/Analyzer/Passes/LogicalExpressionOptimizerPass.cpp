@@ -1863,11 +1863,13 @@ public:
         /// semi join keeps only matched rows
         if (join_node->getStrictness() != JoinStrictness::Semi)
         {
-            left_side_preserved = isLeftOrFull(join_node->getKind());
-            if (left_side_preserved)
+            if (isLeftOrFull(join_node->getKind()))
                 tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
             if (isRightOrFull(join_node->getKind()))
                 tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+            /// the planner may swap the sides of a GLOBAL RIGHT JOIN, see tryRewriteGlobalRightJoinAsLeftJoin
+            left_side_preserved = isLeftOrFull(join_node->getKind())
+                || (join_node->getKind() == JoinKind::Right && isGlobalJoin(*join_node, getSettings()));
         }
 
         visitWithPreservedJoinSides(child, std::move(tables), left_side_preserved);
