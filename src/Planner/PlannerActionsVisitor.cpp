@@ -115,10 +115,12 @@ class ActionNodeNameHelper
 public:
     ActionNodeNameHelper(QueryTreeNodeToName & node_to_name_,
         const PlannerContext & planner_context_,
-        bool use_column_identifier_as_action_node_name_)
+        bool use_column_identifier_as_action_node_name_,
+        IsInputColumnName is_input_column_name_ = {})
         : node_to_name(node_to_name_)
         , planner_context(planner_context_)
         , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+        , is_input_column_name(std::move(is_input_column_name_))
     {
     }
 
@@ -377,7 +379,7 @@ public:
                     buffer << ')';
                 }
 
-                result = buffer.str();
+                result = nameApartFromInputColumns(buffer.str());
                 break;
             }
             case QueryTreeNodeType::LAMBDA:
@@ -434,6 +436,19 @@ public:
 
         return result;
     }
+
+    String nameApartFromInputColumns(String name) const
+    {
+        if (!is_input_column_name || !is_input_column_name(name))
+            return name;
+
+        String prefix = "__FUNCTION";
+        for (size_t i = 1; is_input_column_name(prefix + "." + name); ++i)
+            prefix = "__FUNCTION" + std::to_string(i);
+        return prefix + "." + name;
+    }
+
+    const IsInputColumnName & getIsInputColumnName() const { return is_input_column_name; }
 
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
     {
@@ -538,6 +553,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> & node_to_name;
     const PlannerContext & planner_context;
     bool use_column_identifier_as_action_node_name = true;
+    IsInputColumnName is_input_column_name;
 };
 
 class ActionsScopeNode
@@ -719,7 +735,8 @@ public:
         ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
         const ColumnNodePtrWithHashSet & correlated_columns_set_,
-        bool use_column_identifier_as_action_node_name_);
+        bool use_column_identifier_as_action_node_name_,
+        IsInputColumnName is_input_column_name_);
 
     std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
 
@@ -793,11 +810,12 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_
+    bool use_column_identifier_as_action_node_name_,
+    IsInputColumnName is_input_column_name_
 )
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
-    , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
+    , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_, std::move(is_input_column_name_))
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
@@ -1113,7 +1131,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// it itself when it rebuilds the lambda from the serialized plan.
     auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
     auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
-    auto lambda_node_name = calculateActionNodeName(node, *planner_context);
+    QueryTreeNodeToName lambda_node_to_name;
+    ActionNodeNameHelper lambda_name_helper(lambda_node_to_name, *planner_context,
+        /*use_column_identifier_as_action_node_name_=*/ true, action_node_name_helper.getIsInputColumnName());
+    auto lambda_node_name = action_node_name_helper.nameApartFromInputColumns(lambda_name_helper.calculateActionNodeName(node));
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
@@ -1208,7 +1229,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set,
+        /*use_column_identifier_as_action_node_name_=*/ true, action_node_name_helper.getIsInputColumnName());
 
     for (const auto & argument : function_node.getArguments())
     {
@@ -1497,10 +1519,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_)
+    bool use_column_identifier_as_action_node_name_,
+    IsInputColumnName is_input_column_name_)
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+    , is_input_column_name(std::move(is_input_column_name_))
 {}
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
@@ -1509,7 +1533,8 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
         actions_dag,
         planner_context,
         correlated_columns_set,
-        use_column_identifier_as_action_node_name);
+        use_column_identifier_as_action_node_name,
+        is_input_column_name);
     return actions_visitor_impl.visit(expression_node);
 }
 
