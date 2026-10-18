@@ -298,8 +298,10 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
 
     /// The tags and the modification time of an object can change without changing its `ETag` (a copy
     /// of an object onto itself with replaced metadata keeps the contents) or the snapshot of a data lake,
-    /// so neither the key of the files nor the hash of the filter describes them.
-    if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time"))
+    /// so neither the key of the files nor the hash of the filter describes them. Likewise `_table` comes
+    /// from the name of the table, while the entries are keyed by its UUID, which a `RENAME TABLE` keeps.
+    if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time")
+        || info.requested_virtual_columns.contains("_table"))
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
