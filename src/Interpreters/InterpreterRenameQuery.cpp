@@ -255,6 +255,12 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
+
+        /// Views from the same database are checked too: their stored query keeps the old database name.
+        for (auto iterator = db->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(
+                StorageID(old_name, iterator->name()), getContext(), /*is_drop_database*/ false);
+
         db->renameDatabase(getContext(), new_name);
     }
 
