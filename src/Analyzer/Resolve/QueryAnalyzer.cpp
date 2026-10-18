@@ -48,6 +48,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -62,9 +63,12 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -2900,31 +2904,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             rename_transformer_to_used_column_names.emplace(rename_transformer, std::unordered_set<std::string>());
     }
 
-    auto evaluate_rename_lambda = [&](const RenameColumnTransformerNode & rename_transformer, const String & column_name) -> String
-    {
-        if (!scope.context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate RENAME lambda without query context");
-
-        auto lambda_expression_to_resolve = rename_transformer.getLambdaNode()->clone();
-        auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
-        resolveLambda(
-            rename_transformer.getLambdaNode(),
-            lambda_expression_to_resolve,
-            {std::make_shared<ConstantNode>(Field{column_name})},
-            lambda_scope);
-
-        auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
-        auto rename_expression_ast = lambda_expression_to_resolve_typed.getExpression()->toAST();
-        auto [rename_value, _] = evaluateConstantExpression(rename_expression_ast, scope.context);
-
-        if (rename_value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "RENAME lambda must return String, got {}. In scope {}",
-                rename_value.getTypeName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        return rename_value.safeGet<String>();
-    };
+    const RenameColumnTransformerNode * lambda_rename_transformer = nullptr;
+    Array rename_source_names;
+    std::vector<size_t> rename_projection_indices;
 
     ListNodePtr list = std::make_shared<ListNode>();
     ProjectionNames result_projection_names;
@@ -3083,7 +3065,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// while `node_to_projection_name` may be shared with other expressions.
                 if (rename_transformer->getRenameTransformerType() == RenameColumnTransformerType::LAMBDA)
                 {
-                    result_projection_names.back() = evaluate_rename_lambda(*rename_transformer, column_name);
+                    lambda_rename_transformer = rename_transformer;
+                    rename_source_names.emplace_back(column_name);
+                    rename_projection_indices.push_back(result_projection_names.size() - 1);
                 }
                 else if (auto new_name = rename_transformer->findNewName(column_name))
                 {
@@ -3220,6 +3204,60 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             list->getNodes().push_back(node);
         else
             result_projection_names.pop_back();
+    }
+
+    if (lambda_rename_transformer)
+    {
+        /// Resolve the `RENAME` lambda once with a `String` argument, then evaluate it
+        /// over all surviving column names using `arrayMap`. Names stay local to this matcher.
+        auto rename_function = std::make_shared<FunctionNode>("arrayMap");
+        rename_function->getArguments().getNodes() =
+        {
+            lambda_rename_transformer->getLambdaNode()->clone(),
+            std::make_shared<ConstantNode>(std::move(rename_source_names),
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()))
+        };
+        QueryTreeNodePtr rename_expression = rename_function;
+        resolveExpressionNode(rename_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        ColumnPtr result_column;
+        if (const auto * constant = rename_expression->as<ConstantNode>())
+            result_column = constant->getColumn();
+        else
+        {
+            /// The analyzer does not fold results larger than its constant-folding size limit.
+            /// Build actions from the resolved tree to evaluate those results without an AST round trip.
+            auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            auto planner_context = std::make_shared<PlannerContext>(Context::createCopy(scope.context), global_planner_context, SelectQueryOptions{});
+            collectSetsAndSourceColumns(rename_expression, planner_context, false /*keep_alias_columns*/);
+            auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                rename_expression, {}, planner_context, ColumnNodePtrWithHashSet{});
+            correlated_subtrees.assertEmpty("in RENAME lambda");
+
+            if (actions.getOutputs().size() != 1 || !actions.getRequiredColumnsNames().empty()
+                || actions.hasNonDeterministicOrStatefulFunctions())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "RENAME lambda must return a constant String for each column name");
+
+            result_column = actions.getOutputs().front()->column;
+        }
+        if (!result_column || !isColumnConst(*result_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RENAME lambda must return a constant String for each column name");
+
+        const auto & result_data = assert_cast<const ColumnConst &>(*result_column).getDataColumn();
+        auto result = result_data[0];
+        if (result.getType() != Field::Types::Array)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RENAME name mapping must return an array");
+        const auto & renamed_names = result.safeGet<Array>();
+        if (renamed_names.size() != rename_projection_indices.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RENAME name mapping changed the number of columns");
+
+        for (size_t i = 0; i < renamed_names.size(); ++i)
+        {
+            const auto & name = renamed_names[i];
+            if (name.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "RENAME lambda must return String, got {}", name.getTypeName());
+            result_projection_names[rename_projection_indices[i]] = name.safeGet<String>();
+        }
     }
 
     for (auto & [rename_transformer, used_column_names] : rename_transformer_to_used_column_names)
