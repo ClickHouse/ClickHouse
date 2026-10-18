@@ -25,6 +25,14 @@
                 step -&gt; (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000),
                 arrayFilter(step -&gt; sipHash64(number, step) % 2 = 0, range(300)))
         FROM numbers_mt(8000)
+        UNION ALL
+        SELECT
+            if(number &lt; 5000, 'mm_left', 'mm_right'),
+            map('k', toString(intDiv(number % 5000, 5))),
+            arrayMap(
+                step -&gt; (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000),
+                arrayFilter(step -&gt; if(number &lt; 5000, step % 3 != 0, step % 5 != 0), range(300)))
+        FROM numbers_mt(10000)
     </fill_query>
 
     <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo[10]) and on(instance) last_over_time(bar[10])', 100, 3090, 10) FORMAT Null</query>
@@ -35,6 +43,9 @@
     <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) and on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) or on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) unless on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
+
+    <!-- 1000 match keys, five series on each side, gaps on every third and fifth step. -->
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(mm_left[10]) or on(k) last_over_time(mm_right[10])', 100, 3090, 10) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_set_operator_presence_mask_ts</drop_query>
 </test>

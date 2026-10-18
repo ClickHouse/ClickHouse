@@ -6,7 +6,10 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
+#include <unordered_set>
 
 #include <Interpreters/Context.h>
 
@@ -55,6 +58,13 @@ public:
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
+        ++visit_depth;
+        SCOPE_EXIT({
+            --visit_depth;
+            if (visit_depth == 0)
+                entered_shared_bodies.clear();
+        });
+
         bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
         if (!traverse_top_to_bottom)
             visitChildren(query_tree_node);
@@ -85,10 +95,13 @@ private:
 
             bool need_visit_child = getDerived().needChildVisit(expression, child);
 
-            if (need_visit_child)
+            if (need_visit_child && enterSharedMaterializedCTEBody(expression, child, entered_shared_bodies))
                 visit(child);
         }
     }
+
+    size_t visit_depth = 0;
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
 };
 
 template <typename Derived>
@@ -109,10 +122,26 @@ public:
     using VisitQueryTreeNodeType = QueryTreeNodePtr;
 
     explicit InDepthQueryTreeVisitorWithContext(ContextPtr context, size_t initial_subquery_depth = 0)
-        : current_context(std::move(context))
-        , subquery_depth(initial_subquery_depth)
+        : InDepthQueryTreeVisitorWithContext(std::move(context), initial_subquery_depth, nullptr)
     {}
 
+protected:
+    explicit InDepthQueryTreeVisitorWithContext(
+        ContextPtr context,
+        size_t initial_subquery_depth,
+        std::unordered_set<const IQueryTreeNode *> * shared_entered_bodies)
+        : current_context(std::move(context))
+        , subquery_depth(initial_subquery_depth)
+        , owns_entered_shared_bodies(shared_entered_bodies == nullptr)
+        , entered_shared_bodies(owns_entered_shared_bodies ? &owned_entered_shared_bodies : shared_entered_bodies)
+    {}
+
+    std::unordered_set<const IQueryTreeNode *> & getEnteredSharedBodies()
+    {
+        return *entered_shared_bodies;
+    }
+
+public:
     /// Return true if visitor should visit child, false otherwise
     bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
     {
@@ -157,6 +186,14 @@ public:
 
         if (is_subquery_node)
             ++subquery_depth;
+
+        ++visit_depth;
+        SCOPE_EXIT({
+            --visit_depth;
+            /// Only the owner clears the set. A nested visitor borrows it.
+            if (visit_depth == 0 && owns_entered_shared_bodies)
+                entered_shared_bodies->clear();
+        });
 
         getDerived().enterImpl(query_tree_node);
 
@@ -210,7 +247,8 @@ private:
             }
             return;
         }
-        visit(child);
+        if (enterSharedMaterializedCTEBody(parent, child, *entered_shared_bodies))
+            visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)
@@ -224,6 +262,10 @@ private:
 
     ContextPtr current_context;
     size_t subquery_depth = 0;
+    size_t visit_depth = 0;
+    bool owns_entered_shared_bodies = true;
+    std::unordered_set<const IQueryTreeNode *> owned_entered_shared_bodies;
+    std::unordered_set<const IQueryTreeNode *> * entered_shared_bodies = &owned_entered_shared_bodies;
 };
 
 }

@@ -7,10 +7,13 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Analyzer/traverseQueryTree.h>
+
+#include <Interpreters/MaterializedCTE.h>
 
 namespace DB
 {
@@ -90,10 +93,39 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     }
 }
 
+void pruneUnusedProjectionColumns(
+    const std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> & node_to_used_columns)
+{
+    for (const auto & [query_or_union_node, used_columns] : node_to_used_columns)
+    {
+        /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
+        if (auto * query_node = query_or_union_node->as<QueryNode>())
+        {
+            if (query_node->isDistinct())
+                continue;
+        }
+
+        auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
+        updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
+
+        /// Keep at least 1 column if used projection columns are empty
+        if (used_projection_indexes.empty())
+            used_projection_indexes.insert(0);
+
+        if (auto * union_node = query_or_union_node->as<UnionNode>())
+            union_node->removeUnusedProjectionColumns(used_projection_indexes);
+        else if (auto * query_node = query_or_union_node->as<QueryNode>())
+            query_node->removeUnusedProjectionColumns(used_projection_indexes);
+    }
+}
+
 }
 
 void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr /*context*/)
 {
+    /// United requirements of every parent of one shared body. Pruned once after the walk.
+    std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> shared_body_columns;
+    std::unordered_set<const IQueryTreeNode *> visited_queries;
     QueryTreeNodes nodes_to_visit = { query_tree_node };
 
     while (!nodes_to_visit.empty())
@@ -101,7 +133,9 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         auto node_to_visit = std::move(nodes_to_visit.back());
         nodes_to_visit.pop_back();
 
-        std::unordered_set<QueryTreeNodePtr> subqueries_nodes_to_visit;
+        if (!visited_queries.insert(node_to_visit.get()).second)
+            continue;
+
         std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> node_to_used_columns;
 
         /// Initialize map with query and union nodes in the FROM clause
@@ -112,16 +146,34 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                     node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
         }
 
+        auto remember_used_column = [&node_to_used_columns, &shared_body_columns](
+            const QueryTreeNodePtr & column_source_node, const std::string & column_name)
+        {
+            if (auto it = node_to_used_columns.find(column_source_node); it != node_to_used_columns.end())
+                it->second.insert(column_name);
+
+            /// The temporary table already stores every projection column of an initialized body.
+            const auto * source_table = column_source_node->as<TableNode>();
+            if (!source_table || !source_table->sharesMaterializedCTEBody()
+                || source_table->getMaterializedCTE()->isStorageInitialized())
+                return;
+
+            const auto & body = source_table->getMaterializedCTESubquery();
+            if (body)
+                shared_body_columns[body].insert(column_name);
+        };
+
         /// Collect information about what columns are used in the query.
         traverseQueryTree(node_to_visit,
-            [&subqueries_nodes_to_visit, &node_to_used_columns](
+            [&nodes_to_visit, &visited_queries, &remember_used_column](
                 const QueryTreeNodePtr & /*parent*/,
                 const QueryTreeNodePtr & child
             )
             {
                 if (isQueryOrUnionNode(child))
                 {
-                    subqueries_nodes_to_visit.insert(child);
+                    if (!visited_queries.contains(child.get()))
+                        nodes_to_visit.push_back(child);
 
                     auto * query_node = child->as<QueryNode>();
                     auto * union_node = child->as<UnionNode>();
@@ -130,19 +182,13 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                     for (const auto & correlated_column : correlated_columns)
                     {
                         auto * column_node = correlated_column->as<ColumnNode>();
-                        auto column_source_node = column_node->getColumnSource();
-                        auto column_source_node_type = column_source_node->getNodeType();
-                        if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-                        {
-                            if (auto it = node_to_used_columns.find(column_source_node); it != node_to_used_columns.end())
-                                it->second.insert(column_node->getColumnName());
-                        }
+                        remember_used_column(column_node->getColumnSource(), column_node->getColumnName());
                     }
                     return false;
                 }
                 return true;
             },
-            [&node_to_used_columns](const QueryTreeNodePtr & node)
+            [&remember_used_column](const QueryTreeNodePtr & node)
             {
                 const auto node_type = node->getNodeType();
                 if (node_type != QueryTreeNodeType::COLUMN)
@@ -152,44 +198,18 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 if (column_node.getColumnName() == "__grouping_set")
                     return;
 
-                auto column_source_node = column_node.getColumnSource();
-
-                auto it = node_to_used_columns.find(column_source_node);
                 /// If the source node is not found in the map then:
                 /// 1. Tt's either not a Query or Union node.
                 /// 2. It's a correlated column and it comes from the outer scope.
-                if (it != node_to_used_columns.end())
-                {
-                    it->second.insert(column_node.getColumnName());
-                }
+                remember_used_column(column_node.getColumnSource(), column_node.getColumnName());
             });
 
-        /// Pass information about used columns to subqueries and remove unused projection columns
-        for (auto & [query_or_union_node, used_columns] : node_to_used_columns)
-        {
-            /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
-            if (auto * query_node = query_or_union_node->as<QueryNode>())
-            {
-                if (query_node->isDistinct())
-                    continue;
-            }
-
-            auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
-            updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
-
-            /// Keep at least 1 column if used projection columns are empty
-            if (used_projection_indexes.empty())
-                used_projection_indexes.insert(0);
-
-            if (auto * union_node = query_or_union_node->as<UnionNode>())
-                union_node->removeUnusedProjectionColumns(used_projection_indexes);
-            else if (auto * query_node = query_or_union_node->as<QueryNode>())
-                query_node->removeUnusedProjectionColumns(used_projection_indexes);
-        }
-
-        for (const auto & subquery_node_to_visit : subqueries_nodes_to_visit)
-            nodes_to_visit.push_back(subquery_node_to_visit);
+        /// Prune these subqueries before they are walked.
+        pruneUnusedProjectionColumns(node_to_used_columns);
     }
+
+    if (prune_shared_bodies)
+        pruneUnusedProjectionColumns(shared_body_columns);
 }
 
 }

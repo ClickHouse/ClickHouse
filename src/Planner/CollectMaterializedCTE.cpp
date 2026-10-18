@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/Exception.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -40,37 +42,122 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
 
     size_t level = 0;
     size_t max_level = 0;
+
+    /// Nested levels from the first walk of a shared body. A later reference adds this offset.
+    std::unordered_map<MaterializedCTEPtr, std::unordered_map<MaterializedCTEPtr, size_t>> relative_levels;
+    std::unordered_set<const MaterializedCTE *> walked_bodies;
+    struct WalkingBody
+    {
+        MaterializedCTEPtr cte;
+        size_t entry_level;
+    };
+    std::vector<WalkingBody> walking;
+    std::vector<char> entered_body;
+
+    auto propagate = [&](const MaterializedCTEPtr & root_owner, size_t root_level)
+    {
+        std::vector<std::pair<MaterializedCTEPtr, size_t>> pending;
+        pending.emplace_back(root_owner, root_level);
+
+        /// A cycle of relative levels must not raise levels without end.
+        const size_t cte_count = std::max<size_t>(materialized_ctes.size(), 1);
+        const size_t hop_limit = cte_count * cte_count * cte_count;
+        size_t hops = 0;
+
+        while (!pending.empty() && hops < hop_limit)
+        {
+            ++hops;
+            auto [owner, owner_level] = pending.back();
+            pending.pop_back();
+
+            auto owner_it = materialized_ctes.find(owner);
+            if (owner_it == materialized_ctes.end() || owner_level < owner_it->second.level)
+                continue;
+
+            auto found = relative_levels.find(owner);
+            if (found == relative_levels.end())
+                continue;
+
+            const size_t new_entry = owner_level + 1;
+            for (const auto & [nested, relative] : found->second)
+            {
+                auto nested_it = materialized_ctes.find(nested);
+                if (nested_it == materialized_ctes.end())
+                    continue;
+
+                const size_t candidate = new_entry + relative;
+                if (candidate <= nested_it->second.level)
+                    continue;
+
+                nested_it->second.level = candidate;
+                max_level = std::max(max_level, candidate);
+                pending.emplace_back(nested, candidate);
+            }
+        }
+    };
+
+    auto qualifies = [&](const TableNode * table_node) -> MaterializedCTEPtr
+    {
+        if (!table_node)
+            return {};
+
+        const auto & cte = table_node->getMaterializedCTE();
+        /// A subquery-less, non-plan-backed reference is the CTE's temp storage resolved by name
+        /// (e.g. a per-shard local plan reading a shipped external table): nothing to materialize.
+        /// A plan that may run as a standalone pipeline is the exception - nothing above it can
+        /// gate its readers, so it plants its own gate.
+        if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
+                    || select_query_options.force_materialize_cte))
+            return cte;
+
+        return {};
+    };
+
     traverseQueryTree(node, Everything{},
     [&](const QueryTreeNodePtr & current_node)
     {
-        if (auto * table_node = current_node->as<TableNode>())
+        auto * table_node = current_node->as<TableNode>();
+        auto cte = qualifies(table_node);
+        if (!cte)
+            return;
+
+        const bool shares = table_node->sharesMaterializedCTEBody();
+        const bool first_shared_walk = shares && walked_bodies.insert(cte.get()).second;
+
+        auto [it, inserted] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{current_node, level});
+        if (!inserted && level > it->second.level)
         {
-            const auto & cte = table_node->getMaterializedCTE();
-            /// A subquery-less, non-plan-backed reference is the CTE's temp storage resolved by name
-            /// (e.g. a per-shard local plan reading a shipped external table): nothing to materialize.
-            /// A plan that may run as a standalone pipeline is the exception - nothing above it can
-            /// gate its readers, so it plants its own gate.
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
-                        || select_query_options.force_materialize_cte))
-            {
-                auto [it, _] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{current_node, level});
-
-                it->second.level = std::max(it->second.level, level);
-                max_level = std::max(max_level, level);
-
-                ++level;
-            }
+            it->second.level = level;
+            if (shares && !first_shared_walk)
+                propagate(cte, level);
         }
+
+        max_level = std::max(max_level, it->second.level);
+
+        for (const auto & frame : walking)
+        {
+            if (frame.cte == cte || level < frame.entry_level)
+                continue;
+
+            auto & slot = relative_levels[frame.cte][cte];
+            slot = std::max(slot, level - frame.entry_level);
+        }
+
+        ++level;
+        entered_body.push_back(first_shared_walk ? 1 : 0);
+        if (first_shared_walk)
+            walking.push_back(WalkingBody{cte, level});
     },
-    [&level, &select_query_options](const QueryTreeNodePtr & current_node)
+    [&](const QueryTreeNodePtr & current_node)
     {
-        if (auto * table_node = current_node->as<TableNode>())
-        {
-            const auto & cte = table_node->getMaterializedCTE();
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
-                        || select_query_options.force_materialize_cte))
-                --level;
-        }
+        if (!qualifies(current_node->as<TableNode>()))
+            return;
+
+        const bool pushed = entered_body.back();
+        entered_body.pop_back();
+        if (pushed)
+            walking.pop_back();
+        --level;
     });
 
     if (materialized_ctes.empty())

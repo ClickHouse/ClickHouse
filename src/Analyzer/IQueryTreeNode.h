@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include <Parsers/IAST_fwd.h>
@@ -270,8 +271,12 @@ public:
     public:
         size_t getNodeId(const IQueryTreeNode * node);
 
+        /// A shared materialized CTE body is dumped once. Return false when this dump already entered it.
+        bool enterSharedMaterializedCTEBody(const IQueryTreeNode * body);
+
     private:
         std::unordered_map<const IQueryTreeNode *, size_t> node_to_id;
+        std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
     };
 
     /** Dump query tree to buffer starting with indent.
