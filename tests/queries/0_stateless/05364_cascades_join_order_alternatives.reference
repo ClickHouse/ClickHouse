@@ -1,0 +1,23 @@
+-- the fact table is joined with the broadcast dimension before any shuffle
+GatherExchange
+JoinLogical (Shuffle HashJoin )
+ShuffleExchange
+ReadFromMergeTree (ParallelRead default.t_alt_bridge)
+ShuffleExchange
+JoinLogical (Broadcast HashJoin )
+ReadFromMergeTree (ParallelRead default.t_alt_fact)
+ReadFromMergeTree (ReplicatedRead default.t_alt_dim)
+-- the same result with either order and on one node
+31398000	4000
+31398000	4000
+31398000	4000
+-- all three ways to split the tables, the same plan and result
+GatherExchange
+JoinLogical (Shuffle HashJoin )
+ShuffleExchange
+ReadFromMergeTree (ParallelRead default.t_alt_bridge)
+ShuffleExchange
+JoinLogical (Broadcast HashJoin )
+ReadFromMergeTree (ParallelRead default.t_alt_fact)
+ReadFromMergeTree (ReplicatedRead default.t_alt_dim)
+31398000	4000

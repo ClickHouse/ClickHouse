@@ -1,0 +1,10 @@
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_xr_fact)
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (ReplicatedRead default.t_xr_dim)

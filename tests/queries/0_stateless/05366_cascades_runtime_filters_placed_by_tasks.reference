@@ -1,0 +1,6 @@
+-- no runtime filter steps in the initiator plan
+0
+-- the tasks create filters, and the result is right
+49504500
+49504500
+1

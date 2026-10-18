@@ -1197,4 +1197,17 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     return &dag.addFunction(and_func, std::move(and_args), {});
 }
 
+size_t countPendingRuntimeFilters(
+    const IRuntimeFilterLookup & lookup, const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors)
+{
+    size_t pending = 0;
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup.find(descriptor.filter_id);
+        if (!filter || !filter->isReady())
+            ++pending;
+    }
+    return pending;
+}
+
 }

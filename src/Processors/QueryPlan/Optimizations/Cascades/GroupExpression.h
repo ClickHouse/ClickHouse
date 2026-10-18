@@ -93,10 +93,14 @@ public:
 
     std::optional<ExpressionCost> cost;
 
-    /// Physical output row count when it differs from the group's logical statistics: a partial
-    /// top-N emits up to L rows on each of its nodes while the group stats are trimmed to L.
-    /// Set during costing (statistics are derived by then); parents price exchanges on it.
-    std::optional<Float64> physical_output_rows;
+    /// Copies of each row of the group's logical result that this implementation emits, one when it emits the logical
+    /// result: a partial top-N emits up to L rows on each of its nodes while the group stats are trimmed to L, a partial
+    /// aggregation a state per group on each node that has rows of the group. Set during costing (statistics are
+    /// derived by then) from the selected inputs, see `derivePhysicalCopies`; the parents price the rows they read
+    /// and move on it.
+    Float64 physical_copies = 1.0;
+    /// The physical output is not known: `physical_copies` is a search value, not an estimate.
+    bool physical_copies_unknown = false;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

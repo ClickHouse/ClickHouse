@@ -1,0 +1,33 @@
+-- toYear: 3 years
+rows: ~3.0
+-- a decreasing chain: 3 years
+rows: ~3.0
+-- a Nullable argument: 3 years
+rows: ~3.0
+-- toYYYYMM: the 209 integers from 202001 to 202209 bound the 33 months
+rows: ~209.0
+-- toDayOfWeek is not monotonic over the range: the NDV of the dates
+rows: ~1003.0
+-- materialize and toNullable keep the values, LowCardinality is looked through: 3 years
+rows: ~3.0
+rows: ~3.0
+-- assumeNotNull exposes the values stored under NULL, which the range does not cover: the NDV of the dates and one more
+rows: ~1004.0
+-- the range of a float column leaves out NaN: the 3 values of x, not the 1 sign of -2 and -1
+rows: ~3.0
+-- a union covers the ranges of both inputs: 2020 and 2021, not the 1 year of the first input
+rows: ~2.0
+-- an outer join pads with the default date of 1970, outside the range: the 100 dates, not 1 year
+rows: ~100.0
+-- GROUPING SETS fill the key with the default date of 1970, outside the range: the 100 dates, not 1 year
+rows: ~100.0
+-- an anti join fills the columns of the other side with the default date of 1970, outside the range: with the 2021 dates of a union, the NDV of the dates, not 1 year
+rows: ~200.0
+-- JOIN USING casts the key to DateTime64(3), whose values the range of DateTime64(0) does not describe: the 2 times, not 1 year
+rows: ~2.0
+-- FINAL of SummingMergeTree returns sums, which the range of the stored values does not cover: the 2 values, not 1 year
+rows: ~2.0
+-- an update that the read applies on the fly changes values the range does not cover: the 2 dates, not 1 year
+rows: ~2.0
+-- a pending rename gives x the values of the old y, which the statistics of the old x do not describe: the 2 dates, not 1 year
+rows: ~2.0

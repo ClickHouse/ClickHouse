@@ -94,7 +94,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
 /// Compute selectivity combining direct edges and transitive equivalence classes.
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
-SelectivityEstimate computeSelectivity(
+JoinKeyEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
@@ -102,9 +102,13 @@ SelectivityEstimate computeSelectivity(
     const BitSet & left,
     const BitSet & right)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = query_graph.probe_keys_within_preserved_side;
+    collectEdgeKeys(query_graph, dp_table, expression_selectivity, edges, left, keys);
 
-    /// Also account for transitively-equivalent columns spanning both sides.
+    /// One key per equivalence class with members on both sides: the largest values over the
+    /// members of each side, as evaluating every (left member, right member) pair and taking the
+    /// most selective would give, since min(1/max(l, r)) = 1/max(all l's and r's).
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
     std::unordered_set<ConstClassPtr> visited;
 
@@ -118,34 +122,47 @@ SelectivityEstimate computeSelectivity(
         if (!equiv_class || !visited.insert(equiv_class).second)
             continue;
 
-        /// Find the maximum NDV across all members of this class that belong
-        /// to either side of the join. This is equivalent to evaluating all
-        /// (left_member, right_member) pairs and taking the minimum selectivity,
-        /// since min(1/max(l,r)) = 1/max(all l's and r's).
-        UInt64 max_ndv = 0;
-        UInt64 max_ndv_upper_bound = 0;
+        KeyDistinctValues left_distinct_values;
+        KeyDistinctValues right_distinct_values;
+        UInt64 domain_distinct_values = 0;
         bool has_left = false;
         bool has_right = false;
+        std::vector<UInt64> left_columns;
+        std::vector<UInt64> right_columns;
         for (const auto & equiv_member : *equiv_class)
         {
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
+            KeyDistinctValues * side = nullptr;
             if (left.test(*relation))
+            {
                 has_left = true;
+                side = &left_distinct_values;
+                left_columns.push_back(keyColumnId(equiv_member.getColumnName()));
+            }
             else if (right.test(*relation))
+            {
                 has_right = true;
+                side = &right_distinct_values;
+                right_columns.push_back(keyColumnId(equiv_member.getColumnName()));
+            }
             else
                 continue;
-            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
-            max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
-            max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
+            const auto member_values = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+            side->from_statistics = std::max(side->from_statistics, member_values.from_statistics);
+            side->rows = std::max(side->rows, member_values.rows);
+            side->imprecise |= member_values.imprecise;
+            domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
         }
         if (has_left && has_right)
-            applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+        {
+            keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
+            keys.countIndependentKey(left_distinct_values, right_distinct_values, left_columns, right_columns);
+        }
     }
 
-    return estimate;
+    return keys;
 }
 
 }

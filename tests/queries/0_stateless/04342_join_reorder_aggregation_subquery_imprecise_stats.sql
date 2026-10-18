@@ -29,9 +29,9 @@ OPTIMIZE TABLE t_agg_stats FINAL;
 
 SET use_statistics = 1;
 
--- The aggregation subquery reads from a table without statistics. Its row estimate is derived from the
--- MergeTree fallback, so the imprecise/`no_stats~` annotation must be carried through the aggregation
--- (estimateAggregatingStepStats) and reach join reordering, instead of being silently reset to precise.
+-- The aggregation subquery reads from a table without statistics. Its key has no NDV, so the
+-- aggregation's row count is unknown and the `no_stats~` annotation reaches the join reordering
+-- above it.
 SELECT '-- aggregation subquery over a table without statistics keeps the no_stats label --';
 SELECT trimLeft(explain) FROM
 (

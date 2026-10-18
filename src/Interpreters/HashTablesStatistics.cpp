@@ -44,8 +44,14 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
     // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
     if (!hint || hint->shouldBeUpdated(new_entry))
     {
-        LOG_TRACE(getLogger("HashTablesStatistics"), "Statistics updated for key={}: {}", params.key, new_entry.dump());
-        cache->set(params.key, std::make_shared<Entry>(new_entry));
+        auto entry = std::make_shared<Entry>(new_entry);
+        if constexpr (requires { hint->keepFieldsMissingIn(*entry); })
+        {
+            if (hint)
+                hint->keepFieldsMissingIn(*entry);
+        }
+        LOG_TRACE(getLogger("HashTablesStatistics"), "Statistics updated for key={}: {}", params.key, entry->dump());
+        cache->set(params.key, std::move(entry));
     }
 }
 

@@ -5,11 +5,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -19,10 +21,10 @@ namespace DB
 /// Fallback implementation rule for steps not handled by specialized rules.
 /// Creates a single implementation at {1 node} without distribution propagation.
 /// Distributed execution of these steps is handled by dedicated rules
-/// (`AggregationImplementation`, `SortingEnforcer`, etc.).
+/// (`AggregationImplementation`, `DistinctImplementation`, `SortingEnforcer`, etc.).
 ///
-/// Stateless per-row steps (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`)
-/// are excluded and handled by `DistributionPassthrough` instead.
+/// Steps that run on any split of their input (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`,
+/// a preliminary `DistinctStep`) are excluded and handled by `DistributionPassthrough` instead.
 class DefaultImplementation : public IOptimizationRule
 {
 public:
@@ -33,7 +35,9 @@ public:
         const auto * step = expression->getQueryPlanStep();
         /// Steps with specialized implementation rules.
         if (typeid_cast<const AggregatingStep *>(step) != nullptr
+            || typeid_cast<const DistinctStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
+            || typeid_cast<const WindowStep *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
         /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo

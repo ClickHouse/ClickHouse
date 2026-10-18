@@ -4,12 +4,11 @@ Expression (Project names)
     Sorting
       Aggregating
         JoinLogical (Local HashJoin  swapped)
-          BuildRuntimeFilter (Build runtime join filter on __table2.k)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (default.t_corr_right_multi)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_corr_right_multi)
           GatherExchange
             Aggregating
-              Expression ((Apply runtime join filter + Change column names to column identifiers))
+              Expression (Change column names to column identifiers)
                 ReadFromMergeTree (ParallelRead default.t_corr_left)
 -- canary: variant B (full pushdown) fires for case 13\'s query (single Aggregating, below the join)
 Expression (Project names)

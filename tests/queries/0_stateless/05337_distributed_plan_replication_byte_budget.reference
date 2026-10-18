@@ -1,0 +1,91 @@
+-- 1000 rows of 2 MB each exceed the default budget: shuffle
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ShuffleExchange (by hash([__table1.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_big)
+            ShuffleExchange (by hash([__table2.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_small)
+-- the same rows at 16 bytes fit: broadcast
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_rb_big)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_small)
+-- a filter the primary key cannot prune leaves the rows unknown; the bound of 1000 rows fits the row limit: broadcast
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_rb_big)
+            BroadcastExchange
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_rb_small)
+-- the same bound above a row limit of 500: shuffle
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            ShuffleExchange (by hash([__table1.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_big)
+            ShuffleExchange (by hash([__table2.k]))
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_rb_small)
+-- a table that fits the row limit stays one read task, unless its bytes exceed the budget
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        ScatterExchange (any)
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_rb_small)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_rb_small)
+-- the width of a row comes from the estimator too: 2 MB rows by hint exceed the budget
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_rb_small)
+-- a UNION ALL is as wide as its inputs weighted by their rows: 2000 rows of 16 and 2000 bytes do not fit a budget of 100000 bytes
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ShuffleExchange (by hash([__table1.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_big)
+            ScatterExchange (by hash([__table2.k]))
+              Union
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_rb_small)
+                GatherExchange
+                  Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                    ReadFromMergeTree (default.t_rb_wide)
+-- results do not depend on the shape
+14300
+14300

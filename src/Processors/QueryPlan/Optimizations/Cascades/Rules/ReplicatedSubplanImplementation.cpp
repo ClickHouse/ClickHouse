@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Common/typeid_cast.h>
@@ -60,6 +61,12 @@ public:
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
+        /// Every node recomputes the step over replicated inputs, so each input is data copied
+        /// to every node and has to fit the byte budget.
+        for (const auto & input : expression->inputs)
+            if (!decideReplicationOf(*memo.getGroup(input.group_id), memo.getContext(), getName(), /*repeats_scan*/ true).allowed)
+                return {};
+
         DistributionDescription replicated_distribution;
         replicated_distribution.node_count = required_properties.distribution.node_count;
         replicated_distribution.is_replicated = true;

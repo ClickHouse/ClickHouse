@@ -852,6 +852,25 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 }
 
 
+bool containsJoinRuntimeFilter(const ActionsDAG::Node * node)
+{
+    std::vector<const ActionsDAG::Node *> stack{node};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (!visited.insert(current).second)
+            continue;
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+            && current->function_base->getName() == "__applyFilter")
+            return true;
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
 {
     std::vector<RuntimeFilterIndexAnalysisDescriptor> res;

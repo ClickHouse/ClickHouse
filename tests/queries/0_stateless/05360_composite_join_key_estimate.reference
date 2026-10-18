@@ -1,0 +1,5 @@
+true rows	2000
+-- two key columns
+(rows: ~20000.0, bound: 40000000, from defaults)
+-- a column in two keys: the second key is not independent, only the most selective key counts
+(rows: ~200000.0, bound: 40000000)

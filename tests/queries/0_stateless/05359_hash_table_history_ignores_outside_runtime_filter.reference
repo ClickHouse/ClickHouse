@@ -1,0 +1,6 @@
+5000
+-- the inner join estimate after one run
+(rows: ~1000.0
+5000
+-- the inner join estimate after two runs
+(rows: ~1000.0

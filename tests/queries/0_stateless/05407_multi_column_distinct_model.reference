@@ -1,0 +1,24 @@
+-- default and largest: the largest NDV, 100
+rows: ~100.0
+rows: ~100.0
+-- product: 100 * 50 * 10
+rows: ~50000.0
+-- geometric_mean: sqrt(100 * 50000)
+rows: ~2236.0
+-- backoff: 100 * 50^(1/2) * 10^(1/4)
+rows: ~1257.0
+-- per_table: the three columns are of one table, so the largest NDV, 100
+rows: ~100.0
+-- postgres: the product 50000, at most 10% of the 100000 rows of the table
+rows: ~10000.0
+-- postgres: two keys of 100 and 50 values, below the cap, multiply
+rows: ~5000.0
+-- a join on two key columns of 100 and 50 values (the estimates not randomized): default takes the geometric mean of 1/100 and 1/5000, postgres multiplies 1/100 and 1/50
+rows: ~14142136.0
+rows: ~2000000.0
+-- DISTINCT gets the same estimate
+rows: ~1257.0
+-- the settings are separate: the group count keeps backoff while the join uses postgres
+rows: ~1257.0
+rows: ~2000000.0
+-- an unknown model is an error

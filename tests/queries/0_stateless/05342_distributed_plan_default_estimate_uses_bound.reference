@@ -1,0 +1,38 @@
+-- an equality estimated from statistics (100 of 1000 rows) fits the budget: broadcast
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_db_big)
+            BroadcastExchange
+              GatherExchange
+                Expression ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.t_db_dim)
+-- the LIKE default also says 100 rows, but it is a guess and the bound of 1000 rows does not fit: shuffle
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            ShuffleExchange (by hash([__table1.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_db_big)
+            ShuffleExchange (by hash([__table2.k]))
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_db_dim)
+-- with a budget the bound fits, the guess may broadcast
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_db_big)
+            BroadcastExchange
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_db_dim)

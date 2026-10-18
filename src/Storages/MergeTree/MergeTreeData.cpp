@@ -1147,7 +1147,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     {
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
-        estimator_builder.incrementRowCount(part.data_part->rows_count);
+        estimator_builder.addPart(part.data_part->rows_count);
         for (const auto & [column_name, stat] : stats)
             estimator_builder.addStatistics(column_name, stat);
     }

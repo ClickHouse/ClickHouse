@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -10,6 +11,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -233,7 +235,30 @@ static void setQueryConditionCacheAttribution(
     };
 }
 
-void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns, const bool suppress_for_vector_search)
+/// `ActionsDAG::mergeNodes` binds an added node to an existing node of the same name. Two runtime filters of one join
+/// have the same name but different lookup keys, so merging one into a PREWHERE that holds the other would make it
+/// look up the other's key, which may be one that nothing registers.
+static bool hasConstantOfSameNameAndOtherValue(const ActionsDAG & existing, const ActionsDAG & added)
+{
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> existing_by_name;
+    for (const auto & node : existing.getNodes())
+        existing_by_name.emplace(node.result_name, &node);
+
+    for (const auto & node : added.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+            continue;
+        auto it = existing_by_name.find(node.result_name);
+        if (it == existing_by_name.end())
+            continue;
+        const auto * other = it->second;
+        if (other->type != ActionsDAG::ActionType::COLUMN || !other->column || node.column->getField() != other->column->getField())
+            return true;
+    }
+    return false;
+}
+
+void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns, const bool suppress_for_vector_search, const bool runtime_filters_only)
 {
     /// Assume that there are at least 2 nodes:
     /// 1. FilterNode - parent_node
@@ -266,7 +291,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     PrewhereInfoPtr existing_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (existing_prewhere_info
-        && (!settings[Setting::optimize_prewhere_after_pushdown] || !source_step_with_filter->canUpdatePrewhereInfoMultipleTimes()))
+        && ((!runtime_filters_only && !settings[Setting::optimize_prewhere_after_pushdown])
+            || !source_step_with_filter->canUpdatePrewhereInfoMultipleTimes()))
+        return;
+
+    if (existing_prewhere_info && hasConstantOfSameNameAndOtherValue(existing_prewhere_info->prewhere_actions, filter_step->getExpression()))
         return;
 
     bool is_final = source_step_with_filter->isQueryWithFinal();
@@ -347,6 +376,16 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         source_step_with_filter->getContext(),
         is_final,
         columns_read_before_filter);
+
+    /// Only the runtime filters move: the other conditions had their PREWHERE decision already.
+    if (runtime_filters_only)
+    {
+        const size_t moved_conditions = optimize_result.prewhere_nodes.size();
+        std::erase_if(optimize_result.prewhere_nodes_list, [](const ActionsDAG::Node * node) { return !containsJoinRuntimeFilter(node); });
+        std::erase_if(optimize_result.prewhere_nodes, [](const ActionsDAG::Node * node) { return !containsJoinRuntimeFilter(node); });
+        if (optimize_result.prewhere_nodes.size() != moved_conditions)
+            optimize_result.fully_moved_to_prewhere = false;
+    }
 
     if (optimize_result.prewhere_nodes.empty())
         return;
