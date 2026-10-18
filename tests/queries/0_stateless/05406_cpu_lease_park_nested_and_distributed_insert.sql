@@ -12,7 +12,7 @@ DROP RESOURCE IF EXISTS 05406_cpu;
 CREATE RESOURCE 05406_cpu (MASTER THREAD, WORKER THREAD);
 CREATE WORKLOAD 05406_all;
 CREATE WORKLOAD 05406_wl IN 05406_all SETTINGS max_concurrent_threads = 1;
-CREATE WORKLOAD 05406_capped IN 05406_all SETTINGS max_cpus = 0.5, max_burst_cpu_seconds = 0.01;
+CREATE WORKLOAD 05406_capped IN 05406_all SETTINGS max_cpus = 0.05, max_burst_cpu_seconds = 0.01;
 
 CREATE TABLE t_local (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_heavy (x UInt64, y UInt64 MATERIALIZED cityHash64(arrayMap(i -> cityHash64(x, i), range(10)))) ENGINE = MergeTree ORDER BY x;
@@ -64,11 +64,12 @@ SELECT count() FROM remote('127.0.0.2', numbers(100000)) AS l GLOBAL JOIN (SELEC
 SETTINGS workload = '05406_wl', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 60,
     enable_parallel_replicas = 0, max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q7';
 
--- A long aggregation in a nested pipeline renews the CPU slot of its thread, so the CPU limit preempts it
-CREATE VIEW v_agg AS SELECT sum(cityHash64(number)) AS s FROM numbers(300000000);
+-- A long aggregation in a nested pipeline renews the CPU slot of its thread, so the CPU limit preempts it.
+-- It is stopped after 1 s: the CPU limit is far below what any build gets in that time.
+CREATE VIEW v_agg AS SELECT sum(cityHash64(number)) AS s FROM numbers(100000000000);
 SELECT * FROM loop(v_agg) LIMIT 1
-SETTINGS workload = '05406_capped', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 60,
-    max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q8'
+SETTINGS workload = '05406_capped', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 1,
+    timeout_overflow_mode = 'break', max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q8'
 FORMAT Null;
 
 SELECT count() FROM t_heavy;
