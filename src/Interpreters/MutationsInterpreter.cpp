@@ -84,6 +84,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -2582,49 +2583,65 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     if (nondeterministic_virtual_columns.empty())
         return {};
 
-    ASTPtr expressions = make_intrusive<ASTExpressionList>();
+    /// Each command is resolved in its own scope, the same way the commands are analyzed in separate stages
+    /// when the mutation is executed, so an alias defined in one command cannot hide a virtual column read
+    /// in another one.
+    std::vector<ASTPtr> scopes;
     for (const auto & command : commands)
     {
         if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
             continue;
 
+        ASTPtr expressions = make_intrusive<ASTExpressionList>();
         auto alter = command.ast();
         if (alter->predicate)
             expressions->children.push_back(alter->predicate->clone());
         if (command.type == MutationCommand::UPDATE && alter->update_assignments)
             for (const auto & assignment : alter->update_assignments->children)
                 expressions->children.push_back(assignment->as<ASTAssignment &>().expression()->clone());
+
+        if (!expressions->children.empty())
+            scopes.push_back(std::move(expressions));
     }
 
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
+    /// How a compound identifier such as `t._table` is resolved depends on
+    /// `analyzer_compatibility_prefer_alias_over_subcolumn`. The mutation is validated with the value of the
+    /// query, but executed with the value of the background context, which may be different, so the
+    /// interpretations of both are checked. An interpretation which is not used by either of them is not
+    /// required to be well-typed.
+    std::set<bool> prefer_alias_over_subcolumn_values = {
+        context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
+        context->getBackgroundContext()->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]};
+
     /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
-    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn. Column definitions cannot
-    /// reference each other cyclically, and each one is resolved once.
+    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
+    /// Column definitions cannot reference each other cyclically, and each one is resolved once.
     NameSet followed_ephemeral_columns;
-    while (!expressions->children.empty())
+    while (!scopes.empty())
     {
         NameSet read_columns;
 
-        /// How a compound identifier such as `t._table` is resolved depends on
-        /// `analyzer_compatibility_prefer_alias_over_subcolumn`, and the mutation may be executed in the
-        /// background with a different value of it than the one of the query, so check both interpretations.
-        for (bool prefer_alias_over_subcolumn : {false, true})
+        for (const auto & expressions : scopes)
         {
-            auto analysis_context = Context::createCopy(context);
-            analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", prefer_alias_over_subcolumn);
+            for (bool prefer_alias_over_subcolumn : prefer_alias_over_subcolumn_values)
+            {
+                auto analysis_context = Context::createCopy(context);
+                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", prefer_alias_over_subcolumn);
 
-            auto expression = buildQueryTree(expressions->clone(), analysis_context);
-            /// The expressions are only analyzed, nothing is read, so the table is not locked.
-            auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
+                auto expression = buildQueryTree(expressions->clone(), analysis_context);
+                /// The expressions are only analyzed, nothing is read, so the table is not locked.
+                auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
 
-            QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
-            query_analyzer.resolve(expression, table_node, analysis_context);
+                QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
+                query_analyzer.resolve(expression, table_node, analysis_context);
 
-            collectColumnsReadFromTable(expression, table_node, read_columns);
+                collectColumnsReadFromTable(expression, table_node, read_columns);
+            }
         }
 
-        expressions = make_intrusive<ASTExpressionList>();
+        scopes.clear();
         for (const auto & name : read_columns)
         {
             if (nondeterministic_virtual_columns.contains(name))
@@ -2635,7 +2652,11 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
                 continue;
             const auto * description = real_columns.tryGet(column->getNameInStorage());
             if (description && description->default_desc.expression && followed_ephemeral_columns.insert(description->name).second)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
                 expressions->children.push_back(description->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
         }
     }
 
@@ -2663,7 +2684,6 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
-
     }
 
     if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))

@@ -26,6 +26,10 @@ ALTER TABLE t_repl_05228 UPDATE value = t_repl_05228._table WHERE key = 1; -- { 
 ALTER TABLE t_repl_05228 DELETE WHERE t_repl_05228._database != ''; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_repl_05228 DELETE WHERE {CLICKHOUSE_DATABASE:Identifier}.t_repl_05228._table != ''; -- { serverError BAD_ARGUMENTS }
 
+-- Each command is analyzed in its own scope, so an alias defined in a later command does not hide the virtual
+-- column read in an earlier one.
+ALTER TABLE t_repl_05228 UPDATE value = _table WHERE key = 1, UPDATE value = ('safe' AS _table) WHERE key = 2; -- { serverError BAD_ARGUMENTS }
+
 -- Inside a lambda body, the virtual column is still read unless a lambda parameter shadows it.
 ALTER TABLE t_repl_05228 DELETE WHERE arrayExists(x -> x = _table, ['t_repl_05228']); -- { serverError BAD_ARGUMENTS }
 
@@ -107,14 +111,15 @@ SELECT key, value FROM t_repl_05228_nested ORDER BY key;
 DROP TABLE t_repl_05228_nested SYNC;
 
 -- With `analyzer_compatibility_prefer_alias_over_subcolumn`, `r._table` is the virtual column of the table `r`
--- rather than the element of its tuple column `r`. The mutation may be executed with either value of the
--- setting, so it is refused regardless of the value in the query.
+-- rather than the element of its tuple column `r`. The mutation is validated with the value of the query and
+-- executed with the value of the background context (0 here), so it is refused when either of them reads the
+-- virtual column.
 DROP TABLE IF EXISTS r_05228 SYNC;
 CREATE TABLE r_05228 (key Int, value String, r_05228 Tuple(_table String))
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/r', 'r1') ORDER BY key;
 INSERT INTO r_05228 VALUES (1, 'a', tuple('x'));
 ALTER TABLE r_05228 UPDATE value = r_05228._table WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE r_05228 UPDATE value = r_05228._table WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE r_05228 UPDATE value = r_05228._table WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0, mutations_sync = 2;
 SELECT key, value FROM r_05228 ORDER BY key;
 DROP TABLE r_05228 SYNC;
 
@@ -128,3 +133,14 @@ ALTER TABLE b_05228 DELETE WHERE c._table = 'x' SETTINGS mutations_sync = 2;
 ALTER TABLE b_05228 DELETE WHERE b_05228.c._table = 'y' SETTINGS mutations_sync = 2;
 SELECT key FROM b_05228 ORDER BY key;
 DROP TABLE b_05228 SYNC;
+
+-- An interpretation of a compound identifier used neither by the query nor by the background context is not
+-- required to be well-typed: here `r.x` is the numeric element of the tuple `r`, while the column `x` is a
+-- `String`.
+DROP TABLE IF EXISTS r_05228_types SYNC;
+CREATE TABLE r_05228_types (key UInt64, value UInt64, r_05228_types Tuple(x UInt64), x String)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/r_types', 'r1') ORDER BY key;
+INSERT INTO r_05228_types VALUES (1, 0, tuple(5), 'a');
+ALTER TABLE r_05228_types UPDATE value = r_05228_types.x + 1 WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0, mutations_sync = 2;
+SELECT key, value FROM r_05228_types ORDER BY key;
+DROP TABLE r_05228_types SYNC;
