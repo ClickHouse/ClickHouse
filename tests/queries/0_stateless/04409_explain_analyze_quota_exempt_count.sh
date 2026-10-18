@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 # Reason: modifies quotas and creates users
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

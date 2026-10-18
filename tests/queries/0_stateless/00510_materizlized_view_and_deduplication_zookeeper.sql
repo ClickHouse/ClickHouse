@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-ordinary-database
+-- Tags: zookeeper, no-ordinary-database, no-parallel
+-- Tag no-parallel: static UUID
 
 DROP TABLE IF EXISTS with_deduplication;
 DROP TABLE IF EXISTS without_deduplication;
