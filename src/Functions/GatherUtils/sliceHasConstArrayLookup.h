@@ -383,14 +383,13 @@ constexpr Int64 lookup_work_per_wasted_search_work = 32;
 /// Calls `search_row` for the rows until the work is exceeded, then `lookup_rows` for the rest. `search_row` returns false without a
 /// result when the work is exceeded in the middle of the row, so that a long row does not take much longer than the lookup.
 ///
-/// With `search_after_build`, a row after the table is built is still searched first, within a part of the work of its lookup, as a
-/// long row can be settled by one scan for the first value of the constant. It is searched while the searches saved more work than the ones
-/// that did not settle their row took, plus a fraction of the work of the lookups. `lookup_rows` calls `try_search(row)`, which returns
-/// whether the search settled the row, and `add_lookup_work(work)` for each row that it looks up.
+/// A row after the table is built is still searched first, within a part of the work of its lookup, as a row can be settled by one
+/// scan for the first value of the constant, or by values in the head of the constant. It is searched while the searches saved more
+/// work than the ones that did not settle their row took, plus a fraction of the work of the lookups. `lookup_rows` calls
+/// `try_search(row)`, which returns whether the search settled the row, and `add_lookup_work(work)` for each row that it looks up.
 template <typename SearchRow, typename LookupRows>
 void searchThenLookup(
-    const ColumnArray::Offsets & offsets, size_t size, size_t build_work, bool search_after_build, SearchRow && search_row,
-    LookupRows && lookup_rows)
+    const ColumnArray::Offsets & offsets, size_t size, size_t build_work, SearchRow && search_row, LookupRows && lookup_rows)
 {
     Work work{.table = build_work};
     size_t row = 0;
@@ -403,7 +402,7 @@ void searchThenLookup(
     Int64 allowed_search_work = 0;
     auto try_search = [&](size_t searched_row) ALWAYS_INLINE
     {
-        if (!search_after_build || allowed_search_work < 0)
+        if (allowed_search_work < 0)
             return false;
         Work row_work{.table_shift = search_after_build_table_shift};
         const bool searched = search_row(searched_row, offsets[searched_row - 1], offsets[searched_row], row_work);
@@ -454,6 +453,18 @@ void lookupElements(
         if (const_is_first)
         {
             const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+            if constexpr (all && sizeof(T) == 1)
+            {
+                /// As in `sliceHasImplAnyAll`, 16 elements of a long row are searched at once, which is faster than the bitmap.
+                if (!settled && end - begin >= 16)
+                {
+                    const NumericArraySlice<T> const_slice{array.data, array.size};
+                    const NumericArraySlice<T> row_slice{elements.data + begin, end - begin};
+                    result[row] = array.null_map ? sliceHasAllBytes<true>(const_slice, row_slice, array.null_map, null_map)
+                                                 : sliceHasAllBytes<false>(const_slice, row_slice, nullptr, null_map);
+                    return true;
+                }
+            }
             /// The first element of `hasAny` is searched here, as it often settles the row.
             if (!all && !settled && !(has_null_map && null_map[0]))
                 settled = headContains(array, elements.data[begin]);
@@ -538,9 +549,7 @@ void lookupElements(
         }
     };
 
-    /// The search of an element in the constant is not faster than its lookup, and the lookup goes through the same elements of the
-    /// row.
-    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, !const_is_first, search_row, lookup_rows);
+    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, search_row, lookup_rows);
 }
 
 /// The first values are searched as in `sliceHasImplAnyAll` before the lookup. A missing value is usually one of them, and the search
@@ -660,7 +669,7 @@ void lookupAllOfConst(
         }
     };
 
-    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, true, search_row, lookup_rows);
+    searchThenLookup(offsets, size, build_work_per_const_element<T> * array.size, search_row, lookup_rows);
 }
 
 template <typename T>
