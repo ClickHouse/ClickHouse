@@ -127,3 +127,12 @@ SELECT fromUnixTimestamp(toUInt64(5662310400), '%Y-%U', 'UTC');
 SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC');
 SELECT fromUnixTimestamp(toUInt64(5680800000), '%Y-%U', 'UTC');
 SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC') = fromUnixTimestamp(toInt64(5680281600), '%Y-%U', 'UTC');
+
+-- DateTime and unsigned timestamps at epoch zero have a pre-epoch local date in Los Angeles.
+-- This must not clamp the week number to the week of 1970-01-01.
+SELECT formatDateTime(toDateTime(0, 'UTC'), '%F %U', 'America/Los_Angeles');
+SELECT formatDateTime(toDateTime64(0, 3, 'UTC'), '%F %U', 'America/Los_Angeles');
+SELECT fromUnixTimestamp(toUInt32(0), '%F %U', 'America/Los_Angeles');
+SELECT fromUnixTimestamp(toUInt64(0), '%F %U', 'America/Los_Angeles');
+SELECT formatDateTime(toDateTime(0, 'UTC'), '%U', 'America/Los_Angeles')
+    = formatDateTime(toDateTime64(0, 3, 'UTC'), '%U', 'America/Los_Angeles');

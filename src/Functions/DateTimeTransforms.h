@@ -968,7 +968,8 @@ struct ToWeekImpl
     }
     static UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        /// Time zone conversion may put timestamp zero in 1969, which DayNum cannot represent.
+        YearWeek yw = time_zone.toYearWeek(static_cast<Int64>(t), week_mode);
         return yw.second;
     }
     static UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
