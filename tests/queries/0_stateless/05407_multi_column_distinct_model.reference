@@ -18,4 +18,7 @@ rows: ~14142136.0
 rows: ~2000000.0
 -- DISTINCT gets the same estimate
 rows: ~1257.0
+-- the settings are separate: the group count keeps backoff while the join uses postgres
+rows: ~1257.0
+rows: ~2000000.0
 -- an unknown model is an error

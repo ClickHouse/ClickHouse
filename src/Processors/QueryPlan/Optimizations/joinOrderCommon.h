@@ -121,14 +121,14 @@ struct JoinKeyEstimate
     /// columns are correlated. The true size usually lies between the two, and the mean is then at most
     /// the square root of their ratio off either way.
     ///
-    /// The query parameter `_internal_multi_column_distinct_model` replaces the mean for experiments: the
+    /// The setting `query_plan_join_multi_key_model` replaces the mean for experiments: the
     /// combinations of each side then follow `estimateDistinctCombinations`, and `largest` keeps the single key.
     /// `postgres` multiplies the selectivities of the keys, as PostgreSQL does for the clauses of a join.
     std::optional<double> multiColumnSelectivity(double left_rows, double right_rows) const
     {
         if (independent_keys < 2 || !independent_keys_from_statistics)
             return {};
-        const auto model = QueryPlanOptimizations::getMultiColumnDistinctModel();
+        const auto model = QueryPlanOptimizations::getMultiColumnDistinctModel(QueryPlanOptimizations::MultiColumnDistinctModelConsumer::Join);
         if (model == QueryPlanOptimizations::MultiColumnDistinctModel::Largest
             || model == QueryPlanOptimizations::MultiColumnDistinctModel::PerTable)
             return {};

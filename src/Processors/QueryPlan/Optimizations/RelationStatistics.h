@@ -6,6 +6,7 @@
 
 #include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Core/SettingsEnums.h>
 #include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -97,39 +98,24 @@ struct GroupKey
     UInt64 table_selected_rows = 0;
 };
 
-/// The same, for the model the query parameter selects.
+/// The same, for the model the setting `query_plan_group_multi_key_model` selects.
 GroupCountEstimate estimateGroupCount(const std::vector<GroupKey> & keys, std::optional<UInt64> rows, std::optional<UInt64> max_rows);
 
 /// How the distinct value combinations of several key columns follow from the NDVs of the columns, for the group
-/// count of `GROUP BY` and `DISTINCT` and for each side of a join key of several columns. The query parameter
-/// `_internal_multi_column_distinct_model` selects one for experiments that compare them:
-/// - `default`: `largest` for group counts and `geometric_mean` for join keys;
-/// - `largest`: the largest NDV, as if the other columns depend on that one;
-/// - `geometric_mean`: the geometric mean of `largest` and `product`;
-/// - `backoff`: the NDVs from the largest down, raised to the powers 1, 1/2, 1/4 and so on, and multiplied;
-/// - `product`: the product of the NDVs, as if the columns are independent;
-/// - `per_table`: the largest NDV of the columns of each table, as if the columns of a table depend on one of
-///   them, multiplied over the tables, as if columns of different tables are independent. The table of a column
-///   is the qualifier of its name; a join key, whose columns on each side are usually of one table, keeps its
-///   most selective column.
-/// - `postgres`: as `estimate_num_groups` of PostgreSQL. The product of the NDVs of the columns of each table, at most
-///   10% of the rows of the table, but not below the largest NDV, and the share of that the rows the read of the table
-///   selects keep; multiplied over the tables. A table without known rows keeps its largest NDV. A join key is, as in
-///   PostgreSQL, the product of the selectivities of its columns.
-/// All of them are at most the rows of the input.
-enum class MultiColumnDistinctModel : uint8_t
+/// count of `GROUP BY` and `DISTINCT` and for each side of a join key of several columns; the settings
+/// `query_plan_group_multi_key_model` and `query_plan_join_multi_key_model` describe the models. A table of a column is
+/// the qualifier of its name. All of them are at most the rows of the input.
+using DB::MultiColumnDistinctModel;
+
+/// The estimate that uses a model: the selectivity of a join key or the group count of an aggregation or `DISTINCT`.
+enum class MultiColumnDistinctModelConsumer : uint8_t
 {
-    Default,
-    Largest,
-    GeometricMean,
-    Backoff,
-    Product,
-    PerTable,
-    Postgres,
+    Join,
+    Group,
 };
 
-/// The model the query parameter selects, `Default` without the parameter or a query.
-MultiColumnDistinctModel getMultiColumnDistinctModel();
+/// The model the setting of `consumer` selects; `Default` without a query.
+MultiColumnDistinctModel getMultiColumnDistinctModel(MultiColumnDistinctModelConsumer consumer);
 
 /// The distinct value combinations of key columns with the given NDVs (all known) under `model`, at most `rows`.
 /// `Default` is not a model of its own here; resolve it for the caller first.

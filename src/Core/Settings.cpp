@@ -11160,6 +11160,30 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL, \
         {"25.12", "greedy", "greedy", "New experimental setting."}) \
+    DECLARE(MultiColumnDistinctModel, query_plan_join_multi_key_model, MultiColumnDistinctModel::Default, R"(
+For experiments that compare estimation models. Selects how the selectivity of a join on several key columns follows from the NDVs of the columns. The values:
+ - `default` - the model the estimate uses without the setting;
+ - `largest` - the largest NDV, as if the other columns depend on that one;
+ - `geometric_mean` - the geometric mean of `largest` and `product`;
+ - `backoff` - the NDVs from the largest down, raised to the powers 1, 1/2, 1/4 and so on, and multiplied;
+ - `product` - the product of the NDVs, as if the columns are independent;
+ - `per_table` - the largest NDV of the columns of each table, multiplied over the tables: the columns of one table are taken as dependent and columns of different tables as independent;
+ - `postgres` - as `estimate_num_groups` of PostgreSQL: the product of the NDVs of the columns of each table, at most 10% of the rows of the table but not below the largest NDV, scaled to the rows the read of the table selects, and multiplied over the tables.
+For a join, `default` is the geometric mean of the selectivities of the most selective key and of the key combinations, `per_table` keeps the most selective key, and `postgres` multiplies the selectivities of the keys.
+)", EXPERIMENTAL, \
+        {"26.11", "default", "default", "New experimental setting."}) \
+    DECLARE(MultiColumnDistinctModel, query_plan_group_multi_key_model, MultiColumnDistinctModel::Default, R"(
+For experiments that compare estimation models. Selects how the number of groups of `GROUP BY` or `DISTINCT` on several key columns follows from the NDVs of the columns. The values:
+ - `default` - the model the estimate uses without the setting;
+ - `largest` - the largest NDV, as if the other columns depend on that one;
+ - `geometric_mean` - the geometric mean of `largest` and `product`;
+ - `backoff` - the NDVs from the largest down, raised to the powers 1, 1/2, 1/4 and so on, and multiplied;
+ - `product` - the product of the NDVs, as if the columns are independent;
+ - `per_table` - the largest NDV of the columns of each table, multiplied over the tables: the columns of one table are taken as dependent and columns of different tables as independent;
+ - `postgres` - as `estimate_num_groups` of PostgreSQL: the product of the NDVs of the columns of each table, at most 10% of the rows of the table but not below the largest NDV, scaled to the rows the read of the table selects, and multiplied over the tables.
+For a group count, `default` is `largest`.
+)", EXPERIMENTAL, \
+        {"26.11", "default", "default", "New experimental setting."}) \
     DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
 decide which join reorderings are valid. The following values are available:

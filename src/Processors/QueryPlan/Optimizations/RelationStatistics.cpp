@@ -20,41 +20,31 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsMultiColumnDistinctModel query_plan_group_multi_key_model;
+    extern const SettingsMultiColumnDistinctModel query_plan_join_multi_key_model;
 }
 
 namespace DB::QueryPlanOptimizations
 {
 
-MultiColumnDistinctModel getMultiColumnDistinctModel()
+MultiColumnDistinctModel getMultiColumnDistinctModel(MultiColumnDistinctModelConsumer consumer)
 {
     const auto context = CurrentThread::tryGetQueryContext();
     if (!context)
         return MultiColumnDistinctModel::Default;
-    const auto & parameters = context->getQueryParameters();
-    const auto it = parameters.find("_internal_multi_column_distinct_model");
-    if (it == parameters.end() || it->second == "default")
-        return MultiColumnDistinctModel::Default;
-    if (it->second == "largest")
-        return MultiColumnDistinctModel::Largest;
-    if (it->second == "geometric_mean")
-        return MultiColumnDistinctModel::GeometricMean;
-    if (it->second == "backoff")
-        return MultiColumnDistinctModel::Backoff;
-    if (it->second == "product")
-        return MultiColumnDistinctModel::Product;
-    if (it->second == "per_table")
-        return MultiColumnDistinctModel::PerTable;
-    if (it->second == "postgres")
-        return MultiColumnDistinctModel::Postgres;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Unknown `_internal_multi_column_distinct_model` '{}', expected default, largest, geometric_mean, backoff, product, per_table or postgres",
-        it->second);
+    const auto & settings = context->getSettingsRef();
+    return consumer == MultiColumnDistinctModelConsumer::Join ? settings[Setting::query_plan_join_multi_key_model]
+                                                              : settings[Setting::query_plan_group_multi_key_model];
 }
 
 double estimateDistinctCombinations(std::vector<double> distinct_values, double rows, MultiColumnDistinctModel model)
@@ -167,7 +157,7 @@ GroupCountEstimate estimateGroupCount(const std::vector<GroupKey> & keys, std::o
         result.estimated_rows = rows ? std::min(largest, *rows) : largest;
 
     /// The other models need the NDV of every key and the rows.
-    auto model = getMultiColumnDistinctModel();
+    auto model = getMultiColumnDistinctModel(MultiColumnDistinctModelConsumer::Group);
     if (model == MultiColumnDistinctModel::Default)
         model = MultiColumnDistinctModel::Largest;
     const bool all_keys_known = std::ranges::none_of(keys, [](const GroupKey & key) { return key.distinct_values == 0; });
