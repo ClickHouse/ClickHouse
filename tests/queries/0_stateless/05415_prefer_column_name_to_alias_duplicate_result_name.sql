@@ -58,6 +58,12 @@ SELECT b.n AS n, n FROM t9_05415 AS a LEFT JOIN t9_05415 AS b ON a.k = b.k AND b
 SELECT * FROM (SELECT b.n AS n, n FROM t9_05415 AS a LEFT JOIN t9_05415 AS b ON a.k = b.k AND b.v = 1) ORDER BY ALL FORMAT TSVWithNames;
 DROP TABLE t9_05415;
 
+-- The original rows keep x + 1 in x; the inserted row interpolates only the renamed columns.
+SELECT 'INTERPOLATE of a renamed column';
+SELECT 2 * number AS k, x + 1 AS x, x FROM (SELECT number, number AS x FROM numbers(2)) ORDER BY k WITH FILL INTERPOLATE (x AS x + 10) FORMAT TSVWithNames;
+SELECT 2 * number AS k, x + 1 AS x, x, x FROM (SELECT number, number AS x FROM numbers(2)) ORDER BY k WITH FILL INTERPOLATE (x AS x + 10) FORMAT TSVWithNames;
+SELECT 2 * number AS k, number + 1 AS number, number FROM remote('127.0.0.1', numbers(2)) ORDER BY k WITH FILL INTERPOLATE (number AS number + 10) FORMAT TSVWithNames SETTINGS prefer_localhost_replica = 0;
+
 SELECT 'the same column twice keeps its name';
 SELECT col2 AS col2, col2 FROM (SELECT 1 AS col1, 2 AS col2) FORMAT TSVWithNames;
 

@@ -7929,6 +7929,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             for (const auto & projection_column : projection_columns)
                 projection_column_names.insert(projection_column.name);
 
+            /// Positions of renamed columns with their names before renaming.
+            std::vector<std::pair<size_t, std::string>> renamed_columns;
+
             for (size_t i = 0; i < projection_columns.size(); ++i)
             {
                 auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
@@ -7974,7 +7977,46 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     ++suffix;
                 } while (!projection_column_names.emplace(new_name).second);
 
+                renamed_columns.emplace_back(i, projection_columns[i].name);
                 projection_columns[i].name = std::move(new_name);
+            }
+
+            /// An INTERPOLATE item names the projection column it fills, so it must follow a renamed column.
+            /// Each renamed copy of the interpolated expression gets its own item.
+            if (query_node_typed.hasInterpolate() && !renamed_columns.empty())
+            {
+                auto retarget = [](const QueryTreeNodePtr & interpolate_node, const std::string & new_name)
+                {
+                    auto & interpolate = interpolate_node->as<InterpolateNode &>();
+                    auto column = std::make_shared<ColumnNode>(
+                        NameAndTypePair(new_name, interpolate.getExpression()->getResultType()),
+                        static_pointer_cast<ITableExpressionNode>(interpolate_node));
+                    replaceColumns(interpolate.getInterpolateExpression(), interpolate_node, {{interpolate.getExpressionName(), column}});
+                    interpolate.setExpressionName(new_name);
+                };
+
+                auto & interpolate_nodes = query_node_typed.getInterpolate()->as<ListNode &>().getNodes();
+                QueryTreeNodes copies;
+                for (auto & interpolate_node : interpolate_nodes)
+                {
+                    const auto & interpolate = interpolate_node->as<const InterpolateNode &>();
+                    std::vector<size_t> positions;
+                    for (const auto & [position, name] : renamed_columns)
+                    {
+                        if (name == interpolate.getExpressionName()
+                            && interpolate.getExpression()->isEqual(*projection_nodes[position],
+                                IQueryTreeNode::CompareOptions{.compare_aliases = false, .compare_column_sources_by_identity = true}))
+                            positions.push_back(position);
+                    }
+
+                    if (positions.empty())
+                        continue;
+
+                    for (size_t j = 1; j < positions.size(); ++j)
+                        retarget(copies.emplace_back(interpolate_node->clone()), projection_columns[positions[j]].name);
+                    retarget(interpolate_node, projection_columns[positions.front()].name);
+                }
+                interpolate_nodes.insert(interpolate_nodes.end(), copies.begin(), copies.end());
             }
         }
     }

@@ -56,6 +56,19 @@ n	n_1
 []	[(2)]
 [(1)]	[(1)]
 [(3)]	[(3)]
+INTERPOLATE of a renamed column
+k	x	x_1
+0	1	0
+1	0	10
+2	2	1
+k	x	x_1	x_2
+0	1	0	0
+1	0	10	10
+2	2	1	1
+k	number	number_1
+0	1	0
+1	0	10
+2	2	1
 the same column twice keeps its name
 col2	col2
 2	2
