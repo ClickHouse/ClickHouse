@@ -4810,9 +4810,13 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
             dialect_to_restore = client_context->getSettingsRef().get("dialect");
         client_context->setSetting("dialect", String("clickhouse"));
     }
+    /// This guard is the one that consumes `ai_running_query_changed_dialect`, so it is also the one
+    /// that clears it: the guards run in reverse order of declaration, and a guard declared below it
+    /// would clear the flag before it is read here, restoring the old dialect over a confirmed `SET`.
     SCOPE_EXIT_SAFE({
         if (dialect_to_restore && !ai_running_query_changed_dialect)
             client_context->setSetting("dialect", *dialect_to_restore);
+        ai_running_query_changed_dialect = false;
     });
 
     /// Enforce the sandbox settings of the read-only tool. The query is unable to override
@@ -5016,7 +5020,6 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     echo_queries = false;
     SCOPE_EXIT({
         ai_running_query = false;
-        ai_running_query_changed_dialect = false;
         echo_queries = saved_echo_queries;
     });
 
@@ -5647,6 +5650,18 @@ std::optional<String> ClientBase::serverEffectiveSettingValue(const String & nam
     }
     catch (Exception & e)
     {
+        /// `system.settings` reports the settings of the query that reads it, so the question about
+        /// the dialect travels without the pin to the ClickHouse dialect (see
+        /// `fetchInternalQueryResult`) - with it, every session would answer `clickhouse`. A session
+        /// that parses another dialect therefore fails the question in the parser of that dialect,
+        /// and that failure is the answer: the dialect is not ClickHouse. It is recorded as unknown,
+        /// which `internalQueriesRequireDialectPin`, the only one asking, reads as "pin it".
+        if (name == "dialect" && (e.code() == ErrorCodes::SYNTAX_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED))
+        {
+            server_effective_setting_values[name] = std::nullopt;
+            return std::nullopt;
+        }
+
         /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
         /// execution-time limit of the session, a cancelled query - so the failure is neither cached
         /// nor turned into an answer. It propagates, and the tool that asked fails with it: read as
@@ -5752,9 +5767,10 @@ bool ClientBase::internalQueriesRequireDialectPin()
     }
     catch (Exception & e)
     {
-        /// The question is ClickHouse SQL, and under `readonly = 1` it travels without the pin, so
-        /// a session that parses another dialect fails it with a syntax error of that dialect. That
-        /// error is what the user gets, and it says nothing about how to get out of it.
+        /// The question is ClickHouse SQL and travels without the pin. The failures of the parser of
+        /// another dialect are read as the answer (see `serverEffectiveSettingValue`), but another
+        /// failure of the question - one that dialect reports differently - is what the user gets,
+        /// and it says nothing about how to get out of it in a session that cannot install the pin.
         /// Only what is already known is consulted: asking the server here would replace this
         /// error with the failure of another question.
         const auto readonly_answer = server_effective_setting_values.find("readonly");
@@ -5799,8 +5815,13 @@ Block ClientBase::fetchInternalQueryResult(
     /// answer, so it carries only the pin to the ClickHouse dialect: a session that already parses
     /// ClickHouse SQL ignores it as an unchanged value at any `readonly` level, and one that does
     /// not accepts it unless it is read-only - where these queries cannot run anyway.
+    ///
+    /// The question about the dialect itself carries no settings at all: `system.settings` reports
+    /// the settings of the query that reads it, so the pin would be all it measures - see
+    /// `serverEffectiveSettingValue`.
     const std::optional<UInt64> session_readonly = sessionReadonlyIfKnown();
     const bool asking_session_readonly = !session_readonly.has_value();
+    const bool asking_session_dialect = server_setting_probes_in_progress.contains("dialect");
     const bool session_is_readonly = session_readonly == 1;
     if (session_is_readonly && server_setting_probes_in_progress.empty() && internalQueriesRequireDialectPin())
         throw Exception(
@@ -5808,11 +5829,17 @@ Block ClientBase::fetchInternalQueryResult(
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
             "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
 
+    /// The question about `readonly` is checked first: it is asked from within the question about
+    /// the dialect, while that one is still in progress, and it needs its pin.
     std::optional<Settings> settings_to_send;
     if (asking_session_readonly)
     {
         settings_to_send.emplace();
         settings_to_send->set("dialect", String("clickhouse"));
+    }
+    else if (asking_session_dialect)
+    {
+        /// Nothing is sent, see above.
     }
     else if (!session_is_readonly)
     {
@@ -5844,7 +5871,8 @@ Block ClientBase::fetchInternalQueryResult(
     /// the user typed. It is not worth failing a query over, so a session that rejects it keeps
     /// the agent, only without it. The question about whether it may be attached does not attach
     /// it: it is asking, and asking must not fail over the answer.
-    if (from_ai_agent && !asking_session_readonly && !ai_query_log_marker_probe_in_progress && aiQueryLogMarkerAllowed())
+    if (from_ai_agent && !asking_session_readonly && !asking_session_dialect && !ai_query_log_marker_probe_in_progress
+        && aiQueryLogMarkerAllowed())
     {
         if (!settings_to_send)
             settings_to_send.emplace();
