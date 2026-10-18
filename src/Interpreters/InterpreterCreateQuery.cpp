@@ -4100,9 +4100,16 @@ BlockIO InterpreterCreateQuery::execute()
             /// rather than rejecting these queries, which would break randomized tests on this legacy path.
             /// The same applies to the default engines of the inner tables of `TimeSeries`: they are added by
             /// `normalizeTimeSeriesDefinition` only on the worker hosts, so only explicitly specified ones are rewritten.
+            /// SQL UDFs are expanded first, as `createTable` does before the rewrite on the normal path: a UDF
+            /// returning a tuple would otherwise be wrapped as a single `DESC` element, and after the expansion on
+            /// the worker hosts the sorting key would have one element instead of the elements of the tuple.
             if (!is_create_database && !internal && !create.attach && !create.is_clone_as && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+            {
+                if (!UserDefinedSQLFunctionFactory::instance().empty())
+                    substituteUserDefinedFunctionsOutsideEngines(query_ptr, getContext());
                 applyForceReverseOrder(create);
+            }
 
             return executeQueryOnCluster(create);
         }

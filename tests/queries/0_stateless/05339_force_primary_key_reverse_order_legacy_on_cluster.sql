@@ -10,12 +10,19 @@ SET force_primary_key_reverse_order = 1;
 DROP TABLE IF EXISTS t_reverse_legacy_1;
 DROP TABLE IF EXISTS t_reverse_legacy_2;
 DROP TABLE IF EXISTS t_reverse_current;
+DROP TABLE IF EXISTS t_reverse_legacy_udf;
+DROP FUNCTION IF EXISTS f_05339_reverse_key;
 
 SET distributed_ddl_entry_format_version = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t_reverse_legacy_1 ON CLUSTER test_shard_localhost (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b);
 
 SET distributed_ddl_entry_format_version = 2;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t_reverse_legacy_2 ON CLUSTER test_shard_localhost (a UInt32) ENGINE = MergeTree ORDER BY a;
+
+-- A SQL UDF returning a tuple must be expanded before the rewrite, so that every element of the tuple becomes `DESC`,
+-- as on the normal path. Otherwise the sorting key has one element, shorter than the explicit primary key.
+CREATE FUNCTION f_05339_reverse_key AS (x, y) -> tuple(x, y);
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t_reverse_legacy_udf ON CLUSTER test_shard_localhost (a UInt32, b UInt32) ENGINE = MergeTree PRIMARY KEY (a, b) ORDER BY f_05339_reverse_key(a, b);
 
 SET distributed_ddl_entry_format_version = 6;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t_reverse_current ON CLUSTER test_shard_localhost (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b);
@@ -26,3 +33,5 @@ SELECT name, extract(create_table_query, 'ORDER BY (.+?) SETTINGS') FROM system.
 DROP TABLE t_reverse_legacy_1;
 DROP TABLE t_reverse_legacy_2;
 DROP TABLE t_reverse_current;
+DROP TABLE t_reverse_legacy_udf;
+DROP FUNCTION f_05339_reverse_key;
