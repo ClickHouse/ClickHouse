@@ -26,6 +26,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <IO/WriteBufferFromVector.h>
@@ -52,6 +53,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTWithElement.h>
@@ -1417,7 +1419,9 @@ struct CollectTablesData
     /// Set when the query names an object through a function argument whose value cannot be determined
     /// from the AST (e.g. `joinGet(concat('j', 'oin'), ...)` or a first argument bound to an alias), or reads
     /// a table function in `FROM`/`JOIN`. Neither the access nor the existence of such an object can be
-    /// preflighted, so the hook is skipped for the whole query.
+    /// preflighted, so the hook is skipped for the whole query. The same applies to the parts of a query
+    /// whose access is checked in a way the preflight does not model: a nested `EXPLAIN`, an
+    /// `EXECUTE AS` wrapper, and the functions that check their own privileges when they are built.
     bool has_unverifiable_reference = false;
 
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
@@ -2810,6 +2814,39 @@ void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & ali
 /// The bare-identifier right-hand side of `IN` follows the opposite rule — any expression alias wins there —
 /// and is handled separately through `active_aliases`, which — like `active_ctes` — is passed by value so
 /// that a select's aliases reach only its own scope and the scopes nested inside it.
+/// Whether the function checks privileges of its own when it is built, beyond the access to the objects
+/// collected by `collectTablesInQuery` (`READ ON FILE` for `file`, the introspection privileges,
+/// `SHOW COLUMNS` on the table named by `hasColumnInTable`, `SELECT` on a system table, a named
+/// collection for the AI functions, `dictGet` on the dictionary of `naiveBayesClassifier`, ...). Such a
+/// check runs only after the reattach hook, so a query using one of these functions cannot be preflighted.
+bool functionChecksOwnAccess(const String & name)
+{
+    static const std::unordered_set<std::string_view> functions_checking_access =
+    {
+        "file",
+        "addressToLine",
+        "addressToLineWithInlines",
+        "addressToSymbol",
+        "demangle",
+        "hasColumnInTable",
+        "getMacro",
+        "getServerSetting",
+        "getMergeTreeSetting",
+        "naiveBayesClassifier",
+        "naiveBayesClassifierWithProb",
+        "naiveBayesClassifierWithAllProbs",
+        "aiClassify",
+        "aiEmbed",
+        "aiExtract",
+        "aiFilter",
+        "aiGenerate",
+        "aiRedact",
+        "aiSimilarity",
+        "aiTranslate",
+    };
+    return functions_checking_access.contains(FunctionFactory::instance().getCanonicalNameIfAny(name));
+}
+
 void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes, std::unordered_set<String> active_aliases)
 {
     if (!ast)
@@ -2822,6 +2859,17 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     /// after the reattach.
     if (ast->as<ASTCreateSQLFunctionQuery>() || ast->as<ASTCreateRowPolicyQuery>() || ast->as<ASTCreateHandlerQuery>())
         return;
+
+    /// An `EXPLAIN` nested in a `SELECT` (`SELECT * FROM (EXPLAIN AST SELECT * FROM t)`) may not read the
+    /// tables of the explained query at all, while some of its kinds still check the access to them. An
+    /// `EXECUTE AS` wrapper first checks `IMPERSONATE` and then runs the wrapped statement under another
+    /// identity, whose access the preflight, using the caller's identity, cannot check. Neither is
+    /// collected; the whole query is executed without the randomization instead.
+    if (ast->as<ASTExplainQuery>() || ast->as<ASTExecuteAsQuery>())
+    {
+        data.has_unverifiable_reference = true;
+        return;
+    }
 
     if (const auto * select = ast->as<ASTSelectQuery>())
     {
@@ -3067,7 +3115,12 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             return;
         }
     }
-    else if (const auto * function = ast->as<ASTFunction>())
+    else if (const auto * function = ast->as<ASTFunction>(); function && functionChecksOwnAccess(function->name))
+    {
+        data.has_unverifiable_reference = true;
+        return;
+    }
+    else if (function)
     {
         /// `IN table` / `GLOBAL IN table` (and the `NOT IN` / null-aware variants) keep the right-hand-side
         /// table as a bare identifier that is not part of the `FROM`/`JOIN` table expressions walked above,
@@ -3178,16 +3231,16 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
 }
 
-/// Whether any `SETTINGS` clause of the query, including the ones of its subqueries, sets `use_query_cache`.
-static bool astMentionsUseQueryCache(const IAST & ast)
+/// Whether any `SETTINGS` clause of the query, including the ones of its subqueries, sets the setting.
+static bool astMentionsSetting(const IAST & ast, std::string_view setting_name)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (change.name == "use_query_cache")
+            if (change.name == setting_name)
                 return true;
 
     for (const auto & child : ast.children)
-        if (astMentionsUseQueryCache(*child))
+        if (astMentionsSetting(*child, setting_name))
             return true;
     return false;
 }
@@ -3621,6 +3674,37 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             }
             if (defines_own_disk)
                 continue;
+
+            /// The `ATTACH` back re-analyzes the stored columns, indices and projections
+            /// (`InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery`) under the server's
+            /// default settings it runs with. A definition added with a query-level setting the defaults
+            /// lack — e.g. a projection over `toTimezone(dt, tz)` added with
+            /// `allow_nonconst_timezone_arguments = 1` — would be rejected there, and by the recovery `ATTACH`
+            /// as well, leaving the table detached. Analyze them the same way here and skip the table if that
+            /// fails.
+            if (create && create->columns_list && create->columns_list->columns)
+            {
+                auto validation_context = Context::createCopy(context);
+                validation_context->setSettings(context->getGlobalContext()->getSettingsRef());
+                try
+                {
+                    const auto columns = InterpreterCreateQuery::getColumnsDescription(
+                        *create->columns_list->columns, validation_context, LoadingStrictnessLevel::ATTACH);
+                    if (create->columns_list->indices)
+                        for (const auto & index : create->columns_list->indices->children)
+                            IndexDescription::getIndexFromAST(
+                                index->clone(), columns, /* is_implicitly_created */ false, /* escape_filenames */ true, validation_context);
+                    if (create->columns_list->projections)
+                        for (const auto & projection : create->columns_list->projections->children)
+                            ProjectionDescription::getProjectionFromAST(
+                                projection, columns, /* partition_key */ nullptr, validation_context, LoadingStrictnessLevel::ATTACH,
+                                /* attach_short_syntax */ true);
+                }
+                catch (const Exception &)
+                {
+                    continue;
+                }
+            }
         }
 
         /// The internal `ATTACH` below runs with the server's default settings, and
@@ -5524,8 +5608,16 @@ static BlockIO executeQueryImpl(
             /// hit skips building its storage-reading plan, so any nested `use_query_cache` counts as well.
             bool may_use_query_result_cache = (settings[Setting::use_query_cache]
                 && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>()))
-                || astMentionsUseQueryCache(*out_ast);
-            if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache)
+                || astMentionsSetting(*out_ast, "use_query_cache");
+            /// The collector makes the CTEs and aliases of a scope visible in the scopes nested in it, as the
+            /// analyzer does with `enable_global_with_statement`. Without it the analyzer does not look up
+            /// the names of the enclosing scopes, so a name the collector takes for a CTE may be a table the
+            /// query reads (and is checked for access on). A query that disables the setting anywhere, or
+            /// runs with it disabled, is executed without the randomization.
+            bool may_hide_outer_scopes = !settings[Setting::enable_global_with_statement]
+                || astMentionsSetting(*out_ast, "enable_global_with_statement");
+            if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache
+                && !may_hide_outer_scopes)
             {
                 bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
                 auto reattach_probability = std::clamp(

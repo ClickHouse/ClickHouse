@@ -15,6 +15,7 @@
 #   `05366_reattach_tables_dictionary_lazy_table` - dictionaries that are not loaded, lazily loaded tables
 #   `05406_reattach_tables_preflight_followups` - nested query cache, stored handler queries, privileges and row policies
 #   `05407_reattach_tables_transaction_mutation` - a mutation owned by an open transaction
+#   `05408_reattach_tables_review_followups` - stored projections, nested `EXPLAIN`, `EXECUTE AS`, outer CTE visibility, function privileges
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
