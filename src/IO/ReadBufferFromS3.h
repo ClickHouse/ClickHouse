@@ -34,6 +34,9 @@ private:
     /// ETag observed at read setup; each GET response ETag is checked against it to catch an
     /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
     String expected_etag;
+    /// `getETagHash` of the ETag each GET response must have, when only the hash is known (on a
+    /// distributed cache server). 0 means skip.
+    UInt64 expected_etag_hash;
     const S3::S3RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
@@ -70,7 +73,8 @@ public:
         std::optional<size_t> file_size = std::nullopt,
         const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        const String & expected_etag_ = {}
+        const String & expected_etag_ = {},
+        UInt64 expected_etag_hash_ = 0
         );
 
     ~ReadBufferFromS3() override = default;

@@ -41,6 +41,8 @@ $CLICKHOUSE_CLIENT --user "${USER}" -q "INSERT INTO t_right_04201 SELECT number 
 # 1. Non-distributed join with the ratio set: spilling must happen.
 #    The ratio is intentionally tiny (0.0001 of ~1 GiB ≈ 100 KiB) so the
 #    spill threshold is well below the right-side hash table (~9 MiB).
+#    Parallel replicas would build the right side on every replica, and the
+#    remote ones would share the `default` user's 1 GiB limit.
 $CLICKHOUSE_CLIENT --user "${USER}" -q "
     SELECT count()
     FROM t_left_04201 AS t1
@@ -48,6 +50,7 @@ $CLICKHOUSE_CLIENT --user "${USER}" -q "
     SETTINGS
         join_algorithm = 'hash',
         max_threads = 1,
+        enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0,
         max_bytes_ratio_before_external_join = 0.0001,
         log_comment = '${LOG_LOCAL}'

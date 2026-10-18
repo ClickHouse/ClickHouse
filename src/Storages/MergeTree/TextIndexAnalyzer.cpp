@@ -167,7 +167,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const 
         markFailed();
 }
 
-FlatPostingsPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
+PaddedPODArrayPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 {
     chassert(postings);
 
