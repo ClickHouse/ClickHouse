@@ -64,6 +64,12 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
 
+            if (errno == EPIPE)
+            {
+                cancel();
+                return;
+            }
+
             /// Don't use getFileName() here because this method can be called from destructor
             String error_file_name = file_name;
             if (error_file_name.empty())

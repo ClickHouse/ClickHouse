@@ -113,6 +113,10 @@ void ClientApplicationBase::setupSignalHandler()
 
     if (sigaction(SIGQUIT, &new_act, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+
+    new_act.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &new_act, nullptr))
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 }
 
 void ClientApplicationBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
