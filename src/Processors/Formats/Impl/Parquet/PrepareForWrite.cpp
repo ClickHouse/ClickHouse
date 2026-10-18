@@ -1018,6 +1018,10 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
     if (!type->getCustomName())
         return;
 
+    /// The conversions below cast the column to its concrete type, which a constant column is not
+    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it as `prepareColumnRecursive` does.
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
     if (type->getCustomName()->getName() == "Geometry")
     {
         const auto & col_variant = assert_cast<const ColumnVariant &>(*column);
