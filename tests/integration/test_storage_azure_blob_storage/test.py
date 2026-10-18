@@ -2061,3 +2061,40 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
     )
 
     azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
+
+
+def test_server_credentials_anonymous_on_reload(cluster):
+    # A stored table whose definition now resolves to the server's own identity is loaded at startup with a
+    # client that has no credentials (`azure_load_table_anonymously_if_credentials_restricted`), so the server
+    # starts and the table cannot use that identity. `UNDROP` cannot cover it: a table without local data is
+    # removed at once on `DROP`.
+    node = cluster.instances["node"]
+    url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    node.query("DROP TABLE IF EXISTS test_server_credentials_reload SYNC")
+    node.query("DROP NAMED COLLECTION IF EXISTS azure_server_credentials_reload")
+    node.query(
+        f"CREATE NAMED COLLECTION azure_server_credentials_reload AS storage_account_url = '{url}', container = 'cont',"
+        f" blob_path = 'test_server_credentials_reload.csv', account_name = 'devstoreaccount1', account_key = '{key}'"
+    )
+    azure_query(
+        node,
+        "CREATE TABLE test_server_credentials_reload (x UInt8)"
+        " ENGINE = AzureBlobStorage(azure_server_credentials_reload, format = 'CSV')",
+    )
+    azure_query(node, "INSERT INTO test_server_credentials_reload VALUES (7)")
+    assert azure_query(node, "SELECT * FROM test_server_credentials_reload").strip() == "7"
+
+    # Without the account key the stored definition resolves to the server's own identity.
+    node.query("ALTER NAMED COLLECTION azure_server_credentials_reload DELETE account_name, account_key")
+    node.restart_clickhouse()
+
+    assert node.query("EXISTS TABLE test_server_credentials_reload").strip() == "1"
+    assert node.contains_in_log("Loading this table with an Azure client that has no credentials")
+    node.query_and_get_error(
+        "SELECT * FROM test_server_credentials_reload", settings={"azure_sdk_max_retries": 0}
+    )
+
+    node.query("DROP TABLE test_server_credentials_reload SYNC")
+    node.query("DROP NAMED COLLECTION azure_server_credentials_reload")
