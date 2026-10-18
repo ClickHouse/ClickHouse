@@ -63,7 +63,7 @@ struct QuantileExactWeighted
     /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
     static Weight addWeights(Weight lhs, Weight rhs)
     {
-        Weight sum;
+        Weight sum = 0;
         if (common::addOverflow(lhs, rhs, sum))
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in an exact weighted quantile does not fit UInt64");
         return sum;
