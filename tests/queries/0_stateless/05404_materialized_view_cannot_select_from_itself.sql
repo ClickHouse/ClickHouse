@@ -10,11 +10,16 @@ ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src JOIN (SELECT c0 FROM mv) AS t USI
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE c0 IN (SELECT c0 FROM mv); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE c0 > (SELECT count() FROM mv); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src UNION ALL SELECT c0 FROM mv; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE c0 IN (SELECT c0 FROM cluster('test_shard_localhost', currentDatabase(), 'mv')); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM v; -- { serverError INFINITE_LOOP }
 -- A string literal on the right side of IN is a set of values, not a table.
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE toString(c0) IN ('v');
 -- A recursive CTE named like the view is not the view.
 ALTER TABLE mv MODIFY QUERY WITH RECURSIVE mv AS (SELECT 1 AS c0 UNION ALL SELECT c0 + 1 FROM mv WHERE c0 < 3) SELECT c0 FROM src WHERE c0 IN (SELECT c0 FROM mv);
+SELECT dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'src';
+DROP TABLE v;
+RENAME TABLE mv TO mv2;
+ALTER TABLE mv2 MODIFY QUERY SELECT c0 FROM mv2; -- { serverError BAD_ARGUMENTS }
 SELECT dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'src';
 
 -- A refreshable view is not triggered by inserts, so it may read itself.
@@ -30,6 +35,5 @@ DROP TABLE t2;
 DROP TABLE t1;
 DROP TABLE rmv;
 DROP TABLE dst;
-DROP TABLE v;
-DROP TABLE mv;
+DROP TABLE mv2;
 DROP TABLE src;

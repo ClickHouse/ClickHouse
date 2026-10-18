@@ -917,7 +917,7 @@ void StorageMaterializedView::alter(
         /// No `table_name`: it would be dropped from the result. No current database: `InterpreterAlterQuery`
         /// has qualified every table name, and an unqualified one refers to a recursive CTE.
         auto referenced_tables = getDependenciesFromCreateQuery(
-            local_context->getGlobalContext(), /*table_name=*/{}, new_select.select_query, /*current_database=*/"").dependencies;
+            mv_db_context, /*table_name=*/{}, new_select.select_query, /*current_database=*/"").dependencies;
         if (referenced_tables.contains(table_id.getQualifiedName()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
     }
