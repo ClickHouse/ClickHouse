@@ -431,16 +431,43 @@ public:
             sort_key_nodes.insert(outputs[position]);
 
         NodeSet kept_by_read;
-        if (!chooseLazyReads(kept_by_read) || !keepColumnsOfUnreadJoinSides(kept_by_read))
+        if (!chooseLazyReads(kept_by_read))
             return false;
 
-        /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read that the main
-        /// read keeps anyway. A sort key crosses as a column the sorting needs. In the order of the merged DAG, so that the
-        /// copies are numbered and cross the `LIMIT` the same way every time.
-        ///
-        /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of
-        /// a value an expression or a filter computes without outputting it, which that step outputs then. Every step
-        /// above passes the copy through.
+        /// The pruning of the plan can keep a column meant for a lazy read: a join keeps a column of a side it reads nothing
+        /// of, for the number of rows, and that column can be, or be computed from, a column of a read. Such a column stays in
+        /// the main read and crosses the `LIMIT` instead. Carrying it can make the plan keep more, so this goes on until the
+        /// pruning keeps none of the columns read lazily.
+        const auto top_down_nodes = collectNodes();
+        while (true)
+        {
+            if (!collectCarriedValues(sort_key_nodes, kept_by_read))
+                return false;
+
+            const auto kept_more = keepColumnsThePruningKeeps(findUnneededColumns(top_down_nodes), kept_by_read);
+            if (!kept_more)
+                return false;
+            if (!*kept_more)
+                break;
+        }
+
+        return !lazy_by_source.empty();
+    }
+
+    /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read that the main read
+    /// keeps anyway. A sort key crosses as a column the sorting needs. In the order of the merged DAG, so that the copies
+    /// are numbered and cross the `LIMIT` the same way every time.
+    ///
+    /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of a
+    /// value an expression or a filter computes without outputting it, which that step outputs then. Every step above
+    /// passes the copy through.
+    bool collectCarriedValues(const NodeSet & sort_key_nodes, const NodeSet & kept_by_read)
+    {
+        for (const auto & carrying : carried)
+            added_names.erase(carrying.name);
+        carried.clear();
+        carried_from.clear();
+
         for (const auto & node : merged.getDAG().getNodes())
         {
             const auto * value = &node;
@@ -469,6 +496,72 @@ public:
         return true;
     }
 
+    /// Moves to the main read the columns meant for a lazy read that the pruning of the plan keeps, `unneeded_of` says
+    /// which. Returns whether it moved any, or nullopt where an object storage read cannot be split for the rest.
+    std::optional<bool> keepColumnsThePruningKeeps(
+        const std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> & unneeded_of, NodeSet & kept_by_read)
+    {
+        bool kept_more = false;
+        for (auto it = lazy_by_source.begin(); it != lazy_by_source.end();)
+        {
+            const auto source = it->first;
+            auto & lazy = it->second;
+            const auto & unneeded = unneeded_of.at(merged.sources[source].plan_node);
+
+            if (lazy.kind == LazySource::Kind::MergeTree)
+            {
+                /// Both in order, so they are followed at once.
+                auto next_unneeded = unneeded.begin();
+                size_t kept_index = 0;
+                for (size_t index = 0; index < lazy.positions.size(); ++index)
+                {
+                    const size_t position = lazy.positions[index];
+                    while (next_unneeded != unneeded.end() && *next_unneeded < position)
+                        ++next_unneeded;
+
+                    if (next_unneeded != unneeded.end() && *next_unneeded == position)
+                    {
+                        lazy.positions[kept_index] = position;
+                        lazy.inputs[kept_index] = lazy.inputs[index];
+                        ++kept_index;
+                        continue;
+                    }
+
+                    kept_by_read.insert(lazy.inputs[index]);
+                    kept_more = true;
+                }
+                lazy.positions.resize(kept_index);
+                lazy.inputs.resize(kept_index);
+            }
+            else
+            {
+                const auto & inputs = merged.sources[source].inputs;
+                const auto erased = std::erase_if(lazy.inputs, [&](const ActionsDAG::Node * input)
+                {
+                    const size_t position = std::ranges::find(inputs, input) - inputs.begin();
+                    if (std::ranges::binary_search(unneeded, position))
+                        return false;
+                    lazy.eager_names.insert(input->result_name);
+                    kept_by_read.insert(input);
+                    return true;
+                });
+
+                if (erased != 0)
+                {
+                    kept_more = true;
+                    if (!settleObjectStorageLazyRead(source, lazy, kept_by_read))
+                        return {};
+                }
+            }
+
+            if (lazy.inputs.empty())
+                it = lazy_by_source.erase(it);
+            else
+                ++it;
+        }
+        return kept_more;
+    }
+
     /// `sorting_node` is the full sorting right below `root`, the `LIMIT`, or null without ORDER BY.
     void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node * sorting_node)
     {
@@ -479,18 +572,7 @@ public:
                 if (const auto & carrying = carried[index]; carrying.step_node)
                     appendOutputToStep(*node->step, *carrying.step_node, carrying.name);
 
-        /// What the chain hands over: the sort keys and the copies of the values crossing the `LIMIT`. The header of the
-        /// chain is the outputs of the merged DAG.
-        std::vector<size_t> unneeded;
-        auto next_sort_key = sort_key_positions.begin();
-        for (size_t position = 0; position < merged.getOutputs().size(); ++position)
-        {
-            if (next_sort_key != sort_key_positions.end() && *next_sort_key == position)
-                ++next_sort_key;
-            else
-                unneeded.push_back(position);
-        }
-        auto assembled = assemble(unneeded, nodes);
+        auto assembled = assemble(nodes);
         auto & main_plan = assembled.plan;
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
@@ -812,79 +894,6 @@ private:
         }
     }
 
-    /// A join keeps the first input of a side no condition of it reads when nothing else of that side is needed below the
-    /// `LIMIT`, for the number of rows, so that input is computed below the `LIMIT`, and the columns of the reads it is
-    /// computed from have to stay in the main read: those meant for a lazy read cross the `LIMIT` instead. The input can
-    /// be a column of a read, under whatever name the steps between give it, a value computed from columns of one read
-    /// or of several, or a constant, which reads none.
-    bool keepColumnsOfUnreadJoinSides(NodeSet & kept_by_read)
-    {
-        /// The object storage sources whose lazy read lost a column, which may take others with it.
-        std::set<size_t> changed_object_storage_sources;
-
-        for (const auto & side_inputs : merged.unread_join_sides)
-        {
-            bool is_any_needed_below = false;
-            for (const auto * input : side_inputs)
-            {
-                if (isComputedBelow(frontier.at(input)) || kept_by_read.contains(input))
-                {
-                    is_any_needed_below = true;
-                    break;
-                }
-            }
-
-            if (is_any_needed_below)
-                continue;
-
-            for (const auto * column : findReachableNodes({side_inputs.front()}))
-            {
-                if (column->type != ActionsDAG::ActionType::INPUT)
-                    continue;
-
-                const auto source = merged.getSourceOfInput(column);
-                const auto lazy_it = lazy_by_source.find(source);
-                if (lazy_it == lazy_by_source.end())
-                    continue;
-
-                /// A column the read does not leave to its lazy read is in the main read already.
-                auto & lazy = lazy_it->second;
-                const auto input_it = std::ranges::find(lazy.inputs, column);
-                if (input_it == lazy.inputs.end())
-                    continue;
-
-                const auto index = input_it - lazy.inputs.begin();
-                lazy.inputs.erase(input_it);
-                if (lazy.kind == LazySource::Kind::MergeTree)
-                    lazy.positions.erase(lazy.positions.begin() + index);
-                else
-                {
-                    lazy.eager_names.insert(column->result_name);
-                    changed_object_storage_sources.insert(source);
-                }
-                kept_by_read.insert(column);
-
-                if (lazy.inputs.empty())
-                    lazy_by_source.erase(lazy_it);
-            }
-        }
-
-        for (size_t source : changed_object_storage_sources)
-        {
-            const auto lazy_it = lazy_by_source.find(source);
-            if (lazy_it == lazy_by_source.end())
-                continue;
-
-            if (!settleObjectStorageLazyRead(source, lazy_it->second, kept_by_read))
-                return false;
-
-            if (lazy_it->second.inputs.empty())
-                lazy_by_source.erase(lazy_it);
-        }
-
-        return !lazy_by_source.empty();
-    }
-
     bool isAddedColumn(const String & name) const { return added_names.contains(name); }
 
     /// A rebuilt node: its plan, and the positions of its former header it no longer has. Its header is the former one
@@ -924,16 +933,23 @@ private:
         return {child.dropped_positions, std::make_shared<const Block>(std::move(pruned_header))};
     }
 
-    /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
-    /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
-    /// the joins pass through, and prunes a step once its children are built, with their real headers.
-    /// `unneeded` is what is not needed of `chain_top`.
-    Assembled assemble(const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
+    /// What each node between `chain_top` and the sources, `top_down_nodes`, need not output, top-down, as `assemble`
+    /// prunes them: what the step above does not need of it, less the columns values are carried from. The chain hands
+    /// over the sort keys and the copies of the values crossing the `LIMIT`; its header is the outputs of the merged DAG.
+    std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> findUnneededColumns(const std::vector<QueryPlan::Node *> & top_down_nodes) const
     {
-        const auto top_down_nodes = collectNodes();
+        std::vector<size_t> chain_top_unneeded;
+        auto next_sort_key = sort_key_positions.begin();
+        for (size_t position = 0; position < merged.getOutputs().size(); ++position)
+        {
+            if (next_sort_key != sort_key_positions.end() && *next_sort_key == position)
+                ++next_sort_key;
+            else
+                chain_top_unneeded.push_back(position);
+        }
 
         /// A node a value is carried from keeps the column it is copied from.
-        std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, unneeded}};
+        std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, std::move(chain_top_unneeded)}};
         for (auto * node : top_down_nodes)
         {
             auto & node_unneeded = unneeded_of.at(node);
@@ -949,6 +965,16 @@ private:
             for (size_t child = 0; child < node->children.size(); ++child)
                 unneeded_of[node->children[child]] = std::move(child_unneeded.at(child));
         }
+        return unneeded_of;
+    }
+
+    /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
+    /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
+    /// the joins pass through, and prunes a step once its children are built, with their real headers.
+    Assembled assemble(QueryPlan::Nodes & nodes)
+    {
+        const auto top_down_nodes = collectNodes();
+        const auto unneeded_of = findUnneededColumns(top_down_nodes);
 
         std::unordered_map<const QueryPlan::Node *, Assembled> assembled;
         for (auto * node : top_down_nodes | std::views::reverse)
