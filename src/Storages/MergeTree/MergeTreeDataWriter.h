@@ -53,6 +53,13 @@ struct MergeTreeTemporaryPart
     /// `fsync_after_insert` or `fsync_after_insert_each_part` is changed while the INSERT is running.
     bool needs_fsync_on_finish = false;
 
+    /// `fsync_after_insert` from the same snapshot of the table settings. A block deduplicated against
+    /// an existing part is acknowledged on the strength of that part, which may have been committed by
+    /// an `INSERT` in the batched mode that failed or was cancelled before its fsync. So when this is
+    /// set, the existing part is synced when the `INSERT` finishes, regardless of whether this part
+    /// was synced inline or not (its files are discarded anyway).
+    bool fsync_after_insert = false;
+
     /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
     /// Empty when the part keeps the block's row order.
     IColumn::Permutation sort_permutation;

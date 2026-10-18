@@ -502,7 +502,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 /// was cancelled before its own batched fsync (or that is still running), so it is synced
                 /// together with the parts this query commits. A part that exists only on another replica
                 /// is not found locally and is skipped by MergeTreeData::fsyncPartsAfterInsert().
-                if (partition.temp_part->needs_fsync_on_finish)
+                /// This does not depend on whether this query syncs its own parts inline or in a batch.
+                if (partition.temp_part->fsync_after_insert)
                 {
                     for (const auto & hash : conflicts)
                         if (hash.hasConflictPartName())

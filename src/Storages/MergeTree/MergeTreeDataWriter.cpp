@@ -1168,6 +1168,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const bool sync_this_part = fsync_after_insert
         && ((*data_settings)[MergeTreeSetting::fsync_after_insert_each_part] || !data_part_storage->supportsSyncFiles());
     temp_part->needs_fsync_on_finish = fsync_after_insert && !sync_this_part;
+    temp_part->fsync_after_insert = fsync_after_insert;
 
     /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
     /// records its checksum in `gathered_data.checksums` (so it is covered by

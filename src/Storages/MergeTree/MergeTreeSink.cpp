@@ -340,8 +340,9 @@ void MergeTreeSink::finishDelayedChunk()
             /// A deduplicated block is acknowledged on the strength of the part that already holds it.
             /// That part may have been committed by an INSERT that failed or was cancelled before its
             /// own batched fsync (or that is still running), so it is synced together with the parts
-            /// this query commits.
-            auto * conflict_parts = partition.temp_part->needs_fsync_on_finish ? &committed_parts : nullptr;
+            /// this query commits. That does not depend on whether this query syncs its own parts
+            /// inline or in a batch: it is the existing part that has to be durable.
+            auto * conflict_parts = partition.temp_part->fsync_after_insert ? &committed_parts : nullptr;
             UniqueKeyInsertOutcome outcome;
             if (metadata_snapshot->hasUniqueKey())
             {
