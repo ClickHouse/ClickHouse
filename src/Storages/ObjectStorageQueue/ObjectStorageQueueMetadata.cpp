@@ -295,6 +295,11 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     }
 }
 
+ObjectStorageQueueIFileMetadata::FileStatusPtr ObjectStorageQueueMetadata::tryGetFileStatus(const std::string & path)
+{
+    return local_file_statuses.get(getMetadataCacheKey(path));
+}
+
 bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
 {
     std::lock_guard lock(exclusive_processing_paths_mutex);
