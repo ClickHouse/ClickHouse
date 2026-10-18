@@ -47,6 +47,10 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    /// Includes the scalar fields and which of the intervals are present, so that two strategies
+    /// differing only in the schedule kind, the mode, `IF CHANGED` or the intervals hash differently.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };

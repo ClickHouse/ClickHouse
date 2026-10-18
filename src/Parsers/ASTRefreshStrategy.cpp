@@ -4,6 +4,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 #include <base/EnumReflection.h>
 
 namespace DB
@@ -12,6 +13,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+void ASTRefreshStrategy::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    hash_state.update(static_cast<UInt8>(schedule_kind));
+    hash_state.update(static_cast<UInt8>(mode));
+    hash_state.update(if_changed);
+    /// The children do not tell which interval is which: `EVERY 1 HOUR OFFSET 5 MINUTE` and
+    /// `EVERY 1 HOUR RANDOMIZE FOR 5 MINUTE` have the same children otherwise.
+    hash_state.update(period != nullptr);
+    hash_state.update(offset != nullptr);
+    hash_state.update(spread != nullptr);
+    hash_state.update(settings != nullptr);
+    hash_state.update(dependencies != nullptr);
 }
 
 ASTPtr ASTRefreshStrategy::clone() const
