@@ -81,14 +81,15 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].schedulable_row_groups.resize(num_row_groups);
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
-    /// Read-ahead skips row groups with an offset-index column or with all columns in the columns cache, so it is off if
-    /// every row group is such or no column is read. It is also off for page cache reads: the cells they read are not
-    /// counted by the read-ahead bound.
+    /// Read-ahead starts nothing for row groups that are not processed, have an offset-index column or have all columns in
+    /// the columns cache, so it is off if every row group is such or no column is read. It is also off for page cache
+    /// reads: the cells they read are not counted by the read-ahead bound.
     column_data_read_ahead = reader.options.is_remote_fs && reader.prefetcher.readsInBackground()
         && !reader.prefetcher.readsThroughPageCache() && !reader.primitive_columns.empty()
         && std::any_of(reader.row_groups.begin(), reader.row_groups.end(), [](const RowGroup & row_group)
             {
-                return std::none_of(row_group.columns.begin(), row_group.columns.end(),
+                return row_group.need_to_process
+                    && std::none_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
