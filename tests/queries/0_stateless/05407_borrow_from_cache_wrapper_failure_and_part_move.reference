@@ -1,0 +1,10 @@
+after the failed wrapper
+1	a
+2	b
+3	c
+moved onto the borrowed disk	borrow_from_cache_disk
+4	d
+5	e
+moved off the borrowed disk	local_disk
+4	d
+5	e

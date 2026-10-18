@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int NOT_INITIALIZED;
 }
 
 namespace
@@ -114,6 +115,15 @@ FileCachePtr BorrowFromCacheObjectStorage::tryGetCache() const
     return file_cache;
 }
 
+bool BorrowFromCacheObjectStorage::isReadOnly() const
+{
+    /// With `load_metadata_asynchronously`, a cache is registered before its metadata is loaded, and
+    /// it cannot hand out segments until then. Stay read-only until it is ready, so that the startup
+    /// access check (`IDisk::startup`) is skipped instead of failing on the uninitialized cache.
+    auto cache = tryGetCache();
+    return !cache || !cache->isInitialized();
+}
+
 BorrowFromCacheObjectStorage::SegmentEntry * BorrowFromCacheObjectStorage::findEntry(const std::string & remote_path) const
 {
     auto it = entries.find(remote_path);
@@ -176,6 +186,10 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
     if (!cache)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filesystem cache '{}' is not registered, so the borrow_from_cache object storage '{}' is read-only", cache_name, name);
+    if (!cache->isInitialized())
+        throw Exception(ErrorCodes::NOT_INITIALIZED,
+            "Filesystem cache '{}' is not initialized (its metadata is still being loaded, or loading it failed, see the server log), "
+            "so the borrow_from_cache object storage '{}' is read-only", cache_name, name);
 
     const auto key = FileSegment::Key::random();
     std::shared_ptr<FileSegmentsHolder> segment_holder = cache->set(
@@ -341,11 +355,17 @@ void BorrowFromCacheObjectStorage::copyObject( /// NOLINT
 void BorrowFromCacheObjectStorage::shutdown()
 {
     std::lock_guard lock(mutex);
-    entries.clear();
+    if (started_users > 0)
+        --started_users;
+    /// The objects are still referenced by the metadata of the disks that remain started.
+    if (started_users == 0)
+        entries.clear();
 }
 
 void BorrowFromCacheObjectStorage::startup()
 {
+    std::lock_guard lock(mutex);
+    ++started_users;
 }
 
 ObjectStorageKeyGeneratorPtr BorrowFromCacheObjectStorage::createKeyGenerator() const

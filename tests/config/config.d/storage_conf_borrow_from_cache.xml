@@ -26,5 +26,18 @@
                 <cache_name>borrow_from_cache_cache</cache_name>
             </borrow_from_cache_disk>
         </disks>
+        <policies>
+            <!-- For moving parts onto a `borrow_from_cache` disk and off it again. -->
+            <borrow_from_cache_move>
+                <volumes>
+                    <main>
+                        <disk>local_disk</disk>
+                    </main>
+                    <borrowed>
+                        <disk>borrow_from_cache_disk</disk>
+                    </borrowed>
+                </volumes>
+            </borrow_from_cache_move>
+        </policies>
     </storage_configuration>
 </clickhouse>

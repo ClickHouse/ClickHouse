@@ -66,6 +66,10 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes) override;
 
+    /// The same instance can be shared by several disks: a `cache` disk over a `borrow_from_cache`
+    /// disk (`DiskObjectStorage::wrapWithCache`) shares both the object storage and the metadata.
+    /// Each started disk starts it up once, and the objects are released only when the last one
+    /// shuts down: a wrapper whose startup fails must not drop the objects of the disk it wraps.
     void shutdown() override;
 
     void startup() override;
@@ -74,13 +78,14 @@ public:
 
     bool isRemote() const override { return false; }
 
-    /// Read-only while the backing cache is not registered. This only happens transiently on attach
+    /// Read-only while the backing cache is not registered or not initialized yet (its metadata is
+    /// loaded asynchronously with `load_metadata_asynchronously`). This only happens transiently on attach
     /// (a reattached `borrow_from_cache` table is always empty, since its data does not survive a
     /// restart), and makes the disk skip every attach-time write: the access check (`IDisk::startup`),
     /// directory creation and the `format_version.txt` write (`MergeTreeData`), and cleanup on `DROP`
     /// (`MergeTreeData::dropAllData`) are all gated on `isReadOnly`. The disk becomes writable as soon
     /// as the cache is registered.
-    bool isReadOnly() const override { return tryGetCache() == nullptr; }
+    bool isReadOnly() const override;
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
@@ -110,6 +115,8 @@ private:
 
     mutable std::mutex mutex;
     mutable std::unordered_map<std::string, SegmentEntry> entries;
+    /// The number of `startup` calls not matched by `shutdown` yet. Guarded by `mutex`.
+    size_t started_users = 0;
 
     LoggerPtr log;
 };
