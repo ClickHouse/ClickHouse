@@ -236,6 +236,11 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+CLICKHOUSE_GDB_LOG_FILE = "/var/log/clickhouse-server/gdb.log"
+
+# A backtrace is also taken on restarts in the middle of a run, so it is bounded.
+GDB_BACKTRACE_TIMEOUT_SECONDS = 300
+
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
@@ -4525,10 +4530,12 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
                     )
 
             start_timeout = 300.0  # seconds
@@ -4643,13 +4650,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5430,6 +5430,10 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
+        # How the last server exited, kept once its exec id is dropped; every start clears them.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5930,6 +5934,39 @@ class ClickHouseInstance:
             )
         )
 
+    def capture_clickhouse_exit(self):
+        """Record the exit code of the server exec before its id, the only handle on the
+        finished exec, is dropped."""
+        if not self.clickhouse_exec_id:
+            return
+        try:
+            info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            self.clickhouse_last_exit_code = info["ExitCode"]
+        except Exception as e:
+            logging.warning(f"Could not inspect exec of {self.name}: {e}")
+
+    def dump_backtrace(self, occasion: str) -> bool:
+        """Append `thread apply all backtrace` of the running server to gdb.log, headed by
+        the occasion and time, as `stop_server` in `tests/docker_scripts/stress_tests.lib`
+        does. Returns False when there is no process left to dump."""
+        pid = self.get_process_pid("clickhouse")
+        if pid is None:
+            return False
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f'echo "thread apply all backtrace ({occasion}) at $(date -u +%FT%TZ)"'
+                f" >> {CLICKHOUSE_GDB_LOG_FILE}; "
+                f"timeout {GDB_BACKTRACE_TIMEOUT_SECONDS}"
+                f" gdb -batch -ex 'thread apply all bt' -p {pid}"
+                f" >> {CLICKHOUSE_GDB_LOG_FILE} 2>&1",
+            ],
+            user="root",
+            nothrow=True,
+        )
+        return True
+
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception(
@@ -5976,6 +6013,8 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self.capture_clickhouse_exit()
+                    self.clickhouse_exec_id = ""  # old exec is no longer valid
                     return True
                 else:
                     time.sleep(1)
@@ -5989,14 +6028,10 @@ class ClickHouseInstance:
                 logging.warning(
                     f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
                 )
-                self.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                    ],
-                    user="root",
-                )
+                # Appended to gdb.log rather than written over the server's stdout.log
+                self.dump_backtrace("on stop")
+                # Only a graceful stop that timed out gets here, never a kill=True call
+                self.clickhouse_forced_stop = True
                 self.stop_clickhouse(kill=True)
             else:
                 ps_all = self.exec_in_container(
@@ -6031,6 +6066,10 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
+                self.clickhouse_last_exit_code = None
+                self.clickhouse_forced_stop = False
+                # Cleared first, so a start that throws leaves no exec of the previous server
+                self.clickhouse_exec_id = ""
                 exec_id = self.exec_in_container(
                     [
                         "bash",
@@ -6047,6 +6086,9 @@ class ClickHouseInstance:
                     get_exec_id=True,
                     environment=environment,
                 )
+                # With `--daemon` the exec is a launcher that exits 0 once it has forked,
+                # so only a foreground start's exec says how the server went away.
+                self.clickhouse_exec_id = "" if daemon else exec_id
                 if not wait_start:
                     return exec_id
                 if expected_to_fail:
@@ -6114,12 +6156,7 @@ class ClickHouseInstance:
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
-                user="root",
-            )
+        self.dump_backtrace("on start timeout")
         if last_err is not None:
             raise last_err
 
@@ -6852,7 +6889,12 @@ class ClickHouseInstance:
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
-        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        if not self.cluster.with_dolor:
+            # The `Detect passwords in tests` rule throws when a password reaches the logs.
+            # La Casa del Dolor generates DDL with the integration-test credentials, and a
+            # query that fails to parse is logged before its arguments are masked, so the
+            # rule would turn fuzzer noise into a logical error.
+            write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
@@ -7026,7 +7068,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command
