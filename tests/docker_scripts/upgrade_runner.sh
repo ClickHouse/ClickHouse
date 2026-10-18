@@ -448,17 +448,20 @@ fi
 # already, and on the upgraded one so does the load of an eager dictionary over it.
 echo "Drop the row policies that cannot be applied to a table they cover"
 
-: > /tmp/drop_row_policies.sql
 : > /test_output/unchecked_row_policy_errors.txt
+: > /test_output/undropped_row_policy_errors.txt
 row_policy_check_failed=0
 row_policy_drop_failed=0
+# The check of a filter runs its scalar subqueries, and they apply the row policies of the tables they read, so the
+# filters without a subquery are checked, and dropped, first.
 if timeout 1m clickhouse-client --query "
-        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
+        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL
+        ORDER BY positionCaseInsensitive(select_filter, 'SELECT') != 0" > /tmp/row_policy_ids.txt
 then
     while read -r row_policy_id
     do
-        # The planner applies row policies, so `EXPLAIN QUERY TREE` resolves this filter without the others. Unqualified
-        # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
+        # `EXPLAIN QUERY TREE` does not apply the row policies of the table it reads. Unqualified tables of the filter
+        # resolve in the current database, so use the policy's one, where its test reads the table.
         if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
                 SELECT format('USE {0}{1}{0}; EXPLAIN QUERY TREE SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3};', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
@@ -474,29 +477,32 @@ then
         fi
         timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
             && continue
-        # Only the server failing to resolve the filter shows that it cannot be applied: an unknown column, table or
-        # function, or a wrong type. A resource limit, a timeout or a lost connection does not.
-        if ! grep -qE '^Code: (43|46|47|59|60|386)\. DB::Exception: Received from ' /tmp/row_policy_check_errors.txt
+        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table or
+        # function, a wrong type or number of arguments, or an invalid constant. A resource limit, a timeout or a lost
+        # connection does not.
+        if ! grep -qE '^Code: (6|36|42|43|46|47|53|59|60|69|125|184|386)\. DB::Exception: Received from ' \
+            /tmp/row_policy_check_errors.txt
         then
             cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
             row_policy_check_failed=1
             continue
         fi
         cat /tmp/row_policy_check_errors.txt >> /test_output/dropped_row_policies.txt
-        timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+        if timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
             SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';' FROM system.row_policies WHERE id = {id:UUID}
-            FORMAT TSVRaw" >> /tmp/drop_row_policies.sql || row_policy_drop_failed=1
+            FORMAT TSVRaw" > /tmp/drop_row_policy.sql
+        then
+            cat /tmp/drop_row_policy.sql >> /test_output/dropped_row_policies.txt
+            timeout 1m clickhouse-client --queries-file /tmp/drop_row_policy.sql \
+                2>> /test_output/undropped_row_policy_errors.txt || row_policy_drop_failed=1
+        else
+            row_policy_drop_failed=1
+        fi
     done < /tmp/row_policy_ids.txt
 else
     echo -e "Cannot list the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
 fi
 
-if [ -s /tmp/drop_row_policies.sql ]
-then
-    cat /tmp/drop_row_policies.sql >> /test_output/dropped_row_policies.txt
-    timeout 5m clickhouse-client --ignore-error --queries-file /tmp/drop_row_policies.sql \
-        2> /test_output/undropped_row_policy_errors.txt || row_policy_drop_failed=1
-fi
 if [ "$row_policy_check_failed" != 0 ]
 then
     echo -e "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
