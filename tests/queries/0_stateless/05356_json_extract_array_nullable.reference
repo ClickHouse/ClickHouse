@@ -19,6 +19,16 @@ Nullable(Tuple(a Int64))
 ['b']
 []
 []
+[]
+[]
+[]
+['x']
+[]
+['1']
+{"a":{"b":1}}	a	['b']
+\N	a	[]
+{"a":{"b":1}}	\N	[]
+\N	\N	[]
 x	LowCardinality(Nullable(String))
 \N	LowCardinality(Nullable(String))
 x	LowCardinality(String)
