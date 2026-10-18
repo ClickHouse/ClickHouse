@@ -141,6 +141,13 @@ constexpr auto DEFAULT_PREFIX = "changelog";
 /// `changelog_*` name only on flush. Startup never treats such objects as changelogs and removes them.
 constexpr auto S3_IN_PROGRESS_PREFIX = "s3_in_progress_";
 
+/// The S3 changelog writer never publishes over the object it replaces: a failed `copyFile` rolls back by removing
+/// the destination, and a plain object storage disk may cache the size of the replaced object. When a rewrite keeps
+/// the range of the segment (`changelog_1_16.bin` rewritten from index 16), the new version is published under the
+/// same name with this extra component (`changelog_1_16_rewrite.bin`), and the next one without it again.
+/// `Changelog::getChangelogFileDescription` ignores the components after the range.
+constexpr auto S3_REWRITE_SUFFIX = "rewrite";
+
 /// The S3 changelog writer starts merging the published objects once this many of them are not merged yet.
 constexpr ptrdiff_t S3_COMPACTION_BACKLOG_THRESHOLD = 16;
 
@@ -1018,6 +1025,18 @@ private:
                 *last_index_written,
                 current_file_description->extension);
 
+            /// The path of a segment that was not published yet is only a placeholder.
+            auto listed_it = existing_changelogs.find(current_file_description->from_log_index);
+            const bool is_published = listed_it != existing_changelogs.end() && listed_it->second == current_file_description;
+            if (is_published && new_path == current_file_description->path)
+                new_path = fmt::format(
+                    "{}_{}_{}_{}.{}",
+                    current_file_description->prefix,
+                    current_file_description->from_log_index,
+                    *last_index_written,
+                    S3_REWRITE_SUFFIX,
+                    current_file_description->extension);
+
             LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", current_file_description->path, new_path);
 
             /// Finalize the upload of the in-progress object first so the data is fully persisted
@@ -1036,12 +1055,13 @@ private:
             auto disk = getDisk();
             const auto in_progress_path = write_buffer_in_progress_path;
 
-            /// The upload to `new_path` is atomic (startup requires an object storage disk), so a failure here leaves
-            /// either nothing at `new_path` or, when `new_path` is the path of the segment reopened by `writeAt`, its
-            /// intact previous version. A crash after the upload but before the old object is removed below leaves
-            /// two objects for the same start index: startup keeps the larger one, which is the new one, because it
-            /// starts with a copy of the old one, and removes the other. The in-progress object is not needed for
-            /// recovery in either case.
+            /// `new_path` never names the segment reopened by `writeAt` (see `S3_REWRITE_SUFFIX`), so the old object
+            /// stays intact whatever happens to the upload: `copyFile` removes its destination when it fails. The upload
+            /// is atomic (startup requires an `s3_plain` disk), so a failure leaves nothing at `new_path`. A crash after
+            /// the upload but before the old object is removed below leaves two objects for the same start index:
+            /// startup keeps the larger one, which is the new one, because it starts with a copy of the old one, and
+            /// removes the other. The in-progress object is not needed for recovery in either case.
+            chassert(!is_published || new_path != current_file_description->path);
             try
             {
                 /// A server-side copy within the object storage, so the segment is not downloaded and uploaded again.
@@ -1050,17 +1070,14 @@ private:
             catch (...)
             {
                 /// Do not leave an unacknowledged object behind to compete with the intact old one for the same
-                /// start index. Never remove the old object itself.
-                if (new_path != current_file_description->path)
+                /// start index.
+                try
                 {
-                    try
-                    {
-                        disk->removeFileIfExists(new_path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("Failed to remove unpublished S3 changelog {}", new_path));
-                    }
+                    disk->removeFileIfExists(new_path);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Failed to remove unpublished S3 changelog {}", new_path));
                 }
                 throw;
             }
