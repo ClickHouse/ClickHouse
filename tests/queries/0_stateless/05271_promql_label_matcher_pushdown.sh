@@ -152,11 +152,12 @@ echo "-- the setting turns the pushdown off"
 CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
 
 # Prints how many selectors the query reads and how many joins it makes.
-# Only the hash joins are counted: the PromQL operators are executed with a hash join, while each selector joins the time ranges table with a merge join.
+# Only the hash joins which are not anti joins are counted: the PromQL operators are executed with a hash join,
+# while each selector joins the time ranges table with a merge join and removes the ids sharing tags with an anti join.
 function reads()
 {
     $CLIENT -q "
-        SELECT countIf(explain LIKE '%metric_name = %'), countIf(explain LIKE '%Join (JOIN FillRightFirst)%')
+        SELECT countIf(explain LIKE '%metric_name = %'), countIf(explain LIKE '%Join (JOIN FillRightFirst)%') - countIf(explain LIKE '%Strictness: anti%')
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))"
 }
 
