@@ -98,6 +98,10 @@ public:
     /// (the `Native` format, `serialization.json`), because the binary and JSON readers check only its shape.
     virtual void checkKindStackForType(const IDataType & type) const;
 
+    /// Rejects a kind stack (and, for a tuple, a kind stack of any element) that no writer can produce.
+    /// The binary reader checks the shape while reading, the JSON reader must call it explicitly.
+    virtual void checkKindStacks() const;
+
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
     /// Forgets that any aggregated info contributed a `LowCardinality` kind (see `add`) and re-derives
     /// the kind stack from the accumulated data alone, so that the kind of an aggregated info can be

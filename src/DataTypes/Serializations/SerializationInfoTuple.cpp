@@ -185,6 +185,13 @@ void SerializationInfoTuple::checkKindStackForType(const IDataType & type) const
         elems[i]->checkKindStackForType(*type_tuple->getElements()[i]);
 }
 
+void SerializationInfoTuple::checkKindStacks() const
+{
+    SerializationInfo::checkKindStacks();
+    for (const auto & elem : elems)
+        elem->checkKindStacks();
+}
+
 void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
 {
     SerializationInfo::writeJSONFields(out, name);

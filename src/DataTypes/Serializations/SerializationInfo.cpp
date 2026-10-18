@@ -365,6 +365,11 @@ void SerializationInfo::checkKindStackForType(const IDataType & type) const
             type.getName());
 }
 
+void SerializationInfo::checkKindStacks() const
+{
+    checkKindStack(ISerialization::KindSet::all());
+}
+
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
     UInt8 type = 0;
@@ -828,6 +833,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             auto info = it->second->createSerializationInfo(infos.settings);
             info->fromJSON(*elem_object);
+            info->checkKindStacks();
             info->checkKindStackForType(*it->second);
             infos.emplace(name, std::move(info));
         }
