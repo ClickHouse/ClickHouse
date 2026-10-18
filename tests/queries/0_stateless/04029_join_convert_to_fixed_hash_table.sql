@@ -18,6 +18,8 @@ INSERT INTO t_right_i64 VALUES (0, 'r0'), (2, 'r2'), (4, 'r4');
 INSERT INTO t_right_neg VALUES (-2, 'r-2'), (0, 'r0'), (2, 'r2');
 
 SET join_algorithm = 'hash';
+-- Only a join with the serial layout converts its map; the join order pass gives the estimate that layout needs.
+SET parallel_hash_join_threshold = 1000000000, query_plan_optimize_join_order_limit = 10, query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_fixed_hash_table_conversion = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_read_in_order_through_join = 0;

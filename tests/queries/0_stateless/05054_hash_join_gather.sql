@@ -623,6 +623,8 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- the planner derive the output header by running the join over an empty block, and the emit has to
 -- reach that point and do nothing. Both halves pin `query_plan_join_swap_table`,
 -- because swapping an `ANY LEFT` join makes it a `RIGHT ANY` one, which claims its rows differently.
+-- The second half also pins the serial layout. A parallel build splits `system.numbers` over several
+-- probe streams, and `LIMIT` then keeps whichever block comes back first.
 SELECT 'arm21 any left join', count(), sum(cityHash64(*)) FROM dg_probe ANY LEFT JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
@@ -636,7 +638,7 @@ SELECT 'arm21 any left join over unbounded source', count(), sum(cityHash64(*)) 
         USING number LIMIT 10
 )
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0, parallel_hash_join_threshold = 18446744073709551615;
 
 -- Arm 22: `RightAny` is a strictness of its own - the old `ANY`, selected by
 -- `any_join_distinct_right_table_keys` - and it picks a key's first row rather than claiming rows

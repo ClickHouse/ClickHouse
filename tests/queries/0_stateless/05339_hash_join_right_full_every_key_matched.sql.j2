@@ -44,7 +44,7 @@ SELECT '--- {{ alg }} ---';
 {% for v in range(c.missing | length + 1) -%}
 SELECT '{{ alg }}', '{{ c.name }}', '{{ kind }}', {{ conv }}, {{ v }}, count(), countIf(r.rm = 0), arraySort(groupArrayIf({{ c.rk }}, l.m = 0))
 FROM l_{{ c.name }}_{{ v }} AS l {{ kind }} JOIN r_{{ c.name }} AS r ON {{ c.on }}
-SETTINGS join_algorithm = '{{ alg }}', enable_join_fixed_hash_table_conversion = {{ conv }}, log_comment = 'oracle_{{ alg }}_{{ c.name }}_{{ kind }}_{{ conv }}_{{ v }}';
+SETTINGS join_algorithm = '{{ alg }}', enable_join_fixed_hash_table_conversion = {{ conv }}, log_comment = 'oracle_{{ alg }}_{{ c.name }}_{{ kind }}_{{ conv }}_{{ v }}'{% if alg == 'hash' %}, parallel_hash_join_threshold = 1000000000, query_plan_optimize_join_order_limit = 10{% endif %};
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
@@ -92,6 +92,7 @@ SETTINGS join_algorithm = 'hash';
 
 -- How many passes over the hash table were skipped and done: none done when every right key matched, one done (by
 -- the part that holds the unmatched key) otherwise, none of either with per-row flags.
+-- A parallel fixed-key map (`u8`, `u16`) is one flat table, so when a key is unmatched each of the 4 streams walks it.
 SYSTEM FLUSH LOGS query_log;
 SELECT substring(log_comment, 8),
     ProfileEvents['JoinNonJoinedHashTableScansSkipped'] > 0,
