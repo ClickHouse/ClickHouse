@@ -36,9 +36,9 @@ namespace
 bool hasTransportHangup(int fd)
 {
 #if defined(POLLRDHUP)
-    constexpr short hangup_events = POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+    constexpr decltype(pollfd::events) hangup_events = POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
 #else
-    constexpr short hangup_events = POLLHUP | POLLERR | POLLNVAL;
+    constexpr decltype(pollfd::events) hangup_events = POLLHUP | POLLERR | POLLNVAL;
 #endif
     pollfd pfd{.fd = fd, .events = hangup_events, .revents = 0};
     int res = 0;
