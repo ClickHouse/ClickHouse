@@ -2,8 +2,10 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
+#include <Common/SipHash.h>
 #include <base/range.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -152,6 +154,52 @@ ASTPtr ASTCreateQuotaQuery::clone() const
         res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     return res;
+}
+
+
+void ASTCreateQuotaQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `getID` is constant and `children` is empty for this query, so every `CREATE`/`ALTER QUOTA`
+    /// collides in the base tree hash. The rewrite-rule matcher uses the tree hash for semantic
+    /// equality, so fold every semantic field the formatter emits (and only those, so the hash
+    /// survives the debug-build format -> parse -> format consistency check).
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(alter);
+    hash_state.update(attach);
+    hash_state.update(if_exists);
+    hash_state.update(if_not_exists);
+    hash_state.update(or_replace);
+    hash_state.update(cluster);
+    hash_state.update(storage_name);
+    hash_state.update(new_name);
+
+    hash_state.update(names.size());
+    for (const auto & name : names)
+        hash_state.update(name);
+
+    /// `key_type`, the prefix bits and `all_limits` are non-AST members emitted through several
+    /// conditional branches (e.g. the prefix bits appear only for an IP key type). Fold exactly
+    /// the text the formatter would emit for them, reusing the same helpers, so the hash both
+    /// distinguishes different quotas and stays stable across the format -> parse round-trip.
+    {
+        const IAST::FormatSettings format_settings(/*one_line=*/ true);
+        WriteBufferFromOwnString buf;
+        if (key_type)
+            formatKeyType(*key_type, ipv4_prefix_bits, ipv6_prefix_bits, buf, format_settings);
+        else if (ipv4_prefix_bits || ipv6_prefix_bits)
+            formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, buf);
+        formatIntervalsWithLimits(all_limits, buf, format_settings);
+        hash_state.update(buf.str());
+    }
+
+    /// The formatter emits `roles` only when it is non-empty or this is an `ALTER` (an empty `TO`
+    /// on a `CREATE` is dropped), so collapse "present but empty and not alter" to the same hash
+    /// as absent to match the round-trip.
+    const bool roles_emitted = roles && (!roles->empty() || alter);
+    hash_state.update(roles_emitted);
+    if (roles_emitted)
+        roles->updateTreeHash(hash_state, ignore_aliases);
 }
 
 

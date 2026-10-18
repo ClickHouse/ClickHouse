@@ -196,6 +196,17 @@ void ASTIdentifier::setShortName(const String & new_name)
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// Only the '.'-joined `full_name` reaches the default hash (via `getID`), which loses the
+    /// part structure: `` `a.b` `` (one part) and `a.b` (two parts) would share a tree hash. For
+    /// a parametrised compound identifier (`a.{x:Identifier}`) `full_name` is empty, so without
+    /// this fold the literal parts would not be hashed at all. The rewrite-rule matcher treats an
+    /// equal `getTreeHash(true)` as semantic equality.
+    hash_state.update(name_parts.size());
+    for (const auto & part : name_parts)
+    {
+        hash_state.update(part.size());
+        hash_state.update(part);
+    }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
