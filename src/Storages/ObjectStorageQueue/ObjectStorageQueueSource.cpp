@@ -220,6 +220,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
         while (new_batch.empty())
         {
+            std::vector<std::string> taken_replays;
             /// Files skipped earlier because of a fresh foreign `processing` observation are
             /// rechecked at the first batch boundary after the observation expires, without
             /// waiting for the rest of the listing pass (it can take much longer than the TTL).
@@ -227,7 +228,7 @@ ObjectStorageQueueSource::FileIterator::next()
             /// progressing even if the rechecks keep becoming due.
             const bool rechecks_first = listing_exhausted || !std::exchange(last_batch_was_recheck, false);
             if (rechecks_first)
-                new_batch = takeDueForeignProcessingRechecks();
+                new_batch = takeDueForeignProcessingRechecks(taken_replays);
 
             std::optional<RelativePathsWithMetadata> result;
             if (new_batch.empty() && !listing_exhausted)
@@ -237,7 +238,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     listing_exhausted = true;
                     if (!rechecks_first)
-                        new_batch = takeDueForeignProcessingRechecks();
+                        new_batch = takeDueForeignProcessingRechecks(taken_replays);
                 }
             }
 
@@ -277,7 +278,18 @@ ObjectStorageQueueSource::FileIterator::next()
                             relisted.insert(object_info->getPath());
                     }
                     if (!relisted.empty())
-                        std::erase_if(foreign_processing_files_to_recheck, [&](const PendingRecheck & pending) { return relisted.contains(pending.object->getPath()); });
+                    {
+                        std::erase_if(foreign_processing_files_to_recheck, [&](const PendingRecheck & pending) TSA_REQUIRES(next_mutex)
+                        {
+                            if (!relisted.contains(pending.object->getPath()))
+                                return false;
+                            /// The inherited recheck could have become a replay in the meantime:
+                            /// its ordering barrier goes away with it.
+                            if (pending.is_replay)
+                                forgetPendingReplay(pending.object->getPath());
+                            return true;
+                        });
+                    }
                 }
 
                 for (auto it = new_batch.begin(); it != new_batch.end();)
@@ -308,6 +320,23 @@ ObjectStorageQueueSource::FileIterator::next()
 
             /// Filter out files which we know we would not need to process.
             filterProcessableFiles(new_batch);
+
+            /// The taken replays which did not survive the filtering are not handed out,
+            /// so they are not ordering barriers any more (if a replay was queued again or
+            /// retained behind a blocker, that keeps its domain ordered instead).
+            if (!taken_replays.empty())
+            {
+                std::unordered_multiset<std::string> survived;
+                for (const auto & object_info : new_batch)
+                    survived.insert(object_info->getPath());
+                for (const auto & path : taken_replays)
+                {
+                    if (const auto it = survived.find(path); it != survived.end())
+                        survived.erase(it);
+                    else
+                        forgetInFlightReplay(path);
+                }
+            }
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
@@ -701,7 +730,7 @@ void ObjectStorageQueueSource::FileIterator::queueForeignProcessingRecheck(
     foreign_processing_files_to_recheck.push_back({std::move(object), due_time});
 }
 
-ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRechecks()
+ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRechecks(std::vector<std::string> & taken_replays)
 {
     if (foreign_processing_files_to_recheck.empty())
         return {};
@@ -747,7 +776,14 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
         if (take)
         {
             if (pending.is_replay)
-                forgetPendingReplay(pending.object->getPath());
+            {
+                /// Not pending in the queue any more, but still not handed out: with buckets it can
+                /// be appended to a bucket cache behind a later file of its domain, see `in_flight_replays_per_domain`.
+                const auto & path = pending.object->getPath();
+                forgetPendingReplay(path);
+                in_flight_replays_per_domain[getOrderingDomain(path)].insert(path);
+                taken_replays.push_back(path);
+            }
             due.push_back(std::move(pending.object));
         }
         else
@@ -792,6 +828,7 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
         foreign_processing_files_to_recheck.clear();
         inherited_foreign_processing_rechecks.clear();
         pending_replays_per_domain.clear();
+        in_flight_replays_per_domain.clear();
         return result;
     }
 
@@ -805,6 +842,7 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
         foreign_processing_files_to_recheck.clear();
         inherited_foreign_processing_rechecks.clear();
         pending_replays_per_domain.clear();
+        in_flight_replays_per_domain.clear();
         return result;
     }
 
@@ -817,7 +855,9 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     /// - no file of the domain is retained behind a blocker (`blocked_files_per_domain`), and no
     ///   range of it was dropped at the replay cap (`dropped_blocked_files_per_domain`) - the next
     ///   iterator does not have these files, so once the inherited blockers resolve it could
-    ///   process a later inherited file and advance the `processed` pointer past them.
+    ///   process a later inherited file and advance the `processed` pointer past them;
+    /// - no replay of the domain was taken from the queue without being handed out
+    ///   (`in_flight_replays_per_domain`), for the same reason.
     /// The files of other domains are not inherited: the next listing pass rechecks them in order.
     std::unordered_set<std::string> pending_paths;
     for (const auto & pending : foreign_processing_files_to_recheck)
@@ -833,7 +873,8 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
             const auto held = foreign_held_files_per_domain.find(domain);
             if (held != foreign_held_files_per_domain.end())
                 it->second = std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); });
-            if (blocked_files_per_domain.contains(domain) || dropped_blocked_files_per_domain.contains(domain))
+            if (blocked_files_per_domain.contains(domain) || dropped_blocked_files_per_domain.contains(domain)
+                || in_flight_replays_per_domain.contains(domain))
                 it->second = false;
         }
 
@@ -843,6 +884,7 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     foreign_processing_files_to_recheck.clear();
     inherited_foreign_processing_rechecks.clear();
     pending_replays_per_domain.clear();
+    in_flight_replays_per_domain.clear();
     return result;
 }
 
@@ -1120,12 +1162,34 @@ bool ObjectStorageQueueSource::FileIterator::isBehindPendingReplay(const std::st
     return it != pending_replays_per_domain.end() && *it->second.begin() < path;
 }
 
+void ObjectStorageQueueSource::FileIterator::forgetInFlightReplay(const std::string & path)
+{
+    const auto it = in_flight_replays_per_domain.find(getOrderingDomain(path));
+    if (it == in_flight_replays_per_domain.end())
+        return;
+
+    if (const auto path_it = it->second.find(path); path_it != it->second.end())
+        it->second.erase(path_it);
+    if (it->second.empty())
+        in_flight_replays_per_domain.erase(it);
+}
+
+bool ObjectStorageQueueSource::FileIterator::isBehindInFlightReplay(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || in_flight_replays_per_domain.empty())
+        return false;
+
+    const auto it = in_flight_replays_per_domain.find(getOrderingDomain(path));
+    return it != in_flight_replays_per_domain.end() && *it->second.begin() < path;
+}
+
 void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(const std::string & path)
 {
     if (mode != ObjectStorageQueueMode::ORDERED)
         return;
 
     std::lock_guard lock(next_mutex);
+    forgetInFlightReplay(path);
     unresolved_set_processing_per_domain[getOrderingDomain(path)].insert(path);
 }
 
@@ -1176,7 +1240,8 @@ ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const std::string
             return OrderingDomainGate::Blocked;
         }
 
-        if (isBehindPendingReplay(path))
+        /// A replay which is not handed out yet can wait in a bucket cache behind this file.
+        if (isBehindPendingReplay(path) || isBehindInFlightReplay(path))
         {
             resolveSetProcessingUnlocked(path);
             return OrderingDomainGate::BehindReplay;

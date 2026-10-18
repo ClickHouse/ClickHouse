@@ -201,6 +201,13 @@ public:
         /// queued as a replay as well, and the recheck batch hands both out in path order.
         std::map<OrderingDomain, std::multiset<std::string>> pending_replays_per_domain TSA_GUARDED_BY(next_mutex);
 
+        /// Ordered mode only. The replayed files taken from `foreign_processing_files_to_recheck`
+        /// which are not handed out to a processing thread yet. With buckets, a replay can wait in
+        /// `keys_cache_per_bucket` behind a later file of its domain cached before it, so it stays
+        /// an ordering barrier for the hand-out gate until it is handed out, where the unresolved
+        /// set-processing guard takes over.
+        std::map<OrderingDomain, std::multiset<std::string>> in_flight_replays_per_domain TSA_GUARDED_BY(next_mutex);
+
         /// Ordered mode only. Files handed out to a processing thread whose `trySetProcessing`
         /// outcome is not known yet. A later file of the domain must not start processing
         /// while a smaller file can still turn out to be foreign-held: with several processing
@@ -218,7 +225,10 @@ public:
         void queueReplay(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         void forgetPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         bool isBehindPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
+        void forgetInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
+        bool isBehindInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
 
+        /// Called when the file is handed out to a processing thread: it also stops being an in-flight replay.
         void registerUnresolvedSetProcessing(const std::string & path);
         void resolveSetProcessing(const std::string & path);
         void resolveSetProcessingUnlocked(const std::string & path) TSA_REQUIRES(next_mutex);
@@ -230,7 +240,8 @@ public:
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
-        ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
+        /// The replays among the taken files are added to `in_flight_replays_per_domain` and to `taken_replays`.
+        ObjectInfos takeDueForeignProcessingRechecks(std::vector<std::string> & taken_replays) TSA_REQUIRES(next_mutex);
         /// When the recheck of `pending` is due, judging by the most recent cached observation.
         time_t getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const;
         std::vector<PendingRecheck> takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
