@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, fromfile_prefix_chars="@")
     parser.add_argument("manifest", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("paths", nargs="*")

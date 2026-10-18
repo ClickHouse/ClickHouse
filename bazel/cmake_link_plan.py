@@ -7,49 +7,40 @@ ninja-commands.txt.gz from the same configured build.
 """
 
 import argparse
+import ast
 import gzip
 import json
 import os
 from pathlib import Path
 import re
 import shlex
-import tarfile
 
 from build_file import target_label, target_owner
 import llvm_targets
+from reference_readers import read_file_api, ninja_edges, ninja_words as words
 from repository_inputs import REPOSITORIES, ROOT
+from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 
-RUST_ARCHIVES = {
-    "rust/workspace/lib_ch_rust_skim_rust.a": "skim",
-    "rust/workspace/lib_ch_rust_prql.a": "prql",
-    "rust/workspace/lib_ch_rust_polyglot.a": "polyglot",
-    "rust/workspace/lib_ch_rust_pco.a": "pco",
-    "rust/workspace/lib_ch_rust_wasmtime.a": "wasmtime",
-    "contrib/delta-kernel-rs-cmake/libdelta_kernel_ffi.a": "delta_kernel_ffi",
-    "contrib/chdig-cmake/libchdig.a": "chdig",
-}
 
-def words(text):
-    # Paths in these references must not contain escaped Ninja separators.
-    if "$ " in text or "$:" in text or "\n" in text.rstrip("\n"):
-        raise ValueError("Unsupported Ninja escaping in link reference: " + text[:240])
-    return shlex.split(text.replace("$$", "$"))
+def object_ranges(objects):
+    """Encode adjacent indices of one compilation group as [ref, start, end]."""
+    ranges = []
+    for kind, ref, index in objects:
+        if kind != "object":
+            raise ValueError("Expected an object reference: " + repr((kind, ref, index)))
+        if ranges and ranges[-1][0] == ref and ranges[-1][2] == index:
+            ranges[-1][2] += 1
+        else:
+            ranges.append([ref, index, index + 1])
+    return ranges
 
 
 class Plan:
     def __init__(self, reference):
         self.reference = Path(reference)
-        with tarfile.open(self.reference / "cmake-file-api.tar.gz") as tf:
-            files = {Path(m.name).name: m for m in tf if m.isfile()}
-
-            def read(name):
-                return json.load(tf.extractfile(files[name]))
-
-            index = read(sorted(n for n in files if n.startswith("index-"))[-1])
-            model = read(next(o["jsonFile"] for o in index["objects"] if o["kind"] == "codemodel"))
-            self.source = model["paths"]["source"]
-            self.build = model["paths"]["build"]
-            self.targets = {t["name"]: read(t["jsonFile"]) for t in model["configurations"][0]["targets"]}
+        model, self.targets = read_file_api(self.reference / "cmake-file-api.tar.gz")
+        self.source = model["paths"]["source"]
+        self.build = model["paths"]["build"]
         self.owners = {}
         for name, target in self.targets.items():
             if name.startswith("LLVM") or name in llvm_targets.NATIVE_RUNTIMES:
@@ -68,31 +59,13 @@ class Plan:
         self.rules = {}
         self.binary_vars = {}
         # Store only CMake build edges, not commands or the 130 MB of flags.
-        with gzip.open(self.reference / "build.ninja.gz", "rt") as stream:
-            in_binary = False
-            for line in stream:
-                if line.startswith("build "):
-                    in_binary = False
-                    out, sep, rest = line[6:].partition(": ")
-                    if not sep:
-                        raise ValueError("Malformed Ninja build edge: " + line[:240])
-                    tokens = words(rest)
-                    rule, explicit = tokens[0], []
-                    for token in tokens[1:]:
-                        if token in {"|", "||", "|@"}:
-                            break
-                        explicit.append(token)
-                    for output in words(out):
-                        if output in {"|", "||"}:
-                            continue
-                        self.rules[os.path.normpath(output)] = (rule, explicit)
-                    in_binary = "programs/clickhouse" in words(out)
-                elif in_binary and line.startswith("  "):
-                    key, sep, val = line.strip().partition(" = ")
-                    if sep and key in {"FLAGS", "LINK_FLAGS", "LINK_LIBRARIES", "LINK_PATH"}:
-                        self.binary_vars[key] = words(val)
-                elif not line.startswith("  ") and line.strip():
-                    in_binary = False
+        for node in ninja_edges(
+                self.reference / "build.ninja.gz",
+                variables=("FLAGS", "LINK_FLAGS", "LINK_LIBRARIES", "LINK_PATH")):
+            for output in node["outputs"] + node["implicit_outputs"]:
+                self.rules[os.path.normpath(output)] = (node["rule"], node["explicit_inputs"])
+            if "programs/clickhouse" in node["outputs"]:
+                self.binary_vars = {key: words(value) for key, value in node["variables"].items()}
         self.refs = []
         self.expected = []
         self.ref_index = {}
@@ -189,11 +162,11 @@ class Plan:
             name = RUST_ARCHIVES[path]
             obj = {"file": self.ref("//bazel/rust:" + name + "_cc", -1)}
             if name == "skim":
-                obj["append"] = [
+                obj["append"] = object_ranges([
                     ["object", self.ref("//bazel/rust:skim_bridge", 2), 0],
                     ["object", self.ref("//bazel/rust:skim_bridge", 2), 1],
                     ["object", self.ref("//bazel/rust:cxx_runtime", 1), 0],
-                ]
+                ])
         else:
             if path not in self.artifacts:
                 raise ValueError("Archive has no File API owner: " + path)
@@ -213,7 +186,7 @@ class Plan:
                     and [v[2] for v in objects] == list(range(self.expected[ref]))):
                 obj = {"file": ref}
             else:
-                obj = {"objects": objects}
+                obj = {"objects": object_ranges(objects)}
         self.archives[path] = obj | {"name": path}
         return ["archive", index]
 
@@ -289,27 +262,40 @@ class Plan:
             "sequence": sequence,
         }
 
-    def check_labels(self):
+    def check_labels(self, builds=None):
+        """Check generated rule names, or parse each existing BUILD once for CLI use."""
+        repositories = {"@" + spec["name"]: owner for owner, spec in REPOSITORIES.items()}
+        rust_names = {name + "_cc" for name in RUST_ARCHIVES.values()} | {"skim_bridge", "cxx_runtime"}
+        declared = {}
         for label in self.refs:
-            if label in {"//:clickhouse__compile_0", "//bazel/rust:skim_bridge", "//bazel/rust:cxx_runtime"}:
-                continue
             if label.startswith("//bazel/rust:"):
+                if label.removeprefix("//bazel/rust:") not in rust_names:
+                    raise ValueError("No declared Rust archive or bridge: " + label)
                 continue
             repository, rest = label.split("//", 1)
             if repository:
-                spec = next((v for v in REPOSITORIES.values() if "@" + v["name"] == repository), None)
-                if not spec:
+                if repository not in repositories:
                     raise ValueError("No declared Bazel repository: " + label)
-                build = ROOT / "bazel/dependencies" / (spec["name"] + ".BUILD.bazel")
+                owner = repositories[repository]
+                filename = ROOT / "bazel/dependencies" / (REPOSITORIES[owner]["name"] + ".BUILD.bazel")
             else:
-                build = ROOT / "BUILD.bazel"
+                owner = None
+                filename = ROOT / "BUILD.bazel"
             name = rest.removeprefix(":")
-            if label == "@clickhouse_lz4//:_lz4__compile_0":
-                # This CMake-only compilation group is declared by the overlay macro.
-                if 'declare_lz4_cmake_objects()' in build.read_text():
-                    continue
-            if not re.search(r'\bname\s*=\s*"' + re.escape(name) + r'"', build.read_text()):
-                raise ValueError("No Bazel target for " + label + " in " + str(build))
+            if owner not in declared:
+                if builds is not None:
+                    declared[owner] = builds[owner].names if owner in builds else set()
+                else:
+                    parsed = ast.parse(filename.read_text(), filename=str(filename))
+                    declared[owner] = {
+                        keyword.value.value
+                        for statement in parsed.body
+                        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
+                        for keyword in statement.value.keywords
+                        if keyword.arg == "name" and isinstance(keyword.value, ast.Constant)
+                    }
+            if name not in declared[owner]:
+                raise ValueError("No Bazel target for " + label + " in " + str(filename))
 
 
 def main():
@@ -323,7 +309,7 @@ def main():
     opts.output.write_text(
         "# Generated by bazel/cmake_link_plan.py from the x86_64 CMake File API and Ninja.\n"
         '\"\"\"Ordered ClickHouse CMake link, using only references to Bazel artifacts.\"\"\"\n\n'
-        "CMAKE_LINK = json.decode(r\x27\x27\x27\n" + json.dumps(data, indent=2) + "\n\x27\x27\x27)\n"
+        "CMAKE_LINK = " + json.dumps(data, indent=2) + "\n"
     )
     kinds = {k: sum(k in a for a in data["archives"]) for k in ("file", "objects", "append")}
     print(f"{len(data['sequence'])} link operands, {len(data['refs'])} Bazel refs; "

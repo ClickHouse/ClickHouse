@@ -1,6 +1,8 @@
 load(":codegen_rules.bzl", "CODEGEN_RULES")
+load(":codegen_actions.bzl", "declare_codegen")
 load(":build_options.bzl", "build_options")
 load(":build_options_data.bzl", "BUILD_OPTIONS")
+load(":cmake_metadata.bzl", "CMAKE_METADATA")
 load(":cmake_toolchain.bzl", "cmake_toolchain")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
@@ -51,7 +53,7 @@ cmake_toolchain(
         c_flags = attrs["c_flags"],
         cxx_flags = attrs["cxx_flags"],
         link_flags = attrs["link_flags"],
-        cmake_substitutions = attrs["cmake_substitutions"],
+        cmake_substitutions = CMAKE_METADATA[arch]["build_options"],
         cmake_metadata = select({
             ":use_cmake_metadata": True,
             "//conditions:default": False,
@@ -83,29 +85,9 @@ cmake_toolchain(
 ]
 
 [
-    genrule(
+    declare_codegen(
         name = name,
-        srcs = attrs["srcs"],
-        outs = attrs["outs"],
-        tools = attrs["tools"],
-        cmd = attrs["cmd"] + (
-            select({
-                ":use_cmake_metadata_x86_64": " --cmake-metadata $(execpath //bazel:config/x86_64/license_substitutions.json)",
-                "//conditions:default": "",
-            }) if name == "generate_x86_64_licenses" else ""
-        ) + (
-            select({
-                # Git checkout mtime in the CMake reference's 162 gzip headers.
-                ":use_cmake_metadata_x86_64": " --cmake-gzip-mtime=1792282266",
-                "//conditions:default": "",
-            }) if "gen/x86_64/contrib/clickstack-cmake/ClickStackResources.generated.h" in attrs["outs"] else ""
-        ) + (
-            select({
-                # Git checkout mtime in the CMake reference's 22 gzip headers.
-                ":use_cmake_metadata_x86_64": " --cmake-gzip-mtime=1792282470",
-                "//conditions:default": "",
-            }) if "gen/x86_64/contrib/sql-console-cmake/SQLConsoleResources.generated.h" in attrs["outs"] else ""
-        ),
+        attrs = attrs,
     )
     for name, attrs in CODEGEN_RULES.items()
 ]

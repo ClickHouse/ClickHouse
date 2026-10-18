@@ -51,11 +51,12 @@ cc_library(
         ":lang/c++/impl/Resolver.cc",
         ":lang/c++/impl/Validator.cc",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -96,9 +97,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/snappy") + "/config/x86_64/contrib/snappy-cmake",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -146,28 +144,24 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        ":headers_28bf8e149b9cf14b",
+        ":headers_6b69b3f95a5c206b",
+        ":headers_6c00ad607ef5cdab",
+        ":headers_84e66e2f72b512ea",
+        "@clickhouse_boost//:headers_1c2127cfc3a8f999",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            ":headers_28bf8e149b9cf14b",
-            ":headers_6b69b3f95a5c206b",
-            ":headers_6c00ad607ef5cdab",
-            ":headers_84e66e2f72b512ea",
-            "@clickhouse_boost//:headers_1c2127cfc3a8f999",
             "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
             "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_snappy//:headers_936173ad0494761b",
         ],
         "@platforms//cpu:aarch64": [
-            ":headers_28bf8e149b9cf14b",
-            ":headers_6b69b3f95a5c206b",
-            ":headers_6c00ad607ef5cdab",
-            ":headers_84e66e2f72b512ea",
-            "@clickhouse_boost//:headers_1c2127cfc3a8f999",
             "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
             "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_snappy//:headers_936173ad0494761b",
         ],
     }) + [
+        "@clickhouse_snappy//:headers_936173ad0494761b",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

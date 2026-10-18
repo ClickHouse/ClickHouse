@@ -33,9 +33,9 @@ def parse_args():
     parser.add_argument("--mount", nargs=2, action="append", required=True, metavar=("INPUT_ROOT", "CLICKHOUSE_DIRECTORY"))
     parser.add_argument("--source", type=Path, action="append", required=True)
     parser.add_argument("--rust-flag", action="append", default=[])
-    parser.add_argument("--source-prefix", default="")
     parser.add_argument("--native-source-root", type=Path)
     parser.add_argument("--native-compilation", action="store_true")
+    parser.add_argument("--native-c-flag", action="append", default=[])
     parser.add_argument("--native-cxx-flag", action="append", default=[])
     parser.add_argument("--openssl-headers", type=Path)
     parser.add_argument("--cmake", type=Path)
@@ -128,26 +128,21 @@ def stage_sources(args, checkout):
 
 
 def native_flags(args, checkout, gcc_root, libc_sysroot):
-    # rust_cxx_flags.bzl comes from the native RUST_CXXFLAGS in CMakeCache.
-    # Restore directories removed for cc_library and its toolchain. The only
-    # differences in native RUST_CFLAGS are the C++ ABI definitions and
-    # -fstrict-vtable-pointers; both references check this same invariant.
-    base = ["--gcc-toolchain=" + str(gcc_root)]
-    for flag in args.native_cxx_flag:
-        base.append(flag)
-        if flag == "-fdebug-compilation-dir=.":
-            base.append("-ffile-prefix-map=" + str(checkout) + "/=")
-    cflags = [flag for flag in base if not (
-        flag == "-fstrict-vtable-pointers"
-        or flag == "-nostdinc++"
-        or flag.startswith("-D_LIBCPP")
-        or flag.startswith("-DSTD_EXCEPTION_HAS_STACK_TRACE")
-    )]
-    cflags += ["--sysroot", str(libc_sysroot)]
+    # Restore directories owned by cc_library's toolchain. Each language's
+    # flags are independently recorded from RUST_CFLAGS or RUST_CXXFLAGS.
+    def restore_directories(flags):
+        result = ["--gcc-toolchain=" + str(gcc_root)]
+        for flag in flags:
+            result.append(flag)
+            if flag == "-fdebug-compilation-dir=.":
+                result.append("-ffile-prefix-map=" + str(checkout) + "/=")
+        return result
+
+    cflags = restore_directories(args.native_c_flag) + ["--sysroot", str(libc_sysroot)]
     # Keep -isystem before -nostdinc++ like the native Cargo environment.
     include = str(checkout / "contrib/llvm-project/libcxx/include")
     cxxflags = []
-    for flag in base:
+    for flag in restore_directories(args.native_cxx_flag):
         if flag == "-nostdinc++":
             cxxflags.extend(["-isystem", include])
         cxxflags.append(flag)
@@ -288,8 +283,6 @@ def main():
         folder = workspace_manifest.parent.name + "_" + manifest_hash
         cargo_target = str(checkout) + "/build_bazel_reference_" + arch + "/./cargo/build/" + folder
         rust_flags = native_rust_flags(args, gcc_root, libc_sysroot)
-        if args.source_prefix:
-            rust_flags.append("--remap-path-prefix=" + str(checkout) + "=" + args.source_prefix)
         target_env = args.target.replace("-", "_")
         env = os.environ | {
             "CARGO_HOME": str(cargo_home),

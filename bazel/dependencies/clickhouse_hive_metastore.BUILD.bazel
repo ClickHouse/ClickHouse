@@ -18,11 +18,12 @@ cc_library(
         ":hive_metastore_types.cpp",
         ":ThriftHiveMetastore.cpp",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -59,17 +60,8 @@ cc_library(
             repository_path("contrib/thrift") + "/lib/cpp/src",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/thrift") + "/config/x86_64/contrib/thrift-cmake",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
-            "-isystem",
-            repository_path("contrib/boost"),
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -104,14 +96,15 @@ cc_library(
             repository_path("contrib/thrift") + "/lib/cpp/src",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/thrift") + "/config/aarch64/contrib/thrift-cmake",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
-            "-isystem",
-            repository_path("contrib/boost"),
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-isystem",
+        "contrib/openssl-cmake/common/include",
+        "-isystem",
+        repository_path("contrib/openssl") + "/include",
+        "-isystem",
+        repository_path("contrib/boost"),
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
             "includes": [],
@@ -121,24 +114,21 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse//:headers_1fd9e05d91f5eb25",
+        "@clickhouse_boost//:headers_1c2127cfc3a8f999",
+        ":headers_64c23fe3920462c5",
+        "@clickhouse_openssl//:headers_c41607910d3fced5",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
-            "@clickhouse_boost//:headers_1c2127cfc3a8f999",
-            ":headers_64c23fe3920462c5",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
             "@clickhouse_thrift//:config/x86_64/contrib/thrift-cmake/thrift/config.h",
-            "@clickhouse_thrift//:headers_918ef57f167badf7",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
-            "@clickhouse_boost//:headers_1c2127cfc3a8f999",
-            ":headers_64c23fe3920462c5",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
             "@clickhouse_thrift//:config/aarch64/contrib/thrift-cmake/thrift/config.h",
-            "@clickhouse_thrift//:headers_918ef57f167badf7",
         ],
     }) + [
+        "@clickhouse_thrift//:headers_918ef57f167badf7",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

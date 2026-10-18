@@ -23,16 +23,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llvm_targets
 from compare_cmake_actions import expanded_arguments
-
-RUST_ARCHIVES = {
-    '_ch_rust_pco': 'pco',
-    '_ch_rust_prql': 'prql',
-    '_ch_rust_polyglot': 'polyglot',
-    '_ch_rust_skim_rust': 'skim',
-    '_ch_rust_wasmtime': 'wasmtime',
-    'delta_kernel_ffi': 'delta_kernel_ffi',
-    'chdig': 'chdig',
-}
+from rust_archives import PACKAGE_TARGETS as RUST_ARCHIVES
 
 OBJECT_ACTIONS = {'CppCompile', 'ObjcCompile', 'Assemble', 'PreprocessAssemble', 'NasmCompile'}
 ARCHIVE_ACTIONS = {'CppArchive', 'ClickHouseNativeArchive'}
@@ -344,7 +335,7 @@ class ArchiveEvidence:
                 or single('--cargo-package') != '_ch_rust_skim_rust'
                 or argv.count('--native-compilation') != 1
                 or values('--cargo-feature') or values('--openssl-headers') or values('--cmake')
-                or single('--native-source-root') != self.repo_root or values('--source-prefix')
+                or single('--native-source-root') != self.repo_root
                 or not {manifest, workspace_manifest, config, marker, *tools.values()}.issubset(declared)
                 or not sources or not sources.issubset(declared)
                 or self.cfg.map_include(config) != 'contrib/corrosion-cmake/config.toml.in'
@@ -434,7 +425,7 @@ class ArchiveEvidence:
             raise ValueError('Native Skim RUST_CXXFLAGS have ambiguous gcc/sysroot operands')
         sysroot = cxx[cxx.index('--sysroot') + 1]
         actual_c, actual_cxx = native_flags(
-            SimpleNamespace(native_cxx_flag=values('--native-cxx-flag')),
+            SimpleNamespace(native_c_flag=values('--native-c-flag'), native_cxx_flag=values('--native-cxx-flag')),
             Path(self.repo_root), Path(gcc[0]), Path(sysroot),
         )
         if actual_c != cache['RUST_CFLAGS'] or actual_cxx != cxx:
@@ -447,6 +438,7 @@ class ArchiveEvidence:
             'native_compilation': True,
             'rust_caller_flags': reference_rust,
             'sanitizer_metadata': 'no-sanitizer (added by bazel/cmake_cargo.py)',
+            'native_c_flags': values('--native-c-flag'),
             'native_cxx_flags': values('--native-cxx-flag'),
             'required_bridge_sources': sorted(bridge),
             'required_native_headers': sorted(headers),

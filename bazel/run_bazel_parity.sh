@@ -6,14 +6,15 @@ usage() {
     cat <<'EOF'
 Usage: bash bazel/run_bazel_parity.sh [--stripped]
 
-Build //:clickhouse using common:remote and --//bazel:cmake_metadata, compare
+Build //:clickhouse using --config=cmake_match, compare
 both complete executables, then capture the CMake and Bazel command audits.
 Requires the preserved CMake reference and tool installation from
 bazel/run_cmake_reference.sh. Refresh the saved Bazel metadata from that
 reference with bazel/refresh_cmake_metadata.py before running this script.
 
 --stripped hashes both originals, compares copies made with the same
-llvm-strip --strip-all, and stops after ELF and Rust archive capture.
+llvm-strip --strip-all --remove-section=.note.gnu.build-id, and requires the
+recorded stripped SHA256. On a mismatch, capture ELF and Rust archives.
 It does not require full unstripped equality or run the command audit.
 
 Exit 0: both full executables compare equal and both command audits pass,
@@ -64,6 +65,9 @@ bazel_hash=not-built
 stripped_cmp_status=not-run
 stripped_cmake_hash=not-built
 stripped_bazel_hash=not-built
+plain_stripped_cmake_hash=not-built
+plain_stripped_bazel_hash=not-built
+strip_flags=not-run
 compiler_hash=not-verified
 bazel_compiler_hash=not-verified
 
@@ -82,6 +86,9 @@ save_evidence() {
         printf 'PARITY_MODE=%s\n' "$mode"
         printf 'CMAKE_STRIPPED_SHA256=%s\n' "$stripped_cmake_hash"
         printf 'BAZEL_STRIPPED_SHA256=%s\n' "$stripped_bazel_hash"
+        printf 'CMAKE_PLAIN_STRIPPED_SHA256=%s\n' "$plain_stripped_cmake_hash"
+        printf 'BAZEL_PLAIN_STRIPPED_SHA256=%s\n' "$plain_stripped_bazel_hash"
+        printf 'STRIP_FLAGS=%s\n' "$strip_flags"
         printf 'PARITY_STRIPPED_CMP_STATUS=%s\n' "$stripped_cmp_status"
         printf 'BAZEL_BUILD_STATUS=%s\n' "$bazel_status"
         printf 'PARITY_CMP_STATUS=%s\n' "$cmp_status"
@@ -173,8 +180,8 @@ echo "CMAKE_REFERENCE_VERIFIED=$cmake_hash"
 echo "CMAKE_COMPILER_VERIFIED=$compiler_hash"
 
 bazel_args=(
-    --config=remote --config=x86_64 --//bazel:cmake_metadata
-    --remote_download_outputs=toplevel --noannounce_rc --color=no --curses=no
+    --config=cmake_match
+    --noannounce_rc --color=no --curses=no
     --show_progress_rate_limit=30
 )
 # Resolve the same target toolchain as //:clickhouse under the same Bazel
@@ -305,25 +312,26 @@ else
     echo "BAZEL_CLICKHOUSE_SHA256=$bazel_hash"
     echo "PARITY_CMP_STATUS=$cmp_status"
     if [[ $mode == stripped ]]; then
-        if "$tools_dir/llvm/bin/llvm-strip" --strip-all -o "$output/cmake.stripped" "$cmake_binary" \
-                && "$tools_dir/llvm/bin/llvm-strip" --strip-all -o "$output/bazel.stripped" "$bazel_binary" \
-                && sha256sum "$output/cmake.stripped" "$output/bazel.stripped" > "$output/stripped.sha256"; then
-            read -r stripped_cmake_hash _ < "$output/stripped.sha256"
-            read -r stripped_bazel_hash _ < <(tail -1 "$output/stripped.sha256")
-            stripped_cmp_status=0
-            cmp -- "$output/cmake.stripped" "$output/bazel.stripped" \
-                > "$output/stripped-cmp.log" 2>&1 || stripped_cmp_status=$?
-            echo "CMAKE_STRIPPED_SHA256=$stripped_cmake_hash"
-            echo "BAZEL_STRIPPED_SHA256=$stripped_bazel_hash"
-            echo "PARITY_STRIPPED_CMP_STATUS=$stripped_cmp_status"
-            if (( stripped_cmp_status == 0 )); then
-                # Stop at the requested stripped equality, preserving both
-                # original hashes in summary.txt.
-                exit 0
-            elif (( stripped_cmp_status > 1 )); then result=2
-            elif (( stripped_cmp_status == 1 )); then result=1; fi
-        else
-            echo "PARITY_STRIP_FAILED=See stripped.sha256" >&2
+        python3 bazel/verify_stripped_hash.py compare --cmake "$cmake_binary" --bazel "$bazel_binary" \
+            --strip "$tools_dir/llvm/bin/llvm-strip" --output "$output" \
+            > "$output/stripped-verification.log" 2>&1 || result=$?
+        cat "$output/stripped-verification.log"
+        if [[ -f $output/stripped-summary.txt ]]; then
+            while IFS='=' read -r name value; do
+                case "$name" in
+                    CMAKE_STRIPPED_SHA256) stripped_cmake_hash=$value ;;
+                    BAZEL_STRIPPED_SHA256) stripped_bazel_hash=$value ;;
+                    CMAKE_PLAIN_STRIPPED_SHA256) plain_stripped_cmake_hash=$value ;;
+                    BAZEL_PLAIN_STRIPPED_SHA256) plain_stripped_bazel_hash=$value ;;
+                    PARITY_STRIPPED_CMP_STATUS) stripped_cmp_status=$value ;;
+                    STRIP_FLAGS) strip_flags=$value ;;
+                esac
+            done < "$output/stripped-summary.txt"
+        fi
+        if (( result == 0 )); then
+            exit 0
+        elif (( result != 1 )); then
+            echo "PARITY_STRIP_FAILED=See stripped-verification.log" >&2
             result=2
         fi
     else

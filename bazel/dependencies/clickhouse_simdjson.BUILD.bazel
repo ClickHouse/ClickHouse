@@ -20,11 +20,12 @@ cc_library(
     srcs = [
         ":src/simdjson.cpp",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -53,17 +54,8 @@ cc_library(
             "-D",
             "OS_LINUX",
             "-gz=zlib",
-            "-Werror",
-            "-nostdinc++",
-            "-isystem",
-            repository_path("contrib/simdjson") + "/include",
-            "-isystem",
-            repository_path("contrib/simdjson") + "/src",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -91,14 +83,15 @@ cc_library(
             "OS_LINUX",
             "-gz=zlib",
             "-DSIMDJSON_IMPLEMENTATION_FALLBACK=1",
-            "-Werror",
-            "-nostdinc++",
-            "-isystem",
-            repository_path("contrib/simdjson") + "/include",
-            "-isystem",
-            repository_path("contrib/simdjson") + "/src",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-Werror",
+        "-nostdinc++",
+        "-isystem",
+        repository_path("contrib/simdjson") + "/include",
+        "-isystem",
+        repository_path("contrib/simdjson") + "/src",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
             "includes": [],

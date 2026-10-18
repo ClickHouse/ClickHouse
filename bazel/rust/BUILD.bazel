@@ -4,6 +4,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel:rust_archive.bzl", "rust_archive")
 load("//bazel:cmake_cargo.bzl", "cmake_cargo")
 load("//bazel:delta_headers.bzl", "delta_headers")
+load("//bazel:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel:rust_cxx_flags.bzl", "RUST_CXX")
 load("//bazel:rust_localization_data.bzl", "RUST_LOCALIZATION_GROUPS")
 load("//bazel:openssl_headers.bzl", "openssl_headers")
@@ -90,29 +91,13 @@ rust_static_library(
     deps = ["@chdig_crates//:chdig"],
 )
 
-CARGO_PATH_CRATES = {
-    "pco": ["pco", "dtype_dispatch", "better_io"],
-    "prql": [],
-    "polyglot": [],
-    "skim": [],
-    "wasmtime": [],
-    "delta_kernel_ffi": [],
-    "chdig": [],
-}
-
 [
     cmake_cargo(
         name = name + "_cargo",
-        cargo_package = (
-            name if name in ["delta_kernel_ffi", "chdig"]
-            else "_ch_rust_" + ("skim_rust" if name == "skim" else name)
-        ),
-        cargo_features = {
-            "delta_kernel_ffi": ["default-engine-native-tls", "test-ffi", "tracing", "arrow"],
-            "chdig": ["tls"],
-        }.get(name, []),
-        path_crates = path_crates,
-        native_compilation = name in ["skim", "wasmtime", "delta_kernel_ffi", "chdig"],
+        cargo_package = spec["package"],
+        cargo_features = spec.get("features", []),
+        path_crates = spec.get("path_crates", []),
+        native_compilation = spec.get("native_compilation", False),
         openssl_headers = ":openssl_include" if name == "delta_kernel_ffi" else None,
         cmake = ":cmake" if name == "wasmtime" else None,
         cmake_files = ":cmake_files" if name == "wasmtime" else None,
@@ -126,27 +111,17 @@ CARGO_PATH_CRATES = {
             "network": "off",
             "dockerRunAsRoot": "true",
         },
-        manifest = {
-            "delta_kernel_ffi": "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
-            "chdig": "@clickhouse_chdig//:cargo_manifest",
-        }.get(name, "//rust/workspace:" + name + "/Cargo.toml"),
+        manifest = spec.get("manifest", "//rust/workspace:" + name + "/Cargo.toml"),
         workspace_manifest = "//rust/workspace:Cargo.toml",
         workspace_sources = "//rust/workspace:cmake_cargo_sources",
         repositories = {
             "@clickhouse_pcodec//:cmake_cargo_sources": "contrib/pcodec",
             "@clickhouse_wasmtime//:cmake_cargo_sources": "contrib/wasmtime",
             "@clickhouse_rust_vendor//:sources": "contrib/rust_vendor",
-        } | {
-            "delta_kernel_ffi": {
-                "@clickhouse_delta_kernel_rs//:cbindgen_sources": "contrib/delta-kernel-rs",
-            },
-            "chdig": {
-                "@clickhouse_chdig//:cmake_cargo_sources": "contrib/chdig",
-            },
-        }.get(name, {}),
+        } | spec.get("repositories", {}),
         config = "//:cmake_cargo_config",
     )
-    for name, path_crates in CARGO_PATH_CRATES.items()
+    for name, spec in RUST_ARCHIVES.items()
 ]
 
 RUST_LOCALIZATION_REFERENCES = select({
@@ -158,39 +133,17 @@ RUST_LOCALIZATION_REFERENCES = select({
     for arch, groups in RUST_LOCALIZATION_GROUPS.items()
 })
 
-rust_archive(
-    name = "pco_cargo_processed",
-    src = ":pco_cargo",
-    references = RUST_LOCALIZATION_REFERENCES,
-    keep_symbols = ["pco_compress", "pco_decompress"],
-)
-
-rust_archive(
-    name = "pco_rules_rs_processed",
-    src = "//rust/workspace:pco",
-    references = RUST_LOCALIZATION_REFERENCES,
-    keep_symbols = ["pco_compress", "pco_decompress"],
-)
-
 [
     rust_archive(
         name = name + "_processed",
         src = select({
             "//bazel:use_cmake_metadata": ":" + name + "_cargo",
-            "//conditions:default": (":" if name in ["delta_kernel_ffi", "chdig"] else "//rust/workspace:") + name,
+            "//conditions:default": spec.get("rules_rs", "//rust/workspace:" + name),
         }),
         references = RUST_LOCALIZATION_REFERENCES,
-        keep_symbols = symbols,
+        keep_symbols = spec.get("keep_symbols", []),
     )
-    for name, symbols in {
-        "delta_kernel_ffi": [],
-        "chdig": [],
-        "skim": [],
-        "wasmtime": [],
-        "prql": ["prql_to_sql", "prql_free_pointer"],
-        "polyglot": ["polyglot_transpile", "polyglot_free_pointer"],
-        "pco": ["pco_compress", "pco_decompress"],
-    }.items()
+    for name, spec in RUST_ARCHIVES.items()
 ]
 
 [
@@ -204,5 +157,5 @@ rust_archive(
             "//conditions:default": [":skim_bridge"],
         }) if name == "skim" else [],
     )
-    for name in ["delta_kernel_ffi", "chdig", "skim", "wasmtime", "prql", "polyglot", "pco"]
+    for name in RUST_ARCHIVES
 ]

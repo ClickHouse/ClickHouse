@@ -107,11 +107,12 @@ cc_library(
         ":src/util.c",
         ":src/witness.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -148,9 +149,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/jemalloc") + "/config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -216,20 +214,19 @@ cc_library(
             ],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse//:headers_f8cca6b6237a1ccb",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:headers_f8cca6b6237a1ccb",
             ":config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h",
-            ":headers_76036a5c7c8baa91",
-            ":headers_830fdf10bdbf5000",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:headers_f8cca6b6237a1ccb",
             ":config/aarch64/contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h",
-            ":headers_76036a5c7c8baa91",
-            ":headers_830fdf10bdbf5000",
         ],
     }) + [
+        ":headers_76036a5c7c8baa91",
+        ":headers_830fdf10bdbf5000",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

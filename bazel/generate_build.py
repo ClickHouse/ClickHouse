@@ -14,6 +14,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codegen import Codegen
+from cmake_metadata import read_metadata, write_metadata
+from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
+from reference_readers import read_file_api
 from configuration import read_configurations
 import llvm_targets
 from build_file import BuildFile, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
@@ -36,24 +39,6 @@ COPIED_INCLUDE_DIRS = {
     'contrib/libcotp/include': 'contrib/libcotp/src',
 }
 CMAKE_ONLY_SOURCES = {'contrib/icu-cmake/empty.cpp'}
-RUST_ARCHIVES = {
-    'contrib/chdig-cmake/libchdig.a': 'chdig',
-    'contrib/delta-kernel-rs-cmake/libdelta_kernel_ffi.a': 'delta_kernel_ffi',
-    **{'rust/workspace/lib_ch_rust_' + ('skim_rust' if n == 'skim' else n) + '.a': n
-       for n in ['skim', 'prql', 'polyglot', 'pco', 'wasmtime']},
-}
-
-
-def load_targets(build):
-    reply = build / '.cmake/api/v1/reply'
-    index = json.loads(sorted(reply.glob('index-*.json'))[-1].read_text())
-    model = json.loads((reply / next(o['jsonFile'] for o in index['objects'] if o['kind'] == 'codemodel')).read_text())
-    return {
-        target['name']: json.loads((reply / target['jsonFile']).read_text())
-        for target in model['configurations'][0]['targets']
-    }
-
-
 def cmake_build_options(text):
     """Preserve CMake feature/version data and extract compiler metadata."""
     substitutions = {
@@ -77,7 +62,7 @@ class Graph:
     def __init__(self, arch):
         self.arch = arch
         self.build = ROOT / ('build_bazel_reference_' + arch)
-        self.targets = load_targets(self.build)
+        _, self.targets = read_file_api(self.build / '.cmake/api/v1/reply')
         self.config = ROOT / 'bazel/config' / arch
         self.header_groups = {}
         self.header_cache = {}
@@ -102,11 +87,9 @@ class Graph:
             self.link_object_owners[name] = owners
         self.direct_object_targets = set().union(*self.link_object_owners.values())
         self.id_names = {t['id']: n for n, t in self.targets.items()}
-        self.custom_outputs = set()
-        for line in (self.build / 'build.ninja').read_text().splitlines():
-            if line.startswith('build ') and ': CUSTOM_COMMAND' in line:
-                self.custom_outputs.update(line[6:].split(': CUSTOM_COMMAND')[0].split(' | ')[0].split())
         self.codegen = Codegen(self)
+        self.custom_outputs = {out for out, edge in self.codegen.nodes.items()
+                               if edge['rule'] == 'CUSTOM_COMMAND'}
         self.build_options = {}
         self.parity_sources = {}
         self.embed_copies = set()
@@ -280,24 +263,27 @@ class Graph:
 
     def rust_cxx_configuration(self):
         cache = (self.build / 'CMakeCache.txt').read_text()
-        value = re.search(r'^RUST_CXXFLAGS:INTERNAL=(.*)$', cache, re.MULTILINE)
-        if not value:
-            raise ValueError('Missing reference RUST_CXXFLAGS')
-        flags = iter(self.flags([{'fragment': value[1]}]))
-        copts, headers = [], set()
-        for flag in flags:
-            if flag == '--sysroot':
-                next(flags)  # The registered hermetic toolchain owns libc.
-                continue
-            copts.append(flag)
-            if flag in {'-I', '-isystem'}:
-                directory = next(flags)
-                if directory.startswith(llvm_targets.PREFIX + '/') or ('/' + llvm_targets.PREFIX + '/') in directory:
-                    copts.pop()
+        result, headers = {}, set()
+        for field, key in (('ccopts', 'RUST_CFLAGS'), ('copts', 'RUST_CXXFLAGS')):
+            value = re.search(r'^' + key + r':INTERNAL=(.*)$', cache, re.MULTILINE)
+            if not value:
+                raise ValueError('Missing reference ' + key)
+            flags = iter(self.flags([{'fragment': value[1]}]))
+            copts = []
+            for flag in flags:
+                if flag == '--sysroot':
+                    next(flags)  # The registered hermetic toolchain owns libc.
                     continue
-                copts.append(directory)
-                headers.update(self.headers(str(ROOT / directory)))
-        return {'copts': copts, 'hdrs': sorted('//' + h if h.startswith(':') else h for h in headers)}
+                copts.append(flag)
+                if flag in {'-I', '-isystem'}:
+                    directory = next(flags)
+                    if directory.startswith(llvm_targets.PREFIX + '/') or ('/' + llvm_targets.PREFIX + '/') in directory:
+                        copts.pop()
+                        continue
+                    copts.append(directory)
+                    headers.update(self.headers(str(ROOT / directory)))
+            result[field] = copts
+        return result | {'hdrs': sorted('//' + h if h.startswith(':') else h for h in headers)}
 
     def embedded_source(self, source, additional_inputs, flags):
         """Keep quoted #embed lookups inside Bazel's generated output tree.
@@ -378,7 +364,10 @@ class Graph:
         if (self.config / 'contrib').exists():
             shutil.rmtree(self.config / 'contrib')
 
-    def target(self, name, target):
+    def target(self, name, target, native=False):
+        if llvm_targets.native_target(name, target):
+            return {'alias': '@' + llvm_targets.RAW_REPOSITORY + '//:' + name,
+                    'kind': target['type'], 'groups': [], 'deps': [], 'linkopts': [], 'alwayslink': False}
         module_target = llvm_targets.target(name)
         if module_target:
             result = {'groups': [], 'deps': [], 'linkopts': [], 'kind': target['type'], 'alwayslink': False}
@@ -387,18 +376,11 @@ class Graph:
             dependencies = [self.id_names[d['id']] for d in target.get('dependencies', [])]
             result['deps'] = [':' + d for d in sorted(dependencies)
                               if d in self.compiled and self.targets[d]['type'] != 'EXECUTABLE']
-            if name in llvm_targets.RUNTIME_ARCHIVES:
-                result['static_library'] = llvm_targets.RUNTIME_ARCHIVES[name]
-                result['alwayslink'] = name in {'clang_rt_builtins', 'clang_rt_xray'}
-                # cc_static_library reports linkopts separately from its archive.
-                if name == 'unwind':
-                    result['linkopts'] = ['--unwindlib=none']
-            else:
-                result['deps'].insert(0, module_target)
+            result['deps'].insert(0, module_target)
             if name == '_fuzzer':
                 result['deps'].append('@llvm-project//compiler-rt:fuzzer')
             return result
-        if name in BCR_DEPENDENCIES:
+        if name in BCR_DEPENDENCIES and not native:
             return {'groups': [], 'deps': BCR_DEPENDENCIES[name]['deps'],
                     'linkopts': [], 'kind': target['type'], 'alwayslink': False}
         groups = []
@@ -449,6 +431,8 @@ class Graph:
                         header = Path(os.path.normpath(source.parent / include))
                         if header.is_file():
                             hdrs.update(self.headers(str(header.parent)))
+                            if native and header.suffix in {'.c', '.cc', '.cpp'}:
+                                additional_inputs.append(source_label(header.relative_to(ROOT).as_posix()))
             for inc in cg.get('includes', []):
                 flag = '-isystem' if inc.get('isSystem') else '-I'
                 path = os.path.normpath(inc['path'])
@@ -470,8 +454,9 @@ class Graph:
                     flags += [flag, '$(GENDIR)/bazel/rust/delta_ffi_headers']
                     hdrs.add('//bazel/rust:delta_ffi_headers')
                     continue
-                replacement = next((d for d in BCR_DEPENDENCIES.values()
-                                    if path.removeprefix(str(ROOT) + '/') in d['include_directories']), None)
+                replacement = next((d for dep_name, d in BCR_DEPENDENCIES.items()
+                                    if not (native and dep_name == name)
+                                    and path.removeprefix(str(ROOT) + '/') in d['include_directories']), None)
                 if replacement:
                     external_deps.update(replacement['deps'])
                     continue
@@ -554,37 +539,9 @@ class Graph:
     def generate(self):
         self.snapshot_configuration()
         self.codegen.generate()
-        license_manifest = json.loads((ROOT / 'bazel/license_manifest.json').read_text())
-        license_sources = {row[2].lstrip('/') for row in license_manifest}
-        license_metadata = self.config / 'license_substitutions.json'
-        license_inputs = ['//bazel:license_manifest.json']
-        if license_metadata.is_file():
-            substitutions = json.loads(license_metadata.read_text())
-            license_sources.update(row[1].lstrip('/') for row in substitutions.values() if row is not None)
-            license_inputs.append('//bazel:config/' + self.arch + '/license_substitutions.json')
-        license_sources = sorted(license_sources)
-        self.codegen.rules['generate_' + self.arch + '_licenses'] = dict(
-            srcs=license_inputs + [source_label(path) for path in license_sources],
-            outs=['gen/' + self.arch + '/' + LICENSES_OUTPUT],
-            tools=['//bazel:generate_licenses'],
-            cmd='$(execpath //bazel:generate_licenses) $(execpath //bazel:license_manifest.json) $@ '
-                + ' '.join(shlex.quote(path) + ' $(execpath ' + source_label(path) + ')' for path in license_sources),
-        )
-        self.codegen.handled.add(LICENSES_OUTPUT)
+        self.codegen.licenses(LICENSES_OUTPUT)
         data = {name: self.target(name, t) for name, t in sorted(self.targets.items()) if t['type'] in COMPILE_TYPES}
-        if self.embed_copies:
-            prefix = 'gen/' + self.arch + '/embedded/'
-            self.codegen.rules['generate_' + self.arch + '_embedded_sources'] = dict(
-                srcs=[source_label(source) for source in sorted(self.embed_copies)],
-                outs=[prefix + source for source in sorted(self.embed_copies)],
-                tools=[],
-                cmd=' && '.join(
-                    'mkdir -p "$$(dirname $(location ' + prefix + source + '))" && '
-                    'cp $(execpath ' + source_label(source) + ') '
-                    '$(location ' + prefix + source + ')'
-                    for source in sorted(self.embed_copies)
-                ),
-            )
+        self.codegen.embedded_sources()
         for target in data.values():
             for group in target['groups']:
                 for source in group['srcs']:
@@ -729,7 +686,8 @@ def main():
     owners = {}
     for graph in graphs.values():
         for name in sorted(graph.compiled):
-            owner = None if name in BCR_DEPENDENCIES or llvm_targets.target(name) else target_owner(graph.targets[name])
+            owner = None if (name in BCR_DEPENDENCIES or llvm_targets.target(name)
+                             or llvm_targets.native_target(name, graph.targets[name])) else target_owner(graph.targets[name])
             if name in owners and owners[name] != owner:
                 raise ValueError("Repository owner differs across architectures: " + name)
             owners[name] = owner
@@ -737,6 +695,7 @@ def main():
     headers = {}
     codegen_rules = {}
     build_options = {}
+    cmake_metadata = read_metadata(ROOT)
     rust_cxx = {}
     parity_sources = {}
     for arch in ARCHES:
@@ -746,6 +705,7 @@ def main():
         headers.update(graph.header_groups)
         codegen_rules.update(graph.codegen.rules)
         build_options[arch] = graph.build_options
+        cmake_metadata[arch]['build_options'] = build_options[arch].pop('cmake_substitutions')
         parity_sources.update(graph.parity_sources)
     codegen_rules = relocate_tools(codegen_rules, owners)
     builds = {owner: BuildFile(owner, owners) for owner in {None, *owners.values()}}
@@ -754,6 +714,14 @@ def main():
     for name, owner in sorted(owners.items()):
         builds[owner].target(name, {arch: graph.generated_targets[name]
                                   for arch, graph in graphs.items() if name in graph.generated_targets})
+    # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses
+    # the original group's ordered objects from its own pinned repository.
+    lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}))
+    lz4.target('_lz4', {arch: graph.target('_lz4', graph.targets['_lz4'], native=True)
+                        for arch, graph in graphs.items() if '_lz4' in graph.targets})
+    llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
+        ROOT, {arch: graph.build for arch, graph in graphs.items()})
+    builds[llvm_targets.PREFIX] = llvm
     dependency_inputs(builds, owners)
     root = builds[None]
     # Keep every configured dependency in //... even when it is only an
@@ -763,7 +731,8 @@ def main():
         for arch, graph in graphs.items()
     })})
     llvm_overlay_inputs = set(re.findall(r'"//:([^\"]+)"', (ROOT / 'bazel/llvm.MODULE.bazel').read_text()))
-    root_exports = sorted(set().union(*(build.root_sources for build in builds.values())) | llvm_overlay_inputs)
+    root_exports = sorted(set().union(*(build.root_sources for build in builds.values()))
+                          | llvm_overlay_inputs | llvm_root_inputs)
     (ROOT / 'BUILD.bazel').write_text(
         '# Generated by bazel/generate_build.py.\n' + root.load_statements() +
         'load("//bazel:root_inputs.bzl", "declare_inputs")\n\n'
@@ -774,6 +743,7 @@ def main():
     preamble = '# Generated by bazel/generate_build.py.\nload(":repository_paths.bzl", "repository_path")\n'
     (ROOT / 'bazel/codegen_rules.bzl').write_text(preamble + 'CODEGEN_RULES = ' + starlark(codegen_rules) + '\n')
     (ROOT / 'bazel/build_options_data.bzl').write_text(preamble + 'BUILD_OPTIONS = ' + starlark(build_options) + '\n')
+    write_metadata(ROOT, cmake_metadata)
     (ROOT / 'bazel/rust_cxx_flags.bzl').write_text(preamble + 'RUST_CXX = ' + starlark(rust_cxx) + '\n')
     # An external cc_library otherwise exports a quote include root that takes
     # precedence over CMake's system include path. Preserve the system boundary
@@ -823,6 +793,7 @@ def main():
                     'external/llvm++llvm+llvm-project',
                     'bazel-out/k8-opt/bin/external/llvm++llvm+llvm-project'))]
     parity['ignore']['include_map'] = existing + generated_includes
+    llvm_targets.update_any2bazel_mappings(parity, llvm_native_targets)
     parity_path.write_text(json.dumps(parity, indent=2) + '\n')
     (ROOT / 'REPO.bazel').write_text(
         '# Generated by bazel/generate_build.py.\n' +
@@ -832,9 +803,4 @@ def main():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--llvm-references':
-        if len(sys.argv) != 5:
-            raise SystemExit('Usage: generate_build.py --llvm-references X86_64_REFERENCE AARCH64_REFERENCE LLVM_INVENTORY')
-        llvm_targets.generate_from_references(ROOT, dict(zip(ARCHES, sys.argv[2:4])), sys.argv[4])
-    else:
-        main()
+    main()

@@ -106,7 +106,7 @@ stage "CMake clickhouse dependencies"
 python3 bazel/compare_cmake_actions.py scope "$output"
 
 bazel_args=(
-    --config=remote --config=x86_64 --//bazel:cmake_metadata
+    --config=cmake_match
     --include_commandline --include_artifacts --noinclude_param_files
     --noannounce_rc --color=no --curses=no --output=jsonproto
 )

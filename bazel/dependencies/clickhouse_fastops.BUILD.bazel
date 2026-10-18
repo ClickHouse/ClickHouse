@@ -29,21 +29,22 @@ filegroup(
 
 cc_library(
     name = "_fastops__compile_0",
-    srcs = select({
+    srcs = [
+        ":fastops/fastops.cpp",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            ":fastops/fastops.cpp",
             ":fastops/avx2/ops_avx2.cpp",
         ],
         "@platforms//cpu:aarch64": [
-            ":fastops/fastops.cpp",
             ":fastops/neon/ops_neon.cpp",
         ],
     }),
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -54,33 +55,8 @@ cc_library(
             "-fdata-sections",
             "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-nostdinc++",
-            "-isystem",
-            repository_path("contrib/fastops"),
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -89,30 +65,31 @@ cc_library(
             "-ffunction-sections",
             "-fdata-sections",
             "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-nostdinc++",
-            "-isystem",
-            repository_path("contrib/fastops"),
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fstrict-vtable-pointers",
+        "-fPIE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "-std=c++23",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-Werror",
+        "-nostdinc++",
+        "-isystem",
+        repository_path("contrib/fastops"),
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
             "includes": [],
@@ -122,18 +99,18 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        ":headers_4d91f4973a41cb44",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            ":headers_4d91f4973a41cb44",
             ":headers_a71a595404d441b7",
-            ":headers_efed2027eb38e219",
         ],
         "@platforms//cpu:aarch64": [
-            ":headers_4d91f4973a41cb44",
             ":headers_af29d2399ddfae20",
-            ":headers_efed2027eb38e219",
         ],
     }) + [
+        ":headers_efed2027eb38e219",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

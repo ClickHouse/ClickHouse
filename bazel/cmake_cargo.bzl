@@ -3,6 +3,7 @@
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load(":rust_archives.bzl", "RUST_ARCHIVES")
 load(":rust_cxx_flags.bzl", "RUST_CXX")
 
 def _cmake_cargo_impl(ctx):
@@ -49,8 +50,6 @@ def _cmake_cargo_impl(ctx):
     # Cargo adds its own package metadata; the driver adds the CMake sanitizer
     # metadata. Do not replace Cargo's package metadata with Bazel label hashes.
     args.add_all(rust.extra_rustc_flags, format_each = "--rust-flag=%s")
-    if ctx.attr.source_prefix:
-        args.add("--source-prefix", ctx.attr.source_prefix)
     if ctx.attr.native_source_root:
         args.add("--native-source-root", ctx.attr.native_source_root)
     args.add_all(["--mount", ctx.file.workspace_manifest.dirname, "rust/workspace"])
@@ -82,6 +81,7 @@ def _cmake_cargo_impl(ctx):
     if ctx.attr.native_compilation:
         args.add("--native-compilation")
         arch = rust.target_flag_value.split("-")[0]
+        args.add_all(RUST_CXX[arch]["ccopts"], format_each = "--native-c-flag=%s")
         args.add_all(RUST_CXX[arch]["copts"], format_each = "--native-cxx-flag=%s")
         native_headers = ctx.attr._native_headers[DefaultInfo].files
         args.add_all([
@@ -123,15 +123,7 @@ cmake_cargo = rule(
     attrs = {
         "cargo_package": attr.string(
             mandatory = True,
-            values = [
-                "_ch_rust_pco",
-                "_ch_rust_prql",
-                "_ch_rust_polyglot",
-                "_ch_rust_skim_rust",
-                "_ch_rust_wasmtime",
-                "delta_kernel_ffi",
-                "chdig",
-            ],
+            values = [spec["package"] for spec in RUST_ARCHIVES.values()],
         ),
         "cargo_features": attr.string_list(),
         # C/C++ code compiled by Cargo build scripts needs the ClickHouse
@@ -157,9 +149,6 @@ cmake_cargo = rule(
         "config": attr.label(mandatory = True, allow_single_file = True),
         "sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
         "sysroot_files": attr.label(default = "@clickhouse_sysroot//:linux_compile_files"),
-        # Set only from the recorded native depfiles when Cargo embedded an
-        # absolute source directory. It never changes package metadata.
-        "source_prefix": attr.string(),
         # Cargo hashes the absolute SourceId of path dependencies outside
         # rust/workspace. Use the recorded CMake source root in an isolated RBE
         # action so the pinned Cargo recomputes those SourceIds itself.

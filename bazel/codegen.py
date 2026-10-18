@@ -5,38 +5,21 @@ custom commands stay visible in the coverage inventory.
 """
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shlex
 import tarfile
 import llvm_targets
+from cmake_metadata import read_metadata
 from repository_inputs import source_label, source_path
+from reference_readers import read_ninja
 
 TOOLS = {'protoc', 'grpc_cpp_plugin', 'flatc', 'llvm-tblgen', 'llvm-min-tblgen'}
 GOOGLEAPIS_REVISION = 'e60db19f11f94175ac682c5898cce0f77cc508ea'
 GOOGLEAPIS_ARCHIVE = 'contrib/google-cloud-cpp-cmake/googleapis/' + GOOGLEAPIS_REVISION + '.tar.gz'
 GOOGLEAPIS_OUTPUT = 'external/googleapis/src/googleapis_download/'
-
-
-def read_ninja(path):
-    nodes = {}
-    current = None
-    for line in path.read_text().replace('$\n', '').splitlines():
-        if line.startswith('build '):
-            outputs, rest = line[6:].split(': ', 1)
-            words = rest.split()
-            current = {
-                'outputs': outputs.split(' | ')[0].split(),
-                'rule': words[0],
-                'inputs': [w for w in words[1:] if w not in {'|', '||'}],
-                'normal_inputs': [w for w in words[1:words.index('||') if '||' in words else len(words)] if w != '|'],
-            }
-            for output in current['outputs']:
-                nodes[output] = current
-        elif current is not None and line.startswith('  COMMAND = '):
-            current['command'] = line.removeprefix('  COMMAND = ').replace('$$', '$')
-    return nodes
 
 
 class Codegen:
@@ -235,7 +218,7 @@ class Codegen:
         for path in byproducts:
             self.nodes[path] = node
         prefix = 'gen/' + self.graph.arch + '/'
-        self.rules['generate_' + self.graph.arch + '_' + namespace] = dict(
+        attrs = dict(
             srcs=[self.label(p.relative_to(self.root).as_posix()) for p in files],
             outs=[prefix + p for p in node['outputs']],
             tools=['//bazel:embed_resources'],
@@ -243,7 +226,42 @@ class Codegen:
                 + ' --output=$(BINDIR)/bazel/' + prefix + output
                 + ' --namespace=' + namespace + ' --compressed=' + compressed,
         )
+        resources = read_metadata(self.root)[self.graph.arch]['resource_gzip_mtimes']
+        if namespace in resources:
+            attrs['cmake_condition'] = '//bazel:use_cmake_metadata_' + self.graph.arch
+            attrs['cmake_cmd'] = ' --cmake-gzip-mtime=' + str(resources[namespace])
+        self.rules['generate_' + self.graph.arch + '_' + namespace] = attrs
         self.handled.update(node['outputs'])
+
+    def licenses(self, output):
+        manifest = json.loads((self.root / 'bazel/license_manifest.json').read_text())
+        sources = {row[2].lstrip('/') for row in manifest}
+        metadata_file = self.graph.config / 'license_substitutions.json'
+        attrs = {'kind': 'licenses', 'outs': ['gen/' + self.graph.arch + '/' + output]}
+        if metadata_file.is_file():
+            substitutions = json.loads(metadata_file.read_text())
+            sources.update(row[1].lstrip('/') for row in substitutions.values() if row is not None)
+            attrs['cmake_metadata'] = '//bazel:config/' + self.graph.arch + '/license_substitutions.json'
+            attrs['cmake_condition'] = '//bazel:use_cmake_metadata_' + self.graph.arch
+        attrs['source_paths'] = sorted(sources)
+        # The reference inventory reads the toolchain LLVM license, including
+        # when ClickHouse LLVM objects are compiled in @clickhouse_llvm_project.
+        attrs['srcs'] = [
+            '@llvm-project//:LICENSE.TXT' if path == llvm_targets.PREFIX + '/LICENSE.TXT' else self.label(path)
+            for path in attrs['source_paths']
+        ]
+        self.rules['generate_' + self.graph.arch + '_licenses'] = attrs
+        self.handled.add(output)
+
+    def embedded_sources(self):
+        if self.graph.embed_copies:
+            prefix = 'gen/' + self.graph.arch + '/embedded/'
+            sources = sorted(self.graph.embed_copies)
+            self.rules['generate_' + self.graph.arch + '_embedded_sources'] = dict(
+                kind='embedded_sources',
+                srcs=[self.label(source) for source in sources],
+                outs=[prefix + source for source in sources],
+            )
 
     def generate(self):
         seen = set()

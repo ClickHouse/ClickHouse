@@ -120,11 +120,12 @@ cc_library(
         ":src/bind_config.c",
         ":src/server.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -158,15 +159,8 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/x86_64/contrib/libssh/include",
             "-I",
             "contrib/libssh-cmake/linux/x86-64",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -198,12 +192,13 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/aarch64/contrib/libssh/include",
             "-I",
             "contrib/libssh-cmake/linux/aarch64",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-isystem",
+        "contrib/openssl-cmake/common/include",
+        "-isystem",
+        repository_path("contrib/openssl") + "/include",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
             "includes": [
@@ -235,28 +230,24 @@ cc_library(
             ],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse//:headers_1fd9e05d91f5eb25",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
             "@clickhouse//:headers_f1d74d641536e1b8",
             ":config/x86_64/contrib/libssh/include/libssh/libssh_version.h",
-            ":headers_27e548871ed46570",
-            ":headers_370b76f708eb4d53",
-            ":headers_39e3851605cb2373",
-            ":headers_e7012ab4a80f2fef",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
             "@clickhouse//:headers_8766a41be282c55b",
             ":config/aarch64/contrib/libssh/include/libssh/libssh_version.h",
-            ":headers_27e548871ed46570",
-            ":headers_370b76f708eb4d53",
-            ":headers_39e3851605cb2373",
-            ":headers_e7012ab4a80f2fef",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
         ],
     }) + [
+        ":headers_27e548871ed46570",
+        ":headers_370b76f708eb4d53",
+        ":headers_39e3851605cb2373",
+        ":headers_e7012ab4a80f2fef",
+        "@clickhouse_openssl//:headers_c41607910d3fced5",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

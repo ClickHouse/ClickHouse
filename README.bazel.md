@@ -85,7 +85,7 @@ To replay the CMake reference's embedded compiler paths, versions, flags,
 and CMake version, and omit the extra `BUILD_SYSTEM` row, use:
 
 ```sh
-bazel build --config=remote --config=x86_64 --//bazel:cmake_metadata //:clickhouse
+bazel build --config=cmake_match //:clickhouse
 ```
 
 For the stripped x86-64 comparison, run on a BuildBuddy Linux hosted runner:
@@ -94,7 +94,8 @@ For the stripped x86-64 comparison, run on a BuildBuddy Linux hosted runner:
 bash bazel/run_stripped_hash.sh
 ```
 
-This uses `common:remote` (`--jobs=500`), verifies that the Clang and Clang++
+`--config=cmake_match` expands to `--config=remote --config=x86_64
+--//bazel:cmake_metadata`. This uses `common:remote` (`--jobs=500`), verifies that the Clang and Clang++
 SHA-256 values match the recorded CMake toolchain, and builds `//:clickhouse`.
 After Bazel finishes, it verifies the original CMake artifact in a temporary
 directory outside the checkout. It first verifies the original
@@ -104,7 +105,9 @@ directory outside the checkout. It first verifies the original
 llvm-strip --strip-all --remove-section=.note.gnu.build-id -o OUTPUT INPUT
 ```
 
-Both copies must have the same SHA-256 and pass `cmp`. The comparison exits
+Both copies must equal the recorded SHA-256
+`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
+and pass `cmp`. The comparison exits
 at that point. LLVM's linker hashes the original ELF, including symbol and debug
 tables, to create the build ID; retaining that ID also retains differences from
 sections which stripping removes. The original ELF and its build ID are kept.
@@ -127,11 +130,21 @@ stripping. Results (SHA-256):
 `cmp` of the last row returned 0, and `PARITY_STATUS=0`. This is stripped
 binary equality; the original binaries and ordinary stripped build IDs differ.
 
+The simplified generated configuration was verified in
+[BuildBuddy invocation c972df98](https://app.buildbuddy.io/invocation/c972df98-7d2d-4b65-ac42-5ebf5117b5a3)
+([Bazel build](https://app.buildbuddy.io/invocation/7bbae2ed-c019-4a04-b07f-746a6570c815)).
+The same compiler, full binary, plain-stripped and normalized hashes in the
+table above all matched; `PARITY_STRIPPED_CMP_STATUS=0`, `PARITY_STATUS=0`.
+
 On the same Linux host, run the complete comparison:
 
 ```sh
 bash bazel/run_bazel_parity.sh
 ```
+
+Use `bash bazel/run_bazel_parity.sh --stripped` for the same normalized
+comparison against a CMake build retained on that host. Both entry points use
+`bazel/verify_stripped_hash.py` and record plain-stripped hashes separately.
 
 `bazel/run_bazel_parity.sh` verifies the saved reference hashes and metadata,
 rebuilds `//bazel:cmake_toolchain_files` and confirms that Bazel selected the

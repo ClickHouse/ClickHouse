@@ -120,6 +120,12 @@ expand_template(
     },
 )
 
+_GENERATED_DEPS_0 = [
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+    ]
+
 cc_library(
     name = "_dmlc_core__compile_0",
     srcs = [
@@ -134,11 +140,12 @@ cc_library(
         "@clickhouse_dmlc_core//:src/io/filesys.cc",
         "@clickhouse_dmlc_core//:src/config.cc",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -178,9 +185,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/xgboost") + "/config/x86_64/contrib/xgboost/dmlc-core",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -226,19 +230,16 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse_dmlc_core//:headers_27d1d3ded2ddddc0",
+        "@clickhouse_dmlc_core//:headers_509ded1923e056b5",
+        "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
+        "@clickhouse_dmlc_core//:headers_fd9960ca5a347e8d",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_dmlc_core//:headers_27d1d3ded2ddddc0",
-            "@clickhouse_dmlc_core//:headers_509ded1923e056b5",
-            "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
-            "@clickhouse_dmlc_core//:headers_fd9960ca5a347e8d",
             ":config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_dmlc_core//:headers_27d1d3ded2ddddc0",
-            "@clickhouse_dmlc_core//:headers_509ded1923e056b5",
-            "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
-            "@clickhouse_dmlc_core//:headers_fd9960ca5a347e8d",
             ":config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
         ],
     }) + [
@@ -258,11 +259,7 @@ cc_library(
         "_XOPEN_SOURCE=700",
         "__USE_XOPEN2K8",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     features = [
         "-fortify_source",
         "-default_compile_flags",
@@ -399,11 +396,12 @@ cc_library(
         ":src/gbm/gblinear.cc",
         ":src/context.cc",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -445,9 +443,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/xgboost") + "/config/x86_64/contrib/xgboost/dmlc-core",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -496,56 +491,37 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
             ":config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
-            ":headers_0ebdfdf523ce1500",
-            ":headers_1c4bbdc73cf4c7c9",
-            ":headers_26caa71b692e0d84",
-            ":headers_2d477f5ffab1f85f",
-            ":headers_320bee4b9a6439f6",
-            ":headers_399e1c4545d4fcb3",
-            ":headers_400b2aa436b232bf",
-            ":headers_4bebb49384ce3e85",
-            ":headers_52226646778ffa7a",
-            ":headers_54967f603405d6f7",
-            ":headers_5deaf8d037734442",
-            ":headers_61b7e8e0ad6fcf7a",
-            ":headers_63962f290a53d4f8",
-            ":headers_94f73087dc89cb0c",
-            ":headers_9564ecfe8f147f66",
-            ":headers_9c717a14c2e7bf46",
-            ":headers_bbef376671a60728",
-            ":headers_c1ac8b1a859833f9",
-            ":headers_f5748b21ccc1f864",
-            ":headers_f84456f18e22396d",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
             ":config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
-            ":headers_0ebdfdf523ce1500",
-            ":headers_1c4bbdc73cf4c7c9",
-            ":headers_26caa71b692e0d84",
-            ":headers_2d477f5ffab1f85f",
-            ":headers_320bee4b9a6439f6",
-            ":headers_399e1c4545d4fcb3",
-            ":headers_400b2aa436b232bf",
-            ":headers_4bebb49384ce3e85",
-            ":headers_52226646778ffa7a",
-            ":headers_54967f603405d6f7",
-            ":headers_5deaf8d037734442",
-            ":headers_61b7e8e0ad6fcf7a",
-            ":headers_63962f290a53d4f8",
-            ":headers_94f73087dc89cb0c",
-            ":headers_9564ecfe8f147f66",
-            ":headers_9c717a14c2e7bf46",
-            ":headers_bbef376671a60728",
-            ":headers_c1ac8b1a859833f9",
-            ":headers_f5748b21ccc1f864",
-            ":headers_f84456f18e22396d",
         ],
     }) + [
+        ":headers_0ebdfdf523ce1500",
+        ":headers_1c4bbdc73cf4c7c9",
+        ":headers_26caa71b692e0d84",
+        ":headers_2d477f5ffab1f85f",
+        ":headers_320bee4b9a6439f6",
+        ":headers_399e1c4545d4fcb3",
+        ":headers_400b2aa436b232bf",
+        ":headers_4bebb49384ce3e85",
+        ":headers_52226646778ffa7a",
+        ":headers_54967f603405d6f7",
+        ":headers_5deaf8d037734442",
+        ":headers_61b7e8e0ad6fcf7a",
+        ":headers_63962f290a53d4f8",
+        ":headers_94f73087dc89cb0c",
+        ":headers_9564ecfe8f147f66",
+        ":headers_9c717a14c2e7bf46",
+        ":headers_bbef376671a60728",
+        ":headers_c1ac8b1a859833f9",
+        ":headers_f5748b21ccc1f864",
+        ":headers_f84456f18e22396d",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [
@@ -557,11 +533,7 @@ cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     features = [
         "-fortify_source",
         "-default_compile_flags",

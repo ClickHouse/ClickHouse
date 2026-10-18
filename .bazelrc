@@ -36,4 +36,9 @@ common:remote --remote_timeout=3600
 common:remote --noremote_local_fallback
 common:remote --shell_executable=/bin/bash
 
+# Reproduce the recorded x86-64 CMake comparison under BuildBuddy.
+common:cmake_match --config=remote
+build:cmake_match --config=x86_64
+build:cmake_match --//bazel:cmake_metadata
+
 try-import %workspace%/.bazelrc.local

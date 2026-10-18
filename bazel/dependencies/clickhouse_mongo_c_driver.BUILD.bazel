@@ -266,6 +266,12 @@ expand_template(
     },
 )
 
+_GENERATED_DEPS_0 = [
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+    ]
+
 cc_library(
     name = "_libbson__compile_0",
     srcs = [
@@ -299,11 +305,12 @@ cc_library(
         ":src/common/src/common-string.c",
         ":src/common/src/common-thread.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -343,9 +350,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/x86_64/contrib/mongo-c-driver/src/common/src",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -419,23 +423,19 @@ cc_library(
             ":config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
-            ":headers_1ed047d4ad63b57c",
-            ":headers_7f7a090512f3865f",
-            ":headers_8d7dafe7b5f4bc6e",
-            ":headers_98ef1b3cdd008278",
-            ":headers_b304b1407c4dd141",
         ],
         "@platforms//cpu:aarch64": [
             ":config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
-            ":headers_1ed047d4ad63b57c",
-            ":headers_7f7a090512f3865f",
-            ":headers_8d7dafe7b5f4bc6e",
-            ":headers_98ef1b3cdd008278",
-            ":headers_b304b1407c4dd141",
         ],
     }) + [
+        ":headers_1ed047d4ad63b57c",
+        ":headers_7f7a090512f3865f",
+        ":headers_8d7dafe7b5f4bc6e",
+        ":headers_98ef1b3cdd008278",
+        ":headers_b304b1407c4dd141",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [
@@ -448,11 +448,7 @@ cc_library(
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     features = [
         "-fortify_source",
         "-default_compile_flags",
@@ -608,11 +604,12 @@ cc_library(
         ":src/common/src/common-thread.c",
         ":src/utf8proc-2.11.3/utf8proc.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -662,23 +659,8 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/x86_64/contrib/mongo-c-driver/src/libbson/src",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/x86_64/contrib/mongo-c-driver/src/common/src",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/src/lib/include",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/src/lib",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/include",
-            "-isystem",
-            "contrib/c-ares-cmake/linux",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -726,20 +708,21 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/aarch64/contrib/mongo-c-driver/src/libbson/src",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/aarch64/contrib/mongo-c-driver/src/common/src",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/src/lib/include",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/src/lib",
-            "-isystem",
-            repository_path("contrib/c-ares") + "/include",
-            "-isystem",
-            "contrib/c-ares-cmake/linux",
-            "-isystem",
-            "contrib/openssl-cmake/common/include",
-            "-isystem",
-            repository_path("contrib/openssl") + "/include",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-isystem",
+        repository_path("contrib/c-ares") + "/src/lib/include",
+        "-isystem",
+        repository_path("contrib/c-ares") + "/src/lib",
+        "-isystem",
+        repository_path("contrib/c-ares") + "/include",
+        "-isystem",
+        "contrib/c-ares-cmake/linux",
+        "-isystem",
+        "contrib/openssl-cmake/common/include",
+        "-isystem",
+        repository_path("contrib/openssl") + "/include",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
             "includes": [
@@ -771,50 +754,39 @@ cc_library(
             ],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse//:headers_1fd9e05d91f5eb25",
+        "@clickhouse//:headers_ec695b8a0ea8c1f4",
+        "@clickhouse_c_ares//:headers_001ac6f0c9c53e75",
+        "@clickhouse_c_ares//:headers_6586f832c2083af7",
+        "@clickhouse_c_ares//:headers_b3b8272e0a31b50e",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
-            "@clickhouse//:headers_ec695b8a0ea8c1f4",
-            "@clickhouse_c_ares//:headers_001ac6f0c9c53e75",
-            "@clickhouse_c_ares//:headers_6586f832c2083af7",
-            "@clickhouse_c_ares//:headers_b3b8272e0a31b50e",
             ":config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
             ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
-            ":headers_1ed047d4ad63b57c",
-            ":headers_302ad383f98724f1",
-            ":headers_65d83afeb5904abd",
-            ":headers_98ef1b3cdd008278",
-            ":headers_9c24c95e9e073bb3",
-            ":headers_f2b8b21fe52fc0f6",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
-            "@clickhouse_zstd//:headers_4a04977d8b971148",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:headers_1fd9e05d91f5eb25",
-            "@clickhouse//:headers_ec695b8a0ea8c1f4",
-            "@clickhouse_c_ares//:headers_001ac6f0c9c53e75",
-            "@clickhouse_c_ares//:headers_6586f832c2083af7",
-            "@clickhouse_c_ares//:headers_b3b8272e0a31b50e",
             ":config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
             ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
-            ":headers_1ed047d4ad63b57c",
-            ":headers_302ad383f98724f1",
-            ":headers_65d83afeb5904abd",
-            ":headers_98ef1b3cdd008278",
-            ":headers_9c24c95e9e073bb3",
-            ":headers_f2b8b21fe52fc0f6",
-            "@clickhouse_openssl//:headers_c41607910d3fced5",
-            "@clickhouse_zstd//:headers_4a04977d8b971148",
         ],
     }) + [
+        ":headers_1ed047d4ad63b57c",
+        ":headers_302ad383f98724f1",
+        ":headers_65d83afeb5904abd",
+        ":headers_98ef1b3cdd008278",
+        ":headers_9c24c95e9e073bb3",
+        ":headers_f2b8b21fe52fc0f6",
+        "@clickhouse_openssl//:headers_c41607910d3fced5",
+        "@clickhouse_zstd//:headers_4a04977d8b971148",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [
@@ -824,11 +796,7 @@ cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     features = [
         "-fortify_source",
         "-default_compile_flags",

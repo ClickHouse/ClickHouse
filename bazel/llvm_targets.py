@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import re
 import shlex
-import tarfile
+from reference_readers import read_file_api, ninja_edges
 
 PREFIX = 'contrib/llvm-project'
 RAW_REPOSITORY = 'clickhouse_llvm_project'
@@ -35,18 +35,6 @@ TOOLCHAIN_INCLUDE_DIRECTORIES = {
     PREFIX + '/libcxxabi/include',
 }
 
-# These archives apply LLVM's stage0 runtime transition. Compiling the raw
-# runtime cc_library with the stage1 consumer toolchain duplicates libc++'s
-# headers and breaks their #include_next of glibc.
-RUNTIME_ARCHIVES = {
-    'cxx': '@llvm-project//libcxx:libcxx.static',
-    'cxxabi': '@llvm-project//libcxxabi:libcxxabi.static',
-    'unwind': '@llvm-project//libunwind:libunwind.static',
-    'clang_rt_builtins': '@llvm-project//compiler-rt:clang_rt.builtins.static',
-    'clang_rt_xray': '@llvm-project//compiler-rt:clang_rt.xray.static',
-}
-
-
 def include_mappings(repository):
     """Canonical header namespaces provided by the module's CcInfo targets."""
     generated = 'bazel-out/k8-opt/bin/' + repository + '/'
@@ -68,12 +56,10 @@ def include_mappings(repository):
     return [{'from': source, 'to': destination} for source, destination in sorted(mappings.items())]
 
 
-def update_any2bazel_mappings(root, targets):
+def update_any2bazel_mappings(parity, targets):
     """Record each embedded LLVM source from the same CMake compile groups."""
     from repository_inputs import comparison_root
 
-    path = root / 'any2bazel.json'
-    parity = json.loads(path.read_text())
     raw_root = comparison_root(PREFIX)
     expected_root = 'external/+contrib+' + RAW_REPOSITORY
     if raw_root != expected_root:
@@ -115,7 +101,7 @@ def update_any2bazel_mappings(root, targets):
         includes[generated] = '@build/' + arch + '/' + PREFIX
         includes[generated + '/llvm/include'] = PREFIX + '/llvm/include'
         # Match include_mappings() for CMake's copy of __config_site and
-        # __assertion_handler. generate_from_references() verifies both copies.
+        # __assertion_handler. declare_from_references() verifies both copies.
         includes[generated + '/libcxx/include/c++/v1'] = PREFIX + '/libcxx/include'
 
     for field, added in (('source_map', sources), ('include_map', includes)):
@@ -139,9 +125,6 @@ def update_any2bazel_mappings(root, targets):
         rows.extend({'from': source, 'to': destination}
                     for source, destination in sorted(added.items()))
 
-    path.write_text(json.dumps(parity, indent=2) + '\n')
-
-
 def generated_target(path):
     if path.startswith(PREFIX + '/') and not path.startswith(PREFIX + '/llvm/'):
         return '@llvm-project//llvm'
@@ -154,12 +137,6 @@ def target(name):
     return {
         'llvm-tblgen': '@llvm-project//llvm:llvm-tblgen',
         'llvm-min-tblgen': '@llvm-project//llvm:llvm-min-tblgen',
-        'cxx': '@llvm-project//libcxx:libcxx',
-        'cxxabi': '@llvm-project//libcxxabi:libcxxabi',
-        'unwind': '@llvm-project//libunwind:libunwind',
-        'clang_rt_builtins': '@llvm-project//compiler-rt:builtins',
-        'clang_rt_xray': '@llvm-project//compiler-rt:xray',
-        'libllvmlibc': '@llvm-project//libc:clickhouse_math',
         '_fuzzer': '@llvm-project//compiler-rt:fuzzer_main',
         '_fuzzer_no_main': '@llvm-project//compiler-rt:fuzzer',
     }.get(name)
@@ -181,8 +158,12 @@ def include_dependencies(relative):
     }[project]
 
 
-def generate_from_references(root, references, inventory_path):
-    """Regenerate embedded LLVM only, without requiring unrelated submodules.
+def native_target(name, value):
+    return (name.startswith('LLVM') or name in NATIVE_RUNTIMES) and value.get('type') == 'STATIC_LIBRARY'
+
+
+def declare_from_references(root, references):
+    """Declare embedded LLVM targets before BUILD files are serialized.
 
     The CMake File API, expanded trace and Ninja graph are the inputs. Config
     values come from set() records at each configure_file(), never from the
@@ -191,37 +172,27 @@ def generate_from_references(root, references, inventory_path):
     from build_file import BuildFile, Glob, select
     from repository_inputs import REPOSITORIES, cmake_has_source_prefix_map, source_label
 
-    inventory = json.loads(Path(inventory_path).read_text())
     repository = REPOSITORIES[PREFIX]
-    for key in ('sha256', 'strip_prefix'):
-        if repository[key] != inventory[key]:
-            raise ValueError('LLVM source archive mismatch: ' + key)
-    repository.update(name=RAW_REPOSITORY, remove_build_files=inventory['remove_build_files'])
-    repository.pop('module', None)
+    if repository['name'] != RAW_REPOSITORY or repository.get('module'):
+        raise ValueError('Embedded LLVM must use the pinned raw repository')
 
     targets = {}
     models = {}
     graphs = {}
     for arch, reference in references.items():
         reference = Path(reference)
-        with tarfile.open(reference / 'cmake-file-api.tar.gz') as archive:
-            members = {Path(m.name).name: m for m in archive.getmembers() if m.isfile()}
-            def read(name):
-                return json.load(archive.extractfile(members[name]))
-            index = read(sorted(n for n in members if n.startswith('index-'))[-1])
-            model = read(next(o['jsonFile'] for o in index['objects'] if o['kind'] == 'codemodel'))
-            models[arch] = model['paths']
-            graph = {t['name']: t for t in model['configurations'][0]['targets']}
-            for name, entry in graph.items():
-                if name.startswith('LLVM') or name in NATIVE_RUNTIMES:
-                    graph[name] = read(entry['jsonFile'])
-            graphs[arch] = graph
-            for name, value in graph.items():
-                if (name.startswith('LLVM') or name in NATIVE_RUNTIMES) and value['type'] == 'STATIC_LIBRARY':
-                    targets.setdefault(name, {})[arch] = value
-            absent = NATIVE_RUNTIMES - targets.keys()
-            if absent:
-                raise ValueError(f'{arch}: missing CMake runtime libraries {sorted(absent)}')
+        saved = reference / 'cmake-file-api.tar.gz'
+        model, graph = read_file_api(
+            saved if saved.is_file() else reference / '.cmake/api/v1/reply',
+            include_target=lambda name: name.startswith('LLVM') or name in NATIVE_RUNTIMES)
+        models[arch] = model['paths']
+        graphs[arch] = graph
+        for name, value in graph.items():
+            if native_target(name, value):
+                targets.setdefault(name, {})[arch] = value
+        absent = NATIVE_RUNTIMES - {name for name, value in graph.items() if native_target(name, value)}
+        if absent:
+            raise ValueError(f'{arch}: missing CMake runtime libraries {sorted(absent)}')
     owners = {name: PREFIX for name in targets}
     build = BuildFile(PREFIX, owners)
     header_patterns = [
@@ -264,7 +235,12 @@ def generate_from_references(root, references, inventory_path):
         outputs = []
         runtime_outputs = []
         templates = set()
-        with gzip.open(reference / 'trace.jsonl.gz', 'rt') as trace:
+        trace_path = reference / 'trace.jsonl'
+        if trace_path.is_file():
+            trace_file = trace_path.open('rt')
+        else:
+            trace_file = gzip.open(reference / 'trace.jsonl.gz', 'rt')
+        with trace_file as trace:
             for line in trace:
                 if not line.startswith('{'):
                     continue
@@ -325,72 +301,67 @@ def generate_from_references(root, references, inventory_path):
             raise ValueError(f'{arch}: expected both CMake COPYONLY libc++ headers: {runtime_outputs}')
         runtime_generated[arch] = runtime_outputs
 
-        node = None
-        with gzip.open(reference / 'build.ninja.gz', 'rt') as ninja:
-            for line in ninja:
-                if line.startswith('build '):
-                    lhs = line[6:].split(': ', 1)
-                    node = None
-                    if len(lhs) == 2 and lhs[1].startswith('CUSTOM_COMMAND '):
-                        first = lhs[0].split(' | ')[0].split()
-                        if len(first) == 1 and first[0].startswith((
-                                PREFIX + '/llvm/',
-                                'contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_')):
-                            node = first[0]
-                elif node and line.startswith('  COMMAND = '):
-                    command = line.removeprefix('  COMMAND = ').strip().replace('$$', '$')
-                    pieces = command.split(' && ')
-                    words = shlex.split(pieces[-1])
-                    tool_name = Path(words[0]).name
-                    if node.startswith('contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'):
-                        source = source_root + '/' + PREFIX + '/compiler-rt/lib/builtins/aarch64/lse.S'
-                        destination = build_root + '/' + node
-                        if tool_name != 'cmake' or words[1:] != ['-E', 'create_symlink', source, destination]:
-                            raise ValueError(f'{arch} {node}: unexpected CMake outline assembly command {command}')
-                        identity = 'build_bazel_reference_' + arch + '/' + node
-                        if identity in outline_commands:
-                            raise ValueError(f'{arch}: duplicate CMake outline generator {node}')
-                        outline_commands[identity] = source.removeprefix(source_root + '/')
-                        node = None
-                        continue
-                    if tool_name not in {'llvm-tblgen', 'llvm-min-tblgen'}:
-                        raise ValueError(f'{arch} {node}: unsupported LLVM generator {command}')
-                    tool = '@llvm-project//llvm:' + tool_name
-                    inputs = [':llvm_tablegen_inputs']
-                    output = 'gen/' + arch + '/' + node.removeprefix(PREFIX + '/')
-                    action_outputs = [output]
-                    if '-gen-register-info' in words:
-                        # LLVM RegisterInfoEmitter::run returns four additional
-                        # files; Ninja tracks only the main .inc. RBE must
-                        # upload every file that the main .inc includes.
-                        action_outputs.extend(output.removesuffix('.inc') + suffix for suffix in (
-                            'Enums.inc', 'MCDesc.inc', 'Header.inc', 'TargetDesc.inc'))
-                    translated = ['$(execpath ' + tool + ')']
-                    for word in words[1:]:
-                        if word == build_root + '/' + node:
-                            translated.append('$(location :' + output + ')')
-                        elif word.startswith(source_root + '/' + PREFIX + '/'):
-                            path = word.removeprefix(source_root + '/' + PREFIX + '/')
-                            if path.endswith('.td'):
-                                label = ':' + path
-                                inputs.append(label)
-                                translated.append('$(execpath ' + label + ')')
-                            else:
-                                # This BUILD file belongs to the raw repository.
-                                translated.append('$(execpath :BUILD.bazel)')
-                                translated[-1] = '$$(dirname ' + translated[-1] + ')/' + path
-                        elif os.path.isabs(word):
-                            raise ValueError(f'{arch} {node}: undeclared TableGen input {word}')
-                        else:
-                            translated.append(shlex.quote(word))
-                    inputs.append(':BUILD.bazel')
-                    rule = 'tablegen_' + arch + '_' + hashlib.sha256(node.encode()).hexdigest()[:16]
-                    build.rule('genrule', rule, {
-                        'srcs': inputs, 'outs': action_outputs, 'tools': [tool],
-                        'cmd': ' '.join(translated),
-                    })
-                    outputs.extend(':' + filename for filename in action_outputs)
-                    node = None
+        ninja_path = reference / 'build.ninja'
+        if not ninja_path.is_file():
+            ninja_path = reference / 'build.ninja.gz'
+        for edge in ninja_edges(ninja_path):
+            if edge['rule'] != 'CUSTOM_COMMAND' or len(edge['outputs']) != 1 or 'command' not in edge:
+                continue
+            node = edge['outputs'][0]
+            if not node.startswith((PREFIX + '/llvm/',
+                                    'contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_')):
+                continue
+            command = edge['command'].strip()
+            pieces = command.split(' && ')
+            words = shlex.split(pieces[-1])
+            tool_name = Path(words[0]).name
+            if node.startswith('contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'):
+                source = source_root + '/' + PREFIX + '/compiler-rt/lib/builtins/aarch64/lse.S'
+                destination = build_root + '/' + node
+                if tool_name != 'cmake' or words[1:] != ['-E', 'create_symlink', source, destination]:
+                    raise ValueError(f'{arch} {node}: unexpected CMake outline assembly command {command}')
+                identity = 'build_bazel_reference_' + arch + '/' + node
+                if identity in outline_commands:
+                    raise ValueError(f'{arch}: duplicate CMake outline generator {node}')
+                outline_commands[identity] = source.removeprefix(source_root + '/')
+                continue
+            if tool_name not in {'llvm-tblgen', 'llvm-min-tblgen'}:
+                raise ValueError(f'{arch} {node}: unsupported LLVM generator {command}')
+            tool = '@llvm-project//llvm:' + tool_name
+            inputs = [':llvm_tablegen_inputs']
+            output = 'gen/' + arch + '/' + node.removeprefix(PREFIX + '/')
+            action_outputs = [output]
+            if '-gen-register-info' in words:
+                # LLVM RegisterInfoEmitter::run returns four additional
+                # files; Ninja tracks only the main .inc. RBE must
+                # upload every file that the main .inc includes.
+                action_outputs.extend(output.removesuffix('.inc') + suffix for suffix in (
+                    'Enums.inc', 'MCDesc.inc', 'Header.inc', 'TargetDesc.inc'))
+            translated = ['$(execpath ' + tool + ')']
+            for word in words[1:]:
+                if word == build_root + '/' + node:
+                    translated.append('$(location :' + output + ')')
+                elif word.startswith(source_root + '/' + PREFIX + '/'):
+                    path = word.removeprefix(source_root + '/' + PREFIX + '/')
+                    if path.endswith('.td'):
+                        label = ':' + path
+                        inputs.append(label)
+                        translated.append('$(execpath ' + label + ')')
+                    else:
+                        # This BUILD file belongs to the raw repository.
+                        translated.append('$(execpath :BUILD.bazel)')
+                        translated[-1] = '$$(dirname ' + translated[-1] + ')/' + path
+                elif os.path.isabs(word):
+                    raise ValueError(f'{arch} {node}: undeclared TableGen input {word}')
+                else:
+                    translated.append(shlex.quote(word))
+            inputs.append(':BUILD.bazel')
+            rule = 'tablegen_' + arch + '_' + hashlib.sha256(node.encode()).hexdigest()[:16]
+            build.rule('genrule', rule, {
+                'srcs': inputs, 'outs': action_outputs, 'tools': [tool],
+                'cmd': ' '.join(translated),
+            })
+            outputs.extend(':' + filename for filename in action_outputs)
         generated[arch] = outputs
         if len(outputs) < 45:
             raise ValueError(f'{arch}: incomplete LLVM TableGen graph ({len(outputs)} outputs)')
@@ -513,71 +484,9 @@ def generate_from_references(root, references, inventory_path):
         raise ValueError(f'CMake AArch64 reference outline sources do not match recorded Ninja: '
                          f'{len(outline_generated)} sources, {len(outline_commands)} generators')
 
-    preamble = '# Generated by bazel/generate_build.py --llvm-references.\n'
+    preamble = '# Generated by bazel/generate_build.py.\n'
     (root / 'bazel/rust_localization_data.bzl').write_text(
         preamble + 'RUST_LOCALIZATION_GROUPS = ' + json.dumps(rust_localization_groups, indent=4) + '\n')
-    text = preamble + build.load_statements()
-    text += 'package(default_visibility = ["//visibility:public"])\n'
-    text += 'exports_files(["BUILD.bazel"])\n\n' + build.text()
-    (root / 'bazel/dependencies' / (RAW_REPOSITORY + '.BUILD.bazel')).write_text(text)
-    (root / 'bazel/contrib_repositories.json').write_text(json.dumps(REPOSITORIES, indent=2) + '\n')
-
-    # The rest of the existing generated graph stays at its configured revision.
-    # Replace each old root LLVM wrapper by its exact CMake target, then remove
-    # the old module's LLVM linkage from ClickHouse consumer compile groups.
-    files = [root / 'BUILD.bazel', *sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel'))]
-    old_to_native = {
-        'IPO': 'LLVMipo', 'CodeGen': 'LLVMCodeGen', 'ObjCARC': 'LLVMObjCARCOpts',
-        'remark_linker': 'LLVMRemarks', 'Scalar': 'LLVMScalarOpts',
-        'X86UtilsAndDesc': 'LLVMX86Desc', 'AArch64UtilsAndDesc': 'LLVMAArch64Desc',
-    }
-    for path in files:
-        if path.name == RAW_REPOSITORY + '.BUILD.bazel':
-            continue
-        original = path.read_text()
-        updated = original
-        if path == root / 'BUILD.bazel':
-            for name in targets:
-                pattern = r'(?:cc_library|cc_import)\(\n    name = "' + re.escape(name) + r'",\n[\s\S]*?^\)\n'
-                alias = 'alias(\n    name = "' + name + '",\n    actual = "@' + RAW_REPOSITORY + '//:' + name + '",\n)\n'
-                updated, count = re.subn(pattern, lambda _: alias, updated, flags=re.MULTILINE)
-                if count != 1 and alias not in updated:
-                    raise ValueError('Missing generated LLVM target: ' + name)
-        def convert_module_library(match):
-            component = match[1]
-            if component in ('llvm-tblgen', 'llvm-min-tblgen'):
-                return match[0]
-            native = old_to_native.get(component, 'LLVM' + component)
-            if native not in targets:
-                raise ValueError(f'{path}: no CMake LLVM target for {component}')
-            return '@' + RAW_REPOSITORY + '//:' + native
-        updated = re.sub(r'@llvm-project//llvm:([\w.+-]+)', convert_module_library, updated)
-        # Preserve the original runtime repository for existing -isystem flags.
-        updated = re.sub(
-            r'repository_path\("contrib/llvm-project"\)(?= \+ "/(?:libc(?:xx(?:abi)?)?|libunwind|compiler-rt)(?:/|"))',
-            'llvm_toolchain_path()', updated)
-        updated = updated.replace('Label("@llvm-project//:BUILD.bazel").workspace_root', 'llvm_toolchain_path()')
-        if 'llvm_toolchain_path()' in updated:
-            updated = updated.replace(
-                'load("@clickhouse//bazel:repository_paths.bzl", "repository_path")',
-                'load("@clickhouse//bazel:repository_paths.bzl", "llvm_toolchain_path", "repository_path")')
-        if path == root / 'BUILD.bazel':
-            prior_exports = 'exports_files(' + json.dumps(sorted(templates), indent=4) + ')\n'
-            updated = updated.replace(prior_exports, '')
-            exports = 'exports_files(' + json.dumps(sorted(templates | RUNTIME_ROOT_INPUTS), indent=4) + ')\n'
-            if exports not in updated:
-                updated += '\n' + exports
-        if original != updated:
-            path.write_text(updated)
-    module_path = root / 'bazel/contrib.MODULE.bazel'
-    module = module_path.read_text()
-    entry = '    "' + RAW_REPOSITORY + '",\n'
-    if entry not in module:
-        module_path.write_text(module.replace('use_repo(\n    contrib,\n', 'use_repo(\n    contrib,\n' + entry))
-    paths = root / 'bazel/repository_paths.bzl'
-    paths.write_text(paths.read_text().replace(
-        '"contrib/llvm-project": Label("@llvm-project//:BUILD.bazel")',
-        '"contrib/llvm-project": Label("@' + RAW_REPOSITORY + '//:BUILD.bazel")'))
-    update_any2bazel_mappings(root, targets)
     print('Embedded LLVM:', len(targets), 'CMake libraries;',
           ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))
+    return build, targets, templates | RUNTIME_ROOT_INPUTS

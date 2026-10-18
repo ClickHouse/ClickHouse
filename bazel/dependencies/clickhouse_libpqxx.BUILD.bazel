@@ -75,11 +75,12 @@ cc_library(
         ":src/version.cxx",
         ":src/wait.cxx",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -114,17 +115,8 @@ cc_library(
             repository_path("contrib/libpqxx") + "/include",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/libpqxx") + "/config/x86_64/contrib/libpqxx-cmake",
-            "-isystem",
-            repository_path("contrib/postgres") + "/src/interfaces/libpq",
-            "-isystem",
-            repository_path("contrib/postgres") + "/src/include",
-            "-isystem",
-            "contrib/postgres-cmake",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -157,14 +149,15 @@ cc_library(
             repository_path("contrib/libpqxx") + "/include",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/libpqxx") + "/config/aarch64/contrib/libpqxx-cmake",
-            "-isystem",
-            repository_path("contrib/postgres") + "/src/interfaces/libpq",
-            "-isystem",
-            repository_path("contrib/postgres") + "/src/include",
-            "-isystem",
-            "contrib/postgres-cmake",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-isystem",
+        repository_path("contrib/postgres") + "/src/interfaces/libpq",
+        "-isystem",
+        repository_path("contrib/postgres") + "/src/include",
+        "-isystem",
+        "contrib/postgres-cmake",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
             "includes": [],
@@ -174,26 +167,23 @@ cc_library(
             "includes": [],
         },
     }),
-    hdrs = select({
+    hdrs = [
+        "@clickhouse//:headers_5c80754e4205425a",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:headers_5c80754e4205425a",
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-            ":headers_3cb500ff45542bb1",
-            ":headers_e6dcd7f24c2b2285",
-            "@clickhouse_postgres//:headers_5dab68e1826b7703",
-            "@clickhouse_postgres//:headers_e9121c79a56e5a6a",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:headers_5c80754e4205425a",
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-            ":headers_3cb500ff45542bb1",
-            ":headers_e6dcd7f24c2b2285",
-            "@clickhouse_postgres//:headers_5dab68e1826b7703",
-            "@clickhouse_postgres//:headers_e9121c79a56e5a6a",
         ],
     }) + [
+        ":headers_3cb500ff45542bb1",
+        ":headers_e6dcd7f24c2b2285",
+        "@clickhouse_postgres//:headers_5dab68e1826b7703",
+        "@clickhouse_postgres//:headers_e9121c79a56e5a6a",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

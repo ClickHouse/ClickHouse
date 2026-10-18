@@ -90,11 +90,12 @@ cc_library(
         ":lib/client.c",
         ":lib/checkpw.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -154,9 +155,6 @@ cc_library(
             "$(GENDIR)/bazel/gen/x86_64/contrib/krb5-cmake/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -288,7 +286,6 @@ cc_library(
             "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h",
             "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h",
             "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h",
-            "@clickhouse_krb5//:headers_89798a0cfc92f9a1",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include/krb5/krb5.h",
@@ -332,9 +329,10 @@ cc_library(
             "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h",
             "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h",
             "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h",
-            "@clickhouse_krb5//:headers_89798a0cfc92f9a1",
         ],
     }) + [
+        "@clickhouse_krb5//:headers_89798a0cfc92f9a1",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

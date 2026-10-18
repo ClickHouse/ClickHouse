@@ -60,11 +60,12 @@ cc_library(
         ":src/h3lib/lib/faceijk.c",
         ":src/h3lib/lib/baseCells.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -98,9 +99,6 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/h3") + "/config/x86_64/contrib/h3/src/h3lib/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -166,15 +164,14 @@ cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/h3/src/h3lib/include/h3api.h",
-            ":headers_088cf730add6140e",
-            ":headers_aee82aeb52d0b60e",
         ],
         "@platforms//cpu:aarch64": [
             ":config/aarch64/contrib/h3/src/h3lib/include/h3api.h",
-            ":headers_088cf730add6140e",
-            ":headers_aee82aeb52d0b60e",
         ],
     }) + [
+        ":headers_088cf730add6140e",
+        ":headers_aee82aeb52d0b60e",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

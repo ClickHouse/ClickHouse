@@ -19,6 +19,33 @@ filegroup(
     srcs = glob(["src/lib/vendors/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
 )
 
+_GENERATED_HDRS_0 = [
+        ":headers_40a7660ab2c767f8",
+        ":headers_614bad3e84804da8",
+        ":headers_8d4811f52ef6e462",
+    ] + [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ]
+
+_GENERATED_DEPS_0 = [
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+    ]
+
+_GENERATED_FEATURES_0 = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ] + [
+        "-llvm_system_c_headers",
+    ]
+
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
+        "@clickhouse_sysroot//:linux_compile_files",
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ]
+
 cc_library(
     name = "_zxc__compile_0",
     srcs = [
@@ -30,11 +57,12 @@ cc_library(
         ":src/lib/zxc_pstream.c",
         ":src/lib/zxc_seekable.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -45,34 +73,8 @@ cc_library(
             "-fdata-sections",
             "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-            "-isystem",
-            repository_path("contrib/zxc") + "/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -81,31 +83,32 @@ cc_library(
             "-ffunction-sections",
             "-fdata-sections",
             "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-            "-isystem",
-            repository_path("contrib/zxc") + "/include",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fPIE",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "-std=gnu11",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-Werror",
+        "-I",
+        repository_path("contrib/zxc") + "/src/lib",
+        "-I",
+        repository_path("contrib/zxc") + "/src/lib/vendors",
+        "-isystem",
+        repository_path("contrib/zxc") + "/include",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
             "includes": [
@@ -137,13 +140,7 @@ cc_library(
             ],
         },
     }),
-    hdrs = [
-        ":headers_40a7660ab2c767f8",
-        ":headers_614bad3e84804da8",
-        ":headers_8d4811f52ef6e462",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
+    hdrs = _GENERATED_HDRS_0,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "ZXC_STATIC_DEFINE",
@@ -151,23 +148,10 @@ cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + [
-        "-llvm_system_c_headers",
-    ],
+    deps = _GENERATED_DEPS_0,
+    features = _GENERATED_FEATURES_0,
     alwayslink = False,
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
 cc_library(
@@ -182,37 +166,30 @@ cc_library(
             ":_zxc_decompress_default",
             ":_zxc_huffman_avx2",
             ":_zxc_huffman_avx512",
-            ":_zxc_huffman_default",
-            "@clickhouse//:clang_rt_builtins",
-            "@clickhouse//:cxx",
-            "@clickhouse//:cxxabi",
-            "@clickhouse//:glibc-compatibility",
-            "@clickhouse//:unwind",
-            ":_zxc__compile_0",
         ],
         "@platforms//cpu:aarch64": [
             ":_zxc_compress_default",
             ":_zxc_decompress_default",
-            ":_zxc_huffman_default",
-            "@clickhouse//:clang_rt_builtins",
-            "@clickhouse//:cxx",
-            "@clickhouse//:cxxabi",
-            "@clickhouse//:glibc-compatibility",
-            "@clickhouse//:unwind",
-            ":_zxc__compile_0",
         ],
-    }),
+    }) + [
+        ":_zxc_huffman_default",
+        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse//:cxx",
+        "@clickhouse//:cxxabi",
+        "@clickhouse//:glibc-compatibility",
+        "@clickhouse//:unwind",
+        ":_zxc__compile_0",
+    ],
 )
 
-cc_library(
-    name = "_zxc_compress_avx2__compile_0",
-    srcs = select({
+_GENERATED_SRCS_0 = select({
         "@platforms//cpu:x86_64": [
             ":src/lib/zxc_compress.c",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
+    })
+
+_GENERATED_COPTS_0 = select({
         "@platforms//cpu:x86_64": [
             "--no-default-config",
             "-fdiagnostics-color=always",
@@ -270,8 +247,9 @@ cc_library(
                 ],
             ],
         },
-    }),
-    hdrs = select({
+    })
+
+_GENERATED_HDRS_1 = select({
         "@platforms//cpu:x86_64": [
             ":headers_40a7660ab2c767f8",
             ":headers_614bad3e84804da8",
@@ -283,8 +261,9 @@ cc_library(
             "@clickhouse_sysroot//:linux_native_headers",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
+    })
+
+_GENERATED_LOCAL_DEFINES_0 = select({
         "@platforms//cpu:x86_64": [
             "STD_EXCEPTION_HAS_STACK_TRACE=1",
             "ZXC_FUNCTION_SUFFIX=_avx2",
@@ -294,16 +273,18 @@ cc_library(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
+    })
+
+_GENERATED_DEPS_1 = select({
         "@platforms//cpu:x86_64": [
             "@llvm-project//compiler-rt:headers",
             "@llvm-project//libc:libc_headers",
             "@llvm-project//libunwind:headers",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    features = [
+    })
+
+_GENERATED_FEATURES_1 = [
         "-fortify_source",
         "-default_compile_flags",
     ] + select({
@@ -311,22 +292,35 @@ cc_library(
             "-llvm_system_c_headers",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
+    })
+
+_GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@platforms//:incompatible",
         ],
-    }),
-    alwayslink = True,
-    additional_compiler_inputs = select({
+    })
+
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_1 = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_compile_files",
             "@clickhouse_llvm_project//:runtime_source_inputs",
             "@clickhouse_llvm_project//:runtime_generated_headers",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
+    })
+
+cc_library(
+    name = "_zxc_compress_avx2__compile_0",
+    srcs = _GENERATED_SRCS_0,
+    copts = _GENERATED_COPTS_0,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    alwayslink = True,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -339,23 +333,10 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_compress_avx2__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
-cc_library(
-    name = "_zxc_compress_avx512__compile_0",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":src/lib/zxc_compress.c",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
+_GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
             "--no-default-config",
             "-fdiagnostics-color=always",
@@ -416,21 +397,9 @@ cc_library(
                 ],
             ],
         },
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":headers_40a7660ab2c767f8",
-            ":headers_614bad3e84804da8",
-            ":headers_8d4811f52ef6e462",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
+    })
+
+_GENERATED_LOCAL_DEFINES_1 = select({
         "@platforms//cpu:x86_64": [
             "STD_EXCEPTION_HAS_STACK_TRACE=1",
             "ZXC_FUNCTION_SUFFIX=_avx512",
@@ -440,39 +409,19 @@ cc_library(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    })
+
+cc_library(
+    name = "_zxc_compress_avx512__compile_0",
+    srcs = _GENERATED_SRCS_0,
+    copts = _GENERATED_COPTS_1,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -485,24 +434,15 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_compress_avx512__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
-cc_library(
-    name = "_zxc_compress_default__compile_0",
-    srcs = [
-        ":src/lib/zxc_compress.c",
-    ],
-    copts = select({
+_GENERATED_COPTS_2 = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -513,32 +453,8 @@ cc_library(
             "-fdata-sections",
             "-faddrsig",
             "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -547,29 +463,30 @@ cc_library(
             "-ffunction-sections",
             "-fdata-sections",
             "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fPIE",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "-std=gnu11",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-Werror",
+        "-I",
+        repository_path("contrib/zxc") + "/src/lib",
+        "-I",
+        repository_path("contrib/zxc") + "/src/lib/vendors",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
             "includes": [
@@ -600,39 +517,29 @@ cc_library(
                 ],
             ],
         },
-    }),
-    hdrs = [
-        ":headers_40a7660ab2c767f8",
-        ":headers_614bad3e84804da8",
-        ":headers_8d4811f52ef6e462",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    local_defines = [
+    })
+
+_GENERATED_LOCAL_DEFINES_2 = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "ZXC_FUNCTION_SUFFIX=_default",
         "ZXC_STATIC_DEFINE",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ]
+
+cc_library(
+    name = "_zxc_compress_default__compile_0",
+    srcs = [
+        ":src/lib/zxc_compress.c",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + [
-        "-llvm_system_c_headers",
-    ],
+    copts = _GENERATED_COPTS_2,
+    hdrs = _GENERATED_HDRS_0,
+    local_defines = _GENERATED_LOCAL_DEFINES_2,
+    deps = _GENERATED_DEPS_0,
+    features = _GENERATED_FEATURES_0,
     alwayslink = True,
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
 cc_library(
@@ -647,129 +554,24 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "_zxc_decompress_avx2__compile_0",
-    srcs = select({
+_GENERATED_SRCS_1 = select({
         "@platforms//cpu:x86_64": [
             ":src/lib/zxc_decompress.c",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-mavx2",
-            "-mbmi",
-            "-mbmi2",
-            "-mlzcnt",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":headers_40a7660ab2c767f8",
-            ":headers_614bad3e84804da8",
-            ":headers_8d4811f52ef6e462",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "ZXC_FUNCTION_SUFFIX=_avx2",
-            "ZXC_STATIC_DEFINE",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    })
+
+cc_library(
+    name = "_zxc_decompress_avx2__compile_0",
+    srcs = _GENERATED_SRCS_1,
+    copts = _GENERATED_COPTS_0,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -782,140 +584,20 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_decompress_avx2__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
 cc_library(
     name = "_zxc_decompress_avx512__compile_0",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":src/lib/zxc_decompress.c",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-mavx512f",
-            "-mavx512bw",
-            "-mavx512vbmi",
-            "-mavx512vbmi2",
-            "-mbmi",
-            "-mbmi2",
-            "-mlzcnt",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":headers_40a7660ab2c767f8",
-            ":headers_614bad3e84804da8",
-            ":headers_8d4811f52ef6e462",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "ZXC_FUNCTION_SUFFIX=_avx512",
-            "ZXC_STATIC_DEFINE",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    srcs = _GENERATED_SRCS_1,
+    copts = _GENERATED_COPTS_1,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -928,12 +610,7 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_decompress_avx512__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
 cc_library(
@@ -941,141 +618,13 @@ cc_library(
     srcs = [
         ":src/lib/zxc_decompress.c",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-        "aarch64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = [
-        ":headers_40a7660ab2c767f8",
-        ":headers_614bad3e84804da8",
-        ":headers_8d4811f52ef6e462",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    local_defines = [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "ZXC_FUNCTION_SUFFIX=_default",
-        "ZXC_STATIC_DEFINE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + [
-        "-llvm_system_c_headers",
-    ],
+    copts = _GENERATED_COPTS_2,
+    hdrs = _GENERATED_HDRS_0,
+    local_defines = _GENERATED_LOCAL_DEFINES_2,
+    deps = _GENERATED_DEPS_0,
+    features = _GENERATED_FEATURES_0,
     alwayslink = True,
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
 cc_library(
@@ -1090,129 +639,24 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "_zxc_huffman_avx2__compile_0",
-    srcs = select({
+_GENERATED_SRCS_2 = select({
         "@platforms//cpu:x86_64": [
             ":src/lib/zxc_huffman.c",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-mavx2",
-            "-mbmi",
-            "-mbmi2",
-            "-mlzcnt",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":headers_40a7660ab2c767f8",
-            ":headers_614bad3e84804da8",
-            ":headers_8d4811f52ef6e462",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "ZXC_FUNCTION_SUFFIX=_avx2",
-            "ZXC_STATIC_DEFINE",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    })
+
+cc_library(
+    name = "_zxc_huffman_avx2__compile_0",
+    srcs = _GENERATED_SRCS_2,
+    copts = _GENERATED_COPTS_0,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -1225,140 +669,20 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_huffman_avx2__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
 cc_library(
     name = "_zxc_huffman_avx512__compile_0",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":src/lib/zxc_huffman.c",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-mavx512f",
-            "-mavx512bw",
-            "-mavx512vbmi",
-            "-mavx512vbmi2",
-            "-mbmi",
-            "-mbmi2",
-            "-mlzcnt",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":headers_40a7660ab2c767f8",
-            ":headers_614bad3e84804da8",
-            ":headers_8d4811f52ef6e462",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "ZXC_FUNCTION_SUFFIX=_avx512",
-            "ZXC_STATIC_DEFINE",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    srcs = _GENERATED_SRCS_2,
+    copts = _GENERATED_COPTS_1,
+    hdrs = _GENERATED_HDRS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    deps = _GENERATED_DEPS_1,
+    features = _GENERATED_FEATURES_1,
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
 )
 
 cc_library(
@@ -1371,12 +695,7 @@ cc_library(
         "@clickhouse//:unwind",
         ":_zxc_huffman_avx512__compile_0",
     ],
-    target_compatible_with = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@platforms//:incompatible",
-        ],
-    }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
 )
 
 cc_library(
@@ -1384,141 +703,13 @@ cc_library(
     srcs = [
         ":src/lib/zxc_huffman.c",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=x86-64-v3",
-            "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fPIE",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=gnu11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-Werror",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib",
-            "-I",
-            repository_path("contrib/zxc") + "/src/lib/vendors",
-        ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-        "aarch64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-                [
-                    "-isystem",
-                    "source",
-                    "libcxxabi/include",
-                ],
-            ],
-        },
-    }),
-    hdrs = [
-        ":headers_40a7660ab2c767f8",
-        ":headers_614bad3e84804da8",
-        ":headers_8d4811f52ef6e462",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    local_defines = [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "ZXC_FUNCTION_SUFFIX=_default",
-        "ZXC_STATIC_DEFINE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    features = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + [
-        "-llvm_system_c_headers",
-    ],
+    copts = _GENERATED_COPTS_2,
+    hdrs = _GENERATED_HDRS_0,
+    local_defines = _GENERATED_LOCAL_DEFINES_2,
+    deps = _GENERATED_DEPS_0,
+    features = _GENERATED_FEATURES_0,
     alwayslink = True,
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
 cc_library(

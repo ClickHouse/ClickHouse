@@ -71,11 +71,12 @@ cc_library(
         ":src/syscall.c",
         ":src/version.c",
     ],
-    copts = select({
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=x86-64-v3",
             "-mpclmul",
             "-fasynchronous-unwind-tables",
@@ -107,13 +108,8 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/liburing") + "/config/x86_64/contrib/liburing/src/include-compat",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/liburing") + "/config/x86_64/contrib/liburing/src/include",
-            "-isystem",
-            repository_path("contrib/liburing") + "/src/include",
         ],
         "@platforms//cpu:aarch64": [
-            "--no-default-config",
-            "-fdiagnostics-color=always",
-            "-pipe",
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-fasynchronous-unwind-tables",
             "-fdebug-compilation-dir=.",
@@ -143,10 +139,11 @@ cc_library(
             "$(GENDIR)/" + repository_path("contrib/liburing") + "/config/aarch64/contrib/liburing/src/include-compat",
             "-isystem",
             "$(GENDIR)/" + repository_path("contrib/liburing") + "/config/aarch64/contrib/liburing/src/include",
-            "-isystem",
-            repository_path("contrib/liburing") + "/src/include",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    }) + [
+        "-isystem",
+        repository_path("contrib/liburing") + "/src/include",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
             "includes": [
@@ -182,16 +179,15 @@ cc_library(
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
             ":config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
-            ":headers_69ed5284e63382fa",
-            ":headers_d00408dcd3ecf43c",
         ],
         "@platforms//cpu:aarch64": [
             ":config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
             ":config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
-            ":headers_69ed5284e63382fa",
-            ":headers_d00408dcd3ecf43c",
         ],
     }) + [
+        ":headers_69ed5284e63382fa",
+        ":headers_d00408dcd3ecf43c",
+    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
     ],
     local_defines = [

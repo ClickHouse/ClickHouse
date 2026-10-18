@@ -5,6 +5,7 @@ import json
 import re
 
 import llvm_targets
+from compact_build import compact
 from repository_inputs import REPOSITORIES, ROOT, execution_path, repository
 
 ARCHES = ('x86_64', 'aarch64')
@@ -143,6 +144,7 @@ class BuildFile:
         self.owners = owners
         self.loads = {}
         self.rules = []
+        self.names = set()
         self.external_inputs = set()
         self.local_sources = set()
         self.root_sources = set()
@@ -166,6 +168,7 @@ class BuildFile:
         return value
 
     def rule(self, kind, name, attrs):
+        self.names.add(name)
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -379,7 +382,7 @@ class BuildFile:
                        for path, names in sorted(loads.items()))
 
     def text(self):
-        return '\n'.join(self.rules)
+        return compact('\n'.join(self.rules))
 
 
 def dependency_inputs(builds, owners):

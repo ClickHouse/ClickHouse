@@ -42,8 +42,15 @@ def _object(operand, libraries):
         fail("Missing Bazel object {} in {}".format(operand[2], _archive(library)))
     return objects[operand[2]]
 
+def _objects(ranges, libraries):
+    return [
+        _object(["object", ref, index], libraries)
+        for ref, start, end in ranges
+        for index in range(start, end)
+    ]
+
 def _cmake_link_impl(ctx):
-    plan = json.decode(ctx.attr.plan)
+    plan = CMAKE_LINK
     if len(ctx.attr.refs) != len(plan["expected_objects"]):
         fail("cmake_link_data.bzl and refs do not describe the same link")
     libraries = []
@@ -78,7 +85,7 @@ def _cmake_link_impl(ctx):
     archives = []
     for record in plan["archives"]:
         if "objects" in record:
-            files = [_object(v, libraries) for v in record["objects"]]
+            files = _objects(record["objects"], libraries)
             output = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"])
             args = ctx.actions.args()
             args.use_param_file("@%s", use_always = True)
@@ -100,7 +107,7 @@ def _cmake_link_impl(ctx):
             if "append" in record and not ctx.attr.cargo_archives:
                 # The default rules_rs build compiles Skim's cxx sources
                 # separately. The native Cargo build already bundles them.
-                files = [_object(v, libraries) for v in record["append"]]
+                files = _objects(record["append"], libraries)
                 output = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"])
                 script = ctx.actions.declare_file(ctx.label.name + "_archives/" + record["name"] + ".mri")
                 ctx.actions.write(
@@ -170,7 +177,6 @@ _cmake_link = rule(
     executable = True,
     attrs = {
         "cargo_archives": attr.bool(mandatory = True),
-        "plan": attr.string(mandatory = True),
         "refs": attr.label_list(mandatory = True, providers = [CcInfo]),
         "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_x86_64_link_files"),
         "_sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
@@ -189,10 +195,5 @@ def cmake_link(name, **kwargs):
             "//conditions:default": False,
         }),
         refs = CMAKE_LINK["refs"],
-        plan = json.encode({
-            "expected_objects": CMAKE_LINK["expected_objects"],
-            "archives": CMAKE_LINK["archives"],
-            "sequence": CMAKE_LINK["sequence"],
-        }),
         **kwargs
     )
