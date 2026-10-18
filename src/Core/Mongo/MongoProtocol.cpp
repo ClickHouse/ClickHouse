@@ -245,12 +245,20 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     /// A reply with cursor id `0` tells the client that it has the whole result, and there is no
     /// way to tell it that the result was cut short. A limit of the profile with the `break` mode
     /// would stop the query after a prefix of the result without an error, so the limits are kept,
-    /// but overflowing them is an error.
+    /// but overflowing them is an error. The same holds for the limits of the intermediate steps:
+    /// a `DISTINCT`, a `GROUP BY` or a sort that stops at its limit in the `break` (or `any`) mode
+    /// answers with a part of the result as if it were all of it.
     query_context->setSetting("result_overflow_mode", String("throw"));
     query_context->setSetting("read_overflow_mode", String("throw"));
     query_context->setSetting("read_overflow_mode_leaf", String("throw"));
     query_context->setSetting("timeout_overflow_mode", String("throw"));
     query_context->setSetting("timeout_overflow_mode_leaf", String("throw"));
+    query_context->setSetting("distinct_overflow_mode", String("throw"));
+    query_context->setSetting("group_by_overflow_mode", String("throw"));
+    query_context->setSetting("sort_overflow_mode", String("throw"));
+    query_context->setSetting("set_overflow_mode", String("throw"));
+    query_context->setSetting("join_overflow_mode", String("throw"));
+    query_context->setSetting("transfer_overflow_mode", String("throw"));
 
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
     /// way the parsing expects rather than the way the user's profile asks.
