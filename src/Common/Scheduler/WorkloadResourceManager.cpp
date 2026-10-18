@@ -357,8 +357,9 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
 }
 
-WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
-    : settings(settings_)
+WorkloadResourceManager::Classifier::Classifier(const String & workload_name_, const ClassifierSettings & settings_)
+    : workload_name(workload_name_)
+    , settings(settings_)
     // One context per classifier (i.e. per query), built from the query's scheduling settings; get()
     // stamps it onto every link so the query-aware schedulers always have it.
     , scheduling_context(std::make_shared<ResourceSchedulingContext>(
@@ -515,7 +516,7 @@ bool WorkloadResourceManager::hasResource(const String & resource_name) const
 
 ClassifierPtr WorkloadResourceManager::acquire(const String & workload_name, const ClassifierSettings & settings)
 {
-    auto classifier = std::make_shared<Classifier>(settings);
+    auto classifier = std::make_shared<Classifier>(workload_name, settings);
 
     // Attach classifier to all resources in parallel (executed in every scheduler thread)
     std::vector<std::future<void>> futures;

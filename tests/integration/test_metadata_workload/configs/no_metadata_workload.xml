@@ -1,0 +1,3 @@
+<clickhouse>
+    <use_metadata_workload>0</use_metadata_workload>
+</clickhouse>
