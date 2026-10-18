@@ -44,6 +44,7 @@ protected:
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    bool rows_ttl_provenance_invalidated = false;
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;

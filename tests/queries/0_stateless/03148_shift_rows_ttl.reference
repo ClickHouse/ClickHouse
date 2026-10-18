@@ -1,0 +1,20 @@
+Test MergeTree to modify TTL.
+6000
+Test shortening TTL.
+3000
+Perform Merge after inserting data.
+4000
+Testing for extended TTL.
+4000
+Perform Merge after inserting data.
+6000
+Test ReplicatedMergeTree to modify TTL.
+6000
+Test shortening TTL.
+3000
+Perform Merge after inserting data.
+4000
+Testing for extended TTL.
+4000
+Perform Merge after inserting data.
+6000

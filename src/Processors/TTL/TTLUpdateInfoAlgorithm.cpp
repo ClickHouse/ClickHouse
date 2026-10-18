@@ -55,6 +55,21 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
     else if (ttl_update_field == TTLUpdateField::TABLE_TTL)
     {
         data_part->ttl_infos.table_ttl = new_ttl_info;
+        /// Record the rows-TTL expression and time zone these timestamps were computed under
+        /// (see `MergeTreeDataPartTTLInfos`) - unless some row's timestamp is exactly 0 (the epoch),
+        /// which means "no TTL" to the rest of the machinery and is excluded from the stored `min`:
+        /// with such a row the bounds are not a complete summary of the part and must not carry a
+        /// fingerprint.
+        if (new_ttl_info.has_epoch_timestamps)
+        {
+            data_part->ttl_infos.table_ttl_expression.clear();
+            data_part->ttl_infos.table_ttl_timezone.clear();
+        }
+        else
+        {
+            data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(description);
+            data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description, date_lut);
+        }
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     }
     else if (ttl_update_field == TTLUpdateField::COLUMNS_TTL)
