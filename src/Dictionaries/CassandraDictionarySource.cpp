@@ -42,7 +42,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
 #endif
     };
-    factory.registerSource("cassandra", create_table_source, Documentation{
+    factory.registerSource("cassandra", create_table_source, SecretArgumentsSpec{.secret_keys = {"password"}}, Documentation{
         .description = R"DOCS_MD(
 # Cassandra dictionary source
 

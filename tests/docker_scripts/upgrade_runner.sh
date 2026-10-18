@@ -180,6 +180,10 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
     clickhouse stop --force
 )
 
+# A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
+# endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
+timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
+
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
 # Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric

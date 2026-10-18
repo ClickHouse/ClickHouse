@@ -13,6 +13,8 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/SystemConfiguration.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -120,6 +122,7 @@
 #include <Storages/registerStorages.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
@@ -426,6 +429,7 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
+    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -434,6 +438,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsString statistics_cache_policy;
+    extern const ServerSettingsUInt64 statistics_cache_size;
+    extern const ServerSettingsDouble statistics_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
@@ -866,6 +873,13 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
+    Poco::AutoPtr<Poco::Util::MapConfiguration> properties(new Poco::Util::MapConfiguration);
+    Poco::Util::AbstractConfiguration::Keys property_keys;
+    config().keys("application", property_keys);
+    for (const auto & key : property_keys)
+        properties->setString("application." + key, config().getRawString("application." + key));
+    application_properties = properties;
+
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
@@ -1359,6 +1373,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1868,7 +1883,6 @@ try
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
 
-#if defined(OS_LINUX)
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
     /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
@@ -1885,13 +1899,22 @@ try
             seccomp_status.allowed_syscalls,
             SettingFieldSeccompMode(seccomp_mode).toString());
     else if (seccomp_mode != SeccompMode::Disabled)
+#if defined(OS_LINUX)
         LOG_WARNING(
             log,
             "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
             "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
             SettingFieldSeccompMode(seccomp_mode).toString(),
             seccomp_status.not_installed_reason);
+#else
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+#endif
 
+#if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -2313,6 +2336,15 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    String statistics_cache_policy = server_settings[ServerSetting::statistics_cache_policy];
+    size_t statistics_cache_size = server_settings[ServerSetting::statistics_cache_size];
+    double statistics_cache_size_ratio = server_settings[ServerSetting::statistics_cache_size_ratio];
+    if (statistics_cache_size > max_cache_size)
+    {
+        statistics_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(statistics_cache_size));
+    }
+    global_context->setStatisticsCache(statistics_cache_policy, statistics_cache_size, statistics_cache_size_ratio);
     String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
     /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
     size_t columns_cache_size = config().getUInt64("columns_cache_size",
@@ -2618,6 +2650,15 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
+            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
+            /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
+            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
+            file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
+            const ConfigurationPtr reload_config = file_and_command_line;
+
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
             /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
             /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
@@ -2627,7 +2668,7 @@ try
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
-                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
+                *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -2645,13 +2686,13 @@ try
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
-            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
-                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+            if (const auto requested_seccomp_mode = getRequestedSeccompMode();
+                requested_seccomp_mode && *requested_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
                 LOG_WARNING(
                     log,
                     "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
                     "after a restart: the seccomp policy of a running process cannot be changed",
-                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    SettingFieldSeccompMode(*requested_seccomp_mode).toString(),
                     new_server_settings[ServerSetting::seccomp].toString());
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
@@ -2742,6 +2783,8 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(config(), logger());
+            /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
+            /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
@@ -2930,6 +2973,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,
@@ -2954,11 +2998,11 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(config()))
-                    global_context->reloadZooKeeperIfChanged(loaded_config);
+                if (zkutil::hasZooKeeperConfig(*reload_config))
+                    global_context->reloadZooKeeperIfChanged(reload_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
-                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
+                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
@@ -2987,6 +3031,7 @@ try
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateStatisticsCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3012,6 +3057,7 @@ try
             CertificateReloader::instance().tryReloadAll(config());
 #endif
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            global_context->reloadStatelessWorkersConfig(config());
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
 
@@ -3068,7 +3114,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = loaded_config;
+            latest_config = reload_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -4716,35 +4762,80 @@ void Server::createServers(
             }
         }
 
-        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
+        bool has_catalog_port = !config.getString("iceberg_rest_catalog.port", "").empty();
+        bool has_catalog_secure_port = !config.getString("iceberg_rest_catalog.secure_port", "").empty();
+        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG)
+            && (has_catalog_port || has_catalog_secure_port))
         {
-            port_name = "iceberg_rest_catalog.port";
+            auto is_listening = [&](const char * name)
+            {
+                return std::any_of(servers.begin(), servers.end(), [&](const auto & server)
+                {
+                    return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == name;
+                });
+            };
+
+            /// Both listeners share one handler factory. Create it only if some configured port is not listening yet.
+            const bool already_listening = (!has_catalog_port || is_listening("iceberg_rest_catalog.port"))
+                && (!has_catalog_secure_port || is_listening("iceberg_rest_catalog.secure_port"));
+
             HTTPRequestHandlerFactoryPtr handler_factory;
-            try
+            if (!already_listening)
             {
-                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
-            }
-            catch (...)
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
             }
 
             if (handler_factory)
             {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                if (has_catalog_port)
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port);
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        ServerType::Type::ICEBERG_REST_CATALOG,
-                        "Iceberg REST catalog: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-                });
+                    port_name = "iceberg_rest_catalog.port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                    });
+                }
+
+                /// The TLS listener uses the certificate from the <openSSL><server> section.
+                if (has_catalog_secure_port)
+                {
+                    port_name = "iceberg_rest_catalog.secure_port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
+                    {
+#if USE_SSL
+                        Poco::Net::SecureServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: https://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS for the Iceberg REST catalog is disabled because Poco library was built without NetSSL support.");
+#endif
+                    });
+                }
             }
         }
     }
@@ -5039,7 +5130,8 @@ void Server::updateServers(
             }
             /// The warehouse name is baked into the Iceberg REST catalog handler factory, so if
             /// the section changes, the listener must be restarted.
-            if (port_name == "iceberg_rest_catalog.port" && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
+            if ((port_name == "iceberg_rest_catalog.port" || port_name == "iceberg_rest_catalog.secure_port")
+                && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
             {
                 force_restart = true;
                 LOG_TRACE(log, "<iceberg_rest_catalog> had been changed, will reload {}", server->getDescription());
