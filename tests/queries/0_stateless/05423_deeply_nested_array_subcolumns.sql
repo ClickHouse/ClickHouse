@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: `MsgPack` is not available in the fast test build
+
 -- Enumerating the subcolumns of a deeply nested `Array` type used to take time cubic in the nesting depth
 -- (seconds of CPU for a depth of 2000 in a release build), because `SerializationArray::supportsPooling`
 -- walked the whole nested chain and was called for every level of every subcolumn.
