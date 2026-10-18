@@ -47,6 +47,7 @@ public:
         bool with_envelope,
         bool flatten_google_wrappers,
         bool oneof_presence,
+        Int64 input_datetime64_scale,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -56,6 +57,7 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool defaults_for_nullable_google_wrappers,
+        Int64 output_datetime64_scale,
         ProtobufWriter & writer);
 };
 

@@ -1,0 +1,30 @@
+-- pre-epoch (Unix seconds)
+1000-01-01 00:00:00.000
+-- post-epoch (Unix seconds)
+3000-01-01 00:00:00.000
+-- seconds written at precision 0 still decode at precision 3
+2020-01-01 00:00:00.000
+-- default output truncates subseconds to Unix seconds
+2020-01-01 00:00:00.000
+-- documented upper bound at precision 7 (scaled ticks)
+9999-12-31 23:59:59.9999999
+-- past upper bound at precision 7 (errs)
+-- scaled ticks near the Unix epoch require a matching precision
+1970-01-01 00:00:20.5555555
+-- scaled ticks for a regular timestamp require a matching precision
+2024-06-15 12:34:56.123456
+-- output scale must match the column precision (errs)
+-- input scale must match the column precision (errs)
+-- reading ticks into a different column precision is rejected (errs)
+-- matching ticks preserve subseconds
+2020-01-01 00:00:00.123
+-- scale 0 ticks are Unix seconds
+2020-01-01 00:00:00
+-- scale outside the DateTime64 range is rejected (errs)
+-- double field stores fractional Unix seconds (independent of the scale setting)
+-- double read preserves subseconds without the scale setting
+2020-01-01 00:00:00.125
+-- double write preserves subseconds without the scale setting
+1577836800.125
+-- fractional double 1.5 is Unix seconds, not truncated ticks
+1970-01-01 00:00:01.500
