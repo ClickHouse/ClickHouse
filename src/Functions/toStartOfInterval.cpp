@@ -79,6 +79,45 @@ Int64 multiplyToResultScale(Int64 value, Int64 multiplier)
     return result;
 }
 
+/// The range [begin, end) of the values in the scale `scale_multiplier` whose whole seconds (rounded down) are in the
+/// range of the LUT, see `DateLUTImpl::isTimeInLUTRange`. Its bounds are private, so they are found by a binary search.
+/// The range is clamped to Int64 when its bounds in the scale do not fit.
+std::pair<Int64, Int64> lutRangeInScale(Int64 scale_multiplier)
+{
+    static const auto range_in_seconds = []
+    {
+        /// The first time in the range, searched below the epoch, and the first time after it, searched above.
+        constexpr Int64 search_limit = Int64(1) << 40;
+        Int64 low = -search_limit;
+        Int64 high = 0;
+        chassert(DateLUTImpl::isTimeInLUTRange(high) && !DateLUTImpl::isTimeInLUTRange(low));
+        while (high - low > 1)
+        {
+            const Int64 middle = low + (high - low) / 2;
+            (DateLUTImpl::isTimeInLUTRange(middle) ? high : low) = middle;
+        }
+        const Int64 begin = high;
+
+        low = 0;
+        high = search_limit;
+        chassert(DateLUTImpl::isTimeInLUTRange(low) && !DateLUTImpl::isTimeInLUTRange(high));
+        while (high - low > 1)
+        {
+            const Int64 middle = low + (high - low) / 2;
+            (DateLUTImpl::isTimeInLUTRange(middle) ? low : high) = middle;
+        }
+        return std::pair<Int64, Int64>{begin, high};
+    }();
+
+    Int64 begin = 0;
+    Int64 end = 0;
+    if (common::mulOverflow(range_in_seconds.first, scale_multiplier, begin))
+        begin = std::numeric_limits<Int64>::min();
+    if (common::mulOverflow(range_in_seconds.second, scale_multiplier, end))
+        end = std::numeric_limits<Int64>::max();
+    return {begin, end};
+}
+
 /// The number of ticks of a subsecond unit in a second, and 1 for the other units.
 template <IntervalKind::Kind unit>
 constexpr Int64 subsecondUnitScale()
@@ -365,6 +404,37 @@ private:
         else
         {
             static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
+
+            /// A result in the scale of the argument (`to_start_of_interval_preserves_argument_type`): rounding the
+            /// whole seconds down to the divisor and scaling them back is rounding the value down to the divisor in
+            /// the scale of the argument, which needs one division per row instead of two and no overflow check.
+            Int64 divisor_in_scale = 0;
+            if (result_scale_multiplier == scale_multiplier && !common::mulOverflow(divisor, scale_multiplier, divisor_in_scale))
+            {
+                /// The values whose whole seconds are in the LUT range, see `lutRangeInScale`.
+                const auto [range_begin, range_end] = lutRangeInScale(scale_multiplier);
+                const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor_in_scale);
+                for (size_t i = 0; i != size; ++i)
+                {
+                    const Int64 value = static_cast<Int64>(time_data[i]);
+                    /// A one-second interval never consults the LUT, so it needs no range check. The whole seconds of
+                    /// a value are negative exactly when the value is.
+                    if (divisor != 1 && unlikely(value < range_begin || value >= range_end || (value < 0 && !valid_before_epoch)))
+                    {
+                        result_data[i] = saturatingResultCast<saturate, ResultFieldType>(multiplyToResultScale(
+                            ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier), result_scale_multiplier));
+                        continue;
+                    }
+                    Int64 res = value / divider * divisor_in_scale;
+                    /// Rounding a negative value down can step below the range of Int64, then it throws as the scaling does.
+                    if (value < 0 && res != value && unlikely(common::subOverflow(res, divisor_in_scale, res)))
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                            "The result of function toStartOfInterval for {} does not fit into the DateTime64 result", value);
+                    result_data[i] = static_cast<ResultFieldType>(res);
+                }
+                return true;
+            }
+
             /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
             const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
             /// The whole seconds rounded towards negative infinity, see `wholeSecondsRoundedDown`.
