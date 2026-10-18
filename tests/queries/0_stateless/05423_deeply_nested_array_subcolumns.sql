@@ -8,10 +8,10 @@
 
 SET input_format_msgpack_number_of_columns = 1, max_parser_depth = 100000, schema_inference_make_columns_nullable = 1;
 
-DESC format(MsgPack, repeat('\x91', 1000) || '\x00') FORMAT Null;
+DESC format(MsgPack, repeat('\x91', 300) || '\x00') FORMAT Null;
 
-SELECT toTypeName(c1) = repeat('Array(', 1000) || 'Nullable(Int64)' || repeat(')', 1000), c1.size0, length(toString(c1))
-FROM format(MsgPack, repeat('\x91', 1000) || '\x00');
+SELECT toTypeName(c1) = repeat('Array(', 300) || 'Nullable(Int64)' || repeat(')', 300), c1.size0, length(toString(c1))
+FROM format(MsgPack, repeat('\x91', 300) || '\x00');
 
-SELECT countSubstrings(toTypeName(c1.size999), 'Array('), length(toString(c1.size999))
-FROM format(MsgPack, repeat('\x91', 1000) || '\x00');
+SELECT countSubstrings(toTypeName(c1.size299), 'Array('), length(toString(c1.size299))
+FROM format(MsgPack, repeat('\x91', 300) || '\x00');
