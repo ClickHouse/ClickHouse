@@ -205,3 +205,115 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM lambda_expression_index
         query_plan_fuse_filter_into_array_join = 1);
 
 DROP TABLE lambda_expression_index;
+
+DROP TABLE IF EXISTS lambda_capture_guard;
+CREATE TABLE lambda_capture_guard
+(
+    id UInt64,
+    arr Array(UInt64),
+    varying_offset UInt64,
+    INDEX idx_u64_const arrayMap(v -> v + toUInt64(1), arr) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO lambda_capture_guard
+SELECT number, [number], toUInt64(if(number % 2 = 0, 2, 1))
+FROM numbers(16);
+
+SELECT 'UInt64 row capture direct IN indexed rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2), toUInt64(3)]
+FROM lambda_capture_guard
+WHERE arrayMap(v -> v + varying_offset, arr) IN ([toUInt64(4)]);
+SELECT 'UInt64 row capture direct IN full scan rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2), toUInt64(3)]
+FROM lambda_capture_guard
+WHERE arrayMap(v -> v + varying_offset, arr) IN ([toUInt64(4)])
+SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_u64_const') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt64 row capture direct IN declines index and reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM lambda_capture_guard
+    WHERE arrayMap(v -> v + varying_offset, arr) IN ([toUInt64(4)]));
+
+SELECT 'UInt64 row capture arrayJoin IN indexed rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2), toUInt64(3)]
+FROM lambda_capture_guard
+WHERE arrayJoin(arrayMap(v -> v + varying_offset, arr)) IN (toUInt64(4))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+    query_plan_fuse_filter_into_array_join = 1;
+SELECT 'UInt64 row capture arrayJoin IN full scan rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2), toUInt64(3)]
+FROM lambda_capture_guard
+WHERE arrayJoin(arrayMap(v -> v + varying_offset, arr)) IN (toUInt64(4))
+SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1,
+    query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_u64_const') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt64 row capture arrayJoin IN declines index and reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM lambda_capture_guard
+    WHERE arrayJoin(arrayMap(v -> v + varying_offset, arr)) IN (toUInt64(4))
+    SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+        query_plan_fuse_filter_into_array_join = 1);
+
+SELECT 'changed UInt64 constant direct IN indexed rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2)]
+FROM lambda_capture_guard
+WHERE arrayMap(v -> v + toUInt64(2), arr) IN ([toUInt64(4)]);
+SELECT 'changed UInt64 constant direct IN full scan rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2)]
+FROM lambda_capture_guard
+WHERE arrayMap(v -> v + toUInt64(2), arr) IN ([toUInt64(4)])
+SETTINGS use_skip_indexes = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_u64_const') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'changed UInt64 constant direct IN declines index and reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM lambda_capture_guard
+    WHERE arrayMap(v -> v + toUInt64(2), arr) IN ([toUInt64(4)]));
+
+SELECT 'changed UInt64 constant arrayJoin IN indexed rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2)]
+FROM lambda_capture_guard
+WHERE arrayJoin(arrayMap(v -> v + toUInt64(2), arr)) IN (toUInt64(4))
+SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+    query_plan_fuse_filter_into_array_join = 1;
+SELECT 'changed UInt64 constant arrayJoin IN full scan rows',
+       arraySort(groupArray(toUInt64(id))) = [toUInt64(2)]
+FROM lambda_capture_guard
+WHERE arrayJoin(arrayMap(v -> v + toUInt64(2), arr)) IN (toUInt64(4))
+SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1,
+    query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_u64_const') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'changed UInt64 constant arrayJoin IN declines index and reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM lambda_capture_guard
+    WHERE arrayJoin(arrayMap(v -> v + toUInt64(2), arr)) IN (toUInt64(4))
+    SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+        query_plan_fuse_filter_into_array_join = 1);
+
+DROP TABLE lambda_capture_guard;

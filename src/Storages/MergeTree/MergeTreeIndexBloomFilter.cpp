@@ -61,6 +61,7 @@
 #include <cstring>
 #include <type_traits>
 #include <typeinfo>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -208,12 +209,33 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
+enum class LambdaInputKind : UInt8
+{
+    Argument,
+    Capture,
+};
+
+struct LambdaInputSlot
+{
+    LambdaInputKind kind;
+    size_t index;
+
+    bool operator==(const LambdaInputSlot &) const = default;
+};
+
+struct LambdaBodyBinding
+{
+    std::unordered_map<const ActionsDAG::Node *, LambdaInputSlot> query_inputs;
+    std::unordered_map<const ActionsDAG::Node *, LambdaInputSlot> index_inputs;
+};
+
 struct ExpressionNodePair
 {
     const ActionsDAG::Node * query_node;
     const ActionsDAG::Node * index_node;
     bool is_lambda_carrier = false;
     bool inside_lambda_body = false;
+    std::shared_ptr<const LambdaBodyBinding> body_binding;
 
     bool operator==(const ExpressionNodePair &) const = default;
 };
@@ -226,7 +248,9 @@ struct ExpressionNodePairHash
         const auto index_hash = std::hash<const ActionsDAG::Node *>{}(pair.index_node);
         const auto pair_hash = query_hash ^ (index_hash + 0x9e3779b9 + (query_hash << 6) + (query_hash >> 2));
         const auto lambda_hash = pair_hash ^ (static_cast<size_t>(pair.is_lambda_carrier) + 0x9e3779b9 + (pair_hash << 6) + (pair_hash >> 2));
-        return lambda_hash ^ (static_cast<size_t>(pair.inside_lambda_body) + 0x9e3779b9 + (lambda_hash << 6) + (lambda_hash >> 2));
+        const auto body_hash = lambda_hash ^ (static_cast<size_t>(pair.inside_lambda_body) + 0x9e3779b9 + (lambda_hash << 6) + (lambda_hash >> 2));
+        const auto binding_hash = std::hash<const LambdaBodyBinding *>{}(pair.body_binding.get());
+        return body_hash ^ (binding_hash + 0x9e3779b9 + (body_hash << 6) + (body_hash >> 2));
     }
 };
 
@@ -855,10 +879,10 @@ enum class LambdaCarrierKind : UInt8
 
 struct LambdaCarrierView
 {
-    LambdaCarrierKind kind;
-    const LambdaCapture * capture;
-    const ActionsDAG * body;
-    const ActionsDAG::Node * node;
+    LambdaCarrierKind kind = LambdaCarrierKind::FunctionCapture;
+    const LambdaCapture * capture = nullptr;
+    const ActionsDAG * body = nullptr;
+    const ActionsDAG::Node * node = nullptr;
     const ColumnFunction * column_function = nullptr;
 };
 
@@ -904,15 +928,12 @@ bool sameLambdaMetadata(const LambdaCapture & left, const LambdaCapture & right,
         || left.lambda_arguments.size() != right.lambda_arguments.size()
         || !budget.consume(left.captured_names.size()) || !budget.consume(right.captured_names.size())
         || !budget.consume(left.lambda_arguments.size()) || !budget.consume(right.lambda_arguments.size())
-        || left.allow_constant_folding != right.allow_constant_folding
-        || !sameBoundedName(left.return_name, right.return_name, budget)
         || !sameType(left.return_type, right.return_type, budget))
         return false;
 
     for (size_t i = 0; i < left.captured_names.size(); ++i)
     {
-        if (!sameBoundedName(left.captured_names[i], right.captured_names[i], budget)
-            || typeid_cast<const DataTypeFunction *>(left.captured_types[i].get())
+        if (typeid_cast<const DataTypeFunction *>(left.captured_types[i].get())
             || typeid_cast<const DataTypeFunction *>(right.captured_types[i].get())
             || !sameType(left.captured_types[i], right.captured_types[i], budget))
             return false;
@@ -933,6 +954,96 @@ bool sameLambdaMetadata(const LambdaCapture & left, const LambdaCapture & right,
     return true;
 }
 
+bool addLambdaNameSlot(
+    std::unordered_map<String, LambdaInputSlot> & slots,
+    const String & name,
+    LambdaInputSlot slot,
+    ExpressionMatchBudget & budget)
+{
+    return budget.consume() && budget.consume(name.size()) && slots.emplace(name, slot).second;
+}
+
+bool mapLambdaBodyInputs(
+    const ActionsDAG::Nodes & nodes,
+    const ActionsDAG::NodeRawConstPtrs & inputs,
+    const LambdaCapture & capture,
+    std::unordered_map<const ActionsDAG::Node *, LambdaInputSlot> & bindings,
+    ExpressionMatchBudget & budget)
+{
+    std::unordered_map<String, LambdaInputSlot> slots;
+    std::vector<UInt8> seen_arguments(capture.lambda_arguments.size(), 0);
+    std::vector<UInt8> seen_captures(capture.captured_names.size(), 0);
+    std::vector<DataTypePtr> argument_types;
+    if (!budget.consume(capture.lambda_arguments.size()))
+        return false;
+    argument_types.reserve(capture.lambda_arguments.size());
+
+    auto argument = capture.lambda_arguments.begin();
+    for (size_t i = 0; i < capture.lambda_arguments.size(); ++i, ++argument)
+    {
+        argument_types.push_back(argument->type);
+        if (!addLambdaNameSlot(slots, argument->name, {LambdaInputKind::Argument, i}, budget))
+            return false;
+    }
+
+    for (size_t i = 0; i < capture.captured_names.size(); ++i)
+        if (!addLambdaNameSlot(slots, capture.captured_names[i], {LambdaInputKind::Capture, i}, budget))
+            return false;
+
+    if (!budget.consume(nodes.size()))
+        return false;
+
+    for (const auto & node : nodes)
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        if (!node.children.empty() || !budget.consume() || !budget.consume(node.result_name.size()))
+            return false;
+
+        const auto slot = slots.find(node.result_name);
+        if (slot == slots.end())
+            return false;
+
+        const DataTypePtr & expected_type = slot->second.kind == LambdaInputKind::Argument
+            ? argument_types[slot->second.index]
+            : capture.captured_types[slot->second.index];
+        if (!sameType(node.result_type, expected_type, budget))
+            return false;
+
+        if (slot->second.kind == LambdaInputKind::Argument)
+            seen_arguments[slot->second.index] = 1;
+        else
+            seen_captures[slot->second.index] = 1;
+        if (!bindings.emplace(&node, slot->second).second)
+            return false;
+    }
+
+    if (inputs.size() != bindings.size() || !budget.consume(inputs.size()))
+        return false;
+
+    std::unordered_set<const ActionsDAG::Node *> registered_inputs;
+    for (const auto * input : inputs)
+    {
+        if (!input || !bindings.contains(input) || !registered_inputs.emplace(input).second)
+            return false;
+    }
+
+    return std::ranges::all_of(seen_arguments, [](UInt8 seen) { return seen != 0; })
+        && std::ranges::all_of(seen_captures, [](UInt8 seen) { return seen != 0; });
+}
+
+bool containsLambdaBodyNode(const ActionsDAG::Nodes & nodes, const ActionsDAG::Node * expected, ExpressionMatchBudget & budget)
+{
+    if (!expected || !budget.consume(nodes.size()))
+        return false;
+
+    for (const auto & node : nodes)
+        if (&node == expected)
+            return true;
+    return false;
+}
+
 bool compareLambdaCarriers(
     const ActionsDAG::Node & left,
     const ActionsDAG::Node & right,
@@ -942,7 +1053,6 @@ bool compareLambdaCarriers(
     LambdaCarrierView left_view{};
     LambdaCarrierView right_view{};
     if (!getLambdaCarrierView(left, left_view) || !getLambdaCarrierView(right, right_view)
-        || left_view.kind != right_view.kind
         || !sameFunctionType(left.result_type, right.result_type, budget)
         || !sameLambdaMetadata(*left_view.capture, *right_view.capture, budget))
         return false;
@@ -967,69 +1077,123 @@ bool compareLambdaCarriers(
         || !sameType(right_signature->getReturnType(), right_view.capture->return_type, budget))
         return false;
 
-    if (left_view.kind == LambdaCarrierKind::FunctionCapture)
-    {
-        const auto * left_capture = typeid_cast<const FunctionCapture *>(left.function_base.get());
-        const auto * right_capture = typeid_cast<const FunctionCapture *>(right.function_base.get());
-        if (!left_capture || !right_capture
-            || left.children.size() != left_view.capture->captured_names.size()
-            || right.children.size() != right_view.capture->captured_names.size()
-            || left_capture->getArgumentTypes().size() != left_view.capture->captured_types.size()
-            || right_capture->getArgumentTypes().size() != right_view.capture->captured_types.size()
-            || !budget.consume(left.children.size()) || !budget.consume(right.children.size()))
-            return false;
-
-        for (size_t i = 0; i < left.children.size(); ++i)
-        {
-            if (!left.children[i] || !right.children[i]
-                || !sameType(left_view.capture->captured_types[i], left.children[i]->result_type, budget)
-                || !sameType(right_view.capture->captured_types[i], right.children[i]->result_type, budget)
-                || !sameType(left_capture->getArgumentTypes()[i], left_view.capture->captured_types[i], budget)
-                || !sameType(right_capture->getArgumentTypes()[i], right_view.capture->captured_types[i], budget))
-                return false;
-            pending.emplace_back(left.children[i], right.children[i], false, true);
-        }
-    }
-    else
-    {
-        const auto & left_captured = left_view.column_function->getCapturedColumns();
-        const auto & right_captured = right_view.column_function->getCapturedColumns();
-        if (left_captured.size() != left_view.capture->captured_names.size()
-            || right_captured.size() != right_view.capture->captured_names.size()
-            || !budget.consume(left_captured.size()) || !budget.consume(right_captured.size()))
-            return false;
-
-        for (size_t i = 0; i < left_captured.size(); ++i)
-        {
-            const auto & left_column = left_captured[i];
-            const auto & right_column = right_captured[i];
-            const auto * left_constant = left_column.column ? typeid_cast<const ColumnConst *>(left_column.column.get()) : nullptr;
-            const auto * right_constant = right_column.column ? typeid_cast<const ColumnConst *>(right_column.column.get()) : nullptr;
-            if (!left_constant || !right_constant
-                || !sameType(left_view.capture->captured_types[i], left_column.type, budget)
-                || !sameType(right_view.capture->captured_types[i], right_column.type, budget)
-                || !compareSupportedConstantValues(left_column.type, left_constant->getDataColumn(),
-                    right_column.type, right_constant->getDataColumn(), budget))
-                return false;
-        }
-    }
-
     const auto & left_nodes = left_view.body->getNodes();
     const auto & right_nodes = right_view.body->getNodes();
     const auto & left_outputs = left_view.body->getOutputs();
     const auto & right_outputs = right_view.body->getOutputs();
     if (left_nodes.size() != right_nodes.size() || left_outputs.size() != 1 || right_outputs.size() != 1
         || !left_outputs.front() || !right_outputs.front()
+        || !containsLambdaBodyNode(left_nodes, left_outputs.front(), budget)
+        || !containsLambdaBodyNode(right_nodes, right_outputs.front(), budget)
         || !sameBoundedName(left_outputs.front()->result_name, left_view.capture->return_name, budget)
         || !sameBoundedName(right_outputs.front()->result_name, right_view.capture->return_name, budget)
-        || !budget.consume(left_nodes.size()) || !budget.consume(left_outputs.size()))
+        || !sameType(left_outputs.front()->result_type, left_signature->getReturnType(), budget)
+        || !sameType(right_outputs.front()->result_type, right_signature->getReturnType(), budget))
+        return false;
+
+    auto body_binding = std::make_shared<LambdaBodyBinding>();
+    if (!mapLambdaBodyInputs(left_nodes, left_view.body->getInputs(), *left_view.capture, body_binding->query_inputs, budget)
+        || !mapLambdaBodyInputs(right_nodes, right_view.body->getInputs(), *right_view.capture, body_binding->index_inputs, budget))
+        return false;
+
+    const auto validate_function_capture = [&](const ActionsDAG::Node & node, const LambdaCapture & capture)
+    {
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (!function_capture || node.children.size() != capture.captured_names.size()
+            || function_capture->getArgumentTypes().size() != capture.captured_types.size()
+            || !budget.consume(node.children.size()))
+            return false;
+
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (!node.children[i]
+                || !sameType(capture.captured_types[i], node.children[i]->result_type, budget)
+                || !sameType(function_capture->getArgumentTypes()[i], capture.captured_types[i], budget))
+                return false;
+        }
+        return true;
+    };
+
+    if (left_view.kind == LambdaCarrierKind::FunctionCapture
+        && !validate_function_capture(left, *left_view.capture))
+        return false;
+    if (right_view.kind == LambdaCarrierKind::FunctionCapture
+        && !validate_function_capture(right, *right_view.capture))
+        return false;
+
+    if (left_view.kind == LambdaCarrierKind::FunctionCapture
+        && right_view.kind == LambdaCarrierKind::FunctionCapture)
+    {
+        for (size_t i = 0; i < left.children.size(); ++i)
+            pending.emplace_back(left.children[i], right.children[i], false, true);
+    }
+    else
+    {
+        const auto * left_column_function = left_view.kind == LambdaCarrierKind::ColumnFunction ? left_view.column_function : nullptr;
+        const auto * right_column_function = right_view.kind == LambdaCarrierKind::ColumnFunction ? right_view.column_function : nullptr;
+        const auto * left_captured = left_column_function ? &left_column_function->getCapturedColumns() : nullptr;
+        const auto * right_captured = right_column_function ? &right_column_function->getCapturedColumns() : nullptr;
+        if ((left_captured && left_captured->size() != left_view.capture->captured_names.size())
+            || (right_captured && right_captured->size() != right_view.capture->captured_names.size())
+            || (left_captured && !budget.consume(left_captured->size()))
+            || (right_captured && !budget.consume(right_captured->size())))
+            return false;
+
+        for (size_t i = 0; i < left_view.capture->captured_names.size(); ++i)
+        {
+            const auto * left_child = left_column_function ? nullptr : left.children[i];
+            const auto * right_child = right_column_function ? nullptr : right.children[i];
+            const auto * left_column = left_captured ? &(*left_captured)[i] : nullptr;
+            const auto * right_column = right_captured ? &(*right_captured)[i] : nullptr;
+            const auto * left_constant = left_column && left_column->column
+                ? typeid_cast<const ColumnConst *>(left_column->column.get()) : nullptr;
+            const auto * right_constant = right_column && right_column->column
+                ? typeid_cast<const ColumnConst *>(right_column->column.get()) : nullptr;
+
+            if ((left_column && (!left_constant || !sameType(left_view.capture->captured_types[i], left_column->type, budget)))
+                || (right_column && (!right_constant || !sameType(right_view.capture->captured_types[i], right_column->type, budget))))
+                return false;
+
+            if (left_child && right_child)
+            {
+                pending.emplace_back(left_child, right_child, false, true);
+                continue;
+            }
+
+            if (left_child && (left_child->type != ActionsDAG::ActionType::COLUMN
+                    || !compareSupportedConstant(*left_child, *left_child, budget)))
+                return false;
+            if (right_child && (right_child->type != ActionsDAG::ActionType::COLUMN
+                    || !compareSupportedConstant(*right_child, *right_child, budget)))
+                return false;
+
+            const DataTypePtr & left_type = left_column ? left_column->type : left_child->result_type;
+            const DataTypePtr & right_type = right_column ? right_column->type : right_child->result_type;
+            const auto * left_child_constant = left_child && left_child->column
+                ? typeid_cast<const ColumnConst *>(left_child->column.get()) : nullptr;
+            const auto * right_child_constant = right_child && right_child->column
+                ? typeid_cast<const ColumnConst *>(right_child->column.get()) : nullptr;
+            if ((left_child && !left_child_constant) || (right_child && !right_child_constant))
+                return false;
+
+            const IColumn & left_value = left_column ? left_constant->getDataColumn()
+                : left_child_constant->getDataColumn();
+            const IColumn & right_value = right_column ? right_constant->getDataColumn()
+                : right_child_constant->getDataColumn();
+            if (!sameType(left_type, right_type, budget)
+                || !compareSupportedConstantValues(left_type, left_value, right_type, right_value, budget))
+                return false;
+        }
+    }
+
+    if (!budget.consume(left_nodes.size()) || !budget.consume(right_nodes.size()) || !budget.consume(left_outputs.size()))
         return false;
 
     auto left_node = left_nodes.begin();
     auto right_node = right_nodes.begin();
     for (; left_node != left_nodes.end() && right_node != right_nodes.end(); ++left_node, ++right_node)
-        pending.emplace_back(&*left_node, &*right_node, false, true);
-    pending.emplace_back(left_outputs.front(), right_outputs.front(), false, true);
+        pending.emplace_back(&*left_node, &*right_node, false, true, body_binding);
+    pending.emplace_back(left_outputs.front(), right_outputs.front(), false, true, body_binding);
 
     return true;
 }
@@ -1154,6 +1318,7 @@ bool isSupportedDirectFunctionPair(
     const ActionsDAG::Node & right,
     ExpressionMatchBudget & budget,
     bool inside_lambda_body,
+    const std::shared_ptr<const LambdaBodyBinding> & body_binding,
     std::vector<ExpressionNodePair> & pending)
 {
     if (!left.function_base || !right.function_base || left.is_function_compiled || right.is_function_compiled)
@@ -1222,7 +1387,7 @@ bool isSupportedDirectFunctionPair(
         {
             if (!budget.consume())
                 return false;
-            pending.emplace_back(left_child, right_child, true, inside_lambda_body);
+            pending.emplace_back(left_child, right_child, true, inside_lambda_body, body_binding);
         }
     }
 
@@ -1255,7 +1420,7 @@ bool isSupportedArrayJoinFunctionPair(
         return false;
 
     if (left.function_base->getFactoryHandle() && right.function_base->getFactoryHandle())
-        return isSupportedDirectFunctionPair(left, right, budget, inside_lambda_body, pending);
+        return isSupportedDirectFunctionPair(left, right, budget, inside_lambda_body, {}, pending);
 
     /// ArrayJoinStep creates emptyArrayToSingle outside FunctionFactory. When either handle is absent,
     /// only the existing exact native-function bridge may authenticate the pair.
@@ -1271,6 +1436,27 @@ const ActionsDAG::Node * normalizeExpressionNode(const ActionsDAG::Node * node, 
         node = node->children[0];
     }
     return node;
+}
+
+bool isCanonicalArrayMapWithNativeLambda(const ActionsDAG::Node * raw_node, ExpressionMatchBudget & budget)
+{
+    const auto * node = normalizeExpressionNode(raw_node, budget);
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base
+        || node->is_function_compiled
+        || node->function_base->getFactoryHandle() != getCanonicalArrayFunctionHandle("arrayMap")
+        || !isSupportedBloomFilterArrayType(node->result_type))
+        return false;
+
+    const auto & argument_types = node->function_base->getArgumentTypes();
+    if (argument_types.empty() || argument_types.size() != node->children.size()
+        || !budget.consume(argument_types.size()) || !budget.consume(node->children.size()))
+        return false;
+
+    const auto * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types.front().get());
+    const auto * lambda_node = node->children.front();
+    LambdaCarrierView lambda_view{};
+    return lambda_type && lambda_node && sameFunctionType(argument_types.front(), lambda_node->result_type, budget)
+        && getLambdaCarrierView(*lambda_node, lambda_view);
 }
 
 bool structurallyMatchesIndexedExpression(
@@ -1296,7 +1482,7 @@ bool structurallyMatchesIndexedExpression(
         const auto * right = normalizeExpressionNode(pair.index_node, budget);
         if (!left || !right)
             return false;
-        if (!visited.emplace(ExpressionNodePair{left, right, pair.is_lambda_carrier, pair.inside_lambda_body}).second)
+        if (!visited.emplace(ExpressionNodePair{left, right, pair.is_lambda_carrier, pair.inside_lambda_body, pair.body_binding}).second)
             continue;
 
         const bool left_is_function_type = left->result_type
@@ -1306,7 +1492,7 @@ bool structurallyMatchesIndexedExpression(
         if (left_is_function_type || right_is_function_type || pair.is_lambda_carrier)
         {
             if (!left_is_function_type || !right_is_function_type || !pair.is_lambda_carrier || pair.inside_lambda_body
-                || left->type != right->type || !compareLambdaCarriers(*left, *right, budget, pending))
+                || !compareLambdaCarriers(*left, *right, budget, pending))
                 return false;
             continue;
         }
@@ -1317,9 +1503,20 @@ bool structurallyMatchesIndexedExpression(
         switch (left->type)
         {
             case ActionsDAG::ActionType::INPUT:
-                if (left->result_name.size() != right->result_name.size()
-                    || !budget.consume(left->result_name.size()) || left->result_name != right->result_name
-                    || !left->children.empty() || !right->children.empty())
+                if (!left->children.empty() || !right->children.empty())
+                    return false;
+                if (pair.body_binding)
+                {
+                    if (!pair.inside_lambda_body)
+                        return false;
+                    const auto left_slot = pair.body_binding->query_inputs.find(left);
+                    const auto right_slot = pair.body_binding->index_inputs.find(right);
+                    if (left_slot == pair.body_binding->query_inputs.end()
+                        || right_slot == pair.body_binding->index_inputs.end()
+                        || !(left_slot->second == right_slot->second))
+                        return false;
+                }
+                else if (!sameBoundedName(left->result_name, right->result_name, budget))
                     return false;
                 break;
             case ActionsDAG::ActionType::COLUMN:
@@ -1330,7 +1527,7 @@ bool structurallyMatchesIndexedExpression(
             case ActionsDAG::ActionType::FUNCTION:
                 if (left->children.size() != right->children.size()
                     || (mode == ExpressionMatchMode::DirectIN
-                        ? !isSupportedDirectFunctionPair(*left, *right, budget, pair.inside_lambda_body, pending)
+                        ? !isSupportedDirectFunctionPair(*left, *right, budget, pair.inside_lambda_body, pair.body_binding, pending)
                         : !isSupportedArrayJoinFunctionPair(*left, *right, budget, pair.inside_lambda_body, pending)))
                     return false;
                 for (size_t i = 0; i < left->children.size(); ++i)
@@ -1352,7 +1549,7 @@ bool structurallyMatchesIndexedExpression(
 
                     if (!budget.consume())
                         return false;
-                    pending.emplace_back(left->children[i], right->children[i], false, pair.inside_lambda_body);
+                    pending.emplace_back(left->children[i], right->children[i], false, pair.inside_lambda_body, pair.body_binding);
                 }
                 break;
             case ActionsDAG::ActionType::ALIAS:
@@ -1385,6 +1582,59 @@ bool matchesIndexedOutput(
         return false;
 
     return structurallyMatchesIndexedExpression(query_node, outputs[position], mode, budget);
+}
+
+bool findMatchingDirectLambdaArrayMapOutputByPosition(
+    const ActionsDAG::Node * query_node,
+    const ActionsDAG & indexed_expression_dag,
+    const Block & header,
+    size_t & matched_position,
+    ExpressionMatchBudget & budget)
+{
+    const auto & outputs = indexed_expression_dag.getOutputs();
+    if (outputs.size() != header.columns() || !isCanonicalArrayMapWithNativeLambda(query_node, budget)
+        || !budget.consume(outputs.size()))
+        return false;
+
+    std::unordered_set<String> unique_names;
+    unique_names.reserve(header.columns());
+    for (size_t position = 0; position < outputs.size(); ++position)
+    {
+        const auto & header_column = header.getByPosition(position);
+        if (!budget.consume() || !budget.consume(header_column.name.size())
+            || !unique_names.emplace(header_column.name).second
+            || header.getPositionByName(header_column.name) != position)
+            return false;
+    }
+
+    for (size_t position = 0; position < outputs.size(); ++position)
+    {
+        const auto & header_column = header.getByPosition(position);
+        const auto * output = outputs[position];
+        if (!output || !output->result_type || !header_column.type
+            || !isSupportedBloomFilterArrayType(header_column.type)
+            || !isSupportedBloomFilterArrayType(output->result_type)
+            || !sameType(output->result_type, header_column.type, budget)
+            || !isCanonicalArrayMapWithNativeLambda(output, budget))
+        {
+            if (budget.remaining == 0)
+                return false;
+            continue;
+        }
+
+        if (matchesIndexedOutput(
+                query_node, indexed_expression_dag, header, header_column.name,
+                ExpressionMatchMode::DirectIN, budget))
+        {
+            matched_position = position;
+            return true;
+        }
+
+        if (budget.remaining == 0)
+            return false;
+    }
+
+    return false;
 }
 
 bool findMatchingArrayJoinOutputByPosition(
@@ -2096,15 +2346,28 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
     auto key_node_column_name = key_node.getColumnName();
+    size_t direct_index_position = 0;
+    bool matched_index_output = false;
 
-    if (header.has(key_node_column_name)
-        && matchesIndexedOutput(
+    if (!expression_match_budget.consume(key_node_column_name.size()))
+        return false;
+
+    if (header.has(key_node_column_name))
+    {
+        matched_index_output = matchesIndexedOutput(
             key_node.getDAGNode(), indexed_expression_dag, header, key_node_column_name,
-            ExpressionMatchMode::DirectIN, expression_match_budget))
+            ExpressionMatchMode::DirectIN, expression_match_budget);
+        if (matched_index_output)
+            direct_index_position = header.getPositionByName(key_node_column_name);
+    }
+    else
+        matched_index_output = findMatchingDirectLambdaArrayMapOutputByPosition(
+            key_node.getDAGNode(), indexed_expression_dag, header, direct_index_position, expression_match_budget);
+
+    if (matched_index_output)
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
-        const DataTypePtr & index_type = header.getByPosition(position).type;
+        const DataTypePtr & index_type = header.getByPosition(direct_index_position).type;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
@@ -2120,7 +2383,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             && setHasEmptyArray(index_type, converted_column, row_size))
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
+        out.predicate.emplace_back(std::make_pair(direct_index_position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
