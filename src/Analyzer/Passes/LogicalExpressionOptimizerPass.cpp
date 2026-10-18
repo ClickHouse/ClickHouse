@@ -1798,7 +1798,7 @@ public:
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
     /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
-    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
             return false;

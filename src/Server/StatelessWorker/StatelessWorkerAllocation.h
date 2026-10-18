@@ -29,11 +29,11 @@ class StatelessWorkerAllocation : private boost::noncopyable
 public:
     ~StatelessWorkerAllocation();
 
-    const std::vector<StatelessWorkerAddress> & getAddresses() const { return addresses; }
+    [[nodiscard]] const std::vector<StatelessWorkerAddress> & getAddresses() const { return addresses; }
 
     /// The token to present when dialing the workers, read from the provider on every call so a rotated
     /// token is picked up. Empty for a static allocation.
-    std::string getAuthToken() const;
+    [[nodiscard]] std::string getAuthToken() const;
 
 private:
     friend class DiscoveryStatelessWorkersProvider;

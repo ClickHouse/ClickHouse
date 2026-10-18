@@ -274,7 +274,7 @@ public:
             unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
 
-    bool atEnd() const { return position == end; }
+    [[nodiscard]] bool atEnd() const { return position == end; }
 
     /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of allocated column
     /// memory. The byte target is soft because a key or an allocation can exceed it; zero disables it.

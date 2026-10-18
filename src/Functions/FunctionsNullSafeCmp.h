@@ -93,7 +93,7 @@ public:
     /// Documentation-only — null-safe comparison treats `NULL` as comparable
     /// and always returns a definite `UInt8` (or `Nothing` when an argument
     /// contains the bare `Nothing` type).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> UInt8";
     }
@@ -102,7 +102,7 @@ public:
     /// value-dependent (`Nothing` when an argument contains `Nothing`, otherwise `UInt8`) and the
     /// least-supertype check cannot be expressed in the DSL, so keep the legacy
     /// `getReturnTypeImpl(DataTypes)` authoritative.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

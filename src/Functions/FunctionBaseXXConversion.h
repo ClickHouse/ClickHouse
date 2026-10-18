@@ -325,7 +325,7 @@ public:
         return {};
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (has_size_optimization)
             return "(StringOrFixedString, [const NativeUInt]) -> String";
