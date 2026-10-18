@@ -254,6 +254,11 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
         throw Exception(status.IsCorruption() ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::CANNOT_OPEN_FILE,
             "Failed to open UNIQUE KEY SST `{}`: {}", sst_file_name, status.ToString());
     index_reader = std::move(reader);
+
+    /// `no_block_cache` preloads the SST's index + filter blocks into this reader;
+    /// record that resident size as the reader cache's weight.
+    if (auto properties = index_reader->GetTableProperties())
+        memory_usage = properties->index_size + properties->filter_size;
 }
 
 std::vector<rocksdb::Status> SSTFileReader::multiGet(
