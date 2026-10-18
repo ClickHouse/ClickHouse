@@ -6,6 +6,7 @@
 #include <Common/Base64.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/JSONBuilder.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -91,6 +92,24 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
             {
                 uuid_numbers[0] = field.safeGet<UUID>().toUnderType().items[0];
                 uuid_numbers[1] = field.safeGet<UUID>().toUnderType().items[1];
+            }
+            return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
+                16, bsoncxx::binary_sub_type::k_uuid);
+        }
+        case TypeIndex::UUID2:
+        {
+            /// `UUID2` stores the two 64-bit halves swapped relative to `UUID`; convert to the `UUID`
+            /// layout so the emitted 16 canonical big-endian bytes match `UUID` for the same textual value.
+            const UUID value = UUIDHelpers::swapHalves(field.safeGet<UUID>());
+            uint64_t uuid_numbers[2];
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                uuid_numbers[0] = std::byteswap(value.toUnderType().items[0]);
+                uuid_numbers[1] = std::byteswap(value.toUnderType().items[1]);
+            } else
+            {
+                uuid_numbers[0] = value.toUnderType().items[0];
+                uuid_numbers[1] = value.toUnderType().items[1];
             }
             return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
                 16, bsoncxx::binary_sub_type::k_uuid);
@@ -395,6 +414,25 @@ static Array BSONArrayAsArray(
                         readBinaryBigEndian(uuid_number.items[1], valBuf);
 
                         arr.emplace_back(UUID(std::move(uuid_number)));
+                        break;
+                    }
+                    case TypeIndex::UUID2:
+                    {
+                        if (value.type() != bsoncxx::type::k_binary)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}.",
+                                            bsoncxx::to_string(value.type()), name);
+                        if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} with size cannot be parsed to UUID2 for column {}.",
+                                bsoncxx::to_string(value.get_binary().sub_type), name);
+
+                        UInt128 uuid_number;
+                        auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+                        readBinaryBigEndian(uuid_number.items[0], valBuf);
+                        readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+                        /// The bytes are the same 16 canonical big-endian bytes as for `UUID`; `UUID2` stores the two
+                        /// 64-bit halves swapped relative to `UUID`, so convert to the `UUID2` layout before inserting.
+                        arr.emplace_back(UUIDHelpers::swapHalves(UUID(std::move(uuid_number))));
                         break;
                     }
                     case TypeIndex::String:

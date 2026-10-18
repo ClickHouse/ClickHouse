@@ -1,0 +1,17 @@
+x	UUID2
+y	UUID
+a	Array(Nullable(UUID2))
+t	Tuple(\n    p UUID2,\n    q UUID)
+m	Map(String, UUID2)
+n	Nullable(UUID2)
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0	['61f0c404-5cb3-11e7-907b-a6006ad3dba0']	('61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0')	{'k':'61f0c404-5cb3-11e7-907b-a6006ad3dba0'}	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Variant alternatives that differ only in UUID and UUID2
+v	Variant(Tuple(\n    x UUID), Tuple(\n    x UUID2))
+('61f0c404-5cb3-11e7-907b-a6006ad3dba0')	Tuple(x UUID2)
+('61f0c404-5cb3-11e7-907b-a6006ad3dba0')	Tuple(x UUID)
+v	Variant(Array(UUID2), UUID)
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	UUID
+['61f0c404-5cb3-11e7-907b-a6006ad3dba0']	Array(UUID2)
+-- without UUID2 values
+y	UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0

@@ -39,6 +39,7 @@ SimpleDataTypesCache::SimpleDataTypesCache()
     addSimpleType(BinaryTypeIndex::Date32, "Date32");
     addSimpleType(BinaryTypeIndex::String, "String");
     addSimpleType(BinaryTypeIndex::UUID, "UUID");
+    addSimpleType(BinaryTypeIndex::UUID2, "UUID2");
     addSimpleType(BinaryTypeIndex::IPv4, "IPv4");
     addSimpleType(BinaryTypeIndex::IPv6, "IPv6");
     addSimpleType(BinaryTypeIndex::Bool, "Bool");

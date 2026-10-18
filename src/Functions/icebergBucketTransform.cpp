@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -109,8 +110,11 @@ public:
                 result_data[i] = static_cast<Int32>(murmur_result->getUInt(i));
             }
         }
-        else if (which.isUUID())
+        else if (which.isUUID() || which.isUUID2())
         {
+            /// `toUInt128` maps a `UUID` and a `UUID2` holding the same textual value to the same `UInt128` (for `UUID2` it is
+            /// a bit-for-bit identity, for `UUID` it swaps the 64-bit halves). So both types take the exact same hashing path
+            /// below, and `icebergHash` is byte-identical for them, preserving function parity.
             // Function toUnderType: UUID => toUInt128 doesn't work for some reason so we need to use toUInt128 clickhouse implementation
             ColumnPtr intermediate_representation = FunctionFactory::instance()
                                                         .get("toUInt128", context)
@@ -274,7 +278,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Syntax syntax = "icebergHash(value)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "UUID2", "Date", "Time", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
@@ -373,7 +377,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Arguments arguments =
     {
         {"N", "The number of buckets, modulo.", {"const (U)Int*"}},
-        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "UUID2", "Date", "Time", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit hash of the source value.", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};

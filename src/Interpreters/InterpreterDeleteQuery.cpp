@@ -23,6 +23,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -34,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUUIDTypeVersion uuid_type_version;
     extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool enable_lightweight_delete;
     extern const SettingsUInt64 lightweight_deletes_sync;
@@ -83,6 +85,11 @@ BlockIO InterpreterDeleteQuery::execute()
     /// SQL UDF bodies are inlined above, so a `toTime` hidden in one is canonicalized too.
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         replaceLegacyToTime(*query_ptr);
+
+    /// Materialize the `uuid_type_version` setting on the initiator for the same reason: a bare `UUID` in the predicate
+    /// (`CAST(x, 'UUID')`) would otherwise be resolved with the setting of the replaying host or of the mutation.
+    if (!getContext()->isDDLOrOnClusterInternal())
+        applyUUIDTypeVersionInPlace(*query_ptr, getContext()->getSettingsRef()[Setting::uuid_type_version]);
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);

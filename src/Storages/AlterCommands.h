@@ -182,7 +182,7 @@ struct AlterCommand
     /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
     bool append_column_setting = false;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, UInt64 uuid_type_version = 1);
 
     /// `MODIFY SETTING name = DEFAULT` means a reset, but `parse` leaves it in a MODIFY_SETTING command.
     /// Engines key their checks on the command type, so the resets are moved out: the command itself

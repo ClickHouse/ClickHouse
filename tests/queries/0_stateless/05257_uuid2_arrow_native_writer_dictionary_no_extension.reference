@@ -1,0 +1,16 @@
+Arrow, LowCardinality(UUID2), as dictionary = 1, has arrow.uuid extension: 0
+Arrow, LowCardinality(UUID2), as dictionary = 1, read back: LowCardinality(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+Arrow, LowCardinality(UUID2), as dictionary = 0, has arrow.uuid extension: 1
+Arrow, LowCardinality(UUID2), as dictionary = 0, read back: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+Arrow, LowCardinality(UUID), as dictionary = 1, has arrow.uuid extension: 0
+Arrow, LowCardinality(UUID), as dictionary = 1, read back: LowCardinality(UUID)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+Arrow, LowCardinality(UUID), as dictionary = 0, has arrow.uuid extension: 1
+Arrow, LowCardinality(UUID), as dictionary = 0, read back: UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+ArrowStream, LowCardinality(UUID2), as dictionary = 1, has arrow.uuid extension: 0
+ArrowStream, LowCardinality(UUID2), as dictionary = 1, read back: LowCardinality(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+ArrowStream, LowCardinality(UUID2), as dictionary = 0, has arrow.uuid extension: 1
+ArrowStream, LowCardinality(UUID2), as dictionary = 0, read back: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+ArrowStream, LowCardinality(UUID), as dictionary = 1, has arrow.uuid extension: 0
+ArrowStream, LowCardinality(UUID), as dictionary = 1, read back: LowCardinality(UUID)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+ArrowStream, LowCardinality(UUID), as dictionary = 0, has arrow.uuid extension: 1
+ArrowStream, LowCardinality(UUID), as dictionary = 0, read back: UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0

@@ -222,15 +222,26 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
     if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
         return;
 
-    if (isUUID(type))
+    if (isUUID(type) || isUUID2(type))
     {
         ReadBufferFromMemory buf(value, size);
         UUID uuid;
+        if (bin && isUUID2(type))
+        {
+            /// UUID2's binary interchange representation is the canonical big-endian bytes, as in RowBinary
+            /// and Native - reading them big-endian yields the stored value directly.
+            readBinaryBigEndian(uuid, buf);
+            assert_cast<ColumnUUID &>(column).insertValue(uuid);
+            return;
+        }
         if (bin)
             readBinary(uuid, buf);
         else
             readUUIDText(uuid, buf);
 
+        /// The text form is the logical UUID value; UUID2 stores the two 64-bit halves swapped relative to it.
+        if (isUUID2(type))
+            uuid = UUIDHelpers::swapHalves(uuid);
         assert_cast<ColumnUUID &>(column).insertValue(uuid);
         return;
     }
@@ -339,12 +350,15 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
     if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
         return;
 
-    if (!isUUID(type))
+    if (!isUUID(type) && !isUUID2(type))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
     readBinaryBigEndian(UUIDHelpers::getHighBytes(uuid), buf);
     readBinaryBigEndian(UUIDHelpers::getLowBytes(uuid), buf);
+    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+    if (isUUID2(type))
+        uuid = UUIDHelpers::swapHalves(uuid);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 

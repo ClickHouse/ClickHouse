@@ -1,0 +1,5 @@
+v	Variant(Tuple(\n    x UUID), Tuple(\n    x UUID2))
+('00112233-4455-6677-8899-aabbccddeeff')	Tuple(x UUID2)	('00112233-4455-6677-8899-aabbccddeeff')
+('00112233-4455-6677-8899-aabbccddeeff')	Tuple(x UUID)	\N
+-- explicit structure with the other UUID type
+00112233-4455-6677-8899-aabbccddeeff	UUID

@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUUIDTypeVersion uuid_type_version;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
@@ -75,6 +80,16 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
         if (!create_query.as_table.empty())
             params.as_create_query = readASCreateQuery(create_query, context);
+
+        /// Only a primary, user-issued CREATE materializes the `uuid_type_version` setting into the stored types of the
+        /// inner columns - never a secondary CREATE (a replica or a DDL worker replaying an already-normalized query),
+        /// an ATTACH or a restore from a backup: those must keep the types exactly as they are stored.
+        /// Mirrors the gate of `InterpreterCreateQuery::getColumnsDescription`.
+        const bool normalize_on_create = (mode < LoadingStrictnessLevel::SECONDARY_CREATE)
+            && !context->isDDLOrOnClusterInternal()
+            && !is_restore_from_backup;
+        if (normalize_on_create)
+            params.uuid_type_version = context->getSettingsRef()[Setting::uuid_type_version];
     }
 
     normalizeTimeSeriesDefinitionImpl(create_query, params);

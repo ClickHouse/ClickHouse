@@ -48,6 +48,10 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
         case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
         case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
         case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
+        /// `UUID2` reuses `ColumnVector<UUID>` as its physical representation, so the dictionary stores and
+        /// returns it through the same `UUID` code path. The logical `UUID2` type is preserved separately in
+        /// `DictionaryAttribute::type`, so the canonical (big-endian) serialization is used on the wire.
+        case TypeIndex::UUID2:      return AttributeUnderlyingType::UUID;
         default: break;
     }
 
