@@ -1,0 +1,18 @@
+-- local, FORMAT clause
+{"x":"a"}
+-- local, INTO OUTFILE with a FORMAT clause
+{"x":"a"}
+-- local, INTO OUTFILE without a FORMAT clause
+{"x":"a"}
+-- local, no FORMAT clause
+"a"
+-- local, SETTINGS clause
+{"x":"a"}
+-- local, SET
+{"x":"a"}
+-- client, FORMAT clause
+{"x":"a"}
+-- client, INTO OUTFILE with a FORMAT clause
+{"x":"a"}
+-- client, no FORMAT clause
+"a"

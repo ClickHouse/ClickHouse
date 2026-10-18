@@ -1139,9 +1139,23 @@ try
         /// ignored by the native client, which formatted from its own `default_output_format`.
         {
             const auto & format_settings_ref = client_context->getSettingsRef();
-            if (!format_settings_ref[Setting::output_format].value.empty())
+            /// The client's own options (`--format`, `--output-format` and the client config) are mirrored into
+            /// these settings through `cmd_settings`. Such a value is only a default, already in `default_output_format`,
+            /// so the query `FORMAT` clause and the `INTO OUTFILE` file extension win over it. A value set by `SET` or
+            /// by the `SETTINGS` clause of the query still wins over them.
+            const bool query_has_format = has_format_clause || outfile_format_from_extension;
+            auto overrides_format = [&](std::string_view name, const String & value)
+            {
+                if (value.empty())
+                    return false;
+                if (!query_has_format)
+                    return true;
+                return !cmd_settings->isChanged(name) || cmd_settings->get(name).safeGet<String>() != value;
+            };
+
+            if (overrides_format("output_format", format_settings_ref[Setting::output_format].value))
                 current_format = format_settings_ref[Setting::output_format];
-            else if (!format_settings_ref[Setting::format].value.empty())
+            else if (overrides_format("format", format_settings_ref[Setting::format].value))
                 current_format = format_settings_ref[Setting::format];
             /// ... only when the client itself was not given an explicit output format. `--output-format`,
             /// `--format` and `--vertical` all set `is_default_format = false` (the last via
