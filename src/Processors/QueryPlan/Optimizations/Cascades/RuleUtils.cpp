@@ -51,7 +51,7 @@ ReplicationDecision decideReplicationOf(const Group & group, const OptimizerCont
         const auto & statistics = *group.statistics;
         if (!statistics.rows_unknown)
             size.estimated_rows = ceilToRowCount(statistics.estimated_row_count);
-        size.estimate_from_defaults = statistics.estimate_from_defaults;
+        size.imprecise_estimate = statistics.estimate_from_defaults || statistics.imprecise_estimate;
         if (statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max()))
             size.max_rows = ceilToRowCount(statistics.max_row_count);
         size.bytes_per_row = statistics.estimated_bytes_per_row;

@@ -403,12 +403,16 @@ inline double estimateJoinedRows(const JoinKeyEstimate & keys, double lhs, doubl
     return lhs * rhs;
 }
 
-/// Whether the rows of a join of inputs with these estimates rest on the independence of its key columns,
-/// so they are a guess, see `JoinKeyEstimate::multiColumnSelectivity`.
-inline bool assumesIndependentKeys(const JoinKeyEstimate & keys, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
+/// Whether the rows of a join of inputs with these estimates rest on an assumption, so they are a guess: an equality
+/// without key NDVs is taken as a foreign key meeting a primary key (see `estimateJoinedRows`), and the key columns
+/// of several keys as independent (see `JoinKeyEstimate::multiColumnSelectivity`).
+inline bool joinRowsRestOnAssumption(const JoinKeyEstimate & keys, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
 {
-    return keys.from_statistics && left_rows && right_rows
-        && keys.assumesIndependentKeys(static_cast<double>(*left_rows), static_cast<double>(*right_rows));
+    if (!left_rows || !right_rows)
+        return false;
+    if (!keys.from_statistics)
+        return keys.has_equality;
+    return keys.assumesIndependentKeys(static_cast<double>(*left_rows), static_cast<double>(*right_rows));
 }
 
 /// Join cardinality for every planner, by the join kind and strictness, at least one row. An empty
@@ -572,7 +576,7 @@ inline JoinEstimate estimateJoin(
 
     const auto rows = estimateJoinCardinality(left_entry, right_entry, keys, join_operator.kind, join_operator.strictness);
     DPJoinEntry joined(left_entry, right_entry, /*cost*/ 0.0, keys.selectivity, rows, join_operator);
-    joined.estimate_from_defaults |= assumesIndependentKeys(keys, left.estimated_rows, right.estimated_rows);
+    joined.estimate_from_defaults |= joinRowsRestOnAssumption(keys, left.estimated_rows, right.estimated_rows);
     return JoinEstimate{
         .rows = joined.estimated_rows,
         .max_rows = joined.max_rows,

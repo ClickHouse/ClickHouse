@@ -23,48 +23,38 @@ ReplicationDecision decideReplication(const ReplicationSize & size, const Replic
     if (!budget.max_rows && budget.max_bytes == 0)
     {
         decision.allowed = true;
-        decision.reason = "no replication limit";
+        decision.reason = "unchecked, no replication limit";
         return decision;
     }
 
-    if (budget.max_rows)
+    /// One row count for every limit: the estimate when it is precise, the bound otherwise.
+    const bool precise_estimate = size.estimated_rows && !size.imprecise_estimate;
+    decision.counted_rows = precise_estimate ? size.estimated_rows : size.max_rows;
+    if (!decision.counted_rows)
     {
-        const std::optional<UInt64> rows_for_limit = size.estimated_rows ? size.estimated_rows : size.max_rows;
-        if (!rows_for_limit)
-        {
-            decision.reason = "the row count is unknown and has no bound";
-            return decision;
-        }
-        if (*rows_for_limit > *budget.max_rows)
-        {
-            decision.counted_rows = rows_for_limit;
-            decision.reason = "more rows than the row limit";
-            return decision;
-        }
+        decision.reason = size.estimated_rows
+            ? "the estimate is imprecise and the rows have no bound"
+            : "the row count is unknown and has no bound";
+        return decision;
+    }
+
+    if (budget.max_rows && *decision.counted_rows > *budget.max_rows)
+    {
+        decision.reason = precise_estimate ? "more estimated rows than the row limit" : "the row bound exceeds the row limit";
+        return decision;
     }
 
     if (budget.max_bytes == 0)
     {
         decision.allowed = true;
-        decision.counted_rows = size.estimated_rows ? size.estimated_rows : size.max_rows;
-        decision.reason = "within the row limit, no byte budget";
-        return decision;
-    }
-
-    const bool trusted_estimate = size.estimated_rows && !size.estimate_from_defaults;
-    decision.counted_rows = trusted_estimate ? size.estimated_rows : size.max_rows;
-    if (!decision.counted_rows)
-    {
-        decision.reason = size.estimated_rows
-            ? "the estimate took defaults and the rows have no bound"
-            : "the row count is unknown and has no bound";
+        decision.reason = precise_estimate ? "the estimated rows fit the row limit" : "the row bound fits the row limit";
         return decision;
     }
 
     decision.modeled_bytes = ceilToRowCount(Float64(*decision.counted_rows) * size.bytes_per_row);
     if (*decision.modeled_bytes > budget.max_bytes)
     {
-        decision.reason = trusted_estimate
+        decision.reason = precise_estimate
             ? "the estimated bytes exceed the byte budget"
             : "the bytes of the row bound exceed the byte budget";
         return decision;
@@ -77,7 +67,7 @@ ReplicationDecision decideReplication(const ReplicationSize & size, const Replic
     }
 
     decision.allowed = true;
-    decision.reason = trusted_estimate
+    decision.reason = precise_estimate
         ? "the estimated bytes fit the byte budget"
         : "the bytes of the row bound fit the byte budget";
     return decision;
@@ -87,10 +77,10 @@ String ReplicationDecision::describe(const ReplicationSize & size, const Replica
 {
     return fmt::format(
         "{}: {}; rows {}{}, bound {}, {:.1f} bytes per row, scan {} bytes, modeled {} bytes; limit {} rows, budget {} bytes",
-        allowed ? "replication allowed" : "replication declined",
+        allowed ? "replication allowed by the model, no memory bound" : "replication declined",
         reason,
         formatOptional(size.estimated_rows),
-        size.estimated_rows && size.estimate_from_defaults ? " (from defaults)" : "",
+        size.estimated_rows && size.imprecise_estimate ? " (imprecise)" : "",
         formatOptional(size.max_rows),
         size.bytes_per_row,
         formatOptional(size.scan_bytes),

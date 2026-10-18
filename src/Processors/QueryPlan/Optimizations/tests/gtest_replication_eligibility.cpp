@@ -30,10 +30,10 @@ TEST(ReplicationEligibility, TrustedEstimateAgainstTheByteBudget)
 
 TEST(ReplicationEligibility, GuessesNeedABound)
 {
-    /// An estimate that took defaults is a guess: the bound decides the bytes.
-    EXPECT_TRUE(decideReplication({.estimated_rows = 50, .estimate_from_defaults = true, .max_rows = 90, .bytes_per_row = 10}, bytes_only).allowed);
-    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .estimate_from_defaults = true, .max_rows = 500, .bytes_per_row = 10}, bytes_only).allowed);
-    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .estimate_from_defaults = true, .bytes_per_row = 10}, bytes_only).allowed);
+    /// An imprecise estimate is a guess: the bound decides the bytes.
+    EXPECT_TRUE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .max_rows = 90, .bytes_per_row = 10}, bytes_only).allowed);
+    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .max_rows = 500, .bytes_per_row = 10}, bytes_only).allowed);
+    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .bytes_per_row = 10}, bytes_only).allowed);
 
     /// No estimate at all: the bound alone decides, nothing without one.
     EXPECT_TRUE(decideReplication({.max_rows = 90, .bytes_per_row = 10}, bytes_only).allowed);
@@ -51,10 +51,11 @@ TEST(ReplicationEligibility, RowLimit)
     EXPECT_FALSE(decideReplication({.max_rows = 101, .bytes_per_row = 1}, rows_and_bytes).allowed);
     EXPECT_FALSE(decideReplication({.bytes_per_row = 1}, rows_and_bytes).allowed);
 
-    /// A guess within the row limit still has to prove its bytes with the bound.
-    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .estimate_from_defaults = true, .max_rows = 5000, .bytes_per_row = 1}, rows_and_bytes).allowed);
-    /// Both limits pass on the estimate and the bound, respectively.
-    EXPECT_TRUE(decideReplication({.estimated_rows = 50, .estimate_from_defaults = true, .max_rows = 900, .bytes_per_row = 1}, rows_and_bytes).allowed);
+    /// A guess counts its bound for every limit, the row limit too: within the row limit by its estimate is not enough.
+    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .max_rows = 900, .bytes_per_row = 1}, rows_and_bytes).allowed);
+    EXPECT_TRUE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .max_rows = 90, .bytes_per_row = 1}, rows_and_bytes).allowed);
+    const ReplicationBudget rows_only{.max_rows = 100, .max_bytes = 0};
+    EXPECT_FALSE(decideReplication({.estimated_rows = 50, .imprecise_estimate = true, .max_rows = 900, .bytes_per_row = 1}, rows_only).allowed);
 }
 
 TEST(ReplicationEligibility, ScanBytes)

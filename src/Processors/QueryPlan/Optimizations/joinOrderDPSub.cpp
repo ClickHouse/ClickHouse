@@ -55,7 +55,7 @@ private:
         double cost = 0;
         double sel = 0;
         std::optional<UInt64> estimated_rows;
-        bool assumes_independent_keys = false;
+        bool rows_rest_on_assumption = false;
         JoinKind kind = JoinKind::Inner;
         JoinStrictness strictness = JoinStrictness::All;
         std::vector<JoinActionRef *> edges;
@@ -76,7 +76,7 @@ private:
         double cost,
         double sel,
         std::optional<UInt64> estimated_rows,
-        bool assumes_independent_keys,
+        bool rows_rest_on_assumption,
         DPJoinEntryPtr left,
         DPJoinEntryPtr right) const;
 
@@ -609,7 +609,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(
         auto left = buildPhysicalPlan(dptable, entry.left, built);
         auto right = buildPhysicalPlan(dptable, entry.right, built);
         result = makeJoinEntry(
-            entry.kind, entry.strictness, entry.edges, entry.cost, entry.sel, entry.estimated_rows, entry.assumes_independent_keys,
+            entry.kind, entry.strictness, entry.edges, entry.cost, entry.sel, entry.estimated_rows, entry.rows_rest_on_assumption,
             std::move(left), std::move(right));
     }
     built.emplace(S, result);
@@ -623,7 +623,7 @@ DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(
     double cost,
     double sel,
     std::optional<UInt64> estimated_rows,
-    bool assumes_independent_keys,
+    bool rows_rest_on_assumption,
     DPJoinEntryPtr left,
     DPJoinEntryPtr right) const
 {
@@ -645,7 +645,7 @@ DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(
     }
 
     auto join_entry = std::make_shared<DPJoinEntry>(std::move(left), std::move(right), cost, sel, estimated_rows, std::move(join_operator));
-    join_entry->estimate_from_defaults |= assumes_independent_keys;
+    join_entry->estimate_from_defaults |= rows_rest_on_assumption;
     return join_entry;
 }
 
@@ -691,8 +691,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
-        /// The rows rest on the independence of the key columns, see `assumesIndependentKeys`.
-        bool assumes_independent_keys = false;
+        /// The rows rest on an assumption, see `joinRowsRestOnAssumption`.
+        bool rows_rest_on_assumption = false;
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
@@ -752,7 +752,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         auto right = buildPhysicalPlan(dptable, alternative.right, built);
         query_graph.full_set_alternatives.push_back(makeJoinEntry(
             alternative.kind, alternative.strictness, alternative.edges, alternative.cost, alternative.sel, alternative.estimated_rows,
-            alternative.assumes_independent_keys, std::move(left), std::move(right)));
+            alternative.rows_rest_on_assumption, std::move(left), std::move(right)));
     }
     return best;
 }

@@ -14,8 +14,9 @@ struct ReplicationSize
 {
     /// Estimated rows; none when there is no estimate.
     std::optional<UInt64> estimated_rows = std::nullopt;
-    /// A default selectivity stood in for a predicate somewhere in the estimate, so the estimate is a guess.
-    bool estimate_from_defaults = false;
+    /// The estimate has an imprecise part: a default selectivity, a key without statistics, statistics of only some
+    /// parts, the rows of a past execution, and the like. Such an estimate is a guess that cannot decide a replication alone.
+    bool imprecise_estimate = false;
     /// Proven upper bound on the rows; none when there is none.
     std::optional<UInt64> max_rows = std::nullopt;
     /// Average bytes of one row.
@@ -36,7 +37,7 @@ struct ReplicationBudget
 struct ReplicationDecision
 {
     bool allowed = false;
-    /// Rows the byte budget counted: the estimate when it is trusted, the bound otherwise.
+    /// Rows the limits counted: the estimate when it is precise, the bound otherwise.
     std::optional<UInt64> counted_rows = std::nullopt;
     /// `counted_rows` times the row width.
     std::optional<UInt64> modeled_bytes = std::nullopt;
@@ -46,9 +47,10 @@ struct ReplicationDecision
     String describe(const ReplicationSize & size, const ReplicationBudget & budget) const;
 };
 
-/// Decides whether a result may be replicated to every node: the row limit on the estimate, or on
-/// the bound without one; the byte budget (rows times the row width) on the estimate when no
-/// default went into it, else on the bound. A result with neither is never replicated.
+/// Decides whether a result may be replicated to every node: the row limit and the byte budget (rows times the row
+/// width) on the estimate when it is precise, else on the bound; a result with neither is never replicated. It checks
+/// the planners' model only: the row width is an average and the bytes have no hash table or concurrency terms, so an
+/// allowed replication has no memory bound, and a precise estimate can still be wrong.
 ReplicationDecision decideReplication(const ReplicationSize & size, const ReplicationBudget & budget);
 
 }

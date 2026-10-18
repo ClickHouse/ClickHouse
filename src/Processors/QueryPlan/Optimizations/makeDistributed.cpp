@@ -619,7 +619,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     /// on its estimate when that is a measurement, on its proven row bound otherwise.
     const ReplicationSize size_b{
         .estimated_rows = stats_b.estimated_rows,
-        .estimate_from_defaults = stats_b.estimate_from_defaults,
+        .imprecise_estimate = stats_b.estimate_from_defaults || stats_b.imprecise_estimate,
         .max_rows = stats_b.max_rows,
         .bytes_per_row = stats_b.avg_row_bytes.value_or(estimateRowWidth(*source_b->step->getOutputHeader(), stats_b.column_stats))};
     const auto budget = replicationBudget(optimization_settings);
@@ -1028,7 +1028,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             const UInt64 scanned_rows = std::max<UInt64>(analysis_result->selected_rows, stats.estimated_rows.value_or(0));
             const ReplicationSize size{
                 .estimated_rows = stats.estimated_rows,
-                .estimate_from_defaults = stats.estimate_from_defaults,
+                .imprecise_estimate = stats.estimate_from_defaults || stats.imprecise_estimate,
                 .max_rows = stats.max_rows ? stats.max_rows : std::optional<UInt64>(analysis_result->selected_rows),
                 .bytes_per_row = bytes_per_row,
                 .scan_bytes = static_cast<UInt64>(static_cast<Float64>(scanned_rows) * bytes_per_row)};
@@ -1059,7 +1059,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         const auto scanned_rows = stats.max_rows ? stats.max_rows : stats.estimated_rows;
         const ReplicationSize size{
             .estimated_rows = stats.estimated_rows,
-            .estimate_from_defaults = stats.estimate_from_defaults,
+            .imprecise_estimate = stats.estimate_from_defaults || stats.imprecise_estimate,
             .max_rows = stats.max_rows,
             .bytes_per_row = bytes_per_row,
             .scan_bytes = scanned_rows ? std::optional<UInt64>(static_cast<UInt64>(static_cast<Float64>(*scanned_rows) * bytes_per_row)) : std::nullopt};

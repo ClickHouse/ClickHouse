@@ -310,7 +310,13 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     const Float64 join_selectivity = join.selectivity;
     const auto join_order_estimate = join_step.isEstimatedByJoinOrder() ? join_step.getResultRowsEstimation() : std::nullopt;
     if (join_order_estimate)
+    {
+        /// It keeps its own imprecision: the join order optimizer may have used the rows of a past execution or
+        /// defaults that the inputs derived here do not have.
         statistics.estimated_row_count = Float64(*join_order_estimate);
+        statistics.imprecise_estimate |= join_step.hasImpreciseEstimate();
+        statistics.estimate_from_defaults |= join_step.isEstimateFromDefaults();
+    }
     else if (join.rows)
         statistics.estimated_row_count = Float64(*join.rows);
     else

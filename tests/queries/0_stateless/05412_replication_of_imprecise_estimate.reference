@@ -1,0 +1,6 @@
+-- statistics in one part: the join does not broadcast
+Shuffle
+-- statistics in both parts: the join broadcasts
+Broadcast
+-- a join of keys without NDVs: the outer join does not replicate it (expect 0)
+0

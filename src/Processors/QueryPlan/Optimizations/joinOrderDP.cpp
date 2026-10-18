@@ -57,7 +57,7 @@ static DPJoinEntryPtr makeJoinEntry(
         effective_kind, query_graph.join_strictness, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
     auto entry = std::make_shared<DPJoinEntry>(left, right, cost, keys.selectivity, cardinality, std::move(join_operator));
-    entry->estimate_from_defaults |= assumesIndependentKeys(keys, left->estimated_rows, right->estimated_rows);
+    entry->estimate_from_defaults |= joinRowsRestOnAssumption(keys, left->estimated_rows, right->estimated_rows);
     return entry;
 }
 

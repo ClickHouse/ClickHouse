@@ -31,7 +31,7 @@ struct ExpressionStatistics
     /// guess, which the replication budget does not take on its own.
     bool estimate_from_defaults = false;
     /// The estimate has another imprecise part, see `RelationStats::imprecise_estimate`: statistics that cover only
-    /// some parts of a table, a key without statistics, a hint, the rows of a past execution.
+    /// some parts of a table, a key without statistics, the rows of a past execution.
     bool imprecise_estimate = false;
     /// The search value of this unknown result is the product of an unknown join's inputs and a
     /// stand-in key selectivity, which can be far below the rows the join produces; the cost model
