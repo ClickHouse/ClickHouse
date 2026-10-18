@@ -24,6 +24,50 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 39618113e63cef6ef3b6c01dad67bf25be38ce0b (39618113e63) FIXME as compared to aa90758f18885318c3e42f102aef1e94bfa2ca09 (aa90758f188)
+
+#### Backward Incompatible Change
+* `parseDateTime` now rejects ISO week 53 for ISO week-years that have only 52 weeks, instead of silently normalizing those dates into the following calendar year. [#126356](https://github.com/ClickHouse/ClickHouse/pull/126356) ([Henry Su](https://github.com/hsusul)).
+
+#### Experimental Feature
+* The columns cache (`use_columns_cache`) now also applies to `Parquet` files read from the local filesystem, from object storages such as S3 and Azure, and by data lake tables. Repeated reads of the same row groups skip reading and decoding the column chunks. [#124531](https://github.com/ClickHouse/ClickHouse/pull/124531) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Performance Improvement
+* A `Memory` table with `compress = true` decompresses only the parts of a column that a subcolumn consists of: `size` of a `String` (used by `length`, `empty` and `notEmpty`), `size0` of an `Array`, `null` of a `Nullable`, tuple elements, and `keys`, `values` and `size0` of a `Map`. A query that reads a column together with its subcolumns decompresses the column once instead of once per name. [#126253](https://github.com/ClickHouse/ClickHouse/pull/126253) ([Groene AI](https://github.com/groeneai)).
+* A `GROUP BY` whose groups are capped, by the trivial `GROUP BY ... LIMIT` optimization or by `max_rows_to_group_by` with `group_by_overflow_mode` `'any'` or `'break'`, now keeps its own hash table size statistics, and so does an aggregation over such a capped one. It no longer preallocates the hash table of the same aggregation without the cap, and the next uncapped run still preallocates for all its groups. Closes [#122608](https://github.com/ClickHouse/ClickHouse/issues/122608). [#126374](https://github.com/ClickHouse/ClickHouse/pull/126374) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* A distributed `INSERT ... SELECT ... SETTINGS automatic_parallel_replicas_mode = ...` now uses parallel replicas, as it does when the setting comes from the session or profile. Previously the setting in the SELECT's `SETTINGS` clause silently made the insert run on the initiator alone. [#126317](https://github.com/ClickHouse/ClickHouse/pull/126317) ([Nikita Taranov](https://github.com/nickitat)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix wrong results when a `MergeTree` table is ordered by `hilbertEncode(x, y)` and a part contains a single distinct point at the origin. With `analyze_index_with_space_filling_curves = 1` (the default), such a part was pruned away and its rows were silently missing from the result. [#115904](https://github.com/ClickHouse/ClickHouse/pull/115904) ([Groene AI](https://github.com/groeneai)).
+* Fixed outer `JOIN` with `join_algorithm = 'full_sorting_merge'` failing with `NOT_IMPLEMENTED` when `optimize_and_compare_chain` derived a bound from `ON` that the join evaluates on its preserved side: for a key over several tables (for example `a.number + b.number` after an inner join, a `FULL JOIN ... USING` key, an `ARRAY JOIN` alias combined with a column, or a key with a lambda), for a bound derived within the other side (from `r.a < r.b AND r.b < 2`), and, with `optimize_redundant_comparisons = 0`, for a derived bound that contradicts another one or cannot hold for the column type. [#126170](https://github.com/ClickHouse/ClickHouse/pull/126170) ([Groene AI](https://github.com/groeneai)).
+* Fixed an `INSERT` failing with `NOT_FOUND_COLUMN_IN_BLOCK` when `enable_positional_arguments_for_projections` was enabled for it and a projection of the table had an integer constant in `GROUP BY`, like `GROUP BY 'a', 1`. [#126185](https://github.com/ClickHouse/ClickHouse/pull/126185) ([Groene AI](https://github.com/groeneai)).
+* Fixed wrong results when converting `Float32` values to `Int128`, `UInt128`, `Int256`, `UInt256`, `Decimal128` or `Decimal256`, and `BFloat16` values to the four wide integer types: a negative fraction such as `toInt128(toFloat32(-0.5))` returned `-18446744073709551616`, values of magnitude `2^63` or more were clamped to about `2^63`, and negative `BFloat16` values wrapped around. [#126191](https://github.com/ClickHouse/ClickHouse/pull/126191) ([Groene AI](https://github.com/groeneai)).
+* Fixed `POLYGON`, `POLYGON_INDEX_CELL` and `POLYGON_INDEX_EACH` dictionaries of small polygons (for example building outlines) returning a polygon that does not contain the point, or the default value for a point inside a polygon that crosses an index cell boundary. Polygons with coordinates beyond about `1.8e19` no longer disappear from `POLYGON_INDEX_CELL`. A polygon tens of millions of units away from the others no longer hides the polygons near the opposite side of the bounding box, and the grid layouts reject polygons more than about `3.4e38` apart with a clear error. Closes [#122018](https://github.com/ClickHouse/ClickHouse/issues/122018). [#126246](https://github.com/ClickHouse/ClickHouse/pull/126246) ([Groene AI](https://github.com/groeneai)).
+
+#### NO CL ENTRY
+
+* NO CL ENTRY:  'Revert "Evaluate PREWHERE functions of a dictionary-encoded Parquet column once per value"'. [#126396](https://github.com/ClickHouse/ClickHouse/pull/126396) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Not applicable — test-only change. [#123676](https://github.com/ClickHouse/ClickHouse/pull/123676) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123820](https://github.com/ClickHouse/ClickHouse/pull/123820) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#124384](https://github.com/ClickHouse/ClickHouse/pull/124384) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not for changelog. [#124938](https://github.com/ClickHouse/ClickHouse/pull/124938) ([Sergei Trifonov](https://github.com/serxa)).
+* Fix a rare 600 s timeout of the tests `04105_system_pause_view` and `04319_system_stop_all_background`. [#125034](https://github.com/ClickHouse/ClickHouse/pull/125034) ([Groene AI](https://github.com/groeneai)).
+* Not applicable — test-only change. [#125196](https://github.com/ClickHouse/ClickHouse/pull/125196) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#125281](https://github.com/ClickHouse/ClickHouse/pull/125281) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Attach the pipeline dump only to a logical error from building the executing graph. [#125706](https://github.com/ClickHouse/ClickHouse/pull/125706) ([Groene AI](https://github.com/groeneai)).
+* Fix `Broken pipe` in test `05345_robin_hood_large_hash_tables`. [#126151](https://github.com/ClickHouse/ClickHouse/pull/126151) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Add `clean-old-worktrees-global` skill. [#126153](https://github.com/ClickHouse/ClickHouse/pull/126153) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* The tests `03047_on_fly_mutations_multiple_updates`, `03047_on_fly_mutations_basics` and `03047_on_fly_mutations_basics_rmt` now sum `FileOpen`/`S3GetObject` over the initial query and the parallel replicas queries it starts, instead of reading only the initiator's `system.query_log` row. [#126181](https://github.com/ClickHouse/ClickHouse/pull/126181) ([Groene AI](https://github.com/groeneai)).
+* The `bedrock-openai` provider of `praktika review` now waits up to 600 s for a Converse response and retries a failed request once instead of four times. [#126311](https://github.com/ClickHouse/ClickHouse/pull/126311) ([Groene AI](https://github.com/groeneai)).
+* Add a style check for broken links in the PR diff. [#126358](https://github.com/ClickHouse/ClickHouse/pull/126358) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
