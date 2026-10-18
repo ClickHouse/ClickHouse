@@ -1759,6 +1759,19 @@ async function main() {
         check('format-multi-statement', 'an unterminated comment after the last delimiter is sent as a statement',
             JSON.stringify(only_comment.requests) === JSON.stringify([['select 1', '/* unterminated']]),
             only_comment.requests);
+
+        /// A leading byte order mark is whitespace for the lexer, so it stays outside the statements,
+        /// but it is a part of the text: the statement offsets must account for it, or the
+        /// statements are cut short (`\uFEFFselect ` instead of `select 1`).
+        const bom = await formatWith('\uFEFFselect 1;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the statement boundaries',
+            JSON.stringify(bom.requests) === JSON.stringify([['select 1']]), bom.requests);
+        check('format-multi-statement', 'a leading BOM is kept in the editor',
+            bom.text === '\uFEFFSELECT 1;', bom.text);
+        const bom_multi = await formatWith('\uFEFFselect 1; select 2;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the boundaries of later statements',
+            JSON.stringify(bom_multi.requests) === JSON.stringify([['select 1', 'select 2']]),
+            bom_multi.requests);
     }
 
     /// Guard (Format across a connection change during the lexer load): the first click loads the

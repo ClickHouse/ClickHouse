@@ -18403,7 +18403,9 @@ function tokenizeSync(query) {
         previous_end = end;
 
         const token_bytes = new Uint8Array(buffer, begin, end - begin);
-        let token = new TextDecoder().decode(token_bytes);
+        /// `ignoreBOM` keeps a leading `U+FEFF` (which the lexer reads as whitespace) in the token:
+        /// the callers compute offsets into the original text from the token lengths.
+        let token = new TextDecoder('utf-8', { ignoreBOM: true }).decode(token_bytes);
 
         result.push({type: token_type, significant: exports.clickhouse_lexer_token_is_significant(token_type), token: token});
     }
