@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <filesystem>
@@ -123,6 +124,89 @@ std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_p
     return makeObjectMetadata(file_stat);
 }
 
+/// A file is written under a staging name next to its object and renamed to the object when it is complete,
+/// see `WriteBufferToConditionallyPublishedFile`.
+constexpr std::string_view STAGING_FILE_PREFIX = ".tmp_";
+constexpr size_t STAGING_FILE_SUFFIX_LENGTH = 8;
+
+String makeStagingFilePath(const fs::path & target_path)
+{
+    /// A dedicated generator, so that staging a file does not advance `thread_local_rng`, which also generates the keys.
+    thread_local pcg64 temp_name_rng(randomSeed());
+    return target_path.parent_path() / fmt::format(
+        "{}{}_{}", STAGING_FILE_PREFIX, target_path.filename().string(), getRandomASCIIString(STAGING_FILE_SUFFIX_LENGTH, temp_name_rng));
+}
+
+bool isStagingFileName(std::string_view name)
+{
+    if (!name.starts_with(STAGING_FILE_PREFIX) || name.size() < STAGING_FILE_PREFIX.size() + 1 + 1 + STAGING_FILE_SUFFIX_LENGTH)
+        return false;
+
+    const auto suffix = name.substr(name.size() - STAGING_FILE_SUFFIX_LENGTH);
+    return name[name.size() - STAGING_FILE_SUFFIX_LENGTH - 1] == '_'
+        && std::all_of(suffix.begin(), suffix.end(), [](char c) { return c >= 'a' && c <= 'z'; });
+}
+
+/// The writer of a staging file holds an exclusive `flock` on it until the file is closed, and the kernel releases
+/// the lock when the process dies. So a staging file that can be locked has no writer anymore: it is left by a
+/// process that was killed before it published or removed the file. Returns whether the file was removed.
+bool removeAbandonedStagingFile(const String & path)
+{
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+    {
+        if (errno == ENOENT)
+            return false;
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
+    }
+
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
+
+    if (0 != ::flock(fd, LOCK_EX | LOCK_NB))
+    {
+        if (errno == EWOULDBLOCK)
+            return false;
+        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot lock file {}", path);
+    }
+
+    /// The writer could have published the file under the name of its object and closed it between `open` and `flock`.
+    /// Then the staging name is either gone or names some other file, which must not be removed.
+    struct stat locked_stat{};
+    struct stat path_stat{};
+    if (0 != ::fstat(fd, &locked_stat))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
+    if (0 != ::lstat(path.c_str(), &path_stat))
+    {
+        if (errno == ENOENT)
+            return false;
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
+    }
+    if (locked_stat.st_dev != path_stat.st_dev || locked_stat.st_ino != path_stat.st_ino)
+        return false;
+
+    if (0 != ::unlink(path.c_str()))
+    {
+        if (errno == ENOENT)
+            return false;
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, path, "Cannot remove file {}", path);
+    }
+    return true;
+}
+
+/// Creates a staging file and takes the lock that tells it from an abandoned one, see `removeAbandonedStagingFile`.
+/// A cleanup can still remove the file between its creation and the lock; then the write fails to publish it.
+std::unique_ptr<WriteBufferFromFile> createStagingFile(const String & path, size_t buf_size)
+{
+    auto buffer = std::make_unique<WriteBufferFromFile>(path, buf_size, O_WRONLY | O_CREAT | O_EXCL);
+    if (0 != ::flock(buffer->getFD(), LOCK_EX | LOCK_NB))
+    {
+        const int saved_errno = errno;
+        [[maybe_unused]] int err = ::unlink(path.c_str());
+        errno = saved_errno;
+        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot lock file {}", path);
+    }
+    return buffer;
+}
 
 }
 
@@ -505,7 +589,7 @@ public:
         std::optional<String> if_match_etag_,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
-        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(temp_path_, buf_size, O_WRONLY | O_CREAT | O_EXCL))
+        : WriteBufferFromFileDecorator(createStagingFile(temp_path_, buf_size))
         , target_path(target_path_)
         , temp_path(temp_path_)
         , mode(mode_)
@@ -649,10 +733,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         /// otherwise be staged and published under the server's working directory,
         /// giving conditional writes a different notion of a key than every other
         /// method of this storage.
-        auto target_path = fs::path(resolved_path);
-        /// A dedicated generator, so that staging a file does not advance `thread_local_rng`, which also generates the keys.
-        thread_local pcg64 temp_name_rng(randomSeed());
-        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8, temp_name_rng));
+        auto temp_path = makeStagingFilePath(resolved_path);
 
         return std::make_unique<WriteBufferToConditionallyPublishedFile>(
             resolved_path,
@@ -1007,6 +1088,31 @@ void LocalObjectStorage::shutdown()
 
 void LocalObjectStorage::startup()
 {
+    removeAbandonedStagingFiles();
+}
+
+void LocalObjectStorage::removeAbandonedStagingFiles() const
+{
+    /// Without a key prefix, the objects are not confined to a directory that could be scanned.
+    if (settings.read_only || settings.key_prefix.empty())
+        return;
+
+    RelativePathsWithMetadata files;
+    listObjects(settings.key_prefix, files, 0);
+
+    size_t removed = 0;
+    for (const auto & file : files)
+    {
+        const auto & path = file->getPath();
+        if (isStagingFileName(fs::path(path).filename().string()) && removeAbandonedStagingFile(path))
+        {
+            LOG_DEBUG(log, "Removed the staging file {} abandoned by a write that was interrupted", path);
+            ++removed;
+        }
+    }
+
+    if (removed)
+        LOG_INFO(log, "Removed {} staging files abandoned by interrupted writes under {}", removed, settings.key_prefix);
 }
 
 void LocalObjectStorage::throwIfReadonly() const

@@ -44,8 +44,9 @@ struct WriteSettings
     std::string object_storage_write_if_match;
 
     /// Publish the object only after it is written completely, so that even if the writing process is killed,
-    /// the object has either its previous contents or the new ones. An upload to a remote object storage is
-    /// atomic anyway; the local object storage stages the file under a temporary name and renames it.
+    /// the object has either its previous contents or the new ones. An upload to S3 or Azure is atomic anyway;
+    /// the local object storage stages the file under a temporary name and renames it. HDFS does not honor it:
+    /// `libhdfs3` has no rename that replaces an existing file, so a rewrite there truncates the file first.
     bool object_storage_write_atomically = false;
 
     /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.

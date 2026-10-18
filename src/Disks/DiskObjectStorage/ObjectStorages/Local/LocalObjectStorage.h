@@ -108,6 +108,9 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
+
+    /// Removes the staging files of writes whose process was killed before it published the object, see `writeObject`.
+    void removeAbandonedStagingFiles() const;
     String resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
