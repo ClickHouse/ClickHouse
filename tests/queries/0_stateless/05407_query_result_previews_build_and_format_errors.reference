@@ -1,0 +1,8 @@
+--- the finalization of an aggregate function throws on the first preview
+previews: 0
+exceptions: 0
+same result
+--- the output format rejects the first preview
+previews: 0
+exceptions: 0
+same result

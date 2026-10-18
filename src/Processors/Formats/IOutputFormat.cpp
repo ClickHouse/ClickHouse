@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -126,13 +127,30 @@ void IOutputFormat::consumeQueryResultPreview(Chunk chunk)
     if (!framing || !query_result_preview_format_creator || finalized || !need_write_prefix)
         return;
 
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A query result preview chunk has no QueryResultPreviewInfo");
+
     framing->beginPayload(FramedPacketKind::Preview);
 
     /// The preview is rendered by a fresh formatter, which is finalized so that the payload is a
     /// complete document of the format; this formatter and its state are not touched.
-    auto preview_format = query_result_preview_format_creator(out);
-    preview_format->write(getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns()));
-    preview_format->finalize();
+    /// The format may reject the intermediate values of a preview while it accepts the result of
+    /// the query (for example, `Npy` rejects an empty array that only a preview has). Such an error
+    /// must not fail the query: the partial document is discarded and the preview is dropped.
+    try
+    {
+        auto preview_format = query_result_preview_format_creator(out);
+        preview_format->write(getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns()));
+        preview_format->finalize();
+    }
+    catch (const Exception & e)
+    {
+        framing->discardPayload();
+        reattachBuffers();
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        return;
+    }
 
     writeFramingPayloadBoundary(FramedPacketKind::Preview);
 }

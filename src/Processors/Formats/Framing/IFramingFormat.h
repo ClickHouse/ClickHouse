@@ -94,6 +94,11 @@ public:
     /// portion's boundary is taken.
     void beginPayload(FramedPacketKind kind) { pending_payload_kind = kind; }
 
+    /// Drops the bytes buffered since the last `onPayload` boundary, without writing a packet. Used
+    /// when the serialization of a `preview` portion threw: a preview is best effort, so the query
+    /// goes on, and the partial document must not leak into the next packet.
+    void discardPayload();
+
     /// Called on query progress, possibly from another thread than `onPayload`
     /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.
     void onProgress(const Progress & progress);

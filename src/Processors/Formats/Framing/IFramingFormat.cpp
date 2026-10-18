@@ -87,6 +87,13 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     flushOut();
 }
 
+void IFramingFormat::discardPayload()
+{
+    payload.str();
+    payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
+    pending_payload_kind = FramedPacketKind::Data;
+}
+
 void IFramingFormat::onProgress(const Progress & progress)
 {
     if (finalized || failClosedAfterPartialWrite())

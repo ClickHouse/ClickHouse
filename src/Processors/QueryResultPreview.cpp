@@ -66,12 +66,17 @@ bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression)
 
 void onQueryResultPreviewEvaluationError(const Exception & error, const QueryResultPreviewInfo & preview, bool is_cancelled)
 {
+    onQueryResultPreviewEvaluationError(error, *preview.control, is_cancelled);
+}
+
+void onQueryResultPreviewEvaluationError(const Exception & error, QueryResultPreviewsControl & control, bool is_cancelled)
+{
     const auto code = error.code();
     if (is_cancelled || code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::QUERY_WAS_CANCELLED
         || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || code == ErrorCodes::ABORTED)
         throw;
 
-    preview.control->disable();
+    control.disable();
     LOG_DEBUG(getLogger("QueryResultPreview"),
         "A query result preview failed and is dropped, previews of its stage are disabled for the rest of the query: {}",
         error.message());

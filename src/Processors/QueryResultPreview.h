@@ -84,6 +84,12 @@ bool canEvaluateOnQueryResultPreviews(const ActionsDAG & expression);
 /// caller then drops the preview chunk.
 void onQueryResultPreviewEvaluationError(const Exception & error, const QueryResultPreviewInfo & preview, bool is_cancelled);
 
+/// The same for an error while building a preview of the stage controlled by `control` (for
+/// example, the finalization of an aggregation snapshot, where an aggregate function may throw on
+/// an intermediate state): rethrows a cancellation or a logical error, otherwise disables the
+/// previews of the stage, and the caller drops the preview.
+void onQueryResultPreviewEvaluationError(const Exception & error, QueryResultPreviewsControl & control, bool is_cancelled);
+
 /// Thresholds extracted from the query settings. All frequency limits must pass for a preview
 /// to be emitted: at least `min_interval_ms`/`min_rows`/`min_bytes` processed since the previous
 /// preview; and the accumulated state must stay small enough (`max_result_rows`/`max_result_bytes`),
