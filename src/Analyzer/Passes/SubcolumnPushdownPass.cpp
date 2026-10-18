@@ -265,6 +265,16 @@ bool joinTreeHasOuterJoin(const QueryTreeNodePtr & join_tree)
     if (const auto * array_join_node = join_tree->as<ArrayJoinNode>())
         return joinTreeHasOuterJoin(array_join_node->getTableExpressionNode());
 
+    if (const auto * cross_join_node = join_tree->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+        {
+            if (joinTreeHasOuterJoin(table_expression))
+                return true;
+        }
+        return false;
+    }
+
     return false;
 }
 

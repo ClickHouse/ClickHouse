@@ -5,6 +5,7 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_pushdown_l;
 DROP TABLE IF EXISTS t_pushdown_r;
+DROP TABLE IF EXISTS t_pushdown_s;
 DROP TABLE IF EXISTS t_pushdown_sum_map;
 DROP TABLE IF EXISTS t_pushdown_coalescing;
 DROP TABLE IF EXISTS t_pushdown_nested;
@@ -30,6 +31,18 @@ SELECT k, getSubcolumn(n, 'null') FROM (SELECT r.k AS k, l.k AS lk, l.n AS n FRO
 ORDER BY k SETTINGS join_use_nulls = 0, optimize_push_subcolumns_into_subqueries = 0;
 SELECT k, getSubcolumn(n, 'null') FROM (SELECT r.k AS k, l.k AS lk, l.n AS n FROM t_pushdown_r AS l RIGHT JOIN t_pushdown_r AS r ON l.k = r.k + 1)
 ORDER BY k SETTINGS join_use_nulls = 0, optimize_push_subcolumns_into_subqueries = 1;
+
+SELECT 'left join below cross join';
+CREATE TABLE t_pushdown_s (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_pushdown_s VALUES (1);
+SELECT k, getSubcolumn(n, 'null') FROM (SELECT l.k AS k, r.n AS n FROM t_pushdown_l AS l LEFT JOIN t_pushdown_r AS r ON l.k = r.k CROSS JOIN t_pushdown_s)
+ORDER BY k SETTINGS join_use_nulls = 0, optimize_push_subcolumns_into_subqueries = 0;
+SELECT k, getSubcolumn(n, 'null') FROM (SELECT l.k AS k, r.n AS n FROM t_pushdown_l AS l LEFT JOIN t_pushdown_r AS r ON l.k = r.k CROSS JOIN t_pushdown_s)
+ORDER BY k SETTINGS join_use_nulls = 0, optimize_push_subcolumns_into_subqueries = 1;
+SELECT k, arr.size0 FROM (SELECT l.k AS k, r.arr AS arr FROM t_pushdown_s, t_pushdown_l AS l LEFT JOIN t_pushdown_r AS r ON l.k = r.k)
+ORDER BY k SETTINGS join_use_nulls = 1, optimize_push_subcolumns_into_subqueries = 0;
+SELECT k, arr.size0 FROM (SELECT l.k AS k, r.arr AS arr FROM t_pushdown_s, t_pushdown_l AS l LEFT JOIN t_pushdown_r AS r ON l.k = r.k)
+ORDER BY k SETTINGS join_use_nulls = 1, optimize_push_subcolumns_into_subqueries = 1;
 
 -- `FINAL`: the merge of a subcolumn is not that subcolumn of the merge of the column.
 CREATE TABLE t_pushdown_sum_map (k UInt64, m SimpleAggregateFunction(sumMap, Map(String, UInt64)))
@@ -82,6 +95,7 @@ GROUP BY CUBE(tup, tup.z) ORDER BY ALL SETTINGS group_by_use_nulls = 1, optimize
 
 DROP TABLE t_pushdown_l;
 DROP TABLE t_pushdown_r;
+DROP TABLE t_pushdown_s;
 DROP TABLE t_pushdown_sum_map;
 DROP TABLE t_pushdown_coalescing;
 DROP TABLE t_pushdown_nested;
