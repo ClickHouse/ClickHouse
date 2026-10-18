@@ -144,7 +144,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & authenticated_user_,
     const String & quota_key_,
     const Settings & settings_,
-    AsynchronousInsertQueueDataKind data_kind_)
+    AsynchronousInsertQueueDataKind data_kind_,
+    const String & quota_client_address_,
+    const String & quota_forwarded_address_)
     : query(query_->clone())
     , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -156,6 +158,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
     , quota_key(quota_key_)
+    , quota_client_address(quota_client_address_)
+    , quota_forwarded_address(quota_forwarded_address_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -197,7 +201,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key})
+    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address})
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
@@ -234,6 +238,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     quota_key = other.quota_key;
+    quota_client_address = other.quota_client_address;
+    quota_forwarded_address = other.quota_forwarded_address;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -256,6 +262,8 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         quota_key = other.quota_key;
+        quota_client_address = other.quota_client_address;
+        quota_forwarded_address = other.quota_forwarded_address;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -725,6 +733,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     }
 
     const auto & client_info = query_context->getClientInfo();
+
+    /// The flush runs in a context of its own, which only has the client address restored if a quota needs it.
+    String quota_client_address;
+    String quota_forwarded_address;
+    if (auto quota = query_context->getQuota(); quota && quota->isKeyedByClientAddress())
+    {
+        if (client_info.current_address)
+            quota_client_address = client_info.current_address->host().toString();
+        quota_forwarded_address = client_info.getLastForwardedForHost();
+    }
+
     InsertQuery key{
         query,
         query_context->getUserID(),
@@ -737,7 +756,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         client_info.authenticated_user,
         client_info.quota_key,
         settings,
-        data_kind};
+        data_kind,
+        quota_client_address,
+        quota_forwarded_address};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1304,6 +1325,11 @@ try
     insert_context->setAuthenticatedUserName(key.authenticated_user);
     /// Restore the quota key so `KEYED BY client_key` quotas bill the originating bucket.
     insert_context->setQuotaClientKey(key.quota_key);
+    /// Restore the client address so `KEYED BY ip_address` / `forwarded_ip_address` quotas bill the originating bucket.
+    if (!key.quota_client_address.empty())
+        insert_context->setCurrentAddress(Poco::Net::SocketAddress(key.quota_client_address, 0));
+    if (!key.quota_forwarded_address.empty())
+        insert_context->setForwardedFor(key.quota_forwarded_address);
 
     insert_context->setSettings(*key.settings);
 

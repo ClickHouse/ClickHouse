@@ -118,6 +118,12 @@ public:
         String authenticated_user;
         /// Client quota key, so `KEYED BY client_key` quotas bill separate buckets per key.
         String quota_key;
+        /// Client address and the last forwarded address of the originating INSERT query, so that quotas keyed by
+        /// `ip_address` or `forwarded_ip_address` are checked on submission and charged on flush in the same bucket.
+        /// Empty unless a quota of the inserting user is keyed by an address: otherwise the address does not matter,
+        /// and inserts from different clients are coalesced into one flush. Part of the batching key.
+        String quota_client_address;
+        String quota_forwarded_address;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -135,7 +141,9 @@ public:
             const String & authenticated_user_,
             const String & quota_key_,
             const Settings & settings_,
-            AsynchronousInsertQueueDataKind data_kind_);
+            AsynchronousInsertQueueDataKind data_kind_,
+            const String & quota_client_address_ = {},
+            const String & quota_forwarded_address_ = {});
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -145,7 +153,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
