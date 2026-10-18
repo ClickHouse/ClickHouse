@@ -541,7 +541,7 @@ bool IMergeTreeReader::isReadByKey(const String & column_name) const
     auto is_required = [&](const Names & required_columns) { return std::ranges::find(required_columns, column_name) != required_columns.end(); };
 
     const auto & metadata = *storage_snapshot->metadata;
-    return is_required(metadata.getColumnsRequiredForPartitionKey()) || is_required(metadata.getColumnsRequiredForPrimaryKey());
+    return is_required(metadata.getColumnsRequiredForPartitionKey()) || is_required(metadata.getColumnsRequiredForSortingKey());
 }
 
 std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
@@ -584,12 +584,13 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
     }
 
     /// Before `ALTER TABLE ... ADD COLUMN` refused such a column, it could be added under the name of a subcolumn that the
-    /// partition key or the primary key reads. Neither key changes after the table is created, so a part that misses
-    /// such a column was written before it was added, and holds a partition and an index computed from that subcolumn.
-    /// For these parts the name keeps the meaning it had then, as it always did, so that pruning agrees with the values
-    /// read. A column added to the sorting key alone by `MODIFY ORDER BY` in the same `ALTER` is not affected: the parts
-    /// written before are not sorted by it.
-    if (is_missing && (data_part_info_for_read->isProjectionPart() || !isReadByKey(name_in_part)))
+    /// partition key or the sorting key reads. A part that misses such a column was written before it was added, and holds
+    /// a partition, an index and a physical order computed from that subcolumn. For these parts the name keeps the meaning
+    /// it had then, as it always did, so that pruning and in-order reads agree with the values read. A part that records
+    /// the column as missing (`skip_empty_columns_on_insert`) was written after, from the column's default, which it reads.
+    if (is_missing
+        && (data_part_info_for_read->isProjectionPart() || !isReadByKey(name_in_part)
+            || data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_storage)))
         return {};
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();

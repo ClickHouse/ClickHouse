@@ -245,7 +245,7 @@ private:
     /// column or subcolumn. @requested_as_nested tells that the column is a subcolumn of a `Nested` column.
     std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const;
 
-    /// Whether the partition key or the primary key of the table reads the column or subcolumn.
+    /// Whether the partition key or the sorting key of the table reads the column or subcolumn.
     bool isReadByKey(const String & column_name) const;
 
     /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds

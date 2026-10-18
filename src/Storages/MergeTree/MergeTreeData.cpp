@@ -6074,7 +6074,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// expression reads: the parts written before hold no such column, so they read its default, while their
         /// primary index, partition minmax index, partition ID and physical order were all computed from the old
         /// subcolumn. Pruning and in-order reads would then use values the key no longer evaluates to. The same holds
-        /// for the key of a projection, by which the projection parts are indexed and sorted.
+        /// for a projection, whose parts are indexed and sorted by its key and whose aggregate states were computed from
+        /// its source columns. A column added in the same `ALTER` to the sorting key by `MODIFY ORDER BY` is refused as
+        /// well: the reader keeps the old meaning of a name that the sorting key reads for the parts that miss it.
         if (is_initial_alter && std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_COLUMN && !c.ignore; }))
         {
             Names key_columns;
@@ -6082,9 +6084,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 key_columns = old_metadata.getColumnsRequiredForPartitionKey();
             if (old_metadata.hasSortingKey())
                 std::ranges::copy(old_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            if (new_metadata.hasSortingKey())
+                std::ranges::copy(new_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
             for (const auto & projection : old_metadata.getProjections())
+            {
+                std::ranges::copy(projection.required_columns, std::back_inserter(key_columns));
                 if (projection.metadata)
                     std::ranges::copy(projection.metadata->getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            }
 
             const auto & new_columns = new_metadata.getColumns();
             for (const auto & key_column : key_columns)
@@ -6094,8 +6101,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (old_column && new_column && old_column->isSubcolumn() && old_column->getNameInStorage() != new_column->getNameInStorage())
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Cannot add column {}: the key expression reads {} as a subcolumn of column {}, and the new column "
-                        "would change it, while the existing parts are indexed and sorted by the old value",
+                        "Cannot add column {}: a key or projection expression reads {} as a subcolumn of column {}, and the new "
+                        "column would change it, while the existing parts are indexed, sorted and aggregated by the old value",
                         backQuoteIfNeed(new_column->getNameInStorage()),
                         backQuoteIfNeed(key_column),
                         backQuoteIfNeed(old_column->getNameInStorage()));
