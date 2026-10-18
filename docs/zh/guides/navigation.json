@@ -5,6 +5,7 @@
       "pages": [
         "zh/guides/clickhouse/index",
         "zh/guides/clickhouse/kusto-query-language",
+        "zh/guides/clickhouse/logsql",
         {
           "group": "数据格式",
           "pages": [
@@ -104,7 +105,7 @@
         },
         "zh/guides/oss/update",
         {
-          "group": "开源版最佳实践",
+          "group": "OSS 最佳实践",
           "pages": [
             "zh/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "zh/guides/oss/best-practices/tips"
@@ -112,7 +113,7 @@
         },
         {
           "expanded": false,
-          "group": "部署与扩容",
+          "group": "部署与扩缩容",
           "pages": [
             "zh/guides/oss/deployment-and-scaling/terminology",
             "zh/guides/oss/deployment-and-scaling/shards",

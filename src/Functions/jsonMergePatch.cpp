@@ -102,15 +102,9 @@ namespace
 
         bool useDefaultImplementationForConstants() const override { return true; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        String getSignatureString() const override
         {
-            FunctionArgumentDescriptor variadic_args{
-                "json1",isString, nullptr, "String"
-            };
-            FunctionArgumentDescriptors mandatory_args{variadic_args};
-
-            validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
-            return std::make_shared<DataTypeString>();
+            return "(String, ...) -> String";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
