@@ -175,7 +175,12 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
 
 void CPUSlotsAllocation::failed(const std::exception_ptr & ptr)
 {
-    std::scoped_lock lock{schedule_mutex};
+    std::unique_lock lock{schedule_mutex};
+    failImpl(lock, ptr);
+}
+
+void CPUSlotsAllocation::failImpl(std::unique_lock<std::mutex> &, const std::exception_ptr & ptr)
+{
     exception = ptr;
     noncompeting.store(exception_value);
     allocated = total_slots + 1;
@@ -200,8 +205,18 @@ void CPUSlotsAllocation::grant()
     {
         // TODO(serxa): we should not request more slots if we already have at least 2 granted and not acquired slots to avoid holding unnecessary slots
         const ResourceLink & link = getCurrentLink(lock);
-        if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
+        try
+        {
+            if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
+                return;
+        }
+        catch (...)
+        {
+            // Enqueueing may fail, e.g. if the queue was purged by the scheduler thread of another resource.
+            // The scheduler thread must not throw, so the allocation fails as if the request were failed by the queue.
+            failImpl(lock, std::current_exception());
             return;
+        }
         // NOTE: if the next slot is noncompeting - postpone granting it to avoid it being acquired too early
     }
 

@@ -2,12 +2,14 @@
 
 #include <base/defines.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Scheduler/ISpaceSharedNode.h>
 
 #include <atomic>
+#include <future>
 
 
 namespace DB
@@ -34,7 +36,13 @@ public:
     void start(ThreadName name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+        {
+            // Only the thread owns the promise: if it finishes without running `schedulerThread`, the promise is broken
+            auto started = std::make_shared<std::promise<void>>();
+            auto started_future = started->get_future();
+            scheduler = ThreadFromGlobalPool([this, name, my_started = std::move(started)] { schedulerThread(name, *my_started); });
+            EventQueue::waitSchedulerThreadStarted(started_future);
+        }
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -47,6 +55,9 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Callbacks run in the current thread, which must not throw either (see `EventQueue::runSchedulerThread`)
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 while (true)
                 {
@@ -145,21 +156,22 @@ public:
     }
 
 private:
-    void schedulerThread(ThreadName name)
+    void schedulerThread(ThreadName name, std::promise<void> & started)
     {
-        setThreadName(name);
-        EventQueue::SchedulerThread scheduler_thread(&events);
-        while (!stop_flag.load())
+        events.runSchedulerThread(name, started, [this]
         {
-            if (events.tryProcess()) // Priority 0: process events
-                continue;
-            else if (decrease) // Priority 1: process decrease requests
-                approveDecrease();
-            else if (increase) // Priority 2: process increase requests
-                approveIncrease();
-            else // Block until any event happens
-                events.process();
-        }
+            while (!stop_flag.load())
+            {
+                if (events.tryProcess()) // Priority 0: process events
+                    continue;
+                else if (decrease) // Priority 1: process decrease requests
+                    approveDecrease();
+                else if (increase) // Priority 2: process increase requests
+                    approveIncrease();
+                else // Block until any event happens
+                    events.process();
+            }
+        });
     }
 
     SpaceSharedNodePtr child;

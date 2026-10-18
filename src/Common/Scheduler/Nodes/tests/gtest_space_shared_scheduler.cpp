@@ -7,12 +7,14 @@
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 
 #include <barrier>
 #include <cstdlib>
 #include <future>
 #include <initializer_list>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -2020,4 +2022,27 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+TEST(SchedulerSpaceShared, ExceptionInSchedulerThreadTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        SpaceSharedScheduler scheduler;
+        scheduler.start(ThreadName::TEST_SCHEDULER);
+        scheduler.event_queue.enqueue([] { throw std::runtime_error("Test exception in the scheduler thread"); });
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }, "Test exception in the scheduler thread");
+}
+
+TEST(SchedulerSpaceShared, MemoryTrackerDoesNotThrowInSchedulerThread)
+{
+    SpaceSharedTest t;
+    std::promise<bool> blocked;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        blocked.set_value(LockMemoryExceptionInThread::isBlocked(VariableContext::Global, /* fault_injection = */ true));
+    });
+    EXPECT_TRUE(blocked.get_future().get());
 }
