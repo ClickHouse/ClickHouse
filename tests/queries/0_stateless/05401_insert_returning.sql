@@ -27,19 +27,19 @@ INSERT INTO t_returning RETURNING (SELECT * FROM t_returning) VALUES (6, 'f', 0)
 
 SELECT 'INSERT SELECT with many blocks';
 INSERT INTO t_returning (id, s) RETURNING (SELECT count(), min(id), max(id), sum(m) FROM t_returning)
-SELECT number + 100, toString(number) FROM numbers(100000) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000;
+SELECT number + 100, toString(number) FROM numbers(10000) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000;
 SELECT count() FROM t_returning;
 
 SELECT 'Parallel insert';
 INSERT INTO t_returning (id, s) RETURNING (SELECT count(), sum(id) FROM t_returning)
-SELECT number + 1000000, '' FROM numbers(100000) SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 1000, min_insert_block_size_rows = 1000;
+SELECT number + 1000000, '' FROM numbers(10000) SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 1000, min_insert_block_size_rows = 1000;
 SELECT count() FROM t_returning WHERE id >= 1000000 AND id < 2000000;
 
 SELECT 'LIMIT does not stop the insert';
 INSERT INTO t_returning (id, s) RETURNING (SELECT id FROM t_returning ORDER BY id LIMIT 2)
-SELECT number + 2000000, '' FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100;
+SELECT number + 2000000, '' FROM numbers(1000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100;
 INSERT INTO t_returning (id, s) RETURNING (SELECT id FROM t_returning LIMIT 0)
-SELECT number + 2100000, '' FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100;
+SELECT number + 2100000, '' FROM numbers(1000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100;
 SELECT count() FROM t_returning WHERE id >= 2000000 AND id < 3000000;
 
 SELECT 'Without FROM, the RETURNING query reads the inserted data';

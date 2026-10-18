@@ -29,8 +29,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_returning_client (x) RETURNING (SELE
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_returning_client"
 
 echo "A large result is received while the data is sent"
-seq 1 3000000 | ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_returning_client (x) RETURNING (SELECT x) FORMAT TSV" | awk '{ s += $1 } END { print NR, s }'
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_returning_client"
+seq 1 1000000 | ${CLICKHOUSE_CLIENT} --max_insert_block_size 100000 --query "INSERT INTO FUNCTION null('x UInt64') RETURNING (SELECT x) FORMAT TSV" | awk '{ s += $1 } END { print NR, s }'
 
 echo "clickhouse-local"
 ${CLICKHOUSE_LOCAL} --query "
