@@ -487,7 +487,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
+           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
            single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {
