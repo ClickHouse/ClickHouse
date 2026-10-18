@@ -925,12 +925,10 @@ void ReadManager::readAheadColumnData()
         return stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_slots >= depth;
     };
 
-    /// Larger row groups keep one request each: more requests stay in flight, and a slow one stalls in-order decoding for less.
     const size_t small_row_group_bytes = reader.options.min_bytes_for_seek / 16;
 
-    /// Consecutive row groups smaller than small_row_group_bytes whose requests are adjacent ranges are started by one call,
-    /// up to bytes_per_read_task. A run of one row group holds one depth slot, a longer run one per read task its call
-    /// created, owned by the first row group of the run that reads from it.
+    /// Consecutive row groups below small_row_group_bytes with adjacent requests are started by one call, up to bytes_per_read_task.
+    /// A run of one holds one depth slot; a longer run one per read task it created, owned by the first row group reading from it.
     std::vector<size_t> run;
     std::vector<PrefetchHandle *> run_prefetches;
     std::vector<size_t> run_prefetch_row_groups;

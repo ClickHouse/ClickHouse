@@ -59,8 +59,7 @@ public:
 
     /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
     /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
-    /// `created_task_first_handle` receives, for each read task created, the position in `requests_to_start`
-    /// of the first handle it covers.
+    /// `created_task_first_handle` receives, per created read task, the position in `requests_to_start` of its first handle.
     std::optional<size_t> startPrefetchWithinLimit(
         const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
         std::vector<size_t> * created_task_first_handle = nullptr);
@@ -69,8 +68,7 @@ public:
     /// the file metadata describes, the registered ranges' own included: adjacent ranges never span one.
     void setBarriers(std::vector<size_t> sorted_offsets);
 
-    /// Ranges that are consecutive in the sorted order of the ranges registered before finalizeRanges(),
-    /// with no structure of the file between them (see setBarriers).
+    /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with no file structure between them (see setBarriers).
     struct AdjacentRanges
     {
         size_t first_range_idx = 0;

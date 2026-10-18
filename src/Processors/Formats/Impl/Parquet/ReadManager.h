@@ -148,8 +148,7 @@ private:
     /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
     /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
     AtomicBitSet column_data_read_ahead_row_groups;
-    /// Read-ahead depth slots held by each such row group: written by readAheadColumnData, read and zeroed by
-    /// the admission round that unsets the row group's bit.
+    /// Depth slots held by each such row group; set by readAheadColumnData, zeroed by the admission round that unsets its bit.
     std::vector<size_t> column_data_read_ahead_run_slots;
     /// Slots held by all row groups.
     std::atomic<size_t> column_data_read_ahead_count {0};
