@@ -36,19 +36,22 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Filter `nested` in place when it is uniquely owned; otherwise deep-clone via
-    /// `IColumn::mutate` and replace, so we never silently mutate a column that is
-    /// shared with another owner.
-    void filterNestedInPlaceOrReplace(ColumnPtr & nested, const IColumn::Filter & filt)
+    /// Filter the elements of arrays, which are stored in `nested` and delimited by `offsets`, as
+    /// `ColumnArray::filter` does. The filtering goes through a temporary `ColumnArray`, so it dispatches
+    /// to the span-based in-place implementations (`filterNumber`, `filterString`, ...) and does not
+    /// materialize a filter with one byte per nested element. The temporary array owns both of its
+    /// columns exclusively: `nested` is deep-COWed via `IColumn::mutate`, so we never silently mutate
+    /// a column that is shared with another owner, and the offsets are copied, because the caller
+    /// still needs them. The filtered column is written back to `nested`, which is restored even when
+    /// `filter` throws, so it is never left moved-from.
+    void filterNestedArrayElements(ColumnPtr & nested, const ColumnPtr & offsets, const IColumn::Filter & filt)
     {
-        /// A unique wrapper can still have shared subcolumns, so always use the deep COW path.
-        /// Keep the original pointer intact until the replacement is fully ready, so an exception
-        /// inside `filter` leaves `nested` valid rather than moved-from.
+        auto offsets_copy = IColumn::mutate(offsets);
         auto * nested_slot = &nested;
-        auto cloned = IColumn::mutate(std::move(*nested_slot));
-        SCOPE_EXIT({ if (!*nested_slot) *nested_slot = std::move(cloned); });
-        cloned->filter(filt);
-        *nested_slot = std::move(cloned);
+        auto temporary = ColumnArray::create(IColumn::mutate(std::move(*nested_slot)), std::move(offsets_copy));
+        SCOPE_EXIT({ if (!*nested_slot) *nested_slot = std::move(temporary->getDataPtr()); });
+        temporary->filter(filt);
+        *nested_slot = std::move(temporary->getDataPtr());
     }
 }
 
@@ -1323,20 +1326,10 @@ void ColumnArray::filterTuple(const Filter & filt)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
-    /// Build the nested filter once from the array offsets.
-    Filter nested_filt(cur_offsets.back());
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (filt[i])
-            memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
-        else
-            memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
-    }
-
     /// Filter each tuple element. `tuple` is owned uniquely by `this->data` (per the
     /// contract of non-const `filter`), but a tuple element may still be shared with
     /// another owner — e.g. when the outer column came from
-    /// `ColumnArray::create(const ColumnPtr &, ...)`. `filterNestedInPlaceOrReplace`
+    /// `ColumnArray::create(const ColumnPtr &, ...)`. `filterNestedArrayElements`
     /// deep-clones such elements before mutating to preserve the COW invariant.
     /// `tuple.getColumns()[i]` returns a reference to a `WrappedPtr`; convert to the
     /// underlying `ColumnPtr &` via `WrappedPtr::operator immutable_ptr<T> &`.
@@ -1344,7 +1337,7 @@ void ColumnArray::filterTuple(const Filter & filt)
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnPtr & nested_ref = mutable_tuple_columns[i];
-        filterNestedInPlaceOrReplace(nested_ref, nested_filt);
+        filterNestedArrayElements(nested_ref, std::as_const(offsets), filt);
     }
 
     /// Update the outer array offsets in place.
@@ -1395,22 +1388,12 @@ void ColumnArray::filterNullable(const Filter & filt)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
-    /// Build the nested filter once from the array offsets.
-    Filter nested_filt(cur_offsets.back());
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (filt[i])
-            memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
-        else
-            memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
-    }
-
     /// `nullable_elems` is owned uniquely by `this->data`, but its nested column and
     /// null map can be shared elsewhere (e.g. when the outer column came from
-    /// `ColumnArray::create(const ColumnPtr &, ...)`). `filterNestedInPlaceOrReplace`
+    /// `ColumnArray::create(const ColumnPtr &, ...)`). `filterNestedArrayElements`
     /// deep-clones in those cases to preserve the COW invariant.
     auto & mutable_nullable = const_cast<ColumnNullable &>(nullable_elems);
-    filterNestedInPlaceOrReplace(mutable_nullable.getNestedColumnPtr(), nested_filt);
+    filterNestedArrayElements(mutable_nullable.getNestedColumnPtr(), std::as_const(offsets), filt);
 
     /// Filter the null map and update outer offsets in place. The null map needs the
     /// same shared-check treatment.
