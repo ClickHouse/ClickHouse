@@ -173,6 +173,9 @@ sll.pcap	1	SLL	['SLL','IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68
 3	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
 --- non-first IPv6 fragment: the extension-header chain stops at the Fragment header ---
 4	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	IPv6-Opts	\N	\N	0
+--- first IPv4 and IPv6 fragments: the transport header is decoded ---
+1	['ETHERNET_II','IP','TCP','RAW']	4	TCP	12345	80	ACK,PSH	1	22	GET / HTTP/1.0\\r\\n\\r\\n
+2	['ETHERNET_II','IPv6','IPv6-Frag','UDP','RAW']	6	UDP	5353	5353	\N	\N	5	first
 --- explicit structure: the columns are converted to the requested types ---
 1	UInt32	80	Nullable(String)
 2	UInt32	67	Nullable(String)

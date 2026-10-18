@@ -252,6 +252,12 @@ SELECT number, protocols, ip_protocol, src_port, dst_port, payload_length
 FROM file('$DATA_DIR/options.pcap', PCAP)
 WHERE ip_version = 6 FORMAT TSV"
 
+echo "--- first IPv4 and IPv6 fragments: the transport header is decoded ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, ip_version, ip_protocol, src_port, dst_port, tcp_flags, tcp_seq, payload_length, payload
+FROM file('$DATA_DIR/fragments.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
 echo "--- explicit structure: the columns are converted to the requested types ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, toTypeName(number), dst_port, toTypeName(dst_port)

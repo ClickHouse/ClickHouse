@@ -913,7 +913,7 @@ Chunk PCAPBlockInputFormat::read()
 
         /// Taken from the IP header itself (the IPv4 `protocol` field, or the `next header`
         /// field after the IPv6 extension-header chain), so it stays correct when the transport
-        /// header was not captured (a truncated snapshot) or is not decodable (a fragment).
+        /// header was not captured (a truncated snapshot) or is not decodable (a non-first fragment).
         if (need[COL_IP_PROTOCOL])
         {
             String name;
@@ -1153,7 +1153,7 @@ The `PCAP` format produces the following columns:
 | `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
 | `dst_addr` | `Nullable(IPv6)` | Destination address of the outermost IP header |
-| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outermost IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. When the snapshot length cuts an IPv6 extension header, it is the type of that header, for example `IPv6-Route`. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outermost IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. When the snapshot length cuts an IPv6 extension header, it is the type of that header, for example `IPv6-Route`. It is filled even when the transport header itself was not captured or is not in the packet (a fragment other than the first one), in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit of the outermost IP header |
 | `src_port` | `Nullable(UInt16)` | Source port of the TCP or UDP header directly inside the outermost IP header |
 | `dst_port` | `Nullable(UInt16)` | Destination port of the TCP or UDP header directly inside the outermost IP header |

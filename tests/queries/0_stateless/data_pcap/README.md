@@ -36,3 +36,6 @@ rewrite each other's files.
   marker followed by padding, so the payload starts at the captured header
   length, and a non-first IPv6 fragment whose data looks like an extension
   header, so the extension-header chain stops at the Fragment header.
+- `fragments.pcap` — a first IPv4 fragment of a TCP segment and a first IPv6
+  fragment of a UDP datagram (fragment offset 0, more fragments), so the
+  transport header in them is decoded.

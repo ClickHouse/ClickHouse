@@ -271,3 +271,17 @@ padded_options = [
 non_first_fragment = bytes([60, 0]) + struct.pack(">HI", 2 << 3, 0x12345678) + bytes.fromhex("0600000000000000") + b"data"
 padded_options.append(ethernet(ipv6(44, non_first_fragment), ether_type=0x86DD))
 write_pcap(out_dir / "options.pcap", [(packet, len(packet)) for packet in padded_options])
+
+# First fragments (fragment offset 0, "more fragments" set): the transport
+# header is in this fragment, so the ports, the TCP fields, and the part of the
+# payload in this fragment are decoded. An IPv4 TCP first fragment, and an IPv6
+# UDP first fragment behind a Fragment header (offset 0, M = 1). The UDP length
+# names the whole datagram, which is longer than this fragment.
+first_fragments = [
+    ethernet(ipv4(6, tcp, flags_and_offset=0x2000)),
+    ethernet(
+        ipv6(44, bytes([17, 0]) + struct.pack(">HI", 1, 0x12345678) + struct.pack(">HHHH", 5353, 5353, 1008, 0) + b"first"),
+        ether_type=0x86DD,
+    ),
+]
+write_pcap(out_dir / "fragments.pcap", [(packet, len(packet)) for packet in first_fragments])
