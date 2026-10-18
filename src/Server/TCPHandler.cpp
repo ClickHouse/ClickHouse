@@ -1558,7 +1558,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
     {
         auto receive_next_block = [&]
         {
-            /// Publish the 1-thread executor's CPU slot, so it is parked while waiting for the next packet.
             std::optional<ScopedCPULease> cpu_lease;
             if constexpr (std::is_same_v<std::decay_t<decltype(executor)>, PushingPipelineExecutor>)
                 cpu_lease.emplace(executor.getCPULease());

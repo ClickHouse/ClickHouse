@@ -267,7 +267,6 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     });
     if (!is_execution_initialized)
     {
-        /// Nested in another executor's step on this thread: run on its lease instead of taking a second slot.
         runs_on_caller_lease = getCurrentCPULease() != nullptr;
         initializeExecution(1, /* concurrency_control = */ !runs_on_caller_lease);
 
