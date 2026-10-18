@@ -9,7 +9,7 @@
 # turning the attack into a `TOO_DEEP_RECURSION` exception while the server keeps serving.
 #
 # The packet is only reachable for a query sent with the `QueryPlan` processing stage while the
-# server has `process_query_plan_packet` enabled (see tests/config/config.d/query_plan_packet.xml).
+# server has `process_query_plan_packet` enabled (see tests/config/config.d/process_query_plan_packet.xml).
 # The client here speaks the raw native protocol pinned to revision 54482 so the revision-gated
 # fields of the handshake are fixed.
 

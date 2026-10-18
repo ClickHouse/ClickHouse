@@ -241,7 +241,6 @@ if check_clickhouse_version 25.4; then
 fi
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 
 if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/

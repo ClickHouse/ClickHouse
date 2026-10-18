@@ -1,6 +1,0 @@
-<clickhouse>
-    <!-- Allow clients to send serialized query plans (QueryPlan packet).
-         Needed by 05427_query_plan_deserialize_deep_recursion and any test
-         exercising the serialize_query_plan / QueryPlan stage path. -->
-    <process_query_plan_packet>true</process_query_plan_packet>
-</clickhouse>
