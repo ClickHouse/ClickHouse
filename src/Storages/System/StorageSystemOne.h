@@ -53,12 +53,25 @@ public:
 
     String getName() const override { return "ReadFromSystemOne"; }
 
+    /// Serialized under the already-registered "ReadFromStorage" name rather than under `getName`:
+    /// `ReadFromStorageStep` holds a complete `system.one` codec, and its decoder is what reads the
+    /// bytes written by `serialize` below. `getName` is deliberately left alone (`EXPLAIN` output and
+    /// `optimizeJoin.cpp` match on it).
+    /// Note: the wire name is consumed only by `QueryPlan::serialize`. The other users of
+    /// `getSerializationName` (hash-table-statistics cache keys, join runtime-filter fingerprints)
+    /// dispatch on `SourceStepWithFilter` / `ITransformingStep` / `JoinStepLogical`; this step derives
+    /// from `ISourceStep` only, so they cannot see it. Revisit if that ever changes.
+    String getSerializationName() const override { return "ReadFromStorage"; }
+
     QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromSystemOneStep>(*this);
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 };
 
 }
