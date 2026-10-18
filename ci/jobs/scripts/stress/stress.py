@@ -193,11 +193,13 @@ class RandomDisruptor:
             logging.warning("Random query kill failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_client(self) -> None:
-        """Kill a random clickhouse-client process."""
+        """Kill a random client process."""
         try:
-            # Get list of clickhouse-test child processes (clickhouse client)
+            # Get list of clickhouse-test child processes: clickhouse client, and `protocol_client.py`,
+            # which runs the tests over the other protocols (see `--protocols`), so that the server
+            # sees the client of every protocol disconnect in the middle of a query.
             result = check_output(
-                "pgrep -f 'clickhouse-client|clickhouse client' 2>/dev/null || true",
+                "pgrep -f 'clickhouse-client|clickhouse client|protocol_client[.]py' 2>/dev/null || true",
                 shell=True,
                 timeout=5,
             )
@@ -372,6 +374,21 @@ class RandomDisruptor:
             logging.error("Random disruptor did not stop in time")
             return
         self._thread = None
+
+
+# The protocols for `clickhouse-test --protocols`.
+STRESS_PROTOCOLS = [
+    "native",
+    "native_tls",
+    "http",
+    "https",
+    "mysql",
+    "postgresql",
+    "grpc",
+    "arrowflight",
+    "ssh",
+    "webterminal",
+]
 
 
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
@@ -756,6 +773,11 @@ def run_func_test(
     # clickhouse-test exits on its own within the execute_bash timeout (180s).
     smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
     smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
+    # Every `.sql` test of the stress run goes over a random protocol, to send the randomized and
+    # fuzzed load to every protocol handler of the server. Not in the smoke check, which compares
+    # results with the references. Not in the upgrade check: its load runs against the previous
+    # release, which may lack a protocol (and its server configuration).
+    protocols_option = "" if upgrade_check else f"--protocols={','.join(STRESS_PROTOCOLS)}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -771,7 +793,7 @@ def run_func_test(
             f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
-        full_command = f"{base_command} {global_time_limit_option} "
+        full_command = f"{base_command} {global_time_limit_option} {protocols_option} "
         commands.append(full_command)
         # Smoke check: disable AST fuzzer (fuzzed queries produce expected
         # errors in stderr) and cap global_time_limit so clickhouse-test
