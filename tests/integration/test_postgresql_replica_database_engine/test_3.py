@@ -3352,6 +3352,83 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
+    # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
+    # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
+    # the list of tables to replicate from the live PostgreSQL schema, failed on the missing nested
+    # table of the new one on every attempt, and never resumed replication of the other tables.
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Not in the publication: created in PostgreSQL after the database.
+    new_table = "postgresql_replica_created_later"
+    # In the publication, but without a nested table, as for a table whose initial snapshot has failed.
+    published_table = "postgresql_replica_published_later"
+    for table in (new_table, published_table):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+
+    instance.stop_clickhouse()
+    pg_manager.execute(
+        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}"
+    )
+    instance.start_clickhouse()
+
+    for i in range(NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number FROM numbers(10, 10)"
+        )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name IN ('{new_table}', '{published_table}')"
+        ).strip()
+        == "0"
+    )
+    assert instance.contains_in_log(
+        f"contains tables that are not replicated, because they were never materialized (for example, their initial snapshot has failed): {published_table}"
+    )
+
+    # A full database backup must not silently omit the published table that has no nested table.
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # `ATTACH TABLE` of another table persists the list of the replicated tables, which does not contain
+    # the published table without a nested table. It must still be remembered after the next restart.
+    instance.query(f"ATTACH TABLE test_database.{new_table}")
+    check_tables_are_synchronized(instance, new_table)
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, new_table)
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # The published table is added to replication with `ATTACH TABLE`.
+    instance.query(f"ATTACH TABLE test_database.{published_table}")
+    check_tables_are_synchronized(instance, published_table)
+
+    pg_manager.drop_materialized_db()
+    for table in (new_table, published_table):
+        pg_manager.execute(f"DROP TABLE {table}")
+
+
 def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_cluster):
     # A user-managed replication slot has a single fixed name, so it cannot be combined with
     # `materialized_postgresql_use_unique_replication_consumer_identifier`. The combination is rejected

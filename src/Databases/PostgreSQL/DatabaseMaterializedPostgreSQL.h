@@ -120,6 +120,11 @@ private:
     /// them directly (see `tryGetTable` and `getTableForRead`).
     bool replication_stopped TSA_GUARDED_BY(tables_mutex) = false;
 
+    /// The tables of a whole-schema database that are in the publication but are not replicated, because they
+    /// do not have nested tables (for example, their initial snapshot has failed). They are not in
+    /// `materialized_tables`, but `getTablesForBackup` must not silently omit them.
+    std::set<String> unmaterialized_published_tables TSA_GUARDED_BY(tables_mutex);
+
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;

@@ -123,9 +123,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             /* is_materialized_postgresql_database = */ true);
 
     std::set<String> tables_to_replicate;
+    std::set<String> new_unmaterialized_published_tables;
     try
     {
-        tables_to_replicate = replication_handler->fetchRequiredTables();
+        /// The tables that were already replicated before the restart: their nested tables exist.
+        std::set<String> nested_tables_on_disk;
+        if (is_attach)
+            for (auto iterator = getTablesIterator(getContext(), {}, /* skip_not_loaded */ false); iterator->isValid(); iterator->next())
+                nested_tables_on_disk.insert(iterator->name());
+
+        tables_to_replicate = replication_handler->fetchRequiredTables(nested_tables_on_disk, new_unmaterialized_published_tables);
     }
     catch (...)
     {
@@ -171,6 +178,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     {
         std::lock_guard tables_lock(tables_mutex);
         materialized_tables = std::move(new_materialized_tables);
+        unmaterialized_published_tables = std::move(new_unmaterialized_published_tables);
     }
 
     replication_handler->startup(/* delayed */false);
@@ -471,6 +479,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
+                unmaterialized_published_tables.erase(table_name);
             }
 
             std::lock_guard lock(handler_mutex);
@@ -721,6 +730,20 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
                     "have finished its initial synchronization from PostgreSQL yet). Failing closed instead of "
                     "producing a partial database backup that silently omits this table.",
                     storage->getStorageID().getNameForLogs());
+        }
+
+        for (const auto & table_name : unmaterialized_published_tables)
+        {
+            if (filter && !filter(table_name))
+                continue;
+
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot back up table {}.{}: it is in the publication, but it is not replicated, because its nested "
+                "ReplacingMergeTree table does not exist (for example, its initial snapshot from PostgreSQL has failed). "
+                "Failing closed instead of producing a partial database backup that silently omits this table. "
+                "Run `ATTACH TABLE` to replicate it.",
+                backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name));
         }
     }
 
