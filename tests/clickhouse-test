@@ -1765,40 +1765,25 @@ def auto_statistics_generator():
     return gen
 
 
-def randomize_external_sort_group_by():
-    """Returns a dict of 8 settings for external sort/group by/distinct/set.
+def randomize_external_thresholds(operations):
+    """Returns a dict of the settings `max_bytes_before_external_<operation>` and
+    `max_bytes_ratio_before_external_<operation>` for each of the operations, which
+    either all spill by bytes or all spill by ratio.
     The Bytes-vs-Ratio choice is made per call (not per process),
-    so each test run gets an independent choice. Each family takes the
-    smaller of its two thresholds, so the unused one is pinned to 0."""
+    so each test run gets an independent choice."""
+    settings = {}
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
-        # Disabled: a spilled `IN` set keeps no explicit elements, which breaks every test that needs
-        # them (e.g. `01700_system_zookeeper_path_in`, index analysis, `query_log` used_* columns).
-        # The `IN` set spill is new and off by default, so draw thresholds low enough to spill
-        # (1 byte spills every set before its first chunk).
-        # set_generator = threshold_generator(0.2, 0.3, 1, 64 * 1024 * 1024)
-        return {
-            "max_bytes_before_external_sort": generator(),
-            "max_bytes_before_external_group_by": generator(),
-            "max_bytes_before_external_distinct": generator(),
-            # "max_bytes_before_external_set": set_generator(),
-            "max_bytes_ratio_before_external_sort": 0,
-            "max_bytes_ratio_before_external_group_by": 0,
-            "max_bytes_ratio_before_external_distinct": 0,
-            "max_bytes_ratio_before_external_set": 0,
-        }
+        for operation in operations:
+            settings[f"max_bytes_before_external_{operation}"] = generator()
+            settings[f"max_bytes_ratio_before_external_{operation}"] = 0
+        return settings
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
-    return {
-        "max_bytes_before_external_sort": 0,
-        "max_bytes_before_external_group_by": 0,
-        "max_bytes_before_external_distinct": 0,
-        "max_bytes_before_external_set": 0,
-        "max_bytes_ratio_before_external_sort": round(generator(), 2),
-        "max_bytes_ratio_before_external_group_by": round(generator(), 2),
-        "max_bytes_ratio_before_external_distinct": round(generator(), 2),
-        "max_bytes_ratio_before_external_set": round(generator(), 2),
-    }
+    for operation in operations:
+        settings[f"max_bytes_before_external_{operation}"] = 0
+        settings[f"max_bytes_ratio_before_external_{operation}"] = round(generator(), 2)
+    return settings
 
 
 # To keep dependency list as short as possible, tzdata is not used here (to
@@ -2325,6 +2310,13 @@ class SettingsRandomizer:
         # Don't randomize the query_plan_*not_null_filters* trio: c2a4711cd16 reverted
         # "Convert OUTER join to INNER join by null-rejecting join conditions", so the settings no
         # longer exist and every draw makes the client reject the option (UNRECOGNIZED_ARGUMENTS).
+        # Memory budgets of a set of `IN` written to disk: 0 disables the structure, and 128 MiB is the default
+        "max_bytes_for_external_set_bloom_filter": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
+        "max_bytes_for_external_set_cache": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
     }
 
     dependent_settings = {
@@ -2411,8 +2403,9 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
-        # Bytes-vs-Ratio choice is made per test, not per process
-        random_settings.update(randomize_external_sort_group_by())
+        # Bytes-vs-Ratio choice is made per test, not per process. Sets of `IN` make their own choice.
+        random_settings.update(randomize_external_thresholds(["sort", "group_by", "distinct"]))
+        random_settings.update(randomize_external_thresholds(["set"]))
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         for setting, parent_setting in SettingsRandomizer.conditional_settings.items():
