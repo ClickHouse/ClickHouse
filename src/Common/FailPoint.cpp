@@ -37,6 +37,7 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
+    REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
@@ -418,6 +419,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
+    PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
