@@ -18,16 +18,22 @@ class QueryNode;
   * rewrite of the analyzer keeps doing it.
   * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
   * the ones with functions like `shardNum` or `dictGet`, reading a table or a table function, or depending on the time zone
-  * of the server, like `toHour(toDateTime(k))` or `toDate(k)` for a numeric `k`. This is needed when
+  * of the server, like `toHour(toDateTime(k))`, `toDate(k)` for a numeric `k` or `toRelativeSecondNum(d)` for a `Date` `d`. This is needed when
   * the query runs on a shard, while `HAVING` would be executed on the initiator.
   * The right-hand side of `GLOBAL IN` is not considered server-dependent, because the initiator sends the same set to every server.
   * If any conjunct contains a window function, a stateful function or a function with observable side effects, nothing is moved.
-  * Nothing is moved either if the projection, `GROUP BY`, `ORDER BY`, `PREWHERE` or `WHERE` contains a stateful function, like
-  * `sum(rowNumberInAllBlocks())`: it would be computed on fewer rows before aggregation.
+  * With `keep_pre_aggregation_expressions`, nothing is moved either if the projection, `GROUP BY`, `ORDER BY`, `PREWHERE`
+  * or `WHERE` contains a stateful function, like `sum(rowNumberInAllBlocks())`, or a function with observable side effects,
+  * like `sum(sleepEachRow(0.001))`: it would be computed on fewer rows before aggregation. The compatibility rewrite of
+  * the analyzer does not check it, like the legacy rewrite.
   * Nothing is moved for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` and `GROUPING SETS`, because
   * there the result of `HAVING` depends on the super-aggregate rows or on the totals.
   */
 void moveNonAggregateHavingConjunctsToWhere(
-    QueryNode & query_node, const ContextPtr & context, bool keep_server_dependent_conjuncts, bool keep_index_hint_conjuncts);
+    QueryNode & query_node,
+    const ContextPtr & context,
+    bool keep_server_dependent_conjuncts,
+    bool keep_index_hint_conjuncts,
+    bool keep_pre_aggregation_expressions);
 
 }

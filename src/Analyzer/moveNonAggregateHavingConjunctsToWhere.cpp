@@ -19,6 +19,8 @@
 #include <Functions/IFunction.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -62,16 +64,36 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
 
     const auto & function_name = function_base->getName();
     auto first_argument_type = removeLowCardinalityAndNullable(arguments[0]->getResultType());
+    bool returns_date = isDateOrDate32(removeLowCardinalityAndNullable(function_node.getResultType()));
 
     /// `toUnixTimestamp` parses a string in the time zone of the server.
     if (function_name == "toUnixTimestamp" && arguments.size() == 1 && isStringOrFixedString(first_argument_type))
         return true;
 
+    /// A `Date` or `Date32` is converted to a point in time at its midnight in the time zone of the server,
+    /// like in `toRelativeSecondNum(d)` or `toUnixTimestamp(d)`. Only the functions that work with whole days,
+    /// or do not look at the value at all, are known to give the same result on every server.
+    if (!returns_date
+        && std::ranges::any_of(arguments, [](const QueryTreeNodePtr & argument)
+            { return argument && isDateOrDate32(removeLowCardinalityAndNullable(argument->getResultType())); }))
+    {
+        static const std::unordered_set<std::string_view> time_zone_independent_functions
+        {
+            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+            "in", "notIn", "nullIn", "notNullIn", "globalIn", "globalNotIn", "globalNullIn", "globalNotNullIn",
+            "has", "hasAny", "hasAll", "isNull", "isNotNull", "tuple", "array", "minus", "toString", "_CAST", "CAST",
+            "toYear", "toQuarter", "toMonth", "toDayOfMonth", "toDayOfWeek", "toDayOfYear", "toISOYear", "toISOWeek",
+            "toWeek", "toYearWeek", "toYYYYMM", "toYYYYMMDD", "toRelativeYearNum", "toRelativeQuarterNum",
+            "toRelativeMonthNum", "toRelativeWeekNum", "toRelativeDayNum",
+        };
+        return !time_zone_independent_functions.contains(function_name);
+    }
+
     if (!isNumber(first_argument_type))
         return false;
 
     /// `toDate(k)`, `toDate32(k)` and `CAST(k AS Date)` take a number as a Unix timestamp.
-    if (isDateOrDate32(removeLowCardinalityAndNullable(function_node.getResultType())))
+    if (returns_date)
         return true;
 
     /// `fromUnixTimestamp(k, format)` formats a Unix timestamp; the optional third argument is the time zone.
@@ -80,8 +102,9 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         && arguments.size() < 3;
 }
 
-/// Whether the subtree contains a stateful function, like `rowNumberInAllBlocks` or `runningDifference`.
-bool hasStatefulFunction(const QueryTreeNodePtr & node)
+/// Whether the subtree contains a stateful function, like `rowNumberInAllBlocks` or `runningDifference`,
+/// or a function with observable side effects, like `sleepEachRow`.
+bool hasStatefulOrSideEffectFunction(const QueryTreeNodePtr & node)
 {
     QueryTreeNodes nodes_to_visit{node};
     while (!nodes_to_visit.empty())
@@ -92,7 +115,7 @@ bool hasStatefulFunction(const QueryTreeNodePtr & node)
         if (const auto * function_node = current->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
         {
             auto function_base = function_node->getFunction();
-            if (function_base && function_base->isStateful())
+            if (function_base && (function_base->isStateful() || function_base->hasObservableSideEffects()))
                 return true;
         }
 
@@ -131,8 +154,9 @@ bool hasStatefulFunction(const QueryTreeNodePtr & node)
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
-  * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` to parse a string, or converts a number as a Unix timestamp
-  * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`): the result depends
+  * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` to parse a string, converts a number as a Unix timestamp
+  * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
+  * or `Date32` to a point in time (like `toRelativeSecondNum(d)`): the result depends
   * on the time zone of the server, which may differ between the shards and the initiator.
   * The right-hand side of the `GLOBAL IN` family is an exception: the initiator computes the set once and sends the same
   * temporary table to every server, so it is not server-dependent.
@@ -278,7 +302,11 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
 }
 
 void moveNonAggregateHavingConjunctsToWhere(
-    QueryNode & query_node, const ContextPtr & context, bool keep_server_dependent_conjuncts, bool keep_index_hint_conjuncts)
+    QueryNode & query_node,
+    const ContextPtr & context,
+    bool keep_server_dependent_conjuncts,
+    bool keep_index_hint_conjuncts,
+    bool keep_pre_aggregation_expressions)
 {
     if (!query_node.hasHaving())
         return;
@@ -291,12 +319,16 @@ void moveNonAggregateHavingConjunctsToWhere(
 
     /// A conjunct moved to `WHERE` removes rows before the expressions computed before aggregation, like the arguments of
     /// aggregate functions and the grouping keys. A stateful function there, like `sum(rowNumberInAllBlocks())`,
-    /// would see fewer rows and change the result even for the groups that pass the filter.
-    for (const auto & node : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getOrderByNode(),
-             query_node.getPrewhere(), query_node.getWhere()})
+    /// would see fewer rows and change the result even for the groups that pass the filter, and a function with
+    /// observable side effects, like `sum(sleepEachRow(0.001))`, would be evaluated fewer times.
+    if (keep_pre_aggregation_expressions)
     {
-        if (node && hasStatefulFunction(node))
-            return;
+        for (const auto & node : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getOrderByNode(),
+                 query_node.getPrewhere(), query_node.getWhere()})
+        {
+            if (node && hasStatefulOrSideEffectFunction(node))
+                return;
+        }
     }
 
     auto & having_node = query_node.getHaving();

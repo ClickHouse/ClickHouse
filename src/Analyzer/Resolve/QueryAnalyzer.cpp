@@ -7150,7 +7150,8 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
         return;
 
     moveNonAggregateHavingConjunctsToWhere(
-        query_node_typed, scope.context, /*keep_server_dependent_conjuncts=*/ false, /*keep_index_hint_conjuncts=*/ false);
+        query_node_typed, scope.context, /*keep_server_dependent_conjuncts=*/ false, /*keep_index_hint_conjuncts=*/ false,
+        /*keep_pre_aggregation_expressions=*/ false);
 }
 
 }

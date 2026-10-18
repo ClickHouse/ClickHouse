@@ -2930,7 +2930,8 @@ void Planner::buildPlanForQueryNode()
     if (select_query_info.need_aggregate && query_node.hasGroupBy()
         && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
         moveNonAggregateHavingConjunctsToWhere(
-            query_node, query_context, /*keep_server_dependent_conjuncts=*/ true, /*keep_index_hint_conjuncts=*/ true);
+            query_node, query_context, /*keep_server_dependent_conjuncts=*/ true, /*keep_index_hint_conjuncts=*/ true,
+            /*keep_pre_aggregation_expressions=*/ true);
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);

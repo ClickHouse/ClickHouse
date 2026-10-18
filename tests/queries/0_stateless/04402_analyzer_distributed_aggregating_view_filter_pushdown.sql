@@ -256,6 +256,14 @@ SELECT k, count() FROM t_sleep_dist_04402 GROUP BY k HAVING sleepEachRow(0.001) 
     SETTINGS query_plan_enable_optimizations = 0, short_circuit_function_evaluation = 'disable',
         max_threads = 1, max_block_size = 100, function_sleep_max_microseconds_per_block = 2000,
         group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0; -- { serverError TOO_SLOW }
+
+-- The same for a function with observable side effects in the argument of an aggregate function: it is computed
+-- before aggregation and must see all 100 rows of the block, which need 100000 microseconds, above the limit of 20000.
+-- With the grouping-key conjunct moved to `WHERE` it would see only the 10 rows of the remaining group.
+SELECT '--- sleepEachRow in the argument of an aggregate function';
+SELECT k, sum(sleepEachRow(0.001)) FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0
+    SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
+        function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
 DROP TABLE t_sleep_dist_04402;
 DROP TABLE t_sleep_local_04402;
 
@@ -331,6 +339,39 @@ FROM (
     EXPLAIN indexes = 1, distributed = 1
     SELECT k, sum(x) FROM t_ts_dist_04402 GROUP BY k HAVING k < 1704151800 + 3600
 );
+
+-- A `Date` converted to a point in time is taken at its midnight in the time zone of the server, so these conjuncts
+-- also stay in `HAVING`. The conjunct comparing the `Date` itself is moved.
+SELECT '--- HAVING converting a Date to a point in time in the time zone of the server';
+DROP TABLE IF EXISTS t_day_local_04402;
+DROP TABLE IF EXISTS t_day_dist_04402;
+CREATE TABLE t_day_local_04402 (d Date, x UInt64) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 10;
+CREATE TABLE t_day_dist_04402 AS t_day_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_day_local_04402');
+INSERT INTO t_day_local_04402 SELECT toDate('2024-01-01') + number, 1 FROM numbers(1000);
+SELECT d, sum(x) FROM t_day_dist_04402 GROUP BY d HAVING toRelativeSecondNum(d) = toRelativeSecondNum(toDate('2024-01-01'))
+    ORDER BY d;
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT d, sum(x) FROM t_day_dist_04402 GROUP BY d HAVING toRelativeSecondNum(d) = 1704067200
+);
+SELECT
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT d, sum(x) FROM t_day_dist_04402 GROUP BY d HAVING toRelativeMinuteNum(d) = 28401120
+);
+SELECT
+    countIf(explain ILIKE '%Condition: (d in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_parts
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT d, sum(x) FROM t_day_dist_04402 GROUP BY d HAVING d < '2024-01-05'
+);
+DROP TABLE t_day_dist_04402;
+DROP TABLE t_day_local_04402;
 
 -- A stateful function computed before aggregation, like in the argument of an aggregate function, must see all rows:
 -- a grouping-key conjunct moved to `WHERE` would renumber the rows of the remaining groups.

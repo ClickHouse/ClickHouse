@@ -78,6 +78,7 @@
 --- HAVING with sleepEachRow
 1	90
 --- HAVING with sleepEachRow and a grouping-key conjunct
+--- sleepEachRow in the argument of an aggregate function
 --- HAVING depending on the time zone of the server
 42
 42
@@ -87,6 +88,11 @@
 --- HAVING converting a Unix timestamp in the time zone of the server
 1704151800	2
 1
+1
+1
+1	0
+--- HAVING converting a Date to a point in time in the time zone of the server
+2024-01-01	2
 1
 1
 1	0
