@@ -11,6 +11,8 @@ ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE c0 IN (SELECT c0 FROM mv); 
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE c0 > (SELECT count() FROM mv); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src UNION ALL SELECT c0 FROM mv; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE mv MODIFY QUERY SELECT c0 FROM v; -- { serverError INFINITE_LOOP }
+-- A string literal on the right side of IN is a set of values, not a table.
+ALTER TABLE mv MODIFY QUERY SELECT c0 FROM src WHERE toString(c0) IN ('v');
 -- A recursive CTE named like the view is not the view.
 ALTER TABLE mv MODIFY QUERY WITH RECURSIVE mv AS (SELECT 1 AS c0 UNION ALL SELECT c0 + 1 FROM mv WHERE c0 < 3) SELECT c0 FROM src WHERE c0 IN (SELECT c0 FROM mv);
 SELECT dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'src';
@@ -20,6 +22,12 @@ CREATE TABLE dst (c0 Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 YEAR APPEND TO dst EMPTY AS SELECT c0 FROM src;
 ALTER TABLE rmv MODIFY QUERY SELECT c0 FROM src WHERE c0 NOT IN (SELECT c0 FROM rmv);
 
+-- A string literal on the right side of IN in a column default is not a loading dependency either.
+CREATE TABLE t1 (c0 String, c1 UInt8 DEFAULT c0 IN ('t2')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (c0 String, c1 UInt8 DEFAULT c0 IN ('t1')) ENGINE = MergeTree ORDER BY tuple();
+
+DROP TABLE t2;
+DROP TABLE t1;
 DROP TABLE rmv;
 DROP TABLE dst;
 DROP TABLE v;

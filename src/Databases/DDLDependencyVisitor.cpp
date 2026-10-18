@@ -323,9 +323,10 @@ namespace
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// x IN table_name.
+                /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                    addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
