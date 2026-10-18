@@ -307,21 +307,74 @@ struct Work
     size_t table = 0;
 
     /// The table would have been faster for the rows searched so far.
-    bool exceeded() const { return search >= table; }
+    bool exceeded() const { return search > table; }
 };
+
+/// Searches the non-NULL values of the array from `first_value` in a row of at most `row_first_part_size` elements, as
+/// `sliceHasImplAnyAll` does, until one is found. Returns false without `found` when the work is exceeded first. In its own function,
+/// as the search is slower when it is inlined into the loops of the lookup.
+template <bool has_null_map, typename T>
+NO_INLINE bool searchValuesInShortRow(
+    const T * data, const UInt8 * null_map, size_t size, const Elements<T> & array, size_t first_value, Work & work, bool & found)
+{
+    if (work.exceeded())
+        return false;
+    /// Each value is searched in one part, so the number of values searched before the work is exceeded is known.
+    const size_t value_work = size + 1;
+    const size_t end = std::min(array.size, first_value + (work.table - work.search) / value_work + 1);
+    const T * values = array.data;
+    const UInt8 * values_null_map = array.null_map;
+    for (size_t j = first_value; j < end; ++j)
+    {
+        if (!(values_null_map && values_null_map[j]) && contains<has_null_map>(data, null_map, size, values[j]))
+        {
+            work.search += (j + 1 - first_value) * value_work;
+            found = true;
+            return true;
+        }
+    }
+    work.search += (end - first_value) * value_work;
+    found = false;
+    return end == array.size;
+}
+
+/// The searches of the rows after the table is built may take `1 / lookup_work_per_wasted_search_work` of the work of the lookups
+/// more than they saved.
+constexpr Int64 lookup_work_per_wasted_search_work = 32;
 
 /// Calls `search_row` for the rows until the work is exceeded, then `lookup_rows` for the rest. `search_row` returns false without a
 /// result when the work is exceeded in the middle of the row, so that a long row does not take much longer than the lookup.
+///
+/// With `search_after_build`, a row after the table is built is still searched first, within the work of its lookup, as a long row
+/// can be settled by one scan for the first value of the constant. It is searched while the searches saved more work than the ones
+/// that did not settle their row took, plus a fraction of the work of the lookups. `lookup_rows` calls `try_search(row)`, which returns
+/// whether the search settled the row, and `add_lookup_work(work)` for each row that it looks up.
 template <typename SearchRow, typename LookupRows>
 void searchThenLookup(
-    const ColumnArray::Offsets & offsets, size_t size, size_t build_work, SearchRow && search_row, LookupRows && lookup_rows)
+    const ColumnArray::Offsets & offsets, size_t size, size_t build_work, bool search_after_build, SearchRow && search_row,
+    LookupRows && lookup_rows)
 {
     Work work{.table = build_work};
     size_t row = 0;
     while (row < size && search_row(row, offsets[row - 1], offsets[row], work))
         ++row;
-    if (row < size)
-        lookup_rows(row);
+    if (row == size)
+        return;
+
+    /// In units of `1 / lookup_work_per_wasted_search_work` of work.
+    Int64 allowed_search_work = 0;
+    auto try_search = [&](size_t searched_row) ALWAYS_INLINE
+    {
+        if (!search_after_build || allowed_search_work < 0)
+            return false;
+        Work row_work;
+        const bool searched = search_row(searched_row, offsets[searched_row - 1], offsets[searched_row], row_work);
+        const Int64 saved_work = (searched ? static_cast<Int64>(row_work.table) : 0) - static_cast<Int64>(row_work.search);
+        allowed_search_work += lookup_work_per_wasted_search_work * saved_work;
+        return searched;
+    };
+    auto add_lookup_work = [&](size_t lookup_work) ALWAYS_INLINE { allowed_search_work += lookup_work; };
+    lookup_rows(row, try_search, add_lookup_work);
 }
 
 /// `hasAny` with either argument constant, and `hasAll(constant, column)`. The search is the one of `sliceHasImplAnyAll`, which
@@ -367,42 +420,64 @@ void lookupElements(
                 settled = settles(i, [&](T value) ALWAYS_INLINE { return constContains(array, value, work.search); });
             }
         }
-        else
+        else if (!settled)
         {
             /// `hasAny(column, constant)` searches each element of the constant in the row.
             const size_t row_size = end - begin;
             const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
             /// The lookup would go through the row until an element is in the constant.
-            if (!settled)
-                work.table += ValueSet<T>::lookup_work * row_size;
-            for (size_t j = 0; j < array.size && !settled; ++j)
+            work.table += ValueSet<T>::lookup_work * row_size;
+            if (row_size <= row_first_part_size)
             {
-                if (array.null_map && array.null_map[j])
-                    continue;
-                if (work.exceeded())
+                /// The first value is searched here, as it often settles the row.
+                if (!(array.null_map && array.null_map[0]))
+                {
+                    if (work.exceeded())
+                        return false;
+                    work.search += row_size + 1;
+                    settled = contains<has_null_map>(elements.data + begin, null_map, row_size, array.data[0]);
+                }
+                if (!settled && !searchValuesInShortRow<has_null_map>(elements.data + begin, null_map, row_size, array, 1, work, settled))
                     return false;
-                ++work.search;
-                settled = countedContains<has_null_map>(
-                    elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
+            }
+            else
+            {
+                for (size_t j = 0; j < array.size && !settled; ++j)
+                {
+                    if (array.null_map && array.null_map[j])
+                        continue;
+                    if (work.exceeded())
+                        return false;
+                    ++work.search;
+                    settled = countedContains<has_null_map>(
+                        elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
+                }
             }
         }
         result[row] = settled != all;
         return true;
     };
 
-    auto lookup_rows = [&](size_t from_row)
+    auto lookup_rows = [&](size_t from_row, auto && try_search, auto && add_lookup_work)
     {
         const ValueSet<T> set(array);
         for (size_t row = from_row; row < size; ++row)
         {
-            bool settled = settled_by_null(offsets[row - 1], offsets[row]);
-            for (size_t i = offsets[row - 1]; i < offsets[row] && !settled; ++i)
+            if (try_search(row))
+                continue;
+            const size_t begin = offsets[row - 1];
+            size_t i = begin;
+            bool settled = settled_by_null(begin, offsets[row]);
+            for (; i < offsets[row] && !settled; ++i)
                 settled = settles(i, [&](T value) ALWAYS_INLINE { return set.has(value); });
+            add_lookup_work(ValueSet<T>::lookup_work * (i - begin));
             result[row] = settled != all;
         }
     };
 
-    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, search_row, lookup_rows);
+    /// The search of an element in the constant is not faster than its lookup, and the lookup goes through the same elements of the
+    /// row.
+    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, !const_is_first, search_row, lookup_rows);
 }
 
 /// The first values are searched as in `sliceHasImplAnyAll` before the lookup. A missing value is usually one of them, and the search
@@ -434,6 +509,9 @@ void lookupAllOfConst(
         }
         const size_t row_size = end - begin;
         const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+        /// The lookup rejects a row shorter than the constant, as that usually has fewer elements than the constant has distinct values.
+        /// Otherwise it searches the first values too, and goes through the row if it has them all.
+        const bool looked_up = row_size >= array.size;
         bool all = !needs_null || hasNull(null_map, row_size);
         size_t num_found = 0;
         for (size_t j = 0; j < array.size && all; ++j)
@@ -442,18 +520,21 @@ void lookupAllOfConst(
                 continue;
             if (work.exceeded())
                 return false;
+            const size_t search_before = work.search;
             ++work.search;
             all = countedContains<has_null_map>(elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
-            /// The lookup searches the first values too, and goes through the row only if it has them all. It does not go through a
-            /// row shorter than the constant either, as that usually has fewer elements than the constant has distinct values.
-            if (all && ++num_found == num_searched_values && row_size >= array.size)
-                work.table += LastRows<T>::lookup_work * row_size;
+            if (looked_up && num_found < num_searched_values)
+            {
+                work.table += work.search - search_before;
+                if (all && ++num_found == num_searched_values)
+                    work.table += LastRows<T>::lookup_work * row_size;
+            }
         }
         result[row] = all;
         return true;
     };
 
-    auto lookup_rows = [&](size_t from_row)
+    auto lookup_rows = [&](size_t from_row, auto && try_search, auto && add_lookup_work)
     {
         /// The first distinct values are searched, the others are counted.
         std::array<T, num_searched_values> searched_values{};
@@ -490,23 +571,33 @@ void lookupAllOfConst(
             const size_t begin = offsets[row - 1];
             const size_t end = offsets[row];
             const size_t row_size = end - begin;
+            if (row_size < min_row_size)
+            {
+                result[row] = 0;
+                continue;
+            }
+            if (try_search(row))
+                continue;
             const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
-            bool all = row_size >= min_row_size && (!needs_null || hasNull(null_map, row_size))
+            bool all = (!needs_null || hasNull(null_map, row_size))
                 && std::all_of(searched_values.begin(), searched_values.begin() + num_searched, [&](T value) ALWAYS_INLINE
                                { return contains<has_null_map>(elements.data + begin, null_map, row_size, value); });
             if (all && num_counted)
             {
                 const auto row_mark = static_cast<UInt32>(row + 1);
                 size_t found = 0;
-                for (size_t i = begin; i < end && found < num_counted; ++i)
+                size_t i = begin;
+                for (; i < end && found < num_counted; ++i)
                     found += (!has_null_map || !elements.null_map[i]) && last_rows.mark(elements.data[i], row_mark);
+                /// The search of the first values is not counted: the search of the row does it too, and saves nothing on it.
+                add_lookup_work(LastRows<T>::lookup_work * (i - begin));
                 all = found == num_counted;
             }
             result[row] = all;
         }
     };
 
-    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, search_row, lookup_rows);
+    searchThenLookup(offsets, size, search_work_per_const_element<T> * array.size, true, search_row, lookup_rows);
 }
 
 template <typename T>
