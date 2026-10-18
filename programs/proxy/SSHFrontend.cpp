@@ -65,6 +65,9 @@ struct Bridge
     Poco::Net::SocketAddress peer;
     LoggerPtr log;
 
+    /// The pool is retained along with the backend: until the channel opens, the backend has no active
+    /// connections, and only this reference keeps a dynamic pool from being evicted by `Router`.
+    BackendPoolPtr pool;
     BackendPtr backend;
     bool routed = false;
     bool connection_counted = false;
@@ -134,6 +137,7 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
             return SSH_AUTH_DENIED;
         }
 
+        bridge->pool = decision.pool;
         bridge->backend = decision.backend;
         bridge->routed = true;
         LOG_DEBUG(bridge->log, "SSH {} key (user '{}') routed to backend {}",
