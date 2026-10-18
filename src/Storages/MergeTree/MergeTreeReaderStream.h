@@ -156,6 +156,7 @@ protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
     std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
+    std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t first_column_position, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
 
