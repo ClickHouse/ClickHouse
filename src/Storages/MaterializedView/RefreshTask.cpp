@@ -1492,6 +1492,15 @@ void RefreshTask::executeRefresh()
             znode.last_success_source_hash = watermark.source_hash;
             znode.last_success_definition_hash = watermark.definition_hash;
         }
+        else if (new_table_uuid.has_value())
+        {
+            /// The run published a target built from the old definition, so the persisted watermark
+            /// no longer describes the target. Keeping it would let a later refresh under a definition
+            /// that matches the watermark's (e.g. after the query was changed and changed back while
+            /// this run was in flight) skip on an unchanged source and leave the old definition's rows.
+            znode.last_success_source_hash.reset();
+            znode.last_success_definition_hash = {};
+        }
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
         znode.randomness_obsolete = drawRandomness();
@@ -1584,7 +1593,16 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
             watermark.definition_hash = computeViewDefinitionHash(*view_metadata, refresh_context);
             if (auto select_ast = view_metadata->select.select_query)
-                watermark.source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+            {
+                /// Hash the sources under the settings the refresh reads them with: `prepareRefresh` applies the
+                /// stored query's own `SETTINGS` to `refresh_context` before the read and the post-read hash,
+                /// and a source view folds its effective settings into its hash. Hashing them under the bare
+                /// refresh context here would make the two hashes differ on every refresh of
+                /// `... FROM v SETTINGS max_threads = 1`, and an `APPEND` view would append unchanged rows.
+                auto source_hash_context = Context::createCopy(refresh_context);
+                InterpreterSetQuery::applySettingsFromQuery(select_ast->clone(), source_hash_context);
+                watermark.source_hash = computeQueryReferencedTablesModificationHash(select_ast, source_hash_context);
+            }
 
             /// The watermark of the last refresh that rebuilt the view. With coordination it is the one
             /// persisted in the coordination state: every replica writes it there on its own successful

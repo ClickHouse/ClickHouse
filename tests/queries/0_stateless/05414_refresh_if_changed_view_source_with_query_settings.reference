@@ -1,0 +1,4 @@
+refresh query settings over an invoker view keep the watermark: yes
+overridden definer setting of a source view keeps the watermark: yes
+changed source triggers refresh through an invoker view: yes
+changed source triggers refresh through a definer view: yes

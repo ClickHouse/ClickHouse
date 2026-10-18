@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -862,7 +863,13 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// Hash dependencies under the same context that executes the view query: the SQL-security
         /// overridden context, normalized exactly like the read path normalizes it (`getViewContext`).
         /// Hashing the raw overridden context instead would fold in settings the view never runs with.
-        auto effective_context = getViewContext(query_context, storage_snapshot, this);
+        /// The stored query's own `SETTINGS` apply on top of it when the view is read, so hash under them as well:
+        /// a profile value that the stored query overrides does not change a row, and a source view reached
+        /// from here reads under these settings too. `RefreshTask` hashes the sources of a refresh the same way.
+        /// `view_context` is kept alive: under `SQL SECURITY DEFINER` / `NONE` it can be the query context of the copy.
+        const auto view_context = getViewContext(query_context, storage_snapshot, this);
+        auto effective_context = Context::createCopy(view_context);
+        InterpreterSetQuery::applySettingsFromQuery(inner_query->clone(), effective_context);
 
         /// An `additional_table_filters` entry keyed by the view itself applies to the rows it returns: the
         /// planner folds it into the `WHERE` of the query that reads the view. Under `SQL SECURITY DEFINER`
