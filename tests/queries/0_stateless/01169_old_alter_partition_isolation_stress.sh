@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database, zookeeper, no-msan
+# Tags: long, no-replicated-database, no-ordinary-database, zookeeper, no-msan, no-parallel-replicas
 # no-msan: hundreds of transactional clients take over the 600 s timeout under MSan with `meta in keeper`
 # and `s3 storage`. The test checks the isolation of transactions, MSan does not help to find violations.
 

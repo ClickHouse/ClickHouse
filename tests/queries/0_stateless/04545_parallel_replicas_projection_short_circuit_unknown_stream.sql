@@ -39,6 +39,10 @@ SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
+-- The exact-count arm reads exactly one row (the `id = 999999999` part), so any positive
+-- `parallel_replicas_min_number_of_rows_per_replica` leaves `rows_to_read / setting <= 1` and the
+-- planner turns parallel replicas off, which would make the liveness assertion below state nothing.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 -- Liveness: the queries below must actually take the short-circuit on the initiator, otherwise the
 -- regression is not being exercised. Assert each projection is selected (prints 1).
