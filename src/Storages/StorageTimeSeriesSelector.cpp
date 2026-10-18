@@ -907,9 +907,16 @@ ASTPtr makeFilterForSamplesTable(
         auto samples_size = make_intrusive<ASTIdentifier>(String{TimeSeriesColumnNames::Samples} + ".size0");
         auto exceeds_limit = makeASTFunction(
             "greater", std::move(samples_size), make_intrusive<ASTLiteral>(*max_raw_samples_per_row));
-        /// Keep the selection test inside `throwIf`: PREWHERE may reorder its outer conditions,
-        /// and disabling short-circuit evaluation must not reject an unselected oversized row.
-        auto selected_and_oversized = makeASTFunction("and", std::move(exceeds_limit), id_is_selected->clone());
+        /// Keep the full row selection inside `throwIf`: PREWHERE may reorder its outer conditions,
+        /// and disabling short-circuit evaluation must not reject an oversized row outside the
+        /// selected series or time range.
+        ASTs selected_and_oversized_conditions;
+        selected_and_oversized_conditions.reserve(conditions.size() + 2);
+        for (const auto & condition : conditions)
+            selected_and_oversized_conditions.push_back(condition->clone());
+        selected_and_oversized_conditions.push_back(id_is_selected->clone());
+        selected_and_oversized_conditions.push_back(std::move(exceeds_limit));
+        auto selected_and_oversized = makeASTForLogicalAnd(std::move(selected_and_oversized_conditions));
         auto throw_if_oversized = makeASTFunction(
             "throwIf",
             std::move(selected_and_oversized),
