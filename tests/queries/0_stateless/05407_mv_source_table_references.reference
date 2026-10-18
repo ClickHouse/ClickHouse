@@ -1,0 +1,14 @@
+without transaction
+cte	[1,2,3]
+in	[3]
+join	[1,2,3]
+plain	[1,2,3]
+scalar	[3]
+view	[1]
+view_function	[1]
+implicit transaction
+cte	[4,5]
+in	[5]
+join	[4,5]
+plain	[4,5]
+scalar	[2]
