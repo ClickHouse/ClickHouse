@@ -380,8 +380,8 @@ public:
     /// from the second argument.
     String getSignatureString() const override
     {
-        return "(UUID) -> DateTime64(3)"
-               " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";
+        return "(UUID | UUID2) -> DateTime64(3)"
+               " OR (UUID | UUID2, const tz StringOrFixedString) -> DateTime64(3, tz)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

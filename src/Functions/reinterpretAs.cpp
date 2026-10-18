@@ -540,7 +540,7 @@ public:
         {
             /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
             static const String sig
-                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                = String("(Number | Date | DateTime | DateTime64 | UUID | UUID2 | StringOrFixedString) -> ")
                 + ToDataType{}.getName();
             return sig;
         }
