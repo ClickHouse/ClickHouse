@@ -15,6 +15,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/UniqueLock.h>
 #include <Common/SharedLockGuard.h>
@@ -38,6 +39,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
+namespace FailPoints
+{
+    extern const char wasm_module_manager_pause_after_compile[];
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
@@ -234,23 +240,25 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
                 return {module, it->second.hash};
             was_registered = true;
         }
+
+        auto module_path = getFilePath(module_name);
+        if (!user_scripts_disk->existsFile(module_path))
+            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
+        if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
     }
 
     /// Reading and compiling a module can take seconds, so it is done without holding `modules_mutex`:
     /// otherwise every other module operation, including saving and deleting unrelated modules, waits
     /// for it. Concurrent first loads of the same module may compile it more than once; the result
     /// published first is kept and the others are discarded.
-    auto module_path = getFilePath(module_name);
-    if (!user_scripts_disk->existsFile(module_path))
-        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
-    if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
-
     auto wasm_code = loadModuleImpl(module_name);
     UInt256 local_hash = calculateHash(wasm_code);
 
     std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
     linkHostFunctions(*local_module);
+
+    FailPointInjection::pauseFailPoint(FailPoints::wasm_module_manager_pause_after_compile);
 
     UniqueLock lock(modules_mutex);
     auto it = modules.find(module_name);
