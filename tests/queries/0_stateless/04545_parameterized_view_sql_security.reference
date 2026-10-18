@@ -4,4 +4,6 @@ none:    5001
 invoker: ACCESS_DENIED
 --- parallel replicas ---
 definer pr: 5001
-parallel replicas used: 1
+table pr: 5001
+04545_pr parallel replicas used: 0
+04545_pr_table parallel replicas used: 1
