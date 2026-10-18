@@ -89,8 +89,6 @@ MultiplexedConnections::MultiplexedConnections(
 
 void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
-    std::lock_guard lock(cancel_mutex);
-
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
 
@@ -104,8 +102,6 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
 
 void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
 {
-    std::lock_guard lock(cancel_mutex);
-
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
@@ -130,8 +126,6 @@ bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 versio
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
-    std::lock_guard lock(cancel_mutex);
-
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
 
@@ -159,8 +153,6 @@ void MultiplexedConnections::sendQuery(
     bool with_pending_data,
     const std::vector<String> & external_roles)
 {
-    std::lock_guard lock(cancel_mutex);
-
     if (sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
 
