@@ -96,7 +96,7 @@ namespace DB
             /// whole second. Reject sub-second interval kinds instead of silently truncating them.
             for (const auto & element : interval_types)
             {
-                const auto kind = assert_cast<const DataTypeInterval &>(*element).getKind().kind;
+                const IntervalKind::Kind kind = assert_cast<const DataTypeInterval &>(*element).getKind();
                 if (kind == IntervalKind::Kind::Nanosecond || kind == IntervalKind::Kind::Microsecond
                     || kind == IntervalKind::Kind::Millisecond)
                     throw Exception(

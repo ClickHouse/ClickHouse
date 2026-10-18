@@ -4,8 +4,6 @@
 # subquery on one side of a JOIN used to fail with a confusing
 # `Not found column low_un in block` error. The insert must succeed and the view
 # must receive the correctly joined rows.
-# The analyzer is not randomized by the test harness, so run the scenario explicitly
-# under both the analyzer (enable_analyzer=1) and the old analyzer (enable_analyzer=0).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

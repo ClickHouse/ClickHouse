@@ -827,16 +827,16 @@
 #define LDAP_SYSLOG 1
 
 /* Version */
-#define LDAP_VENDOR_VERSION 000000
+#define LDAP_VENDOR_VERSION 20614
 
 /* Major */
 #define LDAP_VENDOR_VERSION_MAJOR 2
 
 /* Minor */
-#define LDAP_VENDOR_VERSION_MINOR X
+#define LDAP_VENDOR_VERSION_MINOR 6
 
 /* Patch */
-#define LDAP_VENDOR_VERSION_PATCH X
+#define LDAP_VENDOR_VERSION_PATCH 14
 
 /* Define to the sub-directory where libtool stores uninstalled libraries. */
 #define LT_OBJDIR ".libs/"
@@ -854,7 +854,7 @@
 #define OPENLDAP_PACKAGE "OpenLDAP"
 
 /* Version */
-#define OPENLDAP_VERSION "2.X"
+#define OPENLDAP_VERSION "2.6.14"
 
 /* Define to the address where bug reports for this package should be sent. */
 #define PACKAGE_BUGREPORT ""

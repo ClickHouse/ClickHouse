@@ -8,29 +8,22 @@
 namespace DB
 {
 
-/** Table-driven conflict detectors for join reordering, from
-  * Moerkotte et al. "On the Correct and Complete Enumeration of the Core Search Space"
-  * (SIGMOD 2013)
+/** Table-driven conflict detectors that decide which join reorderings preserve results when the
+  * plan mixes inner joins with outer and semi/anti joins (not all reorderings are valid then).
   *
   * Two detectors share this module (select with `ConflictDetector`):
-  *   - CD-A: *correct* but not *complete*. For each operator it computes one Total Eligibility Set
-  *     (TES), widened from the operator's SES by every descendant it does not associate with. Its
-  *     validity test is the unconditioned containment `L-TES ⊆ S1 ∧ R-TES ⊆ S2`.
-  *   - CD-C: *correct and complete* -- it generates exactly the core search space. Its TES stays at
-  *     SES; conflicts are recorded as *conflict rules* `T1 → T2` (a conditioned containment: "if any
-  *     table of T1 is present, all of T2 must be too"). CD-C keeps valid reorderings that CD-A's
-  *     coarse TES widening throws away.
+  *   - CD-A: correct but incomplete. Each operator gets one required set, widened to forbid every
+  *     potentially-invalid reordering -- simple, but it also rejects some valid ones.
+  *   - CD-C: correct and complete. The required set stays minimal, and conflicts are recorded as
+  *     rules `T1 -> T2` ("if any table of T1 is joined, all of T2 must be too"), keeping the valid
+  *     reorderings CD-A's coarse widening discards.
   *
-  * Both are exposed through one descriptor (`ConflictOperator`) and one validity test:
-  *     required_left ⊆ S1 ∧ required_right ⊆ S2   (or the mirrored orientation)
-  *   AND every conflict rule obeyed.
-  * For CD-A, `required_*` is the split TES and `rules` is empty, so the test reduces to CD-A's plain
-  * TES containment. For CD-C, `required_*` is the split SES and `rules` carries the conflict rules.
-  * This is why non-commutative outer and semi/anti joins can be reordered correctly: their required
-  * relations are pinned, and orientation is decided per operator rather than assumed symmetric.
-  *
-  * The properties are looked up in four static matrices encoding `comm`, `assoc`, `l-asscom`, and
-  * `r-asscom`. The null-rejection-dependent entries are resolved from each operator's `nr_rels`.
+  * Both use one descriptor (`ConflictOperator`) and one validity test:
+  *     required_left subseteq S1  AND  required_right subseteq S2   (or the mirrored orientation),
+  *   AND every conflict rule obeyed. CD-A has empty rule sets, so its test reduces to the containment.
+  * Pinning the required relations per side (instead of assuming symmetry) is what lets
+  * non-commutative outer and semi/anti joins reorder correctly. Reorderability comes from four static
+  * matrices (comm, assoc, l-asscom, r-asscom); their null-rejection-dependent entries use `nr_rels`.
   */
 enum class ConflictDetector : UInt8
 {
@@ -43,16 +36,15 @@ struct ConflictOpMask
     UInt32 left = 0;
     UInt32 right = 0;
     UInt32 nel = 0;
-    /// Relations on whose attributes this operator's ON predicate rejects nulls (Definition 1 of
-    /// the paper): the predicate is false/unknown whenever all of that relation's columns are null.
-    /// Always a subset of `nel`. Resolves the null-rejection-dependent matrix entries.
-    /// An equi-join predicate rejects nulls on both of its sides.
+    /// Relations on whose attributes this operator's ON predicate rejects nulls: it is false or
+    /// unknown whenever all of that relation's columns are null. A subset of `nel` (an equi-join
+    /// predicate rejects nulls on both sides). Resolves the null-rejection-dependent matrix entries.
     UInt32 nr_rels = 0;
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
 };
 
-/// A CD-B/CD-C conflict rule: if any table of `t1` is in the joined set, all of `t2` must be too.
+/// A conflict rule: if any table of `t1` is in the joined set, all of `t2` must be too.
 struct ConflictRule
 {
     UInt32 t1 = 0;
@@ -62,14 +54,18 @@ struct ConflictRule
 /// Per-operator descriptor consumed by DPsub's validity check (`isValidJoinOrderMaskConflict`).
 struct ConflictOperator
 {
-    UInt32 relations = 0;      /// T(left) | T(right): every relation under this operator, T: the set of relations in a subtree
-    UInt32 left_relations = 0; /// T(left): the (left-canonical) preserved-side subtree. Used to orient a degenerate
-                               /// (predicate-less) operator, whose empty required_* sets cannot decide the side.
-    UInt32 required_left = 0;  /// relations required on the operator's left input  (TES ∩ T(left) for CD-A, SES ∩ T(left) for CD-C)
-    UInt32 required_right = 0; /// relations required on the operator's right input
+    UInt32 relations = 0;      /// every relation under this operator (left subtree | right subtree)
+    UInt32 left_relations = 0; /// the (left-canonical) preserved-side subtree; used to orient a
+                               /// degenerate operator whose empty required_* sets cannot pick a side
+    UInt32 required_left = 0;  /// relations that must be present on the operator's left input
+    UInt32 required_right = 0; /// relations that must be present on the operator's right input
     UInt32 nel = 0;            /// ON-clause relations, used to locate the operator at a split boundary
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
+    /// True when the ON predicate references relations on at most one input side (a one-sided
+    /// predicate, or none at all for a cross product). Then the required sets cannot orient the
+    /// operator, so the validity test checks each input subtree lands on its own side instead.
+    bool degenerate = false;
     /// True for plain inner/cross/comma joins (comm + assoc among themselves): they impose no join
     /// kind. False for outer/semi/anti/full joins, which pin orientation and fix the kind.
     bool freely_reorderable = true;

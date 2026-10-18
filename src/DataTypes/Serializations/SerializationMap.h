@@ -44,6 +44,15 @@ public:
 
     bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
+    /// Whether a resolved subcolumn is really the `.keys` / `.values` array, which its name alone
+    /// cannot tell. A `Map` exposes them through its nested `Array(Tuple(keys, values))`, so the last
+    /// path element alone is not enough either.
+    static bool isKeysSubcolumn(const SubstreamPath & path);
+    static bool isValuesSubcolumn(const SubstreamPath & path);
+
+    /// Whether a resolved subcolumn is really the value stored under one key (`m.key_<key>`).
+    static bool isKeyValueSubcolumn(const SubstreamPath & path);
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

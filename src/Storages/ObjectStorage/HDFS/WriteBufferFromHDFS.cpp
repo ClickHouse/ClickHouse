@@ -33,7 +33,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
     HDFSFSPtr fs;
     WriteSettings write_settings;
     bool created_file;
-    std::string directories_cleanup_root;
 
     WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
@@ -41,14 +40,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             const Poco::Util::AbstractConfiguration & config_,
             int replication_,
             const WriteSettings & write_settings_,
-            int flags,
-            const std::string & directories_cleanup_root_)
+            int flags)
         : HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , write_settings(write_settings_)
         , created_file(!(flags & O_APPEND))
-        , directories_cleanup_root(directories_cleanup_root_)
     {
         fs = createHDFSFS(builder.get());
 
@@ -87,15 +84,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             LOG_WARNING(getLogger("WriteBufferFromHDFS"),
                 "Cannot remove the file of a canceled write: {} ({}) error: {}",
                 hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
-            return;
         }
-
-        /// A canceled write never reaches `removeObject`, which cleans up the emptied prefix
-        /// directories created by `HDFSObjectStorage::writeObject`, so remove them here too;
-        /// otherwise every canceled write (e.g. a zero-row rewrite of a part) would leak one
-        /// empty directory and grow the NameNode namespace without bound.
-        if (!directories_cleanup_root.empty())
-            removeEmptiedParentDirectories(fs.get(), hdfs_file_path, directories_cleanup_root);
     }
 
     int write(const char * start, size_t size)
@@ -129,10 +118,9 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_,
-        BlobStorageLogWriterPtr blob_log_,
-        const String & directories_cleanup_root_)
+        BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_, directories_cleanup_root_))
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_))
     , hdfs_uri(hdfs_uri_)
     , filename(hdfs_file_path_)
     , blob_log(std::move(blob_log_))

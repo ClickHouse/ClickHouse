@@ -73,8 +73,7 @@ void INATSConsumer::subscribe()
     if (loadReceived()->isFinished())
         storeReceived(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size));
 
-    /// Read before subscribing: a reconnect racing `subscribeImpl` can already have dropped what the
-    /// new subscription is waiting for, and the count from before still reports that reconnect.
+    /// Read before subscribing, so that a reconnect racing `subscribeImpl` is still reported.
     const UInt64 reconnect_count_before_subscribe = connection->getReconnectCount();
 
     subscribeImpl();
@@ -115,11 +114,7 @@ void INATSConsumer::unsubscribe()
 
 void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
 {
-    /// Handing a message back needs the subscription it arrived on: `natsMsg_Nak` follows a plain
-    /// pointer from the message to that subscription, and on to the JetStream context and the
-    /// connection. An unsubscribed consumer holds only leftovers of a subscription that is already
-    /// gone - a direct `SELECT` that ended leaves them behind - so there is nothing to hand them
-    /// back through, and nothing more can arrive either.
+    /// Without a subscription there is nothing to return the leftovers through.
     if (!isSubscribed())
     {
         loadReceived()->finish();
@@ -127,32 +122,14 @@ void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_
         return;
     }
 
-    /// Handles of messages this consumer has read but not acknowledged: nothing inserted them, so
-    /// the broker has to deliver them again.
-    for (auto & msg : consumed_messages)
-        nackMessage(msg.get());
-    consumed_messages.clear();
+    nackMessages(consumed_messages);
 
-    /// Messages that yielded no rows are not waiting to be inserted: `nats_skip_broken_messages`
-    /// passed over them on purpose. Where that skip is already final, handing them back would undo
-    /// it and deliver the same malformed input again, so they are acknowledged instead. Where it is
-    /// not - an uncommitted direct `SELECT`, which must consume nothing - they go back to the
-    /// broker like every other message this consumer has not committed.
     if (skipped_messages_action == SkippedMessages::Acknowledge)
-    {
         ackMessages(skipped_messages);
-    }
     else
-    {
-        for (auto & msg : skipped_messages)
-            nackMessage(msg.get());
-        skipped_messages.clear();
-    }
+        nackMessages(skipped_messages);
 
-    /// Finishing the queue before draining it is what makes this complete rather than a snapshot:
-    /// the queue serializes `push` with `finish`, so a message the NATS client thread is delivering
-    /// right now either lands in the queue before it is finished, and the loop below returns it, or
-    /// fails to push and `onMsg` returns it itself. Nothing can be appended afterwards.
+    /// After `finish` a message the NATS client thread delivers fails to push and `onMsg` returns it.
     auto queue = loadReceived();
     queue->finish();
 
@@ -201,6 +178,13 @@ void INATSConsumer::ackMessages(std::vector<NatsMsgPtr> & messages)
     messages.clear();
 }
 
+void INATSConsumer::nackMessages(std::vector<NatsMsgPtr> & messages)
+{
+    for (auto & msg : messages)
+        nackMessage(msg.get());
+    messages.clear();
+}
+
 void INATSConsumer::ackConsumed()
 {
     ackMessages(consumed_messages);
@@ -209,8 +193,7 @@ void INATSConsumer::ackConsumed()
 
 void INATSConsumer::markLastConsumedSkipped()
 {
-    /// Core NATS messages are destroyed as they arrive - there is nothing to acknowledge and
-    /// nothing was recorded - so a cycle that skips one has nothing to move here.
+    /// Core NATS messages are not recorded.
     if (consumed_messages.empty())
         return;
 
@@ -220,11 +203,21 @@ void INATSConsumer::markLastConsumedSkipped()
 
 void INATSConsumer::dropConsumed()
 {
-    /// Release without acking, for JetStream the server redelivers these messages. A skipped
-    /// message is released the same way: nothing committed the cycle that skipped it, and the
-    /// redelivered message is skipped again.
     consumed_messages.clear();
     skipped_messages.clear();
+}
+
+void INATSConsumer::returnConsumed()
+{
+    /// The handles are only usable while the subscription they arrived on is alive.
+    if (!isSubscribed())
+    {
+        dropConsumed();
+        return;
+    }
+
+    nackMessages(consumed_messages);
+    nackMessages(skipped_messages);
 }
 
 void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)

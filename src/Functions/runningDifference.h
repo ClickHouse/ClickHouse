@@ -169,7 +169,7 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
@@ -204,6 +204,22 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    /// Documentation-only — pairwise difference of consecutive rows; result
+    /// widens to fit a signed difference (`UInt8` → `Int16`, `Date` → `Int32`,
+    /// `Float*` → `Float64`, …). The widening rule isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(MaybeNullable(Number | Date | DateTime)) -> MaybeNullable(Number)";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: the pruning under test is delivered by `collectFiltersForAnalysis`, which only the
 -- analyzer runs, and the old analyzer rewrites a `GLOBAL IN` subquery into an external table that
 -- `ReadFromCluster` never sends to the replicas, so the replica fails to resolve it.
 

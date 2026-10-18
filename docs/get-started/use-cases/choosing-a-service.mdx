@@ -16,7 +16,7 @@ ClickHouse Cloud is the platform for managed services, including ClickHouse for 
 | --- | --- | --- |
 | Aggregations, filtering, and comparisons across large event or result histories | [ClickHouse service in ClickHouse Cloud](/products/cloud/getting-started/intro) | Representative queries, ingestion batches, data freshness, concurrent queries, and the design of updates or retries |
 | Transactional application state, such as orders, inventory reservations, or jobs whose state transitions require transactions and constraints | [ClickHouse Managed Postgres in ClickHouse Cloud](/products/managed-postgres/overview) | Transaction boundaries, constraints, indexes, connection management, and the service's supported features and availability |
-| Transactional application state plus analytical queries that need an independent serving system | [Postgres and ClickHouse services in ClickHouse Cloud](/products/managed-postgres/clickhouse-integration) | Which tables need replication, acceptable replication lag, schema changes, and the cost and operation of two services |
+| Transactional application state plus analytical queries that need an independent serving system | [Postgres and ClickHouse services in ClickHouse Cloud](/products/managed-postgres/clickpipes) | Which tables need replication, acceptable replication lag, schema changes, and the cost and operation of two services |
 | A managed experience for searching and investigating application logs, metrics, and traces | [Managed ClickStack](/clickstack/getting-started/managed) | Instrumentation, telemetry ingestion, retention, and the observability workflows your team needs |
 | Analysis of files or in-memory data inside a local application or notebook | [chDB](/chdb/index) | Local resources and whether you need a separately hosted, shared database service |
 
@@ -49,7 +49,7 @@ Postgres can also serve reporting queries. Add an analytical service when repres
 
 ### Transactions and analytics together {#transactions-and-analytics}
 
-When both workloads justify separate services, keep transactional state in Postgres and replicate the required tables to ClickHouse using [ClickPipes](/products/managed-postgres/clickhouse-integration). Account for replication lag and continue to use the transactional source for decisions that require current application state. Replication does not make a Postgres write and a ClickHouse read part of one transaction.
+When both workloads justify separate services, keep transactional state in Postgres and replicate the required tables to ClickHouse using [ClickPipes](/products/managed-postgres/clickpipes) or [WalShadow](/products/managed-postgres/walshadow). Account for replication lag and continue to use the transactional source for decisions that require current application state. Replication does not make a Postgres write and a ClickHouse read part of one transaction.
 
 The [pg_clickhouse extension](/products/managed-postgres/extensions/pg_clickhouse/introduction) can provide access to ClickHouse through Postgres. A shared query entry point does not turn the two services into one database engine or remove the need to account for data freshness.
 

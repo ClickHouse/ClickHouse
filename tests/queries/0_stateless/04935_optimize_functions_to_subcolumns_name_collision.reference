@@ -1,0 +1,89 @@
+string size
+3	0	1
+0	1	0
+3	0	1
+0	1	0
+array size
+2	0	1
+0	1	0
+2	0	1
+0	1	0
+null map
+0	1
+1	0
+0	1
+1	0
+1
+1
+map keys
+['k']	0
+['k']	0
+map values
+[1]
+[1]
+map element
+1
+1
+nullable json
+2	0	1	1
+0	1	0	0
+2	0	1	1
+0	1	0	0
+nullable tuple
+2	0	1	['k']
+0	1	0	[]
+2	0	1	['k']
+0	1	0	[]
+json size path
+2	0	1	1
+2	0	1	1
+tuple element
+1
+1
+tuple element, nested declared first
+1
+1
+variant element
+7
+7
+physical column shadowed by a json path
+	['abc','def']	['physical','physical2']	0	2	0	1	1
+	['abc','def']	['physical','physical2']	0	2	0	1	1
+tuple element shadowed by a sibling json path
+
+
+distinct json paths
+['fromphysical']
+['fromphysical']
+['__special_subcolumn_name_for_distinct_paths_calculation','real']
+['__special_subcolumn_name_for_distinct_paths_calculation','real']
+array of json element
+FROM_PHYSICAL
+FROM_PHYSICAL
+FROM_PHYSICAL
+FROM_PHYSICAL
+still optimized
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1

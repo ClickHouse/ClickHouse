@@ -49,11 +49,11 @@ Converts a colour from the **OKLCH** perceptual colour space to the familiar **s
 
 If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
 
-:::note
+<Note>
 **OKLCH** is a cylindrical version of the OKLab colour space.
 It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`).
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-:::
+</Note>
 
 The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 

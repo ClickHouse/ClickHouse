@@ -88,6 +88,8 @@ struct PatternData
     bool is_case_insensitive = false;   /// True if case-insensitive (ILIKE or (?i) prefix)
     bool is_raw_regexp = false;         /// True if the regexp came verbatim from a `match()` call,
                                         /// rather than being generated from a LIKE/ILIKE pattern.
+    bool may_have_end_anchor = false;   /// True if the regexp may end with `$`. Assumed for raw `match()`
+                                        /// regexps, which are not parsed.
 };
 
 /// Tracks information about patterns for a single identifier/expression
@@ -231,6 +233,18 @@ struct PatternInfo
                 return false;
         return true;
     }
+
+    /// Returns true if no regexp ends with `$`. `likePatternToRegexp` anchors every pattern which does not
+    /// end in an unescaped `%`, and `multiMatchAny` runs it through Vectorscan, whose `$` also matches before
+    /// a final newline (PCRE), while the original `like`/`ilike` uses RE2, where `$` is the absolute end. So
+    /// rewriting such a chain matches a broader set: `LIKE 'a'` would also match `'a\n'`.
+    bool allRegexpsHaveNoEndAnchor() const
+    {
+        for (const auto & p : patterns)
+            if (p.may_have_end_anchor)
+                return false;
+        return true;
+    }
 };
 
 class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>
@@ -355,6 +369,7 @@ public:
                 data.regexp = pattern_str;
                 data.is_substring = false;
                 data.is_raw_regexp = true;
+                data.may_have_end_anchor = true;
             }
             else
             {
@@ -370,7 +385,7 @@ public:
                 /// behavior. Only the expected parse error is swallowed; anything else propagates.
                 try
                 {
-                    data.regexp = likePatternToRegexp(pattern_str);
+                    data.regexp = likePatternToRegexp(pattern_str, &data.may_have_end_anchor);
                     if (is_ilike)
                         data.regexp = "(?i)" + data.regexp;
                 }
@@ -490,6 +505,7 @@ public:
             else if (eligible && !can_use_multi_search && allow_hyperscan && haystack_is_string
                 && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
                 && !info.hasRawRegexp() && info.allRegexpsValidUTF8() && info.allRegexpsHaveNoEmbeddedNul()
+                && info.allRegexpsHaveNoEndAnchor()
                 && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
             {
                 /// Use `multiMatchAny` for non-substring patterns; it evaluates all regexps in a single
@@ -502,8 +518,9 @@ public:
                 /// `match()` regexp off this path (Vectorscan rejects RE2-only syntax such as `\C` even when
                 /// the bytes are valid UTF-8), and `allRegexpsHaveNoEmbeddedNul` keeps chains whose regexps
                 /// contain an embedded NUL off it (Vectorscan truncates at the first NUL, matching a broader
-                /// set than the length-aware RE2 of the original `like`/`ilike`). A group that fails any of
-                /// these checks keeps its original branches (below).
+                /// set than the length-aware RE2 of the original `like`/`ilike`), and `allRegexpsHaveNoEndAnchor`
+                /// keeps end-anchored chains off it (Vectorscan matches `$` before a final newline, again a
+                /// broader set). A group that fails any of these checks keeps its original branches (below).
                 match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(key_data.key);
                 match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
@@ -521,8 +538,8 @@ public:
             {
                 /// We reach here when the group is below the per-target threshold, or no fast path
                 /// applies: a `FixedString`/`Enum` haystack, Hyperscan disabled/unavailable, a raw
-                /// `match()` regexp, a non-UTF-8 pattern, an embedded NUL, an over-limit or expensive
-                /// regexp, or a pattern that failed to convert. We do not fall back to a combined
+                /// `match()` regexp, a non-UTF-8 pattern, an embedded NUL, an end anchor, an over-limit or
+                /// expensive regexp, or a pattern that failed to convert. We do not fall back to a combined
                 /// `match` alternation (it regresses — see the comment above), so we keep the original
                 /// `OR LIKE` branches: always executable and result-preserving.
                 slot = std::move(key_data.originals);

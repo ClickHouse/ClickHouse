@@ -73,7 +73,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 upper bound: no pruning (beyond Date max, overflow wraps)
 Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
+  Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
       Min-Max
@@ -95,7 +95,7 @@ Expression ((Project names + Projection))
       Ranges: 0
 at Date max: no pruning (boundary value, next wraps)
 Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
+  Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
       Min-Max
@@ -159,7 +159,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 Date32 upper bound: no pruning
 Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
+  Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_d32_explain)
     Indexes:
       Min-Max

@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -32,6 +33,11 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+}
+
+namespace FailPoints
+{
+    extern const char rename_database_after_dependency_check[];
 }
 
 namespace ErrorCodes
@@ -755,6 +761,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
+    /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
+    /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
+    for (const auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
@@ -762,6 +773,24 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         for (auto & table : tables)
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
+
+    /// The rename re-keys every table of the database under the new name in the server-wide dependency
+    /// graph, which can close a cycle - the simplest case being a table `db.t = Alias(<new name>, t)`,
+    /// accepted at `CREATE` because the target database did not exist yet and thus becoming a
+    /// self-reference. Refuse such a rename before anything is modified, the same way `RENAME TABLE`
+    /// refuses it for a single table. The check is done here, under `mutex` and the exclusive database
+    /// DDL lock held by the caller, so that it sees exactly the set of tables that is about to be
+    /// re-keyed below: no table can be created, attached or dropped in between.
+    Strings table_names;
+    table_names.reserve(tables.size());
+    for (const auto & table : tables)
+        table_names.push_back(table.first);
+    DatabaseCatalog::instance().checkDatabaseCanBeRenamedWithNoCyclicDependencies(database_name, new_name, table_names);
+
+    /// Lets a test hold the rename between the dependency check and the catalog rewrite, to prove
+    /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point, and
+    /// that a concurrent `CREATE TABLE` in another database cannot close a cycle that this check missed.
+    FailPointInjection::pauseFailPoint(FailPoints::rename_database_after_dependency_check);
 
 
     try
@@ -783,14 +812,22 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     String old_path_to_table_symlinks;
 
     {
+        /// `updateDatabaseName` repeats the cycle check under the same lock as the rewrite, because DDL in
+        /// other databases is not excluded by our locks and may have added a dependency edge since the
+        /// check above. If it refuses the rename, the catalog is untouched; put the metadata file back.
+        try
         {
-            Strings table_names;
-            table_names.reserve(tables.size());
-            for (auto & table : tables)
-                table_names.push_back(table.first);
             DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
         }
+        catch (...)
+        {
+            default_db_disk->moveFile(new_metadata_file_path, old_metadata_file_path);
+            tryCreateMetadataSymlink();
+            throw;
+        }
         database_name = new_name;
+
+        onDatabaseRenamed();
 
         for (auto & table : tables)
         {
@@ -915,25 +952,29 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
 
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true}, Documentation{
+    factory.registerDatabase("Atomic", create_fn, SecretArgumentsSpec{}, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
-:::note
+<Note>
 On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` may be omitted, because it is the default. A `SETTINGS` clause may hold both settings
+of the database engine (such as [`disk`](#metadata-disk) or [`max_tables`](#limiting-the-number-of-tables))
+and ordinary query settings; each name is dispatched to whichever of the two it belongs to.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
@@ -955,9 +996,9 @@ For example:
 CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
 ```
 
-:::note
+<Note>
 You can use the [show_table_uuid_in_table_create_query_if_not_nil](/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
-:::
+</Note>
 
 ### RENAME TABLE {#rename-table}
 
@@ -987,12 +1028,24 @@ For [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/re
 
 ### Metadata disk {#metadata-disk}
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.
-For example:
+It can name a disk from the server configuration, or define one inline with the `disk` function,
+the same way a single table does:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
+
 If unspecified, the disk defined in `database_disk.disk` is used by default.
+
+The same `SETTINGS` clause works for `ATTACH DATABASE`, which is how a database whose metadata files
+live on another disk is attached to a server. `Atomic` requires the `UUID` of the database to be given
+explicitly in that case:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Limiting the number of tables {#limiting-the-number-of-tables}
 

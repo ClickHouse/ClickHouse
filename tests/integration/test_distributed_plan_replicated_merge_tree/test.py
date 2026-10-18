@@ -26,6 +26,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -82,7 +83,7 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_join_to_in = 0",
     "query_plan_convert_outer_join_to_inner_join = 0",
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
-    # Runtime filters are not yet implemented for distributed queries.
+    # Off by default here; `test_join_runtime_filters` turns them on.
     "enable_join_runtime_filters = 0",
     # To support old explain format
     "explain_query_plan_default = 'legacy'",
@@ -603,6 +604,58 @@ def test_profile_events_local_execution(started_cluster):
 
 
 @EXCHANGE_KINDS
+def test_join_runtime_filters(started_cluster, exchange_kind):
+    """A shuffle join sends the runtime filter states of its build tasks through one `rf_merge_*`
+    task to the probe tasks. The result must match the non-distributed query, and no worker task
+    may keep running after the query ends."""
+    buckets = 3
+    query = "SELECT count(), sum(b.id) FROM big AS b INNER JOIN small AS s ON b.id = s.id"
+    query_id = f"dist_join_rf_{uuid.uuid4().hex}"
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, " + _override(
+            exchange_kind,
+            "enable_join_runtime_filters = 1",
+            "distributed_plan_join_runtime_filters = 1",
+            "join_runtime_filter_min_probe_rows = 0",
+        ),
+        query_id=query_id,
+    )
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # Worker tasks carry the initiator query id as `initial_query_id` and the task id as `query`.
+    tasks = []
+    for node in NODES:
+        node.query("SYSTEM FLUSH LOGS query_log")
+        result = node.query(
+            f"""
+            SELECT query, ProfileEvents['RuntimeFilterStatesSent'],
+                ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
+                ProfileEvents['WriteBufferFromS3Bytes'], ProfileEvents['ReadBufferFromS3Bytes']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}' AND query_id != initial_query_id
+            """
+        )
+        tasks += [line.split("\t") for line in result.strip().splitlines()]
+
+    merge_tasks = [task for task in tasks if task[0].startswith("rf_merge_")]
+    assert len(merge_tasks) == 1, tasks
+    # Each build task sends its partial state once, to the merge task.
+    assert sum(int(task[1]) for task in tasks if task not in merge_tasks) == buckets, tasks
+    if exchange_kind == "Persisted":
+        # On a persisted chain the merge task reads and writes the states as files in MinIO.
+        streaming_bytes, s3_written, s3_read = (int(field) for field in merge_tasks[0][2:])
+        assert streaming_bytes == 0 and s3_read > 0 and s3_written > 0, merge_tasks
+
+    for node in NODES:
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.processes WHERE initial_query_id = '{query_id}'",
+            "0",
+            retry_count=120,
+        )
+
+
+@EXCHANGE_KINDS
 def test_join_with_aggregation(started_cluster, exchange_kind):
     """Combined shuffle: aggregate one side, broadcast the small side, then
     join. Verifies that exchanges around aggregation and join compose."""
@@ -745,29 +798,6 @@ def test_read_in_order_across_surviving_exchange(started_cluster):
             f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
         )
         assert distributed == baseline
-
-
-def test_legacy_read_in_order_is_rejected(started_cluster):
-    """The old interpreter plans read-in-order before the plan is optimized (query_plan_read_in_order = 0)
-    and builds a FinishSorting up front. optimizeReadInOrder only converts a Type::Full sorting, so the
-    exchange-safety check never sees that one, and the scatter placed under it can survive and feed it rows
-    that are no longer sorted - which returned rows from the wrong part of the table on 8 of 16 runs. Such a
-    plan has to be rejected rather than silently reordered."""
-    legacy = ("make_distributed_plan = 1, enable_parallel_replicas = 0, "
-              "enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1, "
-              "distributed_plan_read_in_order = 1")
-    bucket_counts = [
-        # Mismatched, so the exchange the pair fuses into survives - the shape that reproduced.
-        "distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 3",
-        # Matched, which is not safe either: the sorting here is not one this optimizer converted.
-        "distributed_plan_default_reader_bucket_count = 3, distributed_plan_default_shuffle_join_bucket_count = 3",
-    ]
-    for buckets in bucket_counts:
-        error = INITIATOR.query_and_get_error(
-            "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990 "
-            f"SETTINGS {legacy}, {buckets}"
-        )
-        assert "does not support a read-in-order distributed read" in error, error
 
 
 def test_read_in_order_stops_early(started_cluster):

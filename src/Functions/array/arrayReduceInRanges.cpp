@@ -54,13 +54,44 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// With a non-deterministic aggregate this must stay off: the default implementation executes the
+    /// function on a single row and replicates the result to the whole block, which turns per-row draws
+    /// into one draw for the query. `executeImpl` materializes a constant array argument itself.
+    bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Documentation-only — the result is `Array(<agg>::ResultType)` where
+    /// `<agg>` is resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array(Tuple(Integer, Integer)), Array, ...) -> Array";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
     }
+
+    /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
+    /// makes the expression non-deterministic, and both the filter push-down and constant folding have
+    /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
+    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
+    bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -343,6 +374,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Declarative signature — like `arrayReduce` but per-range; the result
+    /// is `Array(R)` where `R` is the named aggregator's finalised return
+    /// type computed over the array element types.
+    String getSignatureString() const override
+    {
+        return "(const a String, Array(Tuple(UInt, UInt)), Array(T1 : Any), ...) -> Array(aggregateFunctionReturnType(AggregateFunction(a, T1, ...)))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

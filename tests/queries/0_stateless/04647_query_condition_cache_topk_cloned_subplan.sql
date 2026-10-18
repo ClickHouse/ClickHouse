@@ -32,7 +32,7 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 -- The last assertion below is a positive control that depends on the decorrelated join keeping the
 -- `tab` read on the side where the `v2 IN (...)` predicate becomes a `FilterStep` above
 -- `ReadFromMergeTree`, which is what primes and then reuses a query condition cache entry. Join

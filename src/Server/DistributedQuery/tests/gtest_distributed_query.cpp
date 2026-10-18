@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <boost/core/noncopyable.hpp>
@@ -28,6 +29,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/JoinOperator.h>
@@ -49,13 +51,17 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/defines.h>
 
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 
@@ -583,6 +589,164 @@ TEST_F(DistributedQueryTest, ShuffleHashJoin)
     executeTestWithExchangeKind("Streaming");
 }
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+}
+
+/// Planning must size a query's distributed plan from the stateless-worker cluster it selects via
+/// `distributed_plan_worker_cluster`, and reject an unusable selection instead of silently planning
+/// zero workers. Covers default/named selection, the named default (`default_cluster_name`), and the
+/// no-default (symmetric) config where a query must name its cluster.
+TEST_F(DistributedQueryTest, StatelessWorkerClusterPlanSizing)
+{
+    auto apply_config = [&](const std::string & sw_block)
+    {
+        const std::string xml = "<clickhouse>\n"
+            "<remote_servers><two><shard>"
+            "<replica><host>pair-a</host><port>9000</port></replica>"
+            "<replica><host>pair-b</host><port>9000</port></replica>"
+            "</shard></two></remote_servers>\n" + sw_block + "</clickhouse>\n";
+        DB::WriteBufferFromFile f("./sw_cluster_config_for_test.xml");
+        DB::writeText(xml, f);
+        f.finalize();
+        DB::ConfigProcessor processor("./sw_cluster_config_for_test.xml", true, true);
+        auto loaded = processor.loadConfig(false);
+        getContext().context->setConfig(loaded.configuration);
+        getContext().context->setClustersConfig(loaded.configuration);
+        /// Planning resolves providers through the process-global registry; keep its cached providers
+        /// in step with each sub-config.
+        getContext().context->reloadStatelessWorkersConfig(getContext().context->getConfigRef());
+    };
+
+    auto make_query_context = [&](const String & cluster, UInt64 workers_num)
+    {
+        auto context = Context::createCopy(getContext().context);
+        context->setSetting("distributed_plan_workers_num", workers_num);
+        context->setSetting("distributed_plan_worker_cluster", cluster);
+        context->setQueryContext(context);
+        return context;
+    };
+
+    auto plan_nodes = [&](const String & cluster, UInt64 workers_num) -> size_t
+    {
+        return getCascadesPlanningNodeCount(make_query_context(cluster, workers_num));
+    };
+
+    auto expect_rejected = [&](const String & cluster, int expected_code)
+    {
+        try
+        {
+            getCascadesPlanningNodeCount(make_query_context(cluster, 5));
+            FAIL() << "expected planning to reject cluster '" << cluster << "'";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), expected_code);
+        }
+    };
+
+    /// A static cluster plans for its configured workers, regardless of the requested count.
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <host>default-host</host>
+        <clusters>
+            <stat><host>stat-host</host></stat>
+            <pair><cluster>two</cluster></pair>
+            <sourceless><enabled>1</enabled></sourceless>
+        </clusters>
+    </stateless_worker_client>
+)");
+    EXPECT_EQ(plan_nodes("", 5), 1u);
+    EXPECT_EQ(plan_nodes("stat", 5), 1u);
+    EXPECT_EQ(plan_nodes("pair", 5), 2u);
+    expect_rejected("nope", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);       /// unknown cluster
+    expect_rejected("sourceless", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG); /// configured but names no worker source
+
+    /// Planning resolves the cluster from the query-level context, not the ambient (subquery) one, so a
+    /// copied context overriding `distributed_plan_worker_cluster` cannot plan a different topology
+    /// than execution allocates from.
+    {
+        auto query_ctx = make_query_context("pair", 5);
+        auto ambient_ctx = Context::createCopy(query_ctx);
+        ambient_ctx->setSetting("distributed_plan_worker_cluster", String("stat"));
+        EXPECT_EQ(getCascadesPlanningNodeCount(ambient_ctx), 2u);
+    }
+
+    /// A named default: the flat block is reachable both by an empty value and by its `default_cluster_name`.
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <default_cluster_name>main</default_cluster_name>
+        <cluster>two</cluster>
+    </stateless_worker_client>
+)");
+    EXPECT_EQ(plan_nodes("", 5), 2u);
+    EXPECT_EQ(plan_nodes("main", 5), 2u);
+
+    /// No default (symmetric config): the flat block names no worker source, only `clusters.<name>`.
+    /// An empty selection is rejected; a named cluster still resolves.
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters>
+            <stat><host>stat-host</host></stat>
+        </clusters>
+    </stateless_worker_client>
+)");
+    expect_rejected("", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    EXPECT_EQ(plan_nodes("stat", 5), 1u);
+
+    /// Client disabled: the default (empty) selection plans locally (0 nodes), but an explicitly named
+    /// cluster is rejected rather than silently planning local.
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>0</enabled>
+        <clusters>
+            <stat><host>stat-host</host></stat>
+        </clusters>
+    </stateless_worker_client>
+)");
+    EXPECT_EQ(plan_nodes("", 5), 0u);
+    expect_rejected("stat", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+
+    /// A `default_cluster_name` that also names a cluster under `clusters` is an ambiguous collision:
+    /// reject it (otherwise the named cluster is unreachable and the query silently uses the default).
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <default_cluster_name>blue</default_cluster_name>
+        <host>default-host</host>
+        <clusters>
+            <blue><host>blue-host</host></blue>
+        </clusters>
+    </stateless_worker_client>
+)");
+    expect_rejected("blue", DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
+    expect_rejected("", DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
+
+    /// A cluster must name exactly one worker source; multiple sources are an ambiguous config and are
+    /// rejected rather than silently resolved by precedence.
+    apply_config(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <cluster>two</cluster>
+        <host>stray-host</host>
+        <clusters>
+            <multi><cluster>two</cluster><host>some-host</host></multi>
+        </clusters>
+    </stateless_worker_client>
+)");
+    expect_rejected("multi", DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
+    expect_rejected("", DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
+}
+
 /// A stream with no columns (case of `SELECT count()`) carries only row counts, so its chunks are
 /// told apart from the end-of-data marker by the row count alone.
 TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
@@ -590,9 +754,11 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     auto context = Context::createCopy(getContext().context);
     context->setSetting("distributed_plan_execute_locally", true);
 
+    /// In-memory exchanges are kept per query id for the whole process, so a fixed id would make a
+    /// repeated run read the exchange the previous run already used.
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
-        /*execute_locally=*/true);
+        toString(UUIDHelpers::generateV4()), ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true, /*cancellation=*/ nullptr);
 
     auto header = std::make_shared<const Block>();
     const ExchangeStreamId stream_id("test_exchange", 0, 0);
@@ -606,7 +772,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
         builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
         builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
         {
-            return exchange_lookup->createSink(sink_header, stream_id);
+            return exchange_lookup->createSink(sink_header, stream_id, /*advisory*/ false);
         });
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         CompletedPipelineExecutor executor(pipeline);
@@ -615,7 +781,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 
     size_t total_rows = 0;
     {
-        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id)));
+        QueryPipeline pipeline(
+            Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false, /*advisory=*/ false)));
         PullingPipelineExecutor executor(pipeline);
         Chunk chunk;
         while (executor.pull(chunk))
@@ -625,25 +792,89 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     EXPECT_EQ(total_rows, 7u);
 }
 
-/// v1 only when every producer port matches the destination worker's exchange port (a v1
-/// consumer dials producers on its own port); v2 as soon as any producer differs.
-TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
+namespace DB::ErrorCodes
 {
-    const UInt64 destination_exchange_port = 9000;
+extern const int INCORRECT_DATA;
+}
 
-    ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
+namespace
+{
 
-    sources.stream_hosts["s1"] = {"host1", 9000};
-    sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
+RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataTypePtr & type, const ExchangeStreamId & stream)
+{
+    RuntimeFilterReceiveDescriptor descriptor;
+    descriptor.filter_key = key;
+    descriptor.filter_name = "filter_" + key;
+    descriptor.key_column_type = type;
+    descriptor.geometry = RuntimeFilterGeometry{
+        .exact_values_limit = 100,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 2048,
+        .bloom_filter_hash_functions = 4,
+        .pass_ratio_threshold_for_disabling = 0.55,
+        .blocks_to_skip_before_reenabling = 7,
+        .max_ratio_of_set_bits_in_bloom_filter = 0.4,
+    };
+    descriptor.stream = stream;
+    return descriptor;
+}
 
-    sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(2));
+String serializeTaskWithDescriptors(std::vector<RuntimeFilterReceiveDescriptor> descriptors)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
+    description.initial_query_id = "q1";
+    description.task.task_id = "t0";
+    description.task.runtime_filter_descriptors = std::move(descriptors);
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    return out.str();
+}
 
-    /// Producers agreeing among themselves is not enough: a destination whose own port
-    /// differs from the producers' port must still get a version-2 task.
-    ExchangeStreamSources uniform_sources;
-    uniform_sources.stream_hosts["s1"] = {"host1", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(uniform_sources, /*destination_exchange_port=*/9224), UInt64(2));
+}
+
+/// The restored task serializes to the same bytes, so no field of a descriptor is lost on the way.
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
+{
+    auto first = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex1", "1", "0"));
+    auto second = makeDescriptor("key_b", std::make_shared<DataTypeString>(), ExchangeStreamId("ex2", "0", "1"));
+    second.geometry.pass_ratio_threshold_for_disabling = 0.25;
+    second.geometry.max_ratio_of_set_bits_in_bloom_filter = 0.15;
+    const String bytes = serializeTaskWithDescriptors({first, second});
+
+    ReadBufferFromString in(bytes);
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+
+    ASSERT_EQ(restored.task.runtime_filter_descriptors.size(), 2u);
+    EXPECT_EQ(restored.task.runtime_filter_descriptors[1].filter_key, "key_b");
+    EXPECT_EQ(serializeTaskWithDescriptors(restored.task.runtime_filter_descriptors), bytes);
+}
+
+/// `deserializeTask` rejects descriptors that a correct initiator never sends.
+TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
+{
+    auto valid = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("ex", "0", "0"));
+    auto without_key = valid;
+    without_key.filter_key.clear();
+
+    const std::vector<std::pair<const char *, std::vector<RuntimeFilterReceiveDescriptor>>> cases = {
+        {"an empty filter key", {without_key}},
+        {"a duplicate filter key", {valid, valid}},
+    };
+    for (const auto & [what, descriptors] : cases)
+    {
+        const String bytes = serializeTaskWithDescriptors(descriptors);
+        ReadBufferFromString in(bytes);
+        DistributedQueryTaskDescription restored;
+        try
+        {
+            deserializeTask(restored, in);
+            ADD_FAILURE() << what << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what;
+        }
+    }
 }
