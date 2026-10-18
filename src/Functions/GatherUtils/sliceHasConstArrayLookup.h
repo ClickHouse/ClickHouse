@@ -155,19 +155,17 @@ ALWAYS_INLINE bool countedContains(const T * data, const UInt8 * null_map, size_
     return false;
 }
 
-/// The constant array is searched in parts from a few vectors, and at least a block of 128 bytes of `sliceContains`. A row is
-/// searched in larger parts, as a part is an extra call for each searched value, and the search of a row is usually not stopped early
-/// by a value at its start.
+/// The constant array is searched in parts from a few vectors, and at least a block of 128 bytes of `sliceContains`, or from one element
+/// if it is compared one by one. A row is searched in larger parts, as a part is an extra call for each searched value, and the search
+/// of a row is usually not stopped early by a value at its start.
 template <typename T>
-constexpr size_t const_first_part_size = std::max<size_t>(32, 128 / sizeof(T));
+constexpr size_t const_first_part_size = is_vector_searched<T> ? std::max<size_t>(32, 128 / sizeof(T)) : 1;
 constexpr size_t row_first_part_size = 256;
 
+/// The first vector of the constant array, or its first element if it is compared one by one. A value there is found about as fast as
+/// by a lookup, so that search is not counted in the work. A constant size lets the compiler drop the checks of the size from the loop.
 template <typename T>
-ALWAYS_INLINE bool constContains(const Elements<T> & array, T value, size_t & work)
-{
-    return array.null_map ? countedContains<true>(array.data, array.null_map, array.size, value, const_first_part_size<T>, work)
-                          : countedContains<false>(array.data, nullptr, array.size, value, const_first_part_size<T>, work);
-}
+constexpr size_t const_head_size = is_vector_searched<T> ? std::min(32 / sizeof(T), minConstSize<T>(Operation::SearchElementsInConst)) : 1;
 
 /// The set of the non-NULL values of the constant array.
 template <typename T>
@@ -338,6 +336,47 @@ NO_INLINE bool searchValuesInShortRow(
     return end == array.size;
 }
 
+template <typename T>
+ALWAYS_INLINE bool headContains(const Elements<T> & array, T value)
+{
+    return array.null_map ? contains<true>(array.data, array.null_map, const_head_size<T>, value)
+                          : contains<false>(array.data, nullptr, const_head_size<T>, value);
+}
+
+/// Searches the elements of a row in the constant array, as `sliceHasImplAnyAll` does, until one settles the row: it is in the constant
+/// for `hasAny`, it is not for `hasAll`. Returns false without `settled` when the work is exceeded first. In its own function, as the
+/// search is slower when it is inlined into the loops of the lookup.
+template <bool all, bool has_null_map, bool const_has_null_map, typename T>
+NO_INLINE bool searchElementsInConst(
+    const T * data, const UInt8 * null_map, size_t size, const Elements<T> & array, Work & work, bool & settled)
+{
+    /// The constant has at least `minConstSize` elements.
+    static constexpr size_t head = const_head_size<T>;
+    const UInt8 * rest_null_map = const_has_null_map ? array.null_map + head : nullptr;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (has_null_map && null_map[i])
+            continue;
+        bool in_const = contains<const_has_null_map>(array.data, array.null_map, head, data[i]);
+        if (!in_const)
+        {
+            if (work.exceeded())
+                return false;
+            work.table += ValueSet<T>::lookup_work;
+            work.search += head;
+            in_const = countedContains<const_has_null_map>(
+                array.data + head, rest_null_map, array.size - head, data[i], const_first_part_size<T>, work.search);
+        }
+        if (in_const != all)
+        {
+            settled = true;
+            return true;
+        }
+    }
+    settled = false;
+    return true;
+}
+
 /// The searches of the rows after the table is built may take `1 / lookup_work_per_wasted_search_work` of the work of the lookups
 /// more than they saved.
 constexpr Int64 lookup_work_per_wasted_search_work = 32;
@@ -401,6 +440,9 @@ void lookupElements(
         return !(has_null_map && elements.null_map[i]) && is_in_const(elements.data[i]) != all;
     };
 
+    auto * search_elements_in_const = array.null_map ? searchElementsInConst<all, has_null_map, true, T>
+                                                     : searchElementsInConst<all, has_null_map, false, T>;
+
     auto search_row = [&](size_t row, size_t begin, size_t end, Work & work) ALWAYS_INLINE
     {
         /// The constant is not empty, so only `hasAll(constant, column)` is true for an empty row.
@@ -412,13 +454,12 @@ void lookupElements(
         bool settled = settled_by_null(begin, end);
         if (const_is_first)
         {
-            for (size_t i = begin; i < end && !settled; ++i)
-            {
-                if (work.exceeded())
-                    return false;
-                work.table += ValueSet<T>::lookup_work;
-                settled = settles(i, [&](T value) ALWAYS_INLINE { return constContains(array, value, work.search); });
-            }
+            const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
+            /// The first element of `hasAny` is searched here, as it often settles the row.
+            if (!all && !settled && !(has_null_map && null_map[0]))
+                settled = headContains(array, elements.data[begin]);
+            if (!settled && !search_elements_in_const(elements.data + begin, null_map, end - begin, array, work, settled))
+                return false;
         }
         else if (!settled)
         {
