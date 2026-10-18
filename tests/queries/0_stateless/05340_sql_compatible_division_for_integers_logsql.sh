@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 for exact in 0 1; do
     for query in '* | stats avg(a, b) as mean' '* | stats avg(b, b) as mean' 'a:>999 | stats avg(a, b) as mean'; do
         $CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_exact_division --dialect logsql \
-            --exact_division_for_integers "$exact" --use_variant_as_common_type 1 \
+            --sql_compatible_division_for_integers "$exact" --use_variant_as_common_type 1 \
             --format TabSeparatedWithNamesAndTypes --query "$query"
     done
 done

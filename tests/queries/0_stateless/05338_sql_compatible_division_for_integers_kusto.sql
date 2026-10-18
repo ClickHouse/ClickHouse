@@ -1,4 +1,4 @@
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SELECT kqlDivide(toIntervalMillisecond(15), toIntervalMillisecond(10));
 SELECT kqlDivide(materialize(toIntervalHour(3)), materialize(toIntervalMinute(120)));
 SELECT kqlDivide(toIntervalMillisecond(15), toIntervalMillisecond(0));
@@ -12,7 +12,7 @@ print unixtime_milliseconds_todatetime(1500), unixtime_microseconds_todatetime(1
 datatable (n:long) [1500, 1750] | project r = unixtime_milliseconds_todatetime(n);
 SET dialect = 'clickhouse';
 
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 SELECT kqlDivide(toIntervalMillisecond(15), toIntervalMillisecond(10));
 SET dialect = 'kusto';
 print unixtime_milliseconds_todatetime(1500), unixtime_microseconds_todatetime(1500000), unixtime_nanoseconds_todatetime(1500000000);
