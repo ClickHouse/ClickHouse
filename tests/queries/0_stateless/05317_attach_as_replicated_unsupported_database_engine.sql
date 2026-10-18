@@ -1,0 +1,17 @@
+-- `ATTACH TABLE ... AS [NOT] REPLICATED` is refused in a database that is neither `Atomic` nor `Ordinary`, and the table still attaches as it was
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.mt VALUES (1);
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt;
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt AS REPLICATED; -- { serverError NOT_IMPLEMENTED }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt AS NOT REPLICATED; -- { serverError NOT_IMPLEMENTED }
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt;
+SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'mt' ORDER BY engine;
+SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.mt ORDER BY x;
+
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
