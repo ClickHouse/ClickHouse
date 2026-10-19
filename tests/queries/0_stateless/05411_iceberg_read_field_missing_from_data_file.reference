@@ -1,0 +1,29 @@
+Avro	rows	[0,1,2,10,11,12]	6
+Avro	where_null	6
+Avro	where_eq	0
+Avro	star	0	0	\N
+Avro	star	1	1	\N
+Avro	star	2	2	\N
+Avro	star	10	10	\N
+Avro	star	11	11	\N
+Avro	star	12	12	\N
+ORC	rows	[0,1,2,10,11,12]	6
+ORC	where_null	6
+ORC	where_eq	0
+ORC	star	0	0	\N
+ORC	star	1	1	\N
+ORC	star	2	2	\N
+ORC	star	10	10	\N
+ORC	star	11	11	\N
+ORC	star	12	12	\N
+Parquet	rows	[0,1,2,10,11,12]	6
+Parquet	where_null	6
+Parquet	where_eq	0
+Parquet	star	0	0	\N
+Parquet	star	1	1	\N
+Parquet	star	2	2	\N
+Parquet	star	10	10	\N
+Parquet	star	11	11	\N
+Parquet	star	12	12	\N
+after_optimize	5	5	26
+files_after_optimize	2	0

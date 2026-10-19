@@ -178,6 +178,15 @@ void checkNoUInt64(const ColumnsDescription & columns)
                 column.name, column.type->getName());
     }
 }
+
+/// A data file may lack an optional field of the schema its manifest names (a column added while the
+/// file was being written); Iceberg reads such a field as NULL.
+void allowFieldsMissingFromDataFile(FormatSettings & format_settings)
+{
+    format_settings.parquet.allow_missing_columns = true;
+    format_settings.orc.allow_missing_columns = true;
+    format_settings.avro.allow_missing_fields = true;
+}
 }
 
 
@@ -581,12 +590,14 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
+        FormatSettings compaction_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+        allowFieldsMissingFromDataFile(compaction_format_settings);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
             object_storage,
             getMetadataLookupSettings(),
-            format_settings,
+            compaction_format_settings,
             sample_block,
             context,
             write_format);
@@ -1561,6 +1572,8 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
+    allowFieldsMissingFromDataFile(format_settings);
+
     if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
         /// data reader and the deletes reader.
