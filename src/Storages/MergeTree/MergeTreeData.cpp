@@ -1710,18 +1710,34 @@ void MergeTreeData::setProperties(
     /// has files under its name. A later metadata change that creates it again goes through the same check.
     /// The files of an index that comes back for a column that stays as it is are valid (for example, after
     /// `DROP INDEX` of an explicit `minmax` index that replaced it), so only new columns are checked.
+    /// A column that keeps its name but is replaced within one `ALTER` (`DROP COLUMN b, ADD COLUMN b ALIAS ...`)
+    /// is new as well: when it is an `ALIAS` before or after, no mutation rebuilds the index files, so a changed
+    /// type or default expression means the files were built for a different column.
     std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
     {
         static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
         NameSet new_implicit_indices;
         for (const auto & index : new_metadata_.secondary_indices)
         {
-            if (!index.isImplicitlyCreated() || old_metadata.secondary_indices.has(index.name) || !index.name.starts_with(implicit_index_prefix))
+            if (!index.isImplicitlyCreated() || !index.name.starts_with(implicit_index_prefix))
                 continue;
 
             const String column_name = index.name.substr(implicit_index_prefix.size());
-            if (new_metadata_.columns.has(column_name) && !old_metadata.columns.has(column_name))
+            const auto * new_column = new_metadata_.columns.tryGet(column_name);
+            if (!new_column)
+                continue;
+
+            const auto * old_column = old_metadata.columns.tryGet(column_name);
+            if (!old_column)
+            {
+                if (!old_metadata.secondary_indices.has(index.name))
+                    new_implicit_indices.insert(index.name);
+            }
+            else if ((old_column->default_desc.kind == ColumnDefaultKind::Alias || new_column->default_desc.kind == ColumnDefaultKind::Alias)
+                && (!old_column->type->equals(*new_column->type) || !(old_column->default_desc == new_column->default_desc)))
+            {
                 new_implicit_indices.insert(index.name);
+            }
         }
 
         if (!new_implicit_indices.empty())
