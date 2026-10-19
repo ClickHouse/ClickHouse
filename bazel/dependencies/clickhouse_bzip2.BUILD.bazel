@@ -35,13 +35,13 @@ expand_template(
 ch_cc_library(
     name = "_bzip2",
     srcs = [
-        ":blocksort.c",
-        ":huffman.c",
-        ":crctable.c",
-        ":randtable.c",
-        ":compress.c",
-        ":decompress.c",
-        ":bzlib.c",
+        "blocksort.c",
+        "huffman.c",
+        "crctable.c",
+        "randtable.c",
+        "compress.c",
+        "decompress.c",
+        "bzlib.c",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": [

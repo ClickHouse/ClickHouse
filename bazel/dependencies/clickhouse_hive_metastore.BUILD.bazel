@@ -17,9 +17,9 @@ _GENERATED_HEADER_INPUTS_1 = []
 ch_cc_library(
     name = "_hivemetastore",
     srcs = [
-        ":hive_metastore_constants.cpp",
-        ":hive_metastore_types.cpp",
-        ":ThriftHiveMetastore.cpp",
+        "hive_metastore_constants.cpp",
+        "hive_metastore_types.cpp",
+        "ThriftHiveMetastore.cpp",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": (([

@@ -12,10 +12,10 @@ exports_files([
 ch_cc_library(
     name = "_jieba",
     srcs = [
-        ":src/jieba.cpp",
-        ":src/jieba_dict.cpp",
-        ":src/jieba_mp_seg.cpp",
-        ":src/jieba_hmm_seg.cpp",
+        "src/jieba.cpp",
+        "src/jieba_dict.cpp",
+        "src/jieba_mp_seg.cpp",
+        "src/jieba_hmm_seg.cpp",
     ],
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",

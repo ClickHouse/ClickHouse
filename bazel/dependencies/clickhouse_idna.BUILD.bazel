@@ -12,7 +12,7 @@ exports_files([
 ch_cc_library(
     name = "_idna",
     srcs = [
-        ":src/idna.cpp",
+        "src/idna.cpp",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

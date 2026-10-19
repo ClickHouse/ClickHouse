@@ -12,7 +12,7 @@ from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
     directory_sources, execution_path, package_sources, repository, source_label, source_path, textual_source_names,
 )
-from initial_migration.simplify_globs import GlobFiles, simplify_globs
+from initial_migration.simplify_globs import GlobFiles, simplify_globs, simplify_source_globs
 
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
@@ -1068,7 +1068,11 @@ class BuildFile:
                        for path, names in sorted(loads.items()))
 
     def text(self):
-        return compact(simplify_globs('\n'.join(self.rules), package_sources(self.owner)))
+        files = package_sources(self.owner)
+        text = simplify_globs('\n'.join(self.rules), files)
+        if self.owner:
+            text = simplify_source_globs(text, files)
+        return compact(text)
 
 
 def dependency_inputs(builds, owners):

@@ -98,10 +98,10 @@ expand_template(
 ch_cc_library(
     name = "_snappy",
     srcs = [
-        ":snappy-c.cc",
-        ":snappy-sinksource.cc",
-        ":snappy-stubs-internal.cc",
-        ":snappy.cc",
+        "snappy-c.cc",
+        "snappy-sinksource.cc",
+        "snappy-stubs-internal.cc",
+        "snappy.cc",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": [

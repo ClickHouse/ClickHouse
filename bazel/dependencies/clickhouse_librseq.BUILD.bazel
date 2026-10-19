@@ -13,8 +13,8 @@ exports_files([
 ch_cc_library(
     name = "_librseq",
     srcs = [
-        ":src/rseq.c",
-        ":src/smp.c",
+        "src/rseq.c",
+        "src/smp.c",
     ] + glob(["src/**/*.h"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

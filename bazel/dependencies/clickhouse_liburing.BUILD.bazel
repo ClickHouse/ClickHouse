@@ -60,11 +60,11 @@ expand_template(
 ch_cc_library(
     name = "_liburing",
     srcs = [
-        ":src/queue.c",
-        ":src/register.c",
-        ":src/setup.c",
-        ":src/syscall.c",
-        ":src/version.c",
+        "src/queue.c",
+        "src/register.c",
+        "src/setup.c",
+        "src/syscall.c",
+        "src/version.c",
     ] + glob(
         ["src/**/*.h"],
         exclude = [

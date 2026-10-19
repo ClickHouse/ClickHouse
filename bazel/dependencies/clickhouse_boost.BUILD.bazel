@@ -33,9 +33,9 @@ _GENERATED_COPTS_0 = [
 ch_cc_library(
     name = "_boost_context__compile_0",
     srcs = [
-        ":libs/context/src/dummy.cpp",
-        ":libs/context/src/fcontext.cpp",
-        ":libs/context/src/posix/stack_traits.cpp",
+        "libs/context/src/dummy.cpp",
+        "libs/context/src/fcontext.cpp",
+        "libs/context/src/posix/stack_traits.cpp",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -69,14 +69,14 @@ ch_cc_library(
     name = "_boost_context__compile_1",
     srcs = select({
         "@platforms//cpu:x86_64": [
-            ":libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
-            ":libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
-            ":libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
+            "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
+            "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
+            "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
         ],
         "@platforms//cpu:aarch64": [
-            ":libs/context/src/asm/jump_arm64_aapcs_elf_gas.S",
-            ":libs/context/src/asm/make_arm64_aapcs_elf_gas.S",
-            ":libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S",
+            "libs/context/src/asm/jump_arm64_aapcs_elf_gas.S",
+            "libs/context/src/asm/make_arm64_aapcs_elf_gas.S",
+            "libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S",
         ],
     }),
     hdrs = [
@@ -155,9 +155,9 @@ cc_library(
 ch_cc_library(
     name = "_boost_coroutine",
     srcs = [
-        ":libs/coroutine/src/detail/coroutine_context.cpp",
-        ":libs/coroutine/src/exceptions.cpp",
-        ":libs/coroutine/src/posix/stack_traits.cpp",
+        "libs/coroutine/src/detail/coroutine_context.cpp",
+        "libs/coroutine/src/exceptions.cpp",
+        "libs/coroutine/src/posix/stack_traits.cpp",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -214,18 +214,7 @@ _GENERATED_DEPS_1 = [
 
 ch_cc_library(
     name = "_boost_filesystem",
-    srcs = [
-        ":libs/filesystem/src/codecvt_error_category.cpp",
-        ":libs/filesystem/src/directory.cpp",
-        ":libs/filesystem/src/exception.cpp",
-        ":libs/filesystem/src/operations.cpp",
-        ":libs/filesystem/src/path.cpp",
-        ":libs/filesystem/src/path_traits.cpp",
-        ":libs/filesystem/src/portability.cpp",
-        ":libs/filesystem/src/unique_path.cpp",
-        ":libs/filesystem/src/utf8_codecvt_facet.cpp",
-        ":libs/filesystem/src/windows_file_codecvt.cpp",
-    ],
+    srcs = glob(["libs/filesystem/src/*.cpp"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["libs/filesystem/**/*.hpp"]),
@@ -280,8 +269,8 @@ ch_cc_library(
 ch_cc_library(
     name = "_boost_graph",
     srcs = [
-        ":libs/graph/src/graphml.cpp",
-        ":libs/graph/src/read_graphviz_new.cpp",
+        "libs/graph/src/graphml.cpp",
+        "libs/graph/src/read_graphviz_new.cpp",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -325,11 +314,11 @@ ch_cc_library(
 ch_cc_library(
     name = "_boost_iostreams",
     srcs = [
-        ":libs/iostreams/src/file_descriptor.cpp",
-        ":libs/iostreams/src/gzip.cpp",
-        ":libs/iostreams/src/mapped_file.cpp",
-        ":libs/iostreams/src/zlib.cpp",
-        ":libs/iostreams/src/zstd.cpp",
+        "libs/iostreams/src/file_descriptor.cpp",
+        "libs/iostreams/src/gzip.cpp",
+        "libs/iostreams/src/mapped_file.cpp",
+        "libs/iostreams/src/zlib.cpp",
+        "libs/iostreams/src/zstd.cpp",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": ([
@@ -781,19 +770,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_boost_program_options",
-    srcs = [
-        ":libs/program_options/src/cmdline.cpp",
-        ":libs/program_options/src/config_file.cpp",
-        ":libs/program_options/src/convert.cpp",
-        ":libs/program_options/src/options_description.cpp",
-        ":libs/program_options/src/parsers.cpp",
-        ":libs/program_options/src/positional_options.cpp",
-        ":libs/program_options/src/split.cpp",
-        ":libs/program_options/src/utf8_codecvt_facet.cpp",
-        ":libs/program_options/src/value_semantic.cpp",
-        ":libs/program_options/src/variables_map.cpp",
-        ":libs/program_options/src/winmain.cpp",
-    ],
+    srcs = glob(["libs/program_options/src/*.cpp"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["libs/program_options/**/*.hpp"]),
@@ -844,8 +821,8 @@ ch_cc_library(
 ch_cc_library(
     name = "_boost_regex",
     srcs = [
-        ":libs/regex/src/posix_api.cpp",
-        ":libs/regex/src/wide_posix_api.cpp",
+        "libs/regex/src/posix_api.cpp",
+        "libs/regex/src/wide_posix_api.cpp",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

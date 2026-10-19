@@ -17206,29 +17206,17 @@ _GENERATED_LOCAL_INCLUDES_0 = [
 
 ch_cc_library(
     name = "_roaring__compile_0",
-    srcs = [
-        ":src/array_util.c",
-        ":src/bitset.c",
-        ":src/bitset_util.c",
-        ":src/isadetection.c",
-        ":src/memory.c",
-        ":src/roaring64.c",
-        ":src/roaring_array.c",
-        ":src/roaring_priority_queue.c",
-        ":src/art/art.c",
-        ":src/containers/array.c",
-        ":src/containers/bitset.c",
-        ":src/containers/containers.c",
-        ":src/containers/convert.c",
-        ":src/containers/mixed_andnot.c",
-        ":src/containers/mixed_equal.c",
-        ":src/containers/mixed_intersection.c",
-        ":src/containers/mixed_negation.c",
-        ":src/containers/mixed_subset.c",
-        ":src/containers/mixed_union.c",
-        ":src/containers/mixed_xor.c",
-        ":src/containers/run.c",
-    ] + glob(
+    srcs = ([
+        "src/array_util.c",
+        "src/bitset.c",
+        "src/bitset_util.c",
+        "src/isadetection.c",
+        "src/memory.c",
+        "src/roaring64.c",
+        "src/roaring_array.c",
+        "src/roaring_priority_queue.c",
+        "src/art/art.c",
+    ] + glob(["src/containers/*.c"])) + glob(
         [
             "include/roaring/**/*.h",
             "src/**/*.h",
@@ -17456,7 +17444,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_roaring__compile_1",
     srcs = [
-        ":src/roaring.c",
+        "src/roaring.c",
     ] + glob(
         [
             "include/roaring/**/*.h",

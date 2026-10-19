@@ -8,7 +8,7 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "_ulid",
     srcs = [
-        ":src/ulid.c",
+        "src/ulid.c",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

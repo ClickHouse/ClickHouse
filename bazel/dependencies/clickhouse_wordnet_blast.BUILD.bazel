@@ -10,11 +10,7 @@ package(
 
 ch_cc_library(
     name = "_wnb",
-    srcs = [
-        ":wnb/core/info_helper.cc",
-        ":wnb/core/load_wordnet.cc",
-        ":wnb/core/wordnet.cc",
-    ],
+    srcs = glob(["wnb/core/*.cc"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.hh"]),

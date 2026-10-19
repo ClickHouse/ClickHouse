@@ -20,7 +20,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
 ch_cc_library(
     name = "_gmock",
     srcs = [
-        ":googlemock/src/gmock-all.cc",
+        "googlemock/src/gmock-all.cc",
     ] + glob(
         ["googlemock/**/*.h"],
         exclude = [
@@ -104,7 +104,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_gmock_main",
     srcs = [
-        ":googlemock/src/gmock_main.cc",
+        "googlemock/src/gmock_main.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -150,7 +150,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_gtest",
     srcs = [
-        ":googletest/src/gtest-all.cc",
+        "googletest/src/gtest-all.cc",
     ] + glob(
         ["googletest/**/*.h"],
         exclude = [

@@ -11,7 +11,7 @@ exports_files([
 ch_cc_library(
     name = "_simdutf",
     srcs = [
-        ":src/simdutf.cpp",
+        "src/simdutf.cpp",
     ] + glob(["src/**/*.h"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

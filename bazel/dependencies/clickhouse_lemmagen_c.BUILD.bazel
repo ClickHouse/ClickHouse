@@ -11,7 +11,7 @@ exports_files([
 ch_cc_library(
     name = "_lemmagen",
     srcs = [
-        ":src/RdrLemmatizer.cpp",
+        "src/RdrLemmatizer.cpp",
     ] + glob(["src/**/*.h"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

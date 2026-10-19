@@ -39,18 +39,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_silk_fibers",
-    srcs = [
-        ":src/fibers/condvar.cpp",
-        ":src/fibers/cpu.cpp",
-        ":src/fibers/fiber.cpp",
-        ":src/fibers/futex.cpp",
-        ":src/fibers/future.cpp",
-        ":src/fibers/histogram.cpp",
-        ":src/fibers/multi-lock.cpp",
-        ":src/fibers/mutex.cpp",
-        ":src/fibers/profiler.cpp",
-        ":src/fibers/sequencer.cpp",
-    ],
+    srcs = glob(["src/fibers/*.cpp"]),
     hdrs = select({
         "@platforms//cpu:x86_64": (([
             "@clickhouse_sysroot//:linux_native_headers",
@@ -158,19 +147,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_silk_util",
-    srcs = [
-        ":src/util/assert.cpp",
-        ":src/util/bitmap.cpp",
-        ":src/util/crash-dumper.cpp",
-        ":src/util/error.cpp",
-        ":src/util/init.cpp",
-        ":src/util/logger.cpp",
-        ":src/util/memory-pool.cpp",
-        ":src/util/perf.cpp",
-        ":src/util/queue.cpp",
-        ":src/util/sharded-stack.cpp",
-        ":src/util/tsc.cpp",
-    ],
+    srcs = glob(["src/util/*.cpp"]),
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
     ] + _GENERATED_HEADER_INPUTS_0 + glob([

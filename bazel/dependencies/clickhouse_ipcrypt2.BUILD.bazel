@@ -12,7 +12,7 @@ exports_files([
 ch_cc_library(
     name = "_ipcrypt2",
     srcs = [
-        ":src/ipcrypt2.c",
+        "src/ipcrypt2.c",
     ] + glob(
         ["src/**/*.h"],
         exclude = ["src/include/ipcrypt2.h"],

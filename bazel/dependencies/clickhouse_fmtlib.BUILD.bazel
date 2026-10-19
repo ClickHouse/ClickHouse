@@ -11,8 +11,8 @@ exports_files([
 ch_cc_library(
     name = "_fmt",
     srcs = [
-        ":src/format.cc",
-        ":src/os.cc",
+        "src/format.cc",
+        "src/os.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

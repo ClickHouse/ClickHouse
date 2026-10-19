@@ -14,13 +14,13 @@ exports_files([
 ch_cc_library(
     name = "_fastops__compile_0",
     srcs = ([
-        ":fastops/fastops.cpp",
+        "fastops/fastops.cpp",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":fastops/avx2/ops_avx2.cpp",
+            "fastops/avx2/ops_avx2.cpp",
         ],
         "@platforms//cpu:aarch64": [
-            ":fastops/neon/ops_neon.cpp",
+            "fastops/neon/ops_neon.cpp",
         ],
     })),
     hdrs = [
@@ -91,7 +91,7 @@ ch_cc_library(
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            ":fastops/sve/ops_sve.cpp",
+            "fastops/sve/ops_sve.cpp",
         ],
     }),
     hdrs = select({

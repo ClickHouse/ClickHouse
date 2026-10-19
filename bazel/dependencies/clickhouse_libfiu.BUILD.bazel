@@ -12,10 +12,10 @@ exports_files([
 ch_cc_library(
     name = "_libfiu",
     srcs = [
-        ":libfiu/fiu.c",
-        ":libfiu/fiu-rc.c",
-        ":libfiu/backtrace.c",
-        ":libfiu/wtable.c",
+        "libfiu/fiu.c",
+        "libfiu/fiu-rc.c",
+        "libfiu/backtrace.c",
+        "libfiu/wtable.c",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",

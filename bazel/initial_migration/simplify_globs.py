@@ -4,9 +4,10 @@ import ast
 from collections import Counter
 from functools import cache
 import json
+import posixpath
 import re
 
-from initial_migration.compact_build import Source
+from initial_migration.compact_build import Source, render_list
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES
 
 
@@ -62,6 +63,95 @@ def _literal_strings(node):
 
 def _function(node, name):
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+
+
+def simplify_source_globs(text, files, stats=None):
+    """Replace native srcs runs only when glob returns exactly the same files in order.
+
+    files must describe the pinned Bazel package after overlay removal of
+    nested BUILD files. Generated files, rule labels, and unknown expressions
+    stay explicit. In particular, never sort a captured CMake source list:
+    cmake_link.bzl selects library objects by their source index.
+    """
+    if files is None:
+        raise ValueError('Cannot simplify sources without their pinned package files')
+    stats = Counter() if stats is None else stats
+    source = Source(text)
+    globs = GlobFiles(files)
+    rules = list(source.rules())
+    rule_names = {
+        kw.value.value for _, call in rules for kw in call.keywords
+        if kw.arg == 'name' and isinstance(kw.value, ast.Constant)
+        and isinstance(kw.value.value, str)
+    }
+    suffixes = {'.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM'}
+    edits = []
+
+    def source_file(node):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            return None
+        if node.value.startswith(('@', '//')):
+            return None
+        filename = node.value.removeprefix(':')
+        if filename not in globs.files or filename in rule_names:
+            return None
+        directory, name = posixpath.split(filename)
+        suffix = posixpath.splitext(name)[1]
+        if suffix not in suffixes or '*' in directory:
+            return None
+        return filename, directory, suffix
+
+    def visit(node, indent):
+        if isinstance(node, ast.List):
+            # Preserve comments in files that have since been hand-edited.
+            if '#' in source.text(node):
+                return
+            values = [source_file(item) for item in node.elts]
+            parts = []
+            emitted = 0
+            index = 0
+            while index < len(values):
+                value = values[index]
+                if value is None:
+                    index += 1
+                    continue
+                end = index + 1
+                while (end < len(values) and values[end] is not None
+                       and values[end][1:] == value[1:]):
+                    end += 1
+                if end - index >= 3:
+                    _, directory, suffix = value
+                    pattern = (directory + '/' if directory else '') + '*' + suffix
+                    filenames = tuple(item[0] for item in values[index:end])
+                    if globs.result([pattern], ()) == filenames:
+                        if index > emitted:
+                            parts.append(render_list(source, node.elts[emitted:index], indent))
+                        parts.append('glob(' + json.dumps([pattern]) + ')')
+                        stats['source_globs'] += 1
+                        stats['source_files_in_globs'] += end - index
+                        emitted = end
+                index = end
+            if parts:
+                if emitted < len(values):
+                    parts.append(render_list(source, node.elts[emitted:], indent))
+                replacement = parts[0] if len(parts) == 1 else '(' + ' + '.join(parts) + ')'
+                edits.append((*source.span(node), replacement))
+            return
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            visit(node.left, indent)
+            visit(node.right, indent)
+        elif (_function(node, 'select') and len(node.args) == 1
+              and isinstance(node.args[0], ast.Dict) and not node.keywords):
+            for branch in node.args[0].values:
+                visit(branch, indent + 4)
+
+    for _, call in rules:
+        if getattr(call.func, 'id', '') not in {'cc_library', 'ch_cc_library', 'cc_binary', 'cc_test'}:
+            continue
+        for attr in call.keywords:
+            if attr.arg == 'srcs':
+                visit(attr.value, attr.col_offset)
+    return source.rewrite(edits)
 
 
 def simplify_globs(text, files, stats=None):

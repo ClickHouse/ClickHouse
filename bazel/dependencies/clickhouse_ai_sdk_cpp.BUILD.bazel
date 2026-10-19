@@ -89,11 +89,11 @@ _GENERATED_DEPS_1 = [
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
     srcs = [
-        ":src/providers/anthropic/anthropic_client.cpp",
-        ":src/providers/anthropic/anthropic_request_builder.cpp",
-        ":src/providers/anthropic/anthropic_response_parser.cpp",
-        ":src/providers/anthropic/anthropic_stream.cpp",
-        ":src/providers/anthropic/anthropic_factory.cpp",
+        "src/providers/anthropic/anthropic_client.cpp",
+        "src/providers/anthropic/anthropic_request_builder.cpp",
+        "src/providers/anthropic/anthropic_response_parser.cpp",
+        "src/providers/anthropic/anthropic_stream.cpp",
+        "src/providers/anthropic/anthropic_factory.cpp",
     ],
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
@@ -128,14 +128,14 @@ ch_cc_library(
 ch_cc_library(
     name = "_ai-sdk-cpp-core",
     srcs = [
-        ":src/types/generate_options.cpp",
-        ":src/types/stream_options.cpp",
-        ":src/types/stream_result.cpp",
-        ":src/types/message.cpp",
-        ":src/http/http_request_handler.cpp",
-        ":src/providers/base_provider_client.cpp",
-        ":src/tools/tool_executor.cpp",
-        ":src/tools/multi_step_coordinator.cpp",
+        "src/types/generate_options.cpp",
+        "src/types/stream_options.cpp",
+        "src/types/stream_result.cpp",
+        "src/types/message.cpp",
+        "src/http/http_request_handler.cpp",
+        "src/providers/base_provider_client.cpp",
+        "src/tools/tool_executor.cpp",
+        "src/tools/multi_step_coordinator.cpp",
     ],
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
@@ -180,11 +180,11 @@ ch_cc_library(
 ch_cc_library(
     name = "_ai-sdk-cpp-openai",
     srcs = [
-        ":src/providers/openai/openai_client.cpp",
-        ":src/providers/openai/openai_request_builder.cpp",
-        ":src/providers/openai/openai_response_parser.cpp",
-        ":src/providers/openai/openai_stream.cpp",
-        ":src/providers/openai/openai_factory.cpp",
+        "src/providers/openai/openai_client.cpp",
+        "src/providers/openai/openai_request_builder.cpp",
+        "src/providers/openai/openai_response_parser.cpp",
+        "src/providers/openai/openai_stream.cpp",
+        "src/providers/openai/openai_factory.cpp",
     ],
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",

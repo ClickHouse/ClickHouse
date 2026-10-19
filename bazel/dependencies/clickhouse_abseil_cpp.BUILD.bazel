@@ -23,11 +23,11 @@ _GENERATED_COPTS_0 = [
 ch_cc_library(
     name = "absl_base",
     srcs = [
-        ":absl/base/internal/cycleclock.cc",
-        ":absl/base/internal/spinlock.cc",
-        ":absl/base/internal/sysinfo.cc",
-        ":absl/base/internal/thread_identity.cc",
-        ":absl/base/internal/unscaledcycleclock.cc",
+        "absl/base/internal/cycleclock.cc",
+        "absl/base/internal/spinlock.cc",
+        "absl/base/internal/sysinfo.cc",
+        "absl/base/internal/thread_identity.cc",
+        "absl/base/internal/unscaledcycleclock.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -95,7 +95,7 @@ _GENERATED_DEPS_1 = [
 ch_cc_library(
     name = "absl_base_cpu_detect",
     srcs = [
-        ":absl/base/internal/cpu_detect.cc",
+        "absl/base/internal/cpu_detect.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -128,7 +128,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_city",
     srcs = [
-        ":absl/hash/internal/city.cc",
+        "absl/hash/internal/city.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -172,7 +172,7 @@ _GENERATED_DEPS_2 = [
 ch_cc_library(
     name = "absl_civil_time",
     srcs = [
-        ":absl/time/internal/cctz/src/civil_time_detail.cc",
+        "absl/time/internal/cctz/src/civil_time_detail.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -246,8 +246,8 @@ _GENERATED_DEPS_3 = [
 ch_cc_library(
     name = "absl_cord",
     srcs = [
-        ":absl/strings/cord.cc",
-        ":absl/strings/cord_analysis.cc",
+        "absl/strings/cord.cc",
+        "absl/strings/cord_analysis.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -282,12 +282,12 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_cord_internal",
     srcs = [
-        ":absl/strings/internal/cord_internal.cc",
-        ":absl/strings/internal/cord_rep_btree.cc",
-        ":absl/strings/internal/cord_rep_btree_navigator.cc",
-        ":absl/strings/internal/cord_rep_btree_reader.cc",
-        ":absl/strings/internal/cord_rep_crc.cc",
-        ":absl/strings/internal/cord_rep_consume.cc",
+        "absl/strings/internal/cord_internal.cc",
+        "absl/strings/internal/cord_rep_btree.cc",
+        "absl/strings/internal/cord_rep_btree_navigator.cc",
+        "absl/strings/internal/cord_rep_btree_reader.cc",
+        "absl/strings/internal/cord_rep_crc.cc",
+        "absl/strings/internal/cord_rep_consume.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -354,7 +354,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_cordz_functions",
     srcs = [
-        ":absl/strings/internal/cordz_functions.cc",
+        "absl/strings/internal/cordz_functions.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -430,7 +430,7 @@ _GENERATED_DEPS_4 = [
 ch_cc_library(
     name = "absl_cordz_handle",
     srcs = [
-        ":absl/strings/internal/cordz_handle.cc",
+        "absl/strings/internal/cordz_handle.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -463,7 +463,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_cordz_info",
     srcs = [
-        ":absl/strings/internal/cordz_info.cc",
+        "absl/strings/internal/cordz_info.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -534,7 +534,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_cordz_sample_token",
     srcs = [
-        ":absl/strings/internal/cordz_sample_token.cc",
+        "absl/strings/internal/cordz_sample_token.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -567,10 +567,10 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_crc32c",
     srcs = [
-        ":absl/crc/crc32c.cc",
-        ":absl/crc/internal/crc_memcpy_fallback.cc",
-        ":absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
-        ":absl/crc/internal/crc_non_temporal_memcpy.cc",
+        "absl/crc/crc32c.cc",
+        "absl/crc/internal/crc_memcpy_fallback.cc",
+        "absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
+        "absl/crc/internal/crc_non_temporal_memcpy.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -630,7 +630,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_crc_cord_state",
     srcs = [
-        ":absl/crc/internal/crc_cord_state.cc",
+        "absl/crc/internal/crc_cord_state.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -685,8 +685,8 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_crc_internal",
     srcs = [
-        ":absl/crc/internal/crc.cc",
-        ":absl/crc/internal/crc_x86_arm_combined.cc",
+        "absl/crc/internal/crc.cc",
+        "absl/crc/internal/crc_x86_arm_combined.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -748,11 +748,11 @@ _GENERATED_DEPS_5 = [
 ch_cc_library(
     name = "absl_debugging_internal",
     srcs = [
-        ":absl/debugging/internal/address_is_readable.cc",
-        ":absl/debugging/internal/elf_mem_image.cc",
-        ":absl/debugging/internal/vdso_support.cc",
-        ":absl/debugging/internal/decode_rust_punycode.cc",
-        ":absl/debugging/internal/utf8_for_code_point.cc",
+        "absl/debugging/internal/address_is_readable.cc",
+        "absl/debugging/internal/elf_mem_image.cc",
+        "absl/debugging/internal/vdso_support.cc",
+        "absl/debugging/internal/decode_rust_punycode.cc",
+        "absl/debugging/internal/utf8_for_code_point.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -793,8 +793,8 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_demangle_internal",
     srcs = [
-        ":absl/debugging/internal/demangle.cc",
-        ":absl/debugging/internal/demangle_rust.cc",
+        "absl/debugging/internal/demangle.cc",
+        "absl/debugging/internal/demangle_rust.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -829,7 +829,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_die_if_null",
     srcs = [
-        ":absl/log/die_if_null.cc",
+        "absl/log/die_if_null.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -909,7 +909,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_examine_stack",
     srcs = [
-        ":absl/debugging/internal/examine_stack.cc",
+        "absl/debugging/internal/examine_stack.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -965,7 +965,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_exponential_biased",
     srcs = [
-        ":absl/profiling/internal/exponential_biased.cc",
+        "absl/profiling/internal/exponential_biased.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -998,7 +998,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_failure_signal_handler",
     srcs = [
-        ":absl/debugging/failure_signal_handler.cc",
+        "absl/debugging/failure_signal_handler.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1055,7 +1055,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_commandlineflag",
     srcs = [
-        ":absl/flags/commandlineflag.cc",
+        "absl/flags/commandlineflag.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1107,7 +1107,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_commandlineflag_internal",
     srcs = [
-        ":absl/flags/internal/commandlineflag.cc",
+        "absl/flags/internal/commandlineflag.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1140,7 +1140,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_config",
     srcs = [
-        ":absl/flags/usage_config.cc",
+        "absl/flags/usage_config.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1203,7 +1203,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_internal",
     srcs = [
-        ":absl/flags/internal/flag.cc",
+        "absl/flags/internal/flag.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1292,7 +1292,7 @@ _GENERATED_DEPS_6 = [
 ch_cc_library(
     name = "absl_flags_marshalling",
     srcs = [
-        ":absl/flags/marshalling.cc",
+        "absl/flags/marshalling.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1325,7 +1325,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_parse",
     srcs = [
-        ":absl/flags/parse.cc",
+        "absl/flags/parse.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1412,7 +1412,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_private_handle_accessor",
     srcs = [
-        ":absl/flags/internal/private_handle_accessor.cc",
+        "absl/flags/internal/private_handle_accessor.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1465,7 +1465,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_program_name",
     srcs = [
-        ":absl/flags/internal/program_name.cc",
+        "absl/flags/internal/program_name.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1498,7 +1498,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_reflection",
     srcs = [
-        ":absl/flags/reflection.cc",
+        "absl/flags/reflection.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1580,7 +1580,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_usage",
     srcs = [
-        ":absl/flags/usage.cc",
+        "absl/flags/usage.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1666,7 +1666,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_flags_usage_internal",
     srcs = [
-        ":absl/flags/internal/usage.cc",
+        "absl/flags/internal/usage.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1751,7 +1751,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_graphcycles_internal",
     srcs = [
-        ":absl/synchronization/internal/graphcycles.cc",
+        "absl/synchronization/internal/graphcycles.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1798,7 +1798,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_hardening",
     srcs = [
-        ":absl/base/internal/hardening.cc",
+        "absl/base/internal/hardening.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1831,7 +1831,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_hash",
     srcs = [
-        ":absl/hash/internal/hash.cc",
+        "absl/hash/internal/hash.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1883,8 +1883,8 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_hashtablez_sampler",
     srcs = [
-        ":absl/container/internal/hashtablez_sampler.cc",
-        ":absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
+        "absl/container/internal/hashtablez_sampler.cc",
+        "absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -1949,7 +1949,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_int128",
     srcs = [
-        ":absl/numeric/int128.cc",
+        "absl/numeric/int128.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2005,7 +2005,7 @@ _GENERATED_DEPS_7 = [
 ch_cc_library(
     name = "absl_kernel_timeout_internal",
     srcs = [
-        ":absl/synchronization/internal/kernel_timeout.cc",
+        "absl/synchronization/internal/kernel_timeout.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2038,7 +2038,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_leak_check",
     srcs = [
-        ":absl/debugging/leak_check.cc",
+        "absl/debugging/leak_check.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2071,7 +2071,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_flags",
     srcs = [
-        ":absl/log/flags.cc",
+        "absl/log/flags.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2159,7 +2159,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_globals",
     srcs = [
-        ":absl/log/globals.cc",
+        "absl/log/globals.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2225,7 +2225,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_initialize",
     srcs = [
-        ":absl/log/initialize.cc",
+        "absl/log/initialize.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2293,7 +2293,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_check_op",
     srcs = [
-        ":absl/log/internal/check_op.cc",
+        "absl/log/internal/check_op.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2372,7 +2372,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_conditions",
     srcs = [
-        ":absl/log/internal/conditions.cc",
+        "absl/log/internal/conditions.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2425,7 +2425,7 @@ _GENERATED_DEPS_8 = [
 ch_cc_library(
     name = "absl_log_internal_fnmatch",
     srcs = [
-        ":absl/log/internal/fnmatch.cc",
+        "absl/log/internal/fnmatch.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2458,7 +2458,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_format",
     srcs = [
-        ":absl/log/internal/log_format.cc",
+        "absl/log/internal/log_format.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2514,7 +2514,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_globals",
     srcs = [
-        ":absl/log/internal/globals.cc",
+        "absl/log/internal/globals.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2547,7 +2547,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_log_sink_set",
     srcs = [
-        ":absl/log/internal/log_sink_set.cc",
+        "absl/log/internal/log_sink_set.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2616,7 +2616,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_message",
     srcs = [
-        ":absl/log/internal/log_message.cc",
+        "absl/log/internal/log_message.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2694,7 +2694,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_nullguard",
     srcs = [
-        ":absl/log/internal/nullguard.cc",
+        "absl/log/internal/nullguard.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2727,7 +2727,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_proto",
     srcs = [
-        ":absl/log/internal/proto.cc",
+        "absl/log/internal/proto.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2760,7 +2760,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_internal_structured_proto",
     srcs = [
-        ":absl/log/internal/structured_proto.cc",
+        "absl/log/internal/structured_proto.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2812,7 +2812,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_severity",
     srcs = [
-        ":absl/base/log_severity.cc",
+        "absl/base/log_severity.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2845,7 +2845,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_log_sink",
     srcs = [
-        ":absl/log/log_sink.cc",
+        "absl/log/log_sink.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2878,7 +2878,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_malloc_internal",
     srcs = [
-        ":absl/base/internal/low_level_alloc.cc",
+        "absl/base/internal/low_level_alloc.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2911,7 +2911,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_periodic_sampler",
     srcs = [
-        ":absl/profiling/internal/periodic_sampler.cc",
+        "absl/profiling/internal/periodic_sampler.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2954,8 +2954,8 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_distributions",
     srcs = [
-        ":absl/random/discrete_distribution.cc",
-        ":absl/random/gaussian_distribution.cc",
+        "absl/random/discrete_distribution.cc",
+        "absl/random/gaussian_distribution.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -2990,8 +2990,8 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_distribution_test_util",
     srcs = [
-        ":absl/random/internal/chi_square.cc",
-        ":absl/random/internal/distribution_test_util.cc",
+        "absl/random/internal/chi_square.cc",
+        "absl/random/internal/distribution_test_util.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3026,7 +3026,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_entropy_pool",
     srcs = [
-        ":absl/random/internal/entropy_pool.cc",
+        "absl/random/internal/entropy_pool.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3095,7 +3095,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_platform",
     srcs = [
-        ":absl/random/internal/randen_round_keys.cc",
+        "absl/random/internal/randen_round_keys.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3128,7 +3128,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_randen",
     srcs = [
-        ":absl/random/internal/randen.cc",
+        "absl/random/internal/randen.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3174,7 +3174,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_randen_hwaes",
     srcs = [
-        ":absl/random/internal/randen_detect.cc",
+        "absl/random/internal/randen_detect.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3230,7 +3230,7 @@ _GENERATED_DEPS_9 = [
 ch_cc_library(
     name = "absl_random_internal_randen_hwaes_impl",
     srcs = [
-        ":absl/random/internal/randen_hwaes.cc",
+        "absl/random/internal/randen_hwaes.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3263,7 +3263,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_randen_slow",
     srcs = [
-        ":absl/random/internal/randen_slow.cc",
+        "absl/random/internal/randen_slow.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3296,7 +3296,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_internal_seed_material",
     srcs = [
-        ":absl/random/internal/seed_material.cc",
+        "absl/random/internal/seed_material.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3329,7 +3329,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_seed_gen_exception",
     srcs = [
-        ":absl/random/seed_gen_exception.cc",
+        "absl/random/seed_gen_exception.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3362,7 +3362,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_random_seed_sequences",
     srcs = [
-        ":absl/random/seed_sequences.cc",
+        "absl/random/seed_sequences.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3415,7 +3415,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_raw_hash_set",
     srcs = [
-        ":absl/container/internal/raw_hash_set.cc",
+        "absl/container/internal/raw_hash_set.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3481,7 +3481,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_raw_logging_internal",
     srcs = [
-        ":absl/base/internal/raw_logging.cc",
+        "absl/base/internal/raw_logging.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3524,7 +3524,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_scoped_set_env",
     srcs = [
-        ":absl/base/internal/scoped_set_env.cc",
+        "absl/base/internal/scoped_set_env.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3557,7 +3557,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_spinlock_wait",
     srcs = [
-        ":absl/base/internal/spinlock_wait.cc",
+        "absl/base/internal/spinlock_wait.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3590,7 +3590,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_stacktrace",
     srcs = [
-        ":absl/debugging/stacktrace.cc",
+        "absl/debugging/stacktrace.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3638,9 +3638,9 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_status",
     srcs = [
-        ":absl/status/internal/status_internal.cc",
-        ":absl/status/status.cc",
-        ":absl/status/status_payload_printer.cc",
+        "absl/status/internal/status_internal.cc",
+        "absl/status/status.cc",
+        "absl/status/status_payload_printer.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3718,7 +3718,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_statusor",
     srcs = [
-        ":absl/status/statusor.cc",
+        "absl/status/statusor.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3793,12 +3793,12 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_str_format_internal",
     srcs = [
-        ":absl/strings/internal/str_format/arg.cc",
-        ":absl/strings/internal/str_format/bind.cc",
-        ":absl/strings/internal/str_format/extension.cc",
-        ":absl/strings/internal/str_format/float_conversion.cc",
-        ":absl/strings/internal/str_format/output.cc",
-        ":absl/strings/internal/str_format/parser.cc",
+        "absl/strings/internal/str_format/arg.cc",
+        "absl/strings/internal/str_format/bind.cc",
+        "absl/strings/internal/str_format/extension.cc",
+        "absl/strings/internal/str_format/float_conversion.cc",
+        "absl/strings/internal/str_format/output.cc",
+        "absl/strings/internal/str_format/parser.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3841,7 +3841,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_strerror",
     srcs = [
-        ":absl/base/internal/strerror.cc",
+        "absl/base/internal/strerror.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3874,20 +3874,20 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_strings",
     srcs = [
-        ":absl/strings/ascii.cc",
-        ":absl/strings/charconv.cc",
-        ":absl/strings/escaping.cc",
-        ":absl/strings/internal/charconv_bigint.cc",
-        ":absl/strings/internal/charconv_parse.cc",
-        ":absl/strings/internal/damerau_levenshtein_distance.cc",
-        ":absl/strings/internal/memutil.cc",
-        ":absl/strings/internal/stringify_sink.cc",
-        ":absl/strings/match.cc",
-        ":absl/strings/numbers.cc",
-        ":absl/strings/str_cat.cc",
-        ":absl/strings/str_replace.cc",
-        ":absl/strings/str_split.cc",
-        ":absl/strings/substitute.cc",
+        "absl/strings/ascii.cc",
+        "absl/strings/charconv.cc",
+        "absl/strings/escaping.cc",
+        "absl/strings/internal/charconv_bigint.cc",
+        "absl/strings/internal/charconv_parse.cc",
+        "absl/strings/internal/damerau_levenshtein_distance.cc",
+        "absl/strings/internal/memutil.cc",
+        "absl/strings/internal/stringify_sink.cc",
+        "absl/strings/match.cc",
+        "absl/strings/numbers.cc",
+        "absl/strings/str_cat.cc",
+        "absl/strings/str_replace.cc",
+        "absl/strings/str_split.cc",
+        "absl/strings/substitute.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -3963,9 +3963,9 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_strings_internal",
     srcs = [
-        ":absl/strings/internal/ostringstream.cc",
-        ":absl/strings/internal/utf8.cc",
-        ":absl/strings/internal/escaping.cc",
+        "absl/strings/internal/ostringstream.cc",
+        "absl/strings/internal/utf8.cc",
+        "absl/strings/internal/escaping.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4002,7 +4002,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_symbolize",
     srcs = [
-        ":absl/debugging/symbolize.cc",
+        "absl/debugging/symbolize.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4056,18 +4056,18 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_synchronization",
     srcs = [
-        ":absl/synchronization/barrier.cc",
-        ":absl/synchronization/blocking_counter.cc",
-        ":absl/synchronization/internal/create_thread_identity.cc",
-        ":absl/synchronization/internal/futex_waiter.cc",
-        ":absl/synchronization/internal/per_thread_sem.cc",
-        ":absl/synchronization/internal/pthread_waiter.cc",
-        ":absl/synchronization/internal/sem_waiter.cc",
-        ":absl/synchronization/internal/stdcpp_waiter.cc",
-        ":absl/synchronization/internal/waiter_base.cc",
-        ":absl/synchronization/internal/win32_waiter.cc",
-        ":absl/synchronization/notification.cc",
-        ":absl/synchronization/mutex.cc",
+        "absl/synchronization/barrier.cc",
+        "absl/synchronization/blocking_counter.cc",
+        "absl/synchronization/internal/create_thread_identity.cc",
+        "absl/synchronization/internal/futex_waiter.cc",
+        "absl/synchronization/internal/per_thread_sem.cc",
+        "absl/synchronization/internal/pthread_waiter.cc",
+        "absl/synchronization/internal/sem_waiter.cc",
+        "absl/synchronization/internal/stdcpp_waiter.cc",
+        "absl/synchronization/internal/waiter_base.cc",
+        "absl/synchronization/internal/win32_waiter.cc",
+        "absl/synchronization/notification.cc",
+        "absl/synchronization/mutex.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4150,7 +4150,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_throw_delegate",
     srcs = [
-        ":absl/base/throw_delegate.cc",
+        "absl/base/throw_delegate.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4183,11 +4183,11 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_time",
     srcs = [
-        ":absl/time/civil_time.cc",
-        ":absl/time/clock.cc",
-        ":absl/time/duration.cc",
-        ":absl/time/format.cc",
-        ":absl/time/time.cc",
+        "absl/time/civil_time.cc",
+        "absl/time/clock.cc",
+        "absl/time/duration.cc",
+        "absl/time/format.cc",
+        "absl/time/time.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4248,15 +4248,15 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_time_zone",
     srcs = [
-        ":absl/time/internal/cctz/src/time_zone_fixed.cc",
-        ":absl/time/internal/cctz/src/time_zone_format.cc",
-        ":absl/time/internal/cctz/src/time_zone_if.cc",
-        ":absl/time/internal/cctz/src/time_zone_impl.cc",
-        ":absl/time/internal/cctz/src/time_zone_info.cc",
-        ":absl/time/internal/cctz/src/time_zone_libc.cc",
-        ":absl/time/internal/cctz/src/time_zone_lookup.cc",
-        ":absl/time/internal/cctz/src/time_zone_posix.cc",
-        ":absl/time/internal/cctz/src/zone_info_source.cc",
+        "absl/time/internal/cctz/src/time_zone_fixed.cc",
+        "absl/time/internal/cctz/src/time_zone_format.cc",
+        "absl/time/internal/cctz/src/time_zone_if.cc",
+        "absl/time/internal/cctz/src/time_zone_impl.cc",
+        "absl/time/internal/cctz/src/time_zone_info.cc",
+        "absl/time/internal/cctz/src/time_zone_libc.cc",
+        "absl/time/internal/cctz/src/time_zone_lookup.cc",
+        "absl/time/internal/cctz/src/time_zone_posix.cc",
+        "absl/time/internal/cctz/src/zone_info_source.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
@@ -4305,7 +4305,7 @@ ch_cc_library(
 ch_cc_library(
     name = "absl_vlog_config_internal",
     srcs = [
-        ":absl/log/internal/vlog_config.cc",
+        "absl/log/internal/vlog_config.cc",
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
