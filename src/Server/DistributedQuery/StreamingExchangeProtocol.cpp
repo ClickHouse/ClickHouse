@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
@@ -85,6 +86,8 @@ void SinkHelloBody::write(WriteBuffer & out) const
 
 namespace
 {
+    LoggerPtr log = getLogger("StreamingExchangeProtocol");
+
     /// The errors `recv` and `send` report when the other side of an established connection is gone.
     bool isPeerGoneError(int socket_errno)
     {
@@ -371,6 +374,14 @@ void applySocketBufferSizes(Poco::Net::StreamSocket & socket)
 
 void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
 {
+    /// setsockopt takes int, so a setting above INT_MAX would wrap to an unrelated size instead of
+    /// asking the kernel to clamp a large buffer; a wrap to 0 would even disable autotuning. Reject
+    /// such a configuration like the HTTP connection pools do, keeping both published values.
+    if (sndbuf > static_cast<UInt64>(INT_MAX) || rcvbuf > static_cast<UInt64>(INT_MAX))
+    {
+        LOG_ERROR(log, "streaming_exchange_sndbuf={} and streaming_exchange_rcvbuf={} exceed the maximum {}; ignoring both", sndbuf, rcvbuf, INT_MAX);
+        return;
+    }
     socket_sndbuf.store(sndbuf, std::memory_order_relaxed);
     socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
 }

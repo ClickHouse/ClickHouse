@@ -154,7 +154,9 @@ namespace StreamingExchangeProtocol
     void applySocketBufferSizes(Poco::Net::StreamSocket & socket);
 
     /// Set the buffer sizes the server pushes from the settings; called at startup and on config
-    /// reload, because the `ServerSettings` a query context sees is loaded only at startup.
+    /// reload, because the `ServerSettings` a query context sees is loaded only at startup. A value
+    /// above INT_MAX would wrap in setsockopt, so a configuration with either size out of range is
+    /// rejected and both published values stay unchanged.
     void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
 
     /// The sizes published for the next connection. These are what `applySocketBufferSizes` reads,

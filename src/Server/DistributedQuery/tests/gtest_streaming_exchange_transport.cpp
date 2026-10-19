@@ -1283,6 +1283,43 @@ TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
     }
 }
 
+TEST(StreamingExchangeTransport, BufferSizesAboveIntMaxAreRejected)
+{
+    const auto saved = StreamingExchangeProtocol::getSocketBufferSizes();
+    struct RestoreBufferSizes
+    {
+        StreamingExchangeProtocol::SocketBufferSizes saved;
+
+        ~RestoreBufferSizes()
+        {
+            StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
+        }
+    } restore{saved};
+
+    StreamingExchangeProtocol::setSocketBufferSizes(65536, 32768);
+    const auto published = StreamingExchangeProtocol::getSocketBufferSizes();
+    ASSERT_EQ(published.sndbuf, 65536u);
+    ASSERT_EQ(published.rcvbuf, 32768u);
+
+    /// 2^32 narrowed to int becomes 0: an explicit setsockopt that locks the buffer at the kernel
+    /// minimum. Rejection must keep both published values, not only the out-of-range one.
+    StreamingExchangeProtocol::setSocketBufferSizes(4294967296, 32768);
+    auto after = StreamingExchangeProtocol::getSocketBufferSizes();
+    EXPECT_EQ(after.sndbuf, published.sndbuf);
+    EXPECT_EQ(after.rcvbuf, published.rcvbuf);
+
+    StreamingExchangeProtocol::setSocketBufferSizes(65536, 4294967296);
+    after = StreamingExchangeProtocol::getSocketBufferSizes();
+    EXPECT_EQ(after.sndbuf, published.sndbuf);
+    EXPECT_EQ(after.rcvbuf, published.rcvbuf);
+
+    /// INT_MAX itself stays accepted.
+    StreamingExchangeProtocol::setSocketBufferSizes(INT_MAX, INT_MAX);
+    after = StreamingExchangeProtocol::getSocketBufferSizes();
+    EXPECT_EQ(after.sndbuf, static_cast<UInt64>(INT_MAX));
+    EXPECT_EQ(after.rcvbuf, static_cast<UInt64>(INT_MAX));
+}
+
 namespace
 {
 
