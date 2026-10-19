@@ -68,10 +68,10 @@ std::string_view getHivePartitionValue(const HivePartitioningKeysAndValues & hiv
     if (it == hive_map.end())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Expected to find hive partitioning column {} in the path {}. "
-            "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
-            column_name,
-            path);
+            "The path {} has no value for the hive partition column {}. "
+            "To read the path without hive partitioning, set partition_strategy = 'wildcard' or use_hive_partitioning = 0, or both",
+            path,
+            column_name);
     return it->second;
 }
 
