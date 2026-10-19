@@ -587,7 +587,29 @@ namespace
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
-                time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            {
+                /// Convert the local time as `toDateTime` does. The offset at `seconds_since_epoch`, which is the local
+                /// time read as UTC, can be the one from the other side of a daylight saving time change.
+                auto local_year = static_cast<Int16>(year);
+                auto local_month = static_cast<UInt8>(month);
+                auto local_day = static_cast<UInt8>(day);
+                /// For a week date or a day of the year, take the calendar date from the day number.
+                if (week_date_format || day_of_year_format)
+                {
+                    const auto values = time_zone.getValues(ExtendedDayNum(days_since_epoch));
+                    local_year = values.year;
+                    local_month = values.month;
+                    local_day = values.day_of_month;
+                }
+                time_zone_offset = seconds_since_epoch
+                    - time_zone.makeDateTime(
+                        local_year,
+                        local_month,
+                        local_day,
+                        static_cast<UInt8>(hour),
+                        static_cast<UInt8>(minute),
+                        static_cast<UInt8>(second));
+            }
 
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
