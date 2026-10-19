@@ -233,6 +233,7 @@ tool on an ARM64 executor against the recorded native CMake result.
 | Inherit first-party headers, remove unused first-party compiler inputs and defaults, and use configured output names for GitHash, config and version (`f8b61cbe4`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/b8c4b4f3-3587-42e9-8e3d-4fecc9c26c1e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/103487d0-a768-47f9-bdbf-86111a7aee9e) |
 | Convert first-party source `-I` directories to `local_includes` and inherit public dependency includes (`573c1a784`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/675b44ee-022b-460d-9ea8-853f58908dd6) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/4f7b1327-4b1b-4fcd-84af-06f0770b446e) |
 | Remove 4,762 unused first-party exports, inherit 1,762 generated source declarations, use 179 ordered globs, share own-code C++ defaults, and remove 258 compiler-input references (`0c285c5d8`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/0da6f376-ab20-4205-9a97-9ee14de85553) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/31eb9ea1-1d3d-4cca-a2ec-119dee5712b7) |
+| Supply LLVM headers, C libc++ inputs and applicable `cxx`/`cxxabi`/`unwind` dependencies through `ch_cc_library` (`ddcb5a721`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/33ee925f-5f62-40d9-8742-506da967a93c) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/3ce75088-45d2-411a-a113-fca669c85918) |
 
 Every x86-64 comparison passed `cmp` and `PARITY_STATUS=0`; every ARM64
 comparison reported `ARM_STRIPPED_STATUS=0`. Each batch also reproduced
@@ -272,6 +273,17 @@ and ordered source lists matched across 1,638 configured library comparisons.
 The four database compilations that use that list remain unchanged. The
 benchmark is absent from the ClickHouse `cmake_link` references on both CPUs.
 Neither change modifies the ClickHouse compile or link inputs verified above.
+
+`ddcb5a721` includes those two changes in complete builds on both CPUs.
+All original ELF, normalized ELF, and selected compiler hashes above remain
+unchanged. x86-64 also compares the two normalized files directly
+(`PARITY_STRIPPED_CMP_STATUS=0`). The macro supplies the ClickHouse LLVM
+header dependencies and include directories by default for ClickHouse code;
+`llvm_headers` opts other libraries in or preserves an exceptional dependency
+order. `link_runtime` opts in only existing direct users of `cxx`, `cxxabi`,
+and `unwind`. `clang_rt_builtins` remains explicit to avoid a dependency
+cycle through `glibc-rseq`. The macro also supplies the pinned libc++ inputs
+for C; assembly inputs remain explicit where required.
 
 `@clickhouse_sysroot` provides the target glibc headers, Linux headers,
 startup objects, and link libraries that CMake used. The x86 reference uses
