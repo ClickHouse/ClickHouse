@@ -12,7 +12,7 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO projection_null_check_drop_readd VALUES (1, NULL), (2, 1);
 SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop_readd
-SETTINGS force_optimize_projection = 1;
+SETTINGS force_optimize_projection = 1, optimize_functions_to_subcolumns = 0;
 
 -- Keep the old nullable states while the reading schema already has the new non-nullable column.
 SYSTEM STOP MERGES projection_null_check_drop_readd;
