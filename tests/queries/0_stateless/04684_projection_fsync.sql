@@ -20,6 +20,11 @@
 -- `min_bytes_for_full_part_storage = 0` keeps the parts in `Full` storage. A `Packed` part is a
 -- single blob with no per-file syncs to count, so the deltas below would read 0 even for a
 -- correctly synced projection. That setting is randomized in CI, so it must be pinned here.
+--
+-- `async_insert = 0` keeps every `INSERT ... SELECT` on the synchronous route: through the async
+-- insert queue the part is written by the queue flush, so its fsyncs are not attributed to the
+-- `INSERT` query in `system.query_log`.
+SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_proj;
 DROP TABLE IF EXISTS t_plain;
