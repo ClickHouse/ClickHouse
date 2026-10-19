@@ -225,7 +225,7 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
                 loaded = true;
                 return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
             });
-        if (!loaded)
+        if (!loaded && object_with_metadata->metadata->isEtagUsableAsCacheKey())
         {
             metadata_cache_cell = cell;
             metadata_cache_key = std::move(cache_key);
