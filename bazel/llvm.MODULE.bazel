@@ -40,12 +40,12 @@ llvm.from_archive(
     ],
     files = {
         "compiler-rt/lib/xray/clickhouse-reject-modes.cpp": "//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
-        "libc/src/string/x86_cpu_dispatch.h": "//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
-        "libc/src/string/x86_64_mem_functions.cpp": "//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
-        "libc/src/string/aarch64_mem_functions.cpp": "//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
+        "libc/src/string/x86_cpu_dispatch.h": "//:contrib/libllvmlibc-cmake/string/x86_cpu_dispatch.h",
+        "libc/src/string/x86_64_mem_functions.cpp": "//:contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp",
+        "libc/src/string/aarch64_mem_functions.cpp": "//:contrib/libllvmlibc-cmake/string/aarch64_mem_functions.cpp",
         "libunwind/src/clickhouse-unwind-override.c": "//:contrib/libunwind-cmake/unwind-override.c",
-        "libc/src/string/clickhouse-mem-functions.cpp": "//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
-        "libc/src/string/clickhouse-memmem.cpp": "//contrib/libllvmlibc-cmake:string/memmem.cpp",
+        "libc/src/string/clickhouse-mem-functions.cpp": "//:contrib/libllvmlibc-cmake/string/mem_functions.cpp",
+        "libc/src/string/clickhouse-memmem.cpp": "//:contrib/libllvmlibc-cmake/string/memmem.cpp",
     },
     patch_args = ["-p1"],
     patches = [
