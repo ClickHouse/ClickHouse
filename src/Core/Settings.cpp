@@ -1648,14 +1648,14 @@ When enabled together with [group_by_use_nulls](#group_by_use_nulls), the `GROUP
 
 When disabled, `group_by_use_nulls` does not affect `WITH TOTALS`: the totals row contains the default values of the keys, and the keys keep their types unless `ROLLUP`, `CUBE`, or `GROUPING SETS` makes them `Nullable`.
 
-Disable this setting (or use `compatibility` with a version before 26.10) during a rolling upgrade of a cluster that runs distributed `GROUP BY ... WITH TOTALS` queries with `group_by_use_nulls = 1`, because older servers expect non-`Nullable` keys in the totals row.
+Disable this setting (or use `compatibility` with a version before 26.11) during a rolling upgrade of a cluster that runs distributed `GROUP BY ... WITH TOTALS` queries with `group_by_use_nulls = 1`, because older servers expect non-`Nullable` keys in the totals row.
 
 Possible values:
 
 - 0 — `group_by_use_nulls` is not applied to `WITH TOTALS`.
 - 1 — `group_by_use_nulls` is applied to `WITH TOTALS`.
 )", 0, \
-        {"26.10", false, true, "`group_by_use_nulls` now also applies to `WITH TOTALS`: the keys become `Nullable` and are `NULL` in the totals row. `compatibility` with versions before 26.10 restores the previous behavior."}) \
+        {"26.11", false, true, "`group_by_use_nulls` now also applies to `WITH TOTALS`: the keys become `Nullable` and are `NULL` in the totals row. `compatibility` with versions before 26.11 restores the previous behavior."}) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.
