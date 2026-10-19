@@ -95,8 +95,16 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
-
-#if !defined(USE_MUSL)
+///
+/// Keep this guard identical to the one in `programs/main.cpp`. This file is linked into the
+/// `clickhouse` binary as part of `clickhouse-keeper-lib`, so a stub defined here but not there
+/// pulls this object file in and causes duplicate `main` and `inside_main` symbols.
+///
+/// We do allow `dlopen()` in case of OpenSSL FIPS build,
+/// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
+///
+/// Not on WebAssembly: see the comment in `programs/main.cpp`.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);
