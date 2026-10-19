@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <zstd.h>
+#include <Common/CacheLine.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
@@ -57,10 +58,13 @@ namespace
 template <typename ContextPtr>
 struct ContextPools
 {
-    struct Pool
+    /// Each pool takes its own cache lines, so that the threads on different CPUs do not contend for them.
+    struct alignas(CH_CACHE_LINE_SIZE) Pool
     {
         std::mutex mutex;
         std::vector<std::unique_ptr<ContextPtr>> idle; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: process-wide, not charged to a query
+        /// The size of `idle`, so that other CPUs search the pool without locking it when it is empty.
+        std::atomic<size_t> num_idle = 0;
     };
 
     /// Returns a context to the pool of the CPU that took it, which is not necessarily the pool it was taken from.
@@ -72,14 +76,11 @@ struct ContextPools
         {
             std::lock_guard lock(pool->mutex);
             pool->idle.emplace_back(context);
-            ++num_idle;
+            pool->num_idle.store(pool->idle.size(), std::memory_order_relaxed);
         }
     };
 
     using Holder = std::unique_ptr<ContextPtr, Deleter>;
-
-    /// Number of idle contexts in all pools, so that no pool is locked when there are none.
-    static inline std::atomic<size_t> num_idle = 0;
 };
 
 template <typename ContextPtr, typename Factory>
@@ -90,16 +91,18 @@ typename ContextPools<ContextPtr>::Holder getPooledContext(Factory && create)
     static auto * pools = new typename Pools::Pool[num_pools];
     const size_t current = static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools;
     /// A context taken from another pool goes back to the pool of the current CPU, so it is searched for only once after
-    /// a thread moves to another CPU. The counter may be stale, which costs at most one fruitless search or one new context.
-    for (size_t i = 0; i < num_pools && Pools::num_idle.load(std::memory_order_relaxed) > 0; ++i)
+    /// a thread moves to another CPU. The counters of other pools may be stale, which costs at most a fruitless lock or one new context.
+    for (size_t i = 0; i < num_pools; ++i)
     {
         auto & pool = pools[(current + i) % num_pools];
+        if (i != 0 && pool.num_idle.load(std::memory_order_relaxed) == 0)
+            continue;
         std::lock_guard lock(pool.mutex);
         if (!pool.idle.empty())
         {
             ContextPtr * context = pool.idle.back().release();
             pool.idle.pop_back();
-            --Pools::num_idle;
+            pool.num_idle.store(pool.idle.size(), std::memory_order_relaxed);
             return {context, {&pools[current]}};
         }
     }
