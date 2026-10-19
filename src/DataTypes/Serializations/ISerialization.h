@@ -186,6 +186,16 @@ public:
         virtual ~SerializeBinaryBulkState() = default;
     };
 
+    struct DeserializeBinaryBulkState;
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    /// Maps original states to their clones, so that a state shared by several readers stays shared among the clones.
+    struct DeserializeBinaryBulkStateCloneContext
+    {
+        std::unordered_map<const DeserializeBinaryBulkState *, DeserializeBinaryBulkStatePtr> cloned;
+    };
+
     struct DeserializeBinaryBulkState
     {
         DeserializeBinaryBulkState() = default;
@@ -193,11 +203,13 @@ public:
 
         virtual ~DeserializeBinaryBulkState() = default;
 
-        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-    };
+        /// Returns the clone made earlier in the same context if there is one.
+        DeserializeBinaryBulkStatePtr clone(DeserializeBinaryBulkStateCloneContext & context) const;
 
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+    protected:
+        /// Nested states must be cloned through clone with the same context.
+        virtual DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const { return std::make_shared<DeserializeBinaryBulkState>(); }
+    };
 
     struct SubstreamData
     {
@@ -374,7 +386,13 @@ public:
         virtual ~ISubstreamsCacheElement() = default;
     };
 
-    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
+    /// Keys of the substreams caches are hashes of the substream paths, see `getSubstreamsCacheKeyForStream`.
+    struct SubstreamsCacheKeyHash
+    {
+        size_t operator()(const UInt128 & key) const { return static_cast<size_t>(key.items[0]); }
+    };
+
+    using SubstreamsCache = std::unordered_map<UInt128, std::unique_ptr<ISubstreamsCacheElement>, SubstreamsCacheKeyHash>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
@@ -532,7 +550,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
@@ -617,7 +636,7 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
+    using SubstreamsDeserializeStatesCache = std::unordered_map<UInt128, DeserializeBinaryBulkStatePtr, SubstreamsCacheKeyHash>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
@@ -770,7 +789,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
-    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
+    static UInt128 getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

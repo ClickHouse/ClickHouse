@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: asserts on `text_log` of the initial query, but with parallel replicas the join may be built on a remote replica, whose messages carry another query id
 -- Test on-the-fly conversion of hash table to fixed hash table in hash join.
 
 DROP TABLE IF EXISTS t_left;

@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## min_absolute_delay_to_close
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Atraso absoluto mínimo para encerrar, parar de atender requisições e não
 retornar Ok durante a verificação de status.
 
-## min_columns_to_activate_adaptive_write_buffer
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -37,7 +37,7 @@ Valores possíveis:
 * 0 - desabilitado
 * 1 - sempre habilitado
 
-## min_compress_block_size
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -47,7 +47,7 @@ gravar a próxima mark. Você também pode especificar essa configuração nas c
 ). O valor especificado quando a tabela é criada substitui o valor global
 dessa configuração.
 
-## min_index_granularity_bytes
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -56,7 +56,7 @@ Tamanho mínimo permitido dos grânulos de dados, em bytes.
 Serve como proteção contra a criação acidental de tabelas com
 `index_granularity_bytes` muito baixo.
 
-## min_marks_to_honor_max_concurrent_queries
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -77,7 +77,7 @@ Valores possíveis:
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -88,7 +88,7 @@ o volume total de armazenamento de todos os dados que serão mesclados. Se o vol
 dados no disco de armazenamento usando a interface de E/S direta (opção `O_DIRECT`).
 Se `min_merge_bytes_to_use_direct_io = 0`, a E/S direta será desabilitada.
 
-## min_partition_age_to_force_merge_seconds
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -135,7 +135,7 @@ Valores possíveis:
 
 * Inteiro positivo.
 
-## min_parts_to_merge_at_once
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -143,7 +143,7 @@ Quantidade mínima de partes de dados que o selector de mesclagem pode seleciona
 (configuração de nível avançado; não altere se você não entende o que ela faz).
 0 - desabilitado. Funciona para os selectors de mesclagem Simple e StochasticSimple.
 
-## min_replicated_logs_to_keep
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -154,5 +154,49 @@ log do ZooKeeper antes da limpeza.
 Valores possíveis:
 
 * Qualquer inteiro positivo.
+
+## min_unreserved_disk_space_for_merge {#min_unreserved_disk_space_for_merge}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para manter parte do espaço em disco não reservado fora do alcance das mesclagens em segundo plano, para que elas não deixem os inserts sem espaço."}]}]} />
+
+Mantém a quantidade especificada de espaço em disco não reservado (em bytes) fora do alcance das
+mesclagens em segundo plano, para que elas não deixem os inserts sem espaço. Essa quantidade é subtraída
+do espaço livre, e o limite do tamanho total das partes de origem de uma mesclagem
+é derivado do restante, com um fator de segurança adicional, de modo que a maior
+mesclagem permitida fique bem abaixo desse valor. O limite diminui à medida que o disco se enche e
+chega a zero quando o espaço livre cai para essa quantidade; a partir daí, nenhuma
+mesclagem em segundo plano é selecionada. (0 significa desabilitado)
+
+Ao contrário de `keep_free_space_bytes`, o espaço protegido continua utilizável pelo próprio ClickHouse
+— ele apenas fica fora do agendamento de mesclagens. As mutações não são limitadas por
+ele e ainda podem consumir o espaço protegido, e a configuração não tem efeito em
+discos com espaço ilimitado (como armazenamento de objetos).
+
+Mesclagens iniciadas por [OPTIMIZE](/pt-BR/reference/statements/optimize) com `FINAL` ou
+com uma `PARTITION` explícita ignoram esta configuração. Mesclagens que descartam partes
+totalmente expiradas são selecionadas sempre que o limite está acima de zero, independentemente do
+tamanho, e nada é selecionado quando ele chega a zero. Toda mesclagem reserva pelo menos 1 MiB; portanto,
+uma mesclagem iniciada com menos de 1 MiB disponível acima do espaço protegido pode ocupar
+até 1 MiB dele. Uma réplica `ReplicatedMergeTree` também executa os DROPs enfileirados quando seu
+próprio limite é zero, se um TTL de linha sem `WHERE` for o único TTL da tabela. Com um
+TTL com `GROUP BY`, `WHERE` ou de coluna, esse DROP reescreve as linhas restantes:
+o `ReplicatedMergeTree` o adia de acordo com o tamanho de suas partes, mas o `MergeTree`
+não faz isso e pode gravá-las no espaço protegido.
+
+Quando o limite é zero, um `OPTIMIZE` simples não atribui nada: ele não tem efeito ou
+lança `CANNOT_ASSIGN_OPTIMIZE` com `optimize_throw_if_noop = 1`. Use `FINAL`
+ou uma `PARTITION` explícita para mesclar no espaço protegido. No
+`ReplicatedMergeTree`, essa isenção é registrada na entrada de log de replicação
+somente quando a configuração é diferente de zero na réplica que a enfileira; portanto, um
+`OPTIMIZE` enfileirado enquanto ela era 0 continua sendo executado sob a margem de reserva.
+
+`ALTER TABLE ... MODIFY SETTING` não é replicado; portanto, atribua o mesmo valor a todas as
+réplicas: uma réplica com uma margem de reserva maior a reaplica às mesclagens atribuídas
+em outras réplicas e pode adiá-las indefinidamente. Mantenha o valor em `0` até que todas as
+réplicas executem uma versão que reconheça a configuração — uma réplica mais antiga não consegue interpretar
+as entradas de log gravadas para as mesclagens isentas e deixa de fazer pull de novas
+entradas para a tabela, inclusive as de inserts comuns.
 
 {/*AUTOGENERATED_END*/}

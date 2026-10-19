@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# Tag no-parallel -- queries system.text_log
+# Tags: no-parallel-replicas
 # Tag no-parallel-replicas -- the test manages parallel replicas settings itself
 
 # Regression test for "Duplicate announcement received for replica number 1"
