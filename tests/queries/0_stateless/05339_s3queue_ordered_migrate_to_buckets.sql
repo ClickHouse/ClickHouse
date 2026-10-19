@@ -1,6 +1,10 @@
--- Tags: no-fasttest, zookeeper
+-- Tags: no-fasttest, zookeeper, no-shared-catalog
 -- no-fasttest: the `S3Queue` table engine is not built in the fast test.
 -- zookeeper: the migration moves the `processed` nodes of the table inside Keeper.
+-- no-shared-catalog: with a shared catalog each `ALTER TABLE ... MODIFY SETTING` below becomes
+-- a distributed DDL over the hosts of the test cluster and can outlast
+-- `distributed_ddl_task_timeout` under load; this test targets the Keeper layout of the queue
+-- metadata, not the catalog.
 
 -- An Ordered queue without buckets keeps its last processed file name in `<keeper_path>/processed`;
 -- with buckets, in one `buckets/<bucket>/processed` node each. `ALTER TABLE ... MODIFY SETTING
