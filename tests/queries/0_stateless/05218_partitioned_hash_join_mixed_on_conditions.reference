@@ -65,11 +65,11 @@ ANY LEFT | join_use_nulls	(7,[('key1','a','key1','Nullable(String)',0),('key1','
 SEMI LEFT | join_use_nulls	(6,[('key1','a','key1','Nullable(String)',0),('key1','b','key1','Nullable(String)',0),('key1','c','key1','Nullable(String)',0),('key1','d','key1','Nullable(String)',0),('key1','e','key1','Nullable(String)',0),('key4','f','key4','Nullable(String)',0)])
 ANTI LEFT | join_use_nulls	(1,[('key2','a2',NULL,'Nullable(String)',NULL)])
 -- a build large enough to partition, and probe blocks the residual filter stops at max_joined_block_size_rows
-LEFT | large	(2702138,8282803059745770850)
-ANY LEFT | large	(20000,16773256409716441479)
-SEMI LEFT | large	(18000,16012631984897818811)
-ANTI LEFT | large	(2000,15860396084011637885)
-ANY INNER | large	(18000,9258588418448783193)
+LEFT | large	(301046,3552727074987891172)
+ANY LEFT | large	(7000,6282615133046149566)
+SEMI LEFT | large	(6000,10806087805603987237)
+ANTI LEFT | large	(1000,7397580138848679441)
+ANY INNER | large	(6000,14052320352108749199)
 -- a shape hash rejects with a mixed condition is rejected the same way
 -- every labelled query ran the partitioned join
 1	0

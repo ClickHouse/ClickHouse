@@ -15,6 +15,8 @@ opts=(
     --join_algorithm='hash'
     --max_bytes_before_external_join=0
     --max_bytes_ratio_before_external_join=0
+    # With parallel replicas each replica builds a table of its own, and the events add up.
+    --enable_parallel_replicas=0
     # Cache keys are stamped by join-order optimization; keep its plan stable across both runs.
     --query_plan_optimize_join_order_limit=10
     --query_plan_optimize_join_order_randomize=0
