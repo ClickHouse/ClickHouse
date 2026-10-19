@@ -2,6 +2,8 @@
 
 #if USE_PARQUET
 
+#include <Common/MemoryTrackerBlockerInThread.h>
+
 namespace CurrentMetrics
 {
 extern const Metric ParquetMetadataCacheBytes;
@@ -173,6 +175,8 @@ ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path
 void ParquetMetadataCache::keepStatistics(
     const ParquetMetadataCacheKey & key, const MappedPtr & cell, const String & column_key, const ParquetKeptStatistics::Ranges & ranges)
 {
+    /// The kept ranges belong to the shared cache, not to the query that reads the file.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
     auto column = cell->kept_statistics->prepare(column_key, ranges);
     if (!column)
         return;
