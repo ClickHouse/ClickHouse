@@ -9058,7 +9058,8 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             /// The copy has the same sizes, so it takes the place of the original if that one is not accounted for yet.
             {
                 std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
-                std::ranges::replace(parts_with_unaccounted_sizes, original_active_part, part_copy);
+                if (parts_with_unaccounted_sizes.erase(original_active_part))
+                    parts_with_unaccounted_sizes.insert(part_copy);
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
@@ -9268,13 +9269,13 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
     {
-        /// Account for the parts committed since the last call. Pop a part only after its contribution
-        /// is added: if computing its sizes throws, it stays pending and the next reader retries it.
-        while (!parts_with_unaccounted_sizes.empty())
-        {
-            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(parts_with_unaccounted_sizes.back());
-            parts_with_unaccounted_sizes.pop_back();
-        }
+        /// Account for the parts committed since the last call. A contribution is added one column at a
+        /// time, so if adding it throws, the totals are left partially updated and must be rebuilt.
+        are_columns_and_secondary_indices_sizes_calculated = false;
+        for (const auto & part : parts_with_unaccounted_sizes)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+        parts_with_unaccounted_sizes.clear();
+        are_columns_and_secondary_indices_sizes_calculated = true;
         return;
     }
 
@@ -9336,7 +9337,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     /// replica that only fetches parts (they are loaded without sizes) would do that after every fetch.
     if (!part->areColumnAndSecondaryIndexSizesCalculated())
     {
-        parts_with_unaccounted_sizes.push_back(part);
+        parts_with_unaccounted_sizes.insert(part);
         return;
     }
 
@@ -9431,7 +9432,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         return;
 
     /// A part that is still pending has not contributed anything yet.
-    if (std::erase(parts_with_unaccounted_sizes, part))
+    if (parts_with_unaccounted_sizes.erase(part))
         return;
 
     if (!part->areColumnAndSecondaryIndexSizesCalculated())

@@ -5,6 +5,7 @@
 #include <span>
 #include <string_view>
 #include <tuple>
+#include <unordered_set>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/HashTable/Hash.h>
@@ -1910,7 +1911,7 @@ protected:
     /// (guarded by `columns_and_secondary_indices_sizes_mutex`). The next reader adds them, see
     /// `calculateColumnAndSecondaryIndexSizesLazily`. Declared after `storage_settings` and `data_parts_indexes`
     /// so it is destroyed before them: a part destroyed here must still see the settings of the table.
-    mutable DataPartsVector parts_with_unaccounted_sizes;
+    mutable std::unordered_set<DataPartPtr> parts_with_unaccounted_sizes;
 
     /// Mutex for critical sections which alter set of parts
     /// It is like truncate, drop/detach partition
