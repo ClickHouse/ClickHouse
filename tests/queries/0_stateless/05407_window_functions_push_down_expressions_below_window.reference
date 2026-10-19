@@ -47,6 +47,11 @@ LIMIT
 1	100
 LIMIT BY with a constant key
 1	10000
+INTERSECT with an empty side
+ok
+a column that may share memory with a default value of another column
+cityHash64
+Window
 overflow mode break
 ok
 arrayJoin below the window functions

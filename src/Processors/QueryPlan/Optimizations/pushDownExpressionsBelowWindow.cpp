@@ -5,25 +5,27 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/StorageFile.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <optional>
 #include <string_view>
@@ -186,6 +188,68 @@ void collectStorageNodes(const Node * node, NodeSet & storage_nodes)
     }
 }
 
+bool hasIdentifier(const ASTPtr & ast, const String & name)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->name() == name)
+        return true;
+
+    for (const auto & child : ast->children)
+        if (hasIdentifier(child, name))
+            return true;
+
+    return false;
+}
+
+/// Whether the column `column_name` of a `MergeTree` read does not share memory with another column of it.
+/// A column missing in a part is filled with its default expression, which can return another column as is
+/// (`t String DEFAULT s`), and the `PREWHERE` and row policy actions can compute columns from the read ones.
+bool mergeTreeColumnHasOwnMemory(const ReadFromMergeTree & read, const String & column_name)
+{
+    const auto & columns = read.getStorageMetadata()->getColumns();
+    if (columns.getDefault(column_name))
+        return false;
+
+    for (const auto & column : *read.getOutputHeader())
+    {
+        if (column.name == column_name)
+            continue;
+
+        if (auto column_default = columns.getDefault(column.name); column_default && column_default->expression
+            && hasIdentifier(column_default->expression, column_name))
+            return false;
+    }
+
+    std::vector<const ActionsDAG *> read_actions;
+    for (const auto & row_level_filter : {read.getRowLevelFilter(), read.getDeferredRowLevelFilter()})
+        if (row_level_filter)
+            read_actions.push_back(&row_level_filter->actions);
+    for (const auto & prewhere_info : {read.getPrewhereInfo(), read.getDeferredPrewhereInfo()})
+        if (prewhere_info)
+            read_actions.push_back(&prewhere_info->prewhere_actions);
+
+    for (const auto * actions : read_actions)
+    {
+        for (const auto * output : actions->getOutputs())
+        {
+            /// A column computed by the actions is not supported.
+            if (output->result_name == column_name)
+            {
+                if (output->type != ActionsDAG::ActionType::INPUT)
+                    return false;
+                continue;
+            }
+
+            NodeSet output_storage_nodes;
+            collectStorageNodes(output, output_storage_nodes);
+            for (const auto * output_storage_node : output_storage_nodes)
+                if (output_storage_node->type == ActionsDAG::ActionType::INPUT && output_storage_node->result_name == column_name)
+                    return false;
+        }
+    }
+
+    return true;
+}
+
 /// Whether the column `column_name` of the output of `node` does not share memory with another column of it.
 /// The steps that are not known to keep the columns separate are not accepted.
 bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size_t depth = 0)
@@ -245,12 +309,14 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
         return true;
     }
 
-    /// The reads that create new columns. Others may return columns that stay in memory anyway, like a `Memory`
-    /// table, a materialized CTE or a prepared source, so freeing them does not reduce the memory usage.
-    if (typeid_cast<const ReadFromMergeTree *>(step) || typeid_cast<const ReadFromSystemNumbersStep *>(step)
-        || typeid_cast<const ReadFromRemote *>(step) || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step)
-        || typeid_cast<const ReadFromParallelReplicasStep *>(step) || typeid_cast<const ReadFromLocalParallelReplicaStep *>(step)
-        || typeid_cast<const ReadFromObjectStorageStep *>(step) || typeid_cast<const ReadFromFile *>(step))
+    if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
+        return mergeTreeColumnHasOwnMemory(*read_from_merge_tree, column_name);
+
+    /// The reads that create new columns: the columns received from other servers are deserialized separately.
+    /// Others may return columns that stay in memory anyway, like a `Memory` table, a materialized CTE or a prepared
+    /// source, or fill the missing columns with default expressions, so freeing them does not reduce the memory usage.
+    if (typeid_cast<const ReadFromSystemNumbersStep *>(step) || typeid_cast<const ReadFromRemote *>(step)
+        || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step) || typeid_cast<const ReadFromParallelReplicasStep *>(step))
         return true;
 
     if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
@@ -281,30 +347,56 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
     return false;
 }
 
-/// Whether a step above may stop reading the result before all rows are read, so that the projection after
-/// the window functions is computed only for some rows: `LIMIT`, `LIMIT ... WITH TIES`, `LIMIT AFTER / UNTIL`,
-/// `LIMIT BY` (with constant keys it stops after the first rows), `DISTINCT ... LIMIT`, `ORDER BY ... LIMIT`
-/// (`liftUpFunctions` computes the expressions after such a sorting).
-/// An aggregation reads all rows, so the steps above it do not matter.
-bool mayStopBeforeReadingAllRows(const Stack & stack)
+bool hasConstantFilter(const FilterStep & filter)
+{
+    const auto * filter_node = filter.getExpression().tryFindInOutputs(filter.getFilterColumnName());
+    return !filter_node || filter_node->column;
+}
+
+/// Whether the steps above read all rows, so that the projection after the window functions is computed for all rows.
+/// Many steps can stop reading early: `LIMIT` (also `LIMIT BY` with constant keys, `LIMIT AFTER / UNTIL`,
+/// `DISTINCT ... LIMIT`, `ORDER BY ... LIMIT`, after which `liftUpFunctions` computes the expressions), `INTERSECT`
+/// or a `JOIN` with an empty side, a `Filter` with a constant `false` condition. So only the steps known to read
+/// all rows are accepted. An aggregation reads all rows, so the steps above it do not matter.
+bool stepsAboveReadAllRows(const Stack & stack)
 {
     for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
     {
         const auto * step = it->node->step.get();
         if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
-            return false;
-
-        if (typeid_cast<const LimitStep *>(step) || typeid_cast<const LimitRangeStep *>(step) || typeid_cast<const LimitByStep *>(step))
             return true;
 
-        if (const auto * sorting = typeid_cast<const SortingStep *>(step); sorting && sorting->getLimit())
-            return true;
+        if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        {
+            if (hasConstantFilter(*filter))
+                return false;
+            continue;
+        }
 
-        if (const auto * distinct = typeid_cast<const DistinctStep *>(step); distinct && distinct->getLimitHint())
-            return true;
+        if (const auto * sorting = typeid_cast<const SortingStep *>(step))
+        {
+            if (sorting->getLimit())
+                return false;
+            continue;
+        }
+
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
+        {
+            if (distinct->getLimitHint())
+                return false;
+            continue;
+        }
+
+        if (typeid_cast<const ExpressionStep *>(step) || typeid_cast<const WindowStep *>(step) || typeid_cast<const UnionStep *>(step)
+            || typeid_cast<const ArrayJoinStep *>(step) || typeid_cast<const OffsetStep *>(step) || typeid_cast<const ExtremesStep *>(step)
+            || typeid_cast<const FillingStep *>(step) || typeid_cast<const CreatingSetStep *>(step)
+            || typeid_cast<const CreatingSetsStep *>(step) || typeid_cast<const DelayedCreatingSetsStep *>(step))
+            continue;
+
+        return false;
     }
 
-    return false;
+    return true;
 }
 
 void addColumnNames(const SortDescription & description, NameSet & names)
@@ -327,7 +419,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     ActionsDAG * parent_actions_ptr = nullptr;
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get()))
         parent_actions_ptr = &expression_step->getExpression();
-    else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()))
+    else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()); filter_step && !hasConstantFilter(*filter_step))
         parent_actions_ptr = &filter_step->getExpression();
 
     if (!parent_actions_ptr)
@@ -347,7 +439,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         if (!input_names.insert(input->result_name).second)
             return;
 
-    if (mayStopBeforeReadingAllRows(stack))
+    if (!stepsAboveReadAllRows(stack))
         return;
 
     /// The chain of window steps and of the sorting steps for them. The expressions are computed below it,

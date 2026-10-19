@@ -117,6 +117,28 @@ SELECT 'LIMIT BY with a constant key';
 SELECT toUInt64(s), count() OVER () FROM (SELECT if(number < 1000, '1', 'x') AS s FROM numbers(10000))
 LIMIT 1 BY 'group' SETTINGS max_block_size = 10, max_threads = 1;
 
+SELECT 'INTERSECT with an empty side';
+SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, '1', 'x') AS s FROM numbers(10000))
+INTERSECT ALL SELECT number AS v, number AS n FROM numbers(0)
+SETTINGS max_threads = 1, max_block_size = 10;
+SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, '1', 'x') AS s FROM numbers(10000))
+INTERSECT DISTINCT SELECT number AS v, number AS n FROM numbers(0)
+SETTINGS max_threads = 1, max_block_size = 10;
+SELECT 'ok';
+
+SELECT 'a column that may share memory with a default value of another column';
+DROP TABLE IF EXISTS t_window_push_down_default;
+CREATE TABLE t_window_push_down_default (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_window_push_down_default SELECT toString(number % 10) FROM numbers(10);
+ALTER TABLE t_window_push_down_default ADD COLUMN t String DEFAULT s;
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s, cityHash64(t), count() OVER () FROM t_window_push_down_default
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_default;
+
 SELECT 'overflow mode break';
 SELECT v, any(n) FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
 GROUP BY v FORMAT Null
