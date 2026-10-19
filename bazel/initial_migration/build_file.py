@@ -395,8 +395,9 @@ class BuildFile:
         self.external_inputs = set()
         self.local_sources = set()
         self.root_sources = set()
+        self.source_files = None
 
-    def label(self, value):
+    def label(self, value, source_file=False):
         if value.startswith(':'):
             value = '//' + value
         if value.startswith('//:') and value[3:] in self.owners:
@@ -405,7 +406,13 @@ class BuildFile:
             prefix = '@' + REPOSITORIES[self.owner]['name'] + '//:'
             if value.startswith(prefix):
                 self.local_sources.add(value)
-                return ':' + value.removeprefix(prefix)
+                local = value.removeprefix(prefix)
+                if source_file:
+                    if self.source_files is None:
+                        self.source_files = frozenset(package_sources(self.owner))
+                    if local in self.source_files:
+                        return local
+                return ':' + local
             if value.startswith('//:') and (ROOT / value[3:]).is_file():
                 self.root_sources.add(value[3:])
             if value.startswith('//'):
@@ -414,7 +421,7 @@ class BuildFile:
             self.external_inputs.add(value)
         return value
 
-    def label_inputs(self, values):
+    def label_inputs(self, values, source_files=False):
         labels, parts = [], []
         for value in values:
             if isinstance(value, Glob):
@@ -423,7 +430,7 @@ class BuildFile:
                     labels = []
                 parts.append(value)
             else:
-                labels.append(self.label(value))
+                labels.append(self.label(value, source_file=source_files))
         if labels or not parts:
             parts.append(labels)
         return parts[0] if len(parts) == 1 else Concat(parts)
@@ -602,6 +609,11 @@ class BuildFile:
                 item for item in fields['additional_compiler_inputs']
                 if not isinstance(item, str) or not item.startswith(foreign_postgres)
             ]
+            if self.owner == 'contrib/postgres' and name == '_libpq':
+                # libpq uses postgres_headers and OpenSSL's published headers.
+                # The CMake configuration headers are already in hdrs. Files
+                # used to generate OpenSSL headers aren't inputs to libpq.
+                fields['additional_compiler_inputs'] = []
         if not custom and self.owner != 'contrib/abseil-cpp':
             prefix = '@' + REPOSITORIES['contrib/abseil-cpp']['name'] + '//:'
             for field in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
@@ -819,7 +831,7 @@ class BuildFile:
                         group = groups.get(arch, {})
                         value = inputs.get(arch, {}).get(field, []) if field in LABEL_ATTRIBUTES else group.get(field, [])
                         if field in LABEL_ATTRIBUTES:
-                            value = self.label_inputs(value)
+                            value = self.label_inputs(value, source_files=field == 'srcs')
                         values['@platforms//cpu:' + arch] = value
                     attrs[field] = select(values)
                 mapped_arches = [arch for arch, group in groups.items() if group.get('cmake_source_prefix_map')]
@@ -921,7 +933,7 @@ class BuildFile:
                             else:
                                 raise ValueError(f'{name}: unsupported NASM include {origin} {directory}')
                     if field in LABEL_ATTRIBUTES:
-                        value = self.label_inputs(value)
+                        value = self.label_inputs(value, source_files=field == 'srcs')
                         if field == 'deps' and collapse_single:
                             # The compile dependencies include public header
                             # libraries. Keep them before the old wrapper's
