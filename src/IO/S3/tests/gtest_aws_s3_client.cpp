@@ -407,7 +407,7 @@ private:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 response.setContentType("application/xml");
-                response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult/>";
+                response.send() << R"(<?xml version="1.0" encoding="UTF-8"?><DeleteResult/>)";
                 return;
             }
 
