@@ -1,5 +1,6 @@
--- Tags: no-random-settings
--- Random settings (parallel replicas, splitting of ranges, direct IO) change how a read is split into blocks.
+-- Tags: no-random-settings, no-parallel-replicas
+-- Random settings (splitting of ranges, direct IO) change how a read is split into blocks.
+-- Parallel replicas hand out mark ranges that are not aligned with the stripes of the columns cache.
 
 -- The blocks of a read are aligned with the stripes of the columns cache (65536 rows here) by every reader of the
 -- chain together: a skip index evaluated at read time does not turn the alignment off, and a whole stripe is not read
