@@ -4053,26 +4053,31 @@ bool isCompressedFromFileName(const String & file_name)
         || isCompressedFromIndexExtension(extension);
 }
 
-}
+constexpr size_t part_file_size_hint = 4096; /// These files are small.
 
-std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_name) const
+ReadSettings getPartFileReadSettings(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings)
 {
-    constexpr size_t size_hint = 4096; /// These files are small.
-    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+    auto res = read_settings.adjustBufferSize(part_file_size_hint);
 
     /// Default read method is pread_threadpool, but there is not much point in it here.
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    const auto & data_part_storage = getDataPartStorage();
+    res.local_fs_settings.method = LocalFSReadMethod::pread;
 
     if (isPackedPartStorage(data_part_storage)
-        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
+        && !res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
     {
         /// We do not want background download to read too much extra data during parts load/fetch.
-        read_settings.filesystem_cache_settings.allow_background_download = false;
+        res.filesystem_cache_settings.allow_background_download = false;
     }
 
-    auto res = data_part_storage.readFile(file_name, read_settings, size_hint);
+    return res;
+}
+
+}
+
+std::unique_ptr<ReadBuffer> readPartFile(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name)
+{
+    auto res = data_part_storage.readFile(
+        file_name, getPartFileReadSettings(data_part_storage, read_settings), part_file_size_hint);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -4080,24 +4085,10 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     return res;
 }
 
-std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
+std::unique_ptr<ReadBuffer> readPartFileIfExists(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name)
 {
-    constexpr size_t size_hint = 4096; /// These files are small.
-    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
-
-    /// Default read method is pread_threadpool, but there is not much point in it here.
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    const auto & data_part_storage = getDataPartStorage();
-
-    if (isPackedPartStorage(data_part_storage)
-        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
-    {
-        /// We do not want background download to read too much extra data during parts load/fetch.
-        read_settings.filesystem_cache_settings.allow_background_download = false;
-    }
-
-    if (auto res = data_part_storage.readFileIfExists(file_name, read_settings, size_hint))
+    if (auto res = data_part_storage.readFileIfExists(
+            file_name, getPartFileReadSettings(data_part_storage, read_settings), part_file_size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -4105,6 +4096,16 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
         return res;
     }
     return {};
+}
+
+std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_name) const
+{
+    return readPartFile(getDataPartStorage(), getReadSettings(), file_name);
+}
+
+std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
+{
+    return readPartFileIfExists(getDataPartStorage(), getReadSettings(), file_name);
 }
 
 String IMergeTreeDataPart::stateToString() const

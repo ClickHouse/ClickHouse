@@ -1035,6 +1035,11 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 bool isCompressedFromIndexExtension(const String & index_extension);
 
+/// Reads a small file of a part, as `IMergeTreeDataPart::readFile` does, so it works without an `IMergeTreeDataPart`.
+std::unique_ptr<ReadBuffer> readPartFile(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
+/// Same as `readPartFile`, or nullptr if the file does not exist.
+std::unique_ptr<ReadBuffer> readPartFileIfExists(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
+
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 
 Strings getPartsNames(const MergeTreeDataPartsVector & parts);

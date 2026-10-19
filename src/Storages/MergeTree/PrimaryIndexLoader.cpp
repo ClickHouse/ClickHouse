@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
@@ -77,7 +76,7 @@ Columns loadPrimaryIndexFromStorage(
     const KeyDescription & primary_key,
     size_t marks_count,
     const MergeTreeSettings & storage_settings,
-    const ReadSettings & read_settings_,
+    const ReadSettings & read_settings,
     bool keep_all_columns)
 {
     const size_t key_size = primary_key.column_names.size();
@@ -96,20 +95,7 @@ Columns loadPrimaryIndexFromStorage(
     const String index_name = getPrimaryIndexFileName(data_part_storage);
     const String index_path = fs::path(data_part_storage.getRelativePath()) / index_name;
 
-    /// Opened like `IMergeTreeDataPart::readFile` opens the small metadata files of a part.
-    constexpr size_t size_hint = 4096;
-    auto read_settings = read_settings_.adjustBufferSize(size_hint);
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    if (isPackedPartStorage(data_part_storage)
-        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
-        read_settings.filesystem_cache_settings.allow_background_download = false;
-
-    auto raw_file = data_part_storage.readFile(index_name, read_settings, size_hint);
-    std::unique_ptr<ReadBuffer> index_file;
-    if (isCompressedFromIndexExtension(fs::path(index_name).extension()))
-        index_file = std::make_unique<CompressedReadBufferFromFile>(std::move(raw_file));
-    else
-        index_file = std::move(raw_file);
+    auto index_file = readPartFile(data_part_storage, read_settings, index_name);
 
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)
