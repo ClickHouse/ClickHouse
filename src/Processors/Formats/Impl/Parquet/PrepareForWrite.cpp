@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
@@ -1019,8 +1020,8 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         return;
 
     /// The conversions below cast the column to its concrete type, which a constant column is not
-    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it as `prepareColumnRecursive` does.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it.
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     if (type->getCustomName()->getName() == "Geometry")
     {
