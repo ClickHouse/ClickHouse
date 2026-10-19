@@ -1033,9 +1033,8 @@ namespace
 
             case ViewTarget::Histograms:
             {
-                if (engine_name != "MergeTree")
-                    return;
-                if (sorting_key_equals("id, timestamp"))
+                engine_is_generated = !has_arguments && (engine_name == "MergeTree");
+                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
                     inner_engine.reset(inner_engine.order_by);
                 remove_settings({{"index_granularity", settings[TimeSeriesSetting::histograms_index_granularity].value}});
                 break;
