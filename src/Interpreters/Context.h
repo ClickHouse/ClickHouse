@@ -1393,6 +1393,9 @@ public:
 
     void waitAllBackupsAndRestores() const;
 
+    /// Stopping the DDL worker first registers every part of an ON CLUSTER backup or restore it runs, so that the wait covers them.
+    void stopDDLWorkerAndWaitAllBackupsAndRestores() const;
+
     /// Returns false if `deadline` was reached while some operation was still running.
     bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
 
