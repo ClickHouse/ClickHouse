@@ -32,6 +32,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -118,9 +119,15 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+}
+
+namespace FailPoints
+{
+    extern const char temporary_projection_fail_after_finalize[];
 }
 
 namespace
@@ -1268,8 +1275,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     if (is_temp)
         projection_part_storage->beginTransaction();
 
-    /// TODO: On construction failure, stop local writers and undo the owned temporary transaction here.
-    /// The caller has no part yet; non-temporary projections may borrow the parent's transaction.
+    std::unique_ptr<MergedBlockOutputStream> out;
+    scope_guard rollback = [&]
+    {
+        temp_part->cancel();
+        if (out)
+            out->cancel();
+        /// Stop all writers before reclaiming objects; non-temporary projections borrow the parent's transaction.
+        if (is_temp)
+            projection_part_storage->undoTransactionIfUncommitted();
+    };
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
@@ -1383,7 +1398,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
-    auto out = std::make_unique<MergedBlockOutputStream>(
+    out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
         metadata_snapshot,
@@ -1405,6 +1420,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    if (is_temp)
+    {
+        fiu_do_on(FailPoints::temporary_projection_fail_after_finalize,
+        {
+            finalizer.finish();
+            throw Exception(ErrorCodes::ABORTED, "Injected failure after temporary projection finalization");
+        });
+    }
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -1412,6 +1435,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
+    rollback.release();
     return temp_part;
 }
 
