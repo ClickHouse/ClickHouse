@@ -1268,6 +1268,7 @@ def main():
             Path(stale).unlink()
 
     test_result = None
+    test_run_completed = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
@@ -1347,6 +1348,7 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check,
         )
+        test_run_completed = ft_res_processor.run_completed
         if is_bugfix_validation:
             # The job name carries only the architecture, so a row is attributable
             # to a build type only through this label. Set before it is published.
@@ -1851,14 +1853,17 @@ def main():
             print(f"Removing pre-existing {merged_file}")
             os.unlink(merged_file)
 
-        # A missing test_result means the test stage never ran, and a runner-level
-        # ERROR means it terminated unexpectedly; either way the .profraw files
-        # understate coverage. FAIL is a completed run and still publishes.
-        if test_result is None or test_result.is_error():
+        # A missing test_result means the test stage never ran, and an incomplete
+        # run (unexpected termination, server death, kill by signal, early stop)
+        # leaves .profraw files that understate coverage. A completed run with
+        # failed tests still publishes. `test_result.status` is not enough here:
+        # aborts are reported as `FAIL`, and the check-errors aggregation can turn
+        # a runner-level `ERROR` into `FAIL`.
+        if test_result is None or not test_run_completed:
             _gate_reason = (
                 "the test stage did not run"
                 if test_result is None
-                else "the test runner terminated unexpectedly (runner-level ERROR)"
+                else "the test run did not complete"
             )
             print(
                 f"ERROR: {_gate_reason}, so this shard's coverage is incomplete; "
@@ -1910,6 +1915,10 @@ def main():
                 # unconditionally (even when tests fail) and visible in the CI report.
                 if os.path.exists(merged_file):
                     R.files.append(merged_file)
+                    # The job's goal is only to collect coverage: once the
+                    # profile of a completed run is published, failed tests do
+                    # not make the job fail. They stay visible in sub-results.
+                    reset_success = True
                 else:
                     print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
@@ -1917,7 +1926,7 @@ def main():
             print("No usable .profraw files found for coverage")
 
     if reset_success:
-        # coverage job ignores test failures
+        # coverage jobs ignore test failures
         R.set_success()
 
     R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
