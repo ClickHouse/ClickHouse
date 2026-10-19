@@ -31,7 +31,6 @@ ch_cc_library(
             "include/**/*.h",
         ],
     )) + [
-        ":c/lib.c",
     ],
     copts = [
         "-w",

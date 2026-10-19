@@ -39,14 +39,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + select({
         "@platforms//cpu:x86_64": [
-            ":src/avx512bitpacking.c",
-            ":src/avxbitpacking.c",
-            ":src/simdbitpacking.c",
-            ":src/simdcomputil.c",
-            ":src/simdfor.c",
-            ":src/simdintegratedbitpacking.c",
-            ":src/simdpackedsearch.c",
-            ":src/simdpackedselect.c",
         ],
         "@platforms//cpu:aarch64": [],
     }),

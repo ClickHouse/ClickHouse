@@ -32,7 +32,6 @@ ch_cc_library(
             "sha3.c",
         ],
     )) + [
-        ":sha3.c",
     ],
     copts = [
         "-w",

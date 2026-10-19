@@ -23,20 +23,9 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/rseq.c",
-            "src/smp.c",
-        ],
-    )) + [
-        ":src/rseq.c",
-        ":src/smp.c",
+    ] + [
+        ":src/librseq.pc.in",
+    ]) + [
     ],
     copts = [
         "-w",

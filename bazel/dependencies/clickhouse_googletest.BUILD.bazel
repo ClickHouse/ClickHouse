@@ -49,18 +49,31 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "googlemock/**",
-            "googletest/include/**",
-        ],
-        exclude = [
-            "googlemock/**/*.h",
-            "googlemock/src/gmock-all.cc",
-            "googletest/include/**/*.h",
-        ],
-    )) + [
-        ":googlemock/src/gmock-all.cc",
+    ] + [
+        ":googlemock/cmake/gmock.pc.in",
+        ":googlemock/cmake/gmock_main.pc.in",
+        ":googlemock/src/gmock-cardinalities.cc",
+        ":googlemock/src/gmock-internal-utils.cc",
+        ":googlemock/src/gmock-matchers.cc",
+        ":googlemock/src/gmock-spec-builders.cc",
+        ":googlemock/src/gmock.cc",
+        ":googlemock/test/gmock-actions_test.cc",
+        ":googlemock/test/gmock-cardinalities_test.cc",
+        ":googlemock/test/gmock-internal-utils_test.cc",
+        ":googlemock/test/gmock-matchers-arithmetic_test.cc",
+        ":googlemock/test/gmock-matchers-comparisons_test.cc",
+        ":googlemock/test/gmock-matchers-containers_test.cc",
+        ":googlemock/test/gmock-matchers-misc_test.cc",
+        ":googlemock/test/gmock-more-actions_test.cc",
+        ":googlemock/test/gmock-nice-strict_test.cc",
+        ":googlemock/test/gmock-port_test.cc",
+        ":googlemock/test/gmock-spec-builders_test.cc",
+        ":googlemock/test/gmock_leak_test.py",
+        ":googlemock/test/gmock_output_test.py",
+        ":googlemock/test/gmock_output_test_golden.txt",
+        ":googlemock/test/gmock_test.cc",
+        ":googlemock/test/gmock_test_utils.py",
+    ]) + [
     ],
     copts = [
         "-w",
@@ -102,19 +115,13 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "googlemock/include/**",
-            "googlemock/src/**",
-            "googletest/include/**",
-        ],
-        exclude = [
-            "googlemock/include/**/*.h",
-            "googlemock/src/gmock_main.cc",
-            "googletest/include/**/*.h",
-        ],
-    )) + [
-        ":googlemock/src/gmock_main.cc",
+    ] + [
+        ":googlemock/src/gmock-cardinalities.cc",
+        ":googlemock/src/gmock-internal-utils.cc",
+        ":googlemock/src/gmock-matchers.cc",
+        ":googlemock/src/gmock-spec-builders.cc",
+        ":googlemock/src/gmock.cc",
+    ]) + [
     ],
     copts = [
         "-w",
@@ -186,7 +193,6 @@ ch_cc_library(
             "googletest/src/gtest-all.cc",
         ],
     )) + [
-        ":googletest/src/gtest-all.cc",
     ],
     copts = [
         "-w",

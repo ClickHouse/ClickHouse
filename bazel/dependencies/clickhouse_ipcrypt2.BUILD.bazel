@@ -31,7 +31,6 @@ ch_cc_library(
             "src/ipcrypt2.c",
         ],
     )) + [
-        ":src/ipcrypt2.c",
     ],
     copts = [
         "-w",

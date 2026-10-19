@@ -97020,7 +97020,10 @@ ch_cc_library(
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_166 + glob(
+    ] + [
+        "@clickhouse_antlr4_cpp_runtime//:runtime/Cpp/runtime/src/tree/xpath/XPathLexer.g4",
+        "@clickhouse_antlr4_cpp_runtime//:runtime/Cpp/runtime/src/tree/xpath/XPathLexer.tokens",
+    ] + glob(
         ["src/Parsers/Prometheus/grammar/generated/**"],
         exclude = [
             "src/Parsers/Prometheus/grammar/generated/**/*.h",

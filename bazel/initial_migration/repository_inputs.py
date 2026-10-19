@@ -148,28 +148,47 @@ def textual_source_names(owner):
     Compare basenames conservatively: even an include in another directory
     keeps every source of that name. Unresolved includes keep every source.
     """
-    spec = REPOSITORIES[owner]
     suffixes = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm',
-                *CC_HEADER_SUFFIXES, '.def', '.in')
-    directive = re.compile(r'(?m)^[ \t]*#[ \t]*(include_next|include|import|embed)\b([^\r\n]*)')
-    literal = re.compile(r'^[ \t]*(?:"([^"\n]+)"|<([^>\n]+)>)(.*)$')
+                *CC_HEADER_SUFFIXES, '.def', '.defs', '.th', '.in', '.td', '.tbi',
+                '.tbl', '.icc', '.tpp')
+    directive = re.compile(r'(?m)^[ \t]*[%#][ \t]*(include_next|include|import|embed)\b([^\r\n]*)')
+    assembly = re.compile(r'(?mi)^[ \t]*\.(include|incbin)\b([^\r\n]*)')
+    literal = re.compile(r"""^[ \t]*(?:"([^"\n]+)"|<([^>\n]+)>|'([^'\n]+)')(.*)$""")
     included = set()
     unresolved = False
+
+    def scan(path, raw):
+        nonlocal unresolved
+        text = raw.decode('utf-8', errors='replace')
+        text = text.replace('\\\r\n', '').replace('\\\n', '')
+        expressions = (directive, assembly) if path.lower().endswith(('.s', '.asm', '.s.in', '.asm.in')) else (directive,)
+        for expression in expressions:
+            for match in expression.finditer(text):
+                operand = match[2].strip()
+                parsed = literal.match(operand)
+                if parsed:
+                    included.add(Path(next(s for s in parsed.groups()[:3] if s is not None)).name)
+                elif operand and not operand.startswith(('//', '/*', ';')):
+                    unresolved = True
+
+    if owner is None:
+        paths = subprocess.check_output(
+            ['git', 'ls-files', '-z', '--', 'src', 'base', 'programs', 'contrib/*-cmake',
+             'bazel/config', 'bazel/initial_migration'], cwd=ROOT,
+        ).decode().split('\0')
+        for path in paths:
+            source = ROOT / path
+            if path.endswith(suffixes) and source.is_file():
+                scan(path, source.read_bytes())
+        return None if unresolved else frozenset(included)
+    spec = REPOSITORIES[owner]
     with subprocess.Popen(['git', '-C', str(ROOT / owner), 'archive', '--format=tar',
                            spec['commit']], stdout=subprocess.PIPE) as process:
         with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
             for member in archive:
                 if not member.isfile() or not member.name.endswith(suffixes):
                     continue
-                text = archive.extractfile(member).read().decode('utf-8', errors='replace')
-                text = text.replace('\\\r\n', '').replace('\\\n', '')
-                for match in directive.finditer(text):
-                    operand = match[2].strip()
-                    parsed = literal.match(operand)
-                    if parsed:
-                        included.add(Path(parsed[1] or parsed[2]).name)
-                    elif operand and not operand.startswith(('//', '/*')):
-                        unresolved = True
+                scan(member.name, archive.extractfile(member).read())
         if process.wait():
             raise ValueError('Cannot scan pinned includes for ' + owner + ' at ' + spec['commit'])
     return None if unresolved else frozenset(included)

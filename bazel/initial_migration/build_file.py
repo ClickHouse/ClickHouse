@@ -12,7 +12,7 @@ from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
     directory_sources, execution_path, package_sources, repository, source_label, source_path, textual_source_names,
 )
-from initial_migration.simplify_globs import simplify_globs
+from initial_migration.simplify_globs import GlobFiles, simplify_globs
 
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
@@ -428,7 +428,7 @@ class BuildFile:
         if key in self.public_directories:
             return self.public_directories[key]
         targets = self.targets.get(arch, {})
-        directories, headers, seen = set(), set(), set()
+        directories, headers, repositories, seen = set(), set(), set(), set()
         pending = list(dependencies)
         while pending:
             # Configured native target names are unique across repositories.
@@ -447,6 +447,7 @@ class BuildFile:
             target = targets.get(target_name)
             if not target or target.get('kind') == 'EXECUTABLE':
                 continue
+            repositories.add(self.owners.get(target_name))
             pending.extend(target.get('deps', []))
             for dep_group in target.get('groups', []):
                 if dep_group.get('cmake_runtime') or dep_group.get('language') == 'ASM_NASM':
@@ -457,6 +458,12 @@ class BuildFile:
                     item for field in ('hdrs', 'textual_hdrs') for item in dep_group.get(field, [])
                     if isinstance(item, str) and item.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs'))
                 )
+                for field in ('hdrs', 'textual_hdrs'):
+                    for item in dep_group.get(field, []):
+                        if isinstance(item, HeaderDirectory):
+                            repositories.add(repository(item.directory))
+                        elif isinstance(item, str):
+                            repositories.add(repository(source_path(item)))
                 for item in dep_group.get('hdrs', []):
                     if (isinstance(item, HeaderDirectory)
                             and repository(item.directory) == self.owners.get(target_name)
@@ -465,7 +472,7 @@ class BuildFile:
                             and not (item.directory == 'contrib/boost' and target_name.startswith('_boost_'))
                             and not self.header_consumers.get(item.directory, set()) <= {target_name}):
                         directories.add(item.directory.rstrip('/') + '/')
-        result = tuple(sorted(directories)), frozenset(headers)
+        result = tuple(sorted(directories)), frozenset(headers), frozenset(repositories)
         self.public_directories[key] = result
         return result
 
@@ -484,7 +491,7 @@ class BuildFile:
                 if not any(directory.startswith(parent + '/') for parent in directories if parent != directory)
             ]
         custom = group.get('cmake_runtime') or group.get('language') == 'ASM_NASM'
-        supplied, supplied_labels = ((), ()) if custom else self.dependency_headers(
+        supplied, supplied_labels, supplied_repos = ((), (), frozenset()) if custom else self.dependency_headers(
             arch, tuple(group.get('deps', ())) + tuple(library_deps))
         for old_field, directories in original.items():
             for directory in directories:
@@ -578,21 +585,63 @@ class BuildFile:
                             continue
                     kept.append(item)
                 fields[field] = kept
-        if (not custom and not binary and self.owner in SOURCE_HEADER_DIRECTORIES
-                and self.owner.startswith('contrib/aws')):
+        if not custom and not {'-include', '-imacros', '-include-pch', '-include-pth', '-ivfsoverlay'}.intersection(
+            group.get('copts', ())
+        ):
+            # An input might be included by a header from another repository.
+            # Scan all repositories providing this compile group's headers.
+            related = {None, self.owner, *supplied_repos}
+            related.update(repository(directory) for paths in original.values() for directory in paths)
+            for field in ('srcs', 'hdrs', 'textual_hdrs'):
+                related.update(
+                    repository(source_path(item)) for item in fields[field] if isinstance(item, str)
+                )
+            related.difference_update({'contrib/sysroot', llvm_targets.PREFIX})
+            compiled_suffixes = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
+            documentation = re.compile(
+                r'^(?:CMakeLists\.txt|Makefile(?:\..*)?|GNUmakefile(?:\..*)?|'
+                r'LICENSE(?:[._-].*)?|COPYING(?:[._-].*)?|NOTICE(?:[._-].*)?|'
+                r'README(?:[._-].*)?|CHANGELOG(?:[._-].*)?)$', re.I,
+            )
             candidates = {
                 item for item in fields['additional_compiler_inputs']
-                if isinstance(item, str) and item in self.native_sources
-                and repository(source_path(item)) != self.owner
+                if isinstance(item, str) and repository(source_path(item)) not in {None, 'contrib/sysroot', llvm_targets.PREFIX}
+                and (source_path(item).endswith((*compiled_suffixes, '.md'))
+                     or documentation.fullmatch(Path(source_path(item)).name))
             }
-            if candidates:
-                included = textual_source_names(self.owner)
-                if included is not None:
-                    fields['additional_compiler_inputs'] = [
-                        item for item in fields['additional_compiler_inputs']
-                        if not isinstance(item, str) or item not in candidates
-                        or Path(source_path(item)).name in included
-                    ]
+            globs = self.owner not in {None, 'contrib/sysroot', llvm_targets.PREFIX} and any(
+                isinstance(item, Glob) for item in fields['additional_compiler_inputs']
+            )
+            if candidates or globs:
+                related.update(repository(source_path(item)) for item in candidates)
+                scans = [textual_source_names(owner) for owner in related]
+                if all(included is not None for included in scans):
+                    included = frozenset().union(*scans)
+                    kept = []
+                    files = GlobFiles(package_sources(self.owner)) if globs else None
+                    for item in fields['additional_compiler_inputs']:
+                        if isinstance(item, str):
+                            if item not in candidates or Path(source_path(item)).name in included:
+                                kept.append(item)
+                        elif globs and isinstance(item, Glob):
+                            original_files = files.result(item.patterns, item.exclude)
+                            data = [
+                                path for path in original_files
+                                if Path(path).name in included
+                                or not (path.endswith((*compiled_suffixes, '.md'))
+                                        or documentation.fullmatch(Path(path).name))
+                            ]
+                            # Keep large globs rather than listing hundreds of
+                            # files or adding another list of exclusions.
+                            if len(data) != len(original_files) and (
+                                len(data) <= 32 or len(data) <= 256 and len(data) * 3 < len(original_files)
+                            ):
+                                kept.extend(source_label(self.owner + '/' + path) for path in data)
+                            else:
+                                kept.append(item)
+                        else:
+                            kept.append(item)
+                    fields['additional_compiler_inputs'] = kept
         if custom:
             fields['hdrs'].extend(fields['textual_hdrs'])
             fields['hdrs'].extend(fields['additional_compiler_inputs'])

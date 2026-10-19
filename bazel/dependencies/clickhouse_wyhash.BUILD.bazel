@@ -8,7 +8,6 @@ package(
 
 exports_files([
     "LICENSE",
-    "Modern Non-Cryptographic Hash Function and Pseudorandom Number Generator.pdf",
     "README.md",
     "SupplementsInformation.zip",
     "benchmark.cpp",

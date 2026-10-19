@@ -1258,36 +1258,7 @@ ch_cc_library(
     ] + glob(["include/**/*.h"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/civil_time_detail.cc",
-            "src/time_zone_fixed.cc",
-            "src/time_zone_format.cc",
-            "src/time_zone_if.cc",
-            "src/time_zone_impl.cc",
-            "src/time_zone_info.cc",
-            "src/time_zone_libc.cc",
-            "src/time_zone_lookup.cc",
-            "src/time_zone_posix.cc",
-            "src/zone_info_source.cc",
-        ],
-    )) + [
-        ":src/civil_time_detail.cc",
-        ":src/time_zone_fixed.cc",
-        ":src/time_zone_format.cc",
-        ":src/time_zone_if.cc",
-        ":src/time_zone_impl.cc",
-        ":src/time_zone_info.cc",
-        ":src/time_zone_libc.cc",
-        ":src/time_zone_lookup.cc",
-        ":src/time_zone_posix.cc",
-        ":src/zone_info_source.cc",
+    ] + []) + [
     ],
     copts = (
         [

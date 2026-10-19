@@ -71,13 +71,6 @@ ch_cc_library(
             "randtable.c",
         ],
     )) + [
-        ":blocksort.c",
-        ":huffman.c",
-        ":crctable.c",
-        ":randtable.c",
-        ":compress.c",
-        ":decompress.c",
-        ":bzlib.c",
     ],
     copts = [
         "-w",

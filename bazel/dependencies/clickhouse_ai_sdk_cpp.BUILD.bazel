@@ -105,30 +105,7 @@ ch_cc_library(
     ])),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + glob(
-        [
-            "include/**",
-            "src/**",
-            "third_party/concurrentqueue-header-only/**",
-            "third_party/httplib-header-only/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/providers/anthropic/anthropic_client.cpp",
-            "src/providers/anthropic/anthropic_factory.cpp",
-            "src/providers/anthropic/anthropic_request_builder.cpp",
-            "src/providers/anthropic/anthropic_response_parser.cpp",
-            "src/providers/anthropic/anthropic_stream.cpp",
-            "third_party/concurrentqueue-header-only/**/*.h",
-            "third_party/httplib-header-only/**/*.h",
-        ],
-    )) + [
-        ":src/providers/anthropic/anthropic_client.cpp",
-        ":src/providers/anthropic/anthropic_request_builder.cpp",
-        ":src/providers/anthropic/anthropic_response_parser.cpp",
-        ":src/providers/anthropic/anthropic_stream.cpp",
-        ":src/providers/anthropic/anthropic_factory.cpp",
+    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
     features = ["system_include_paths"],
@@ -171,36 +148,7 @@ ch_cc_library(
     ])),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + glob(
-        [
-            "include/**",
-            "src/**",
-            "third_party/concurrentqueue-header-only/**",
-            "third_party/httplib-header-only/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/http/http_request_handler.cpp",
-            "src/providers/base_provider_client.cpp",
-            "src/tools/multi_step_coordinator.cpp",
-            "src/tools/tool_executor.cpp",
-            "src/types/generate_options.cpp",
-            "src/types/message.cpp",
-            "src/types/stream_options.cpp",
-            "src/types/stream_result.cpp",
-            "third_party/concurrentqueue-header-only/**/*.h",
-            "third_party/httplib-header-only/**/*.h",
-        ],
-    )) + [
-        ":src/types/generate_options.cpp",
-        ":src/types/stream_options.cpp",
-        ":src/types/stream_result.cpp",
-        ":src/types/message.cpp",
-        ":src/http/http_request_handler.cpp",
-        ":src/providers/base_provider_client.cpp",
-        ":src/tools/tool_executor.cpp",
-        ":src/tools/multi_step_coordinator.cpp",
+    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
     features = ["system_include_paths"],
@@ -250,30 +198,7 @@ ch_cc_library(
     ])),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + glob(
-        [
-            "include/**",
-            "src/**",
-            "third_party/concurrentqueue-header-only/**",
-            "third_party/httplib-header-only/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/providers/openai/openai_client.cpp",
-            "src/providers/openai/openai_factory.cpp",
-            "src/providers/openai/openai_request_builder.cpp",
-            "src/providers/openai/openai_response_parser.cpp",
-            "src/providers/openai/openai_stream.cpp",
-            "third_party/concurrentqueue-header-only/**/*.h",
-            "third_party/httplib-header-only/**/*.h",
-        ],
-    )) + [
-        ":src/providers/openai/openai_client.cpp",
-        ":src/providers/openai/openai_request_builder.cpp",
-        ":src/providers/openai/openai_response_parser.cpp",
-        ":src/providers/openai/openai_stream.cpp",
-        ":src/providers/openai/openai_factory.cpp",
+    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
     features = ["system_include_paths"],

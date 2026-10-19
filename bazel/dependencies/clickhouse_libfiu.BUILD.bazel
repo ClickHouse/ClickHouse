@@ -24,20 +24,14 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        ["libfiu/**"],
-        exclude = [
-            "libfiu/**/*.h",
-            "libfiu/backtrace.c",
-            "libfiu/fiu-rc.c",
-            "libfiu/fiu.c",
-            "libfiu/wtable.c",
-        ],
-    )) + [
-        ":libfiu/fiu.c",
-        ":libfiu/fiu-rc.c",
-        ":libfiu/backtrace.c",
-        ":libfiu/wtable.c",
+    ] + [
+        ":libfiu/doxygen/Doxyfile.base.in",
+        ":libfiu/doxygen/Doxyfile.internal",
+        ":libfiu/doxygen/Doxyfile.public",
+        ":libfiu/libfiu.3",
+        ":libfiu/libfiu.pc.in",
+        ":libfiu/symbols.map",
+    ]) + [
     ],
     copts = [
         "-w",

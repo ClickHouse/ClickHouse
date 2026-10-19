@@ -27,21 +27,15 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        ["**"],
-        exclude = [
-            "**/*.h",
-            "**/BUILD.bazel",
-            "bcrypt.c",
-            "crypt_blowfish/crypt_blowfish.c",
-            "crypt_blowfish/crypt_gensalt.c",
-            "crypt_blowfish/wrapper.c",
-        ],
-    )) + [
-        ":bcrypt.c",
-        ":crypt_blowfish/crypt_blowfish.c",
-        ":crypt_blowfish/crypt_gensalt.c",
-        ":crypt_blowfish/wrapper.c",
+    ] + [
+        ":.gitignore",
+        ":crypt_blowfish/LINKS",
+        ":crypt_blowfish/PERFORMANCE",
+        ":crypt_blowfish/crypt.3",
+        ":crypt_blowfish/glibc-2.1.3-crypt.diff",
+        ":crypt_blowfish/glibc-2.14-crypt.diff",
+        ":crypt_blowfish/glibc-2.3.6-crypt.diff",
+    ]) + [
     ],
     copts = [
         "-w",

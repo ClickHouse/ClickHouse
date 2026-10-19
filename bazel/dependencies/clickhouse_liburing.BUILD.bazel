@@ -92,22 +92,10 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        ["src/**"],
-        exclude = [
-            "src/**/*.h",
-            "src/queue.c",
-            "src/register.c",
-            "src/setup.c",
-            "src/syscall.c",
-            "src/version.c",
-        ],
-    )) + [
-        ":src/queue.c",
-        ":src/register.c",
-        ":src/setup.c",
-        ":src/syscall.c",
-        ":src/version.c",
+    ] + [
+        ":src/liburing-ffi.map",
+        ":src/liburing.map",
+    ]) + [
     ],
     copts = [
         "-w",

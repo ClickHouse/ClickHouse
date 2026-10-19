@@ -20,11 +20,6 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-        ":LICENSE",
-        ":README.md",
-        ":darwin/icudt78l_dat.S",
-        ":icudt78b_dat.S",
-        ":icudt78l_dat.S",
     ],
     features = [
         "system_include_paths",

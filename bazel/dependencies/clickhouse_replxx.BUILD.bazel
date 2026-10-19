@@ -33,38 +33,7 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "include/**/*.hxx",
-            "src/**/*.h",
-            "src/**/*.hxx",
-            "src/ConvertUTF.cpp",
-            "src/conversion.cxx",
-            "src/escape.cxx",
-            "src/history.cxx",
-            "src/prompt.cxx",
-            "src/replxx.cxx",
-            "src/replxx_impl.cxx",
-            "src/terminal.cxx",
-            "src/util.cxx",
-            "src/wcwidth.cpp",
-        ],
-    )) + [
-        ":src/conversion.cxx",
-        ":src/ConvertUTF.cpp",
-        ":src/escape.cxx",
-        ":src/history.cxx",
-        ":src/terminal.cxx",
-        ":src/prompt.cxx",
-        ":src/replxx_impl.cxx",
-        ":src/replxx.cxx",
-        ":src/util.cxx",
-        ":src/wcwidth.cpp",
+    ] + []) + [
     ],
     copts = [
         "-w",

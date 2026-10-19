@@ -36,7 +36,6 @@ ch_cc_library(
             "xxhash.c",
         ],
     )) + [
-        ":xxhash.c",
     ],
     copts = [
         "-w",

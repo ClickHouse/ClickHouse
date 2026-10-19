@@ -31,43 +31,19 @@ ch_cc_library(
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_compile_files",
-        ] + glob(
-            [
-                "include/**",
-                "src/**",
-            ],
-            exclude = [
-                "include/**/*.h",
-                "src/**/*.h",
-                "src/crc32c.cc",
-                "src/crc32c_portable.cc",
-                "src/crc32c_sse42.cc",
-            ],
-        ),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + glob(
-            [
-                "include/**",
-                "src/**",
-            ],
-            exclude = [
-                "include/**/*.h",
-                "src/**/*.h",
-                "src/crc32c.cc",
-                "src/crc32c_arm64.cc",
-                "src/crc32c_portable.cc",
-            ],
-        ),
-    }) + ([
-        ":src/crc32c_portable.cc",
-        ":src/crc32c.cc",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            ":src/crc32c_sse42.cc",
+        ] + [
+            ":src/crc32c_config.h.in",
         ],
         "@platforms//cpu:aarch64": [
-            ":src/crc32c_arm64.cc",
+            "@clickhouse_sysroot//:linux_compile_files",
+        ] + [
+            ":src/crc32c_config.h.in",
+        ],
+    }) + ([
+    ] + select({
+        "@platforms//cpu:x86_64": [
+        ],
+        "@platforms//cpu:aarch64": [
         ],
     })),
     copts = (

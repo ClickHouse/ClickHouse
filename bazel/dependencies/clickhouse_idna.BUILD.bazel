@@ -19,17 +19,19 @@ ch_cc_library(
     ] + glob(["include/**/*.h"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/idna.cpp",
-        ],
-    )) + [
-        ":src/idna.cpp",
+    ] + [
+        ":src/id_tables.cpp",
+        ":src/identifier.cpp",
+        ":src/mapping.cpp",
+        ":src/mapping_tables.cpp",
+        ":src/normalization.cpp",
+        ":src/normalization_tables.cpp",
+        ":src/punycode.cpp",
+        ":src/to_ascii.cpp",
+        ":src/to_unicode.cpp",
+        ":src/unicode_transcoding.cpp",
+        ":src/validity.cpp",
+    ]) + [
     ],
     copts = (
         [
