@@ -20,6 +20,9 @@ B | s LIKE '%ab%' | 0 | 1000	8578447766716292328	3000000
 B | s LIKE '%ab%' | 1 | 1000	8578447766716292328	3000000
 B | s LIKE '%oo%' AND s LIKE '%z%' | 0 | 1000	17360432100539901376	3001000
 B | s LIKE '%oo%' AND s LIKE '%z%' | 1 | 1000	17360432100539901376	3001000
-05407_plain_bulk_scan_applied	1
+C | position(s, '\x01xxx') > 0 | 0 | 0	0	0
+C | position(s, '\x01xxx') > 0 | 1 | 0	0	0
+05407_plain_bulk_scan_applied	197310
+05407_plain_bulk_scan_large_prefix	3
 05407_plain_bulk_scan_prefixes	6000
 05407_plain_bulk_scan_prefixes_zero	6000

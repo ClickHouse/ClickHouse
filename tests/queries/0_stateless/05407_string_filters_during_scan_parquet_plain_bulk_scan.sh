@@ -10,9 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # a batch of values together with their 4-byte length prefixes. The result must be the same with the
 # setting enabled and disabled. The second file has length prefixes that contain the needles: a needle shorter than
 # 4 bytes or with a zero byte is checked value by value, because its occurrence could start in a prefix.
+# The third file has a value of 16 MiB, whose length prefix contains the first byte of a 4-byte needle.
 
 FILE_A="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan.parquet"
 FILE_B="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_prefixes.parquet"
+FILE_C="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_large.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_A', Parquet, 'k UInt64, s String')
@@ -31,6 +33,12 @@ SELECT number, multiIf(
 FROM numbers(6000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0, output_format_parquet_row_group_size = 100000,
     output_format_parquet_data_page_size = 4096;
+
+INSERT INTO FUNCTION file('$FILE_C', Parquet, 'k UInt64, s String')
+SELECT number AS k, if(number = 1, repeat(repeat('x', 1024), 16384), 'zz') AS s
+FROM numbers(3)
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0, output_format_parquet_row_group_size = 100000,
+    output_format_parquet_data_page_size = 4096;
 "
 
 for cond in "s LIKE '%needle%'" "s LIKE '%needle%' AND s LIKE '%1%'" "s LIKE '%needle%' AND endsWith(s, '7')" "s LIKE '%value%'"; do
@@ -45,16 +53,24 @@ for cond in "position(s, 'abzz') > 0" "position(s, 'g') > 0" "position(s, 'o') >
     done
 done
 
-# A column that can be written to the columns cache is decoded without the filter, so that the cache gets its values.
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_A', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05407_plain_bulk_scan_applied' FORMAT Null"
+for enable in 0 1; do
+    echo "C | position(s, '\x01xxx') > 0 | $enable | $($CLICKHOUSE_CLIENT -q "SELECT count(), sum(cityHash64(s)), sum(k) FROM file('$FILE_C', Parquet) PREWHERE position(s, '\x01xxx') > 0 SETTINGS apply_string_filters_during_scan = $enable, use_columns_cache = 0")"
+done
+
+# Values decided by the bulk scan do not count towards the minimum size of skipped values, so the filter stays applied to
+# every value; checked one by one, these short values turn it off after 8192 checks.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_A', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_applied' FORMAT Null"
 # The 103-byte values have the length prefix 'g' and the values 'zz' the prefix '\x02\0\0\0', but no value contains these
 # needles, so every value is replaced.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_B', Parquet) PREWHERE position(s, 'g') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_prefixes' FORMAT Null"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_B', Parquet) PREWHERE position(s, '\x02\0\0\0zz') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_prefixes_zero' FORMAT Null"
+# The length prefix of the 16 MiB value ends with '\x01', so the scan finds '\x01xxx' there; the re-check of such large values
+# rejects it, so all 3 values are replaced.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_C', Parquet) PREWHERE position(s, '\x01xxx') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_large_prefix' FORMAT Null"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-SELECT log_comment, if(log_comment = '05407_plain_bulk_scan_applied', toUInt64(sum(ProfileEvents['StringValueFilterValuesReplaced']) > 0), sum(ProfileEvents['StringValueFilterValuesReplaced']))
+SELECT log_comment, sum(ProfileEvents['StringValueFilterValuesReplaced'])
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05407_plain_bulk_scan_%'
 GROUP BY log_comment
