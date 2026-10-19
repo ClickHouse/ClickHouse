@@ -43,6 +43,9 @@ namespace ProfileEvents
     extern const Event S3CredentialsAssumeRoleRequests;
     extern const Event S3CredentialsAssumeRoleErrors;
     extern const Event S3CredentialsAssumeRoleEmpty;
+    extern const Event S3ReadRequestsCount;
+    extern const Event S3WriteRequestsCount;
+    extern const Event S3WriteRequestsErrors;
 }
 
 namespace DB::S3RequestSetting
@@ -694,6 +697,8 @@ TEST(IOTestAwsS3Client, AssumeRoleProfileEvents)
     const auto requests = get(ProfileEvents::S3CredentialsAssumeRoleRequests);
     const auto errors = get(ProfileEvents::S3CredentialsAssumeRoleErrors);
     const auto empty = get(ProfileEvents::S3CredentialsAssumeRoleEmpty);
+    const auto s3_requests = get(ProfileEvents::S3ReadRequestsCount) + get(ProfileEvents::S3WriteRequestsCount);
+    const auto s3_errors = get(ProfileEvents::S3WriteRequestsErrors);
 
     {
         SCOPED_TRACE("AssumeRole fails");
@@ -723,6 +728,10 @@ TEST(IOTestAwsS3Client, AssumeRoleProfileEvents)
         EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleErrors), errors + 1);
         EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleEmpty), empty + 1);
     }
+
+    /// STS requests are not accounted as S3 requests.
+    EXPECT_EQ(get(ProfileEvents::S3ReadRequestsCount) + get(ProfileEvents::S3WriteRequestsCount), s3_requests);
+    EXPECT_EQ(get(ProfileEvents::S3WriteRequestsErrors), s3_errors);
 }
 
 TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)

@@ -1083,6 +1083,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
+            aws_client_configuration.for_credentials = true;
             AddProvider(
                 AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
                     aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
@@ -1102,6 +1103,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
+            aws_client_configuration.for_credentials = true;
             AddProvider(std::make_shared<SSOCredentialsProvider>(
                 std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
         }
@@ -1155,6 +1157,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.opt_disk_name,
                 configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
+            aws_client_configuration.for_credentials = true;
 
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
@@ -1373,6 +1376,7 @@ std::shared_ptr<AWSAssumeRoleClient> AWSAssumeRoleClient::create(
     /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
     /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
     auto sts_client_configuration = client_configuration;
+    sts_client_configuration.for_credentials = true;
 
     /// At most 3 retries.
     auto sts_retry_strategy = sts_client_configuration.retry_strategy;

@@ -239,7 +239,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , request_throttler(client_configuration.request_throttler)
+    , for_credentials(client_configuration.for_credentials)
+    , request_throttler(client_configuration.for_credentials ? HTTPRequestThrottler{} : client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
 }
@@ -251,7 +252,9 @@ PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_c
        .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
        .withTCPKeepAliveTimeout(Poco::Timespan(
            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
-    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
+    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter()),
+    /// Only the AWS SDK creates clients with its own configuration, to fetch ECS container credentials.
+    for_credentials(true)
 {
 }
 
@@ -336,6 +339,9 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
+    if (for_credentials)
+        return;
+
     static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
     {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
@@ -363,7 +369,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 
 void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
 {
-    if (latency == 0)
+    if (latency == 0 || for_credentials)
         return;
 
     if (type == S3LatencyType::Connect)
@@ -523,7 +529,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
     }
 
     addMetric(request, S3MetricType::Count);
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
+    std::optional<CurrentMetrics::Increment> metric_increment;
+    if (!for_credentials)
+        metric_increment.emplace(CurrentMetrics::S3Requests);
 
     UInt64 connect_time = 0;
     UInt64 first_byte_time = 0;
