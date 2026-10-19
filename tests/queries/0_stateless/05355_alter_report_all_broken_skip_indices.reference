@@ -1,0 +1,13 @@
+All three dependent indices reported
+Only retained dependent indices reported
+Single-index error includes index list
+Rename reports all dependent indices
+Clear reports all dependent indices
+Modify reports all dependent indices
+3	7
+idx_first
+idx_second
+idx_third
+idx_unrelated
+7
+idx_unrelated
