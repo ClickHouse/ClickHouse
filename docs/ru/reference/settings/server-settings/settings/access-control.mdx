@@ -10,14 +10,13 @@ doc_type: 'reference'
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-<div id="access_control_improvements">
-  ## access_control_improvements
-</div>
+## access_control_improvements {#access_control_improvements}
 
 Параметры для необязательных улучшений системы управления доступом.
 
 | Параметр                                        | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | По умолчанию |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `enable_read_write_grants`                      | Включает разделение привилегий `READ` и `WRITE` для внешних источников данных, таких как `S3`, `HDFS`, `Kafka` и другие. Доступно начиная с версии 25.7. Если установлено значение `true`, для источников можно выдавать привилегии `READ` и `WRITE` по отдельности вместо одной привилегии, охватывающей оба действия.                                                                                                                                                                                                                                                       | `false`      |
 | `on_cluster_queries_require_cluster_grant`      | Устанавливает, требуют ли запросы `ON CLUSTER` привилегию `CLUSTER`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `true`       |
 | `role_cache_expiration_time_seconds`            | Устанавливает количество секунд с момента последнего обращения, в течение которых роль хранится в кэше ролей.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `600`        |
 | `select_from_information_schema_requires_grant` | Устанавливает, требует ли `SELECT * FROM information_schema.<table>` каких-либо привилегий или может выполняться любым пользователем. Если установлено значение true, этот запрос требует `GRANT SELECT ON information_schema.<table>` так же, как и для обычных таблиц.                                                                                                                                                                                                                                                                                                      | `true`       |
@@ -39,12 +38,11 @@ doc_type: 'reference'
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 
-<div id="access_control_path">
-  ## access_control_path
-</div>
+## access_control_path {#access_control_path}
 
 Путь к каталогу, в котором сервер ClickHouse хранит конфигурации пользователей и ролей, созданные SQL-командами.
 
