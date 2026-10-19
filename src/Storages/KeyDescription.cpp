@@ -1,5 +1,6 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
@@ -141,11 +142,11 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     return key_context;
 }
 
-/// Whether the function, or the body of a lambda it stands for, calls one of `names`. A lambda body is a
+/// Whether the function, or the body of a lambda it stands for, is or calls a carrier. A lambda body is a
 /// separate DAG held by its FunctionCapture (FunctionExpression once constant-folded), not a child node.
-static bool callsAnyOf(const IFunctionBase & function, const std::unordered_set<std::string_view> & names)
+static bool callsAnyOf(const IFunctionBase & function, const std::function<bool(const IFunctionBase &)> & is_carrier)
 {
-    if (names.contains(function.getName()))
+    if (is_carrier(function))
         return true;
 
     const ActionsDAG * body = nullptr;
@@ -156,7 +157,7 @@ static bool callsAnyOf(const IFunctionBase & function, const std::unordered_set<
     if (!body)
         return false;
 
-    auto calls_none = [&](const IFunctionBase & inner) { return !callsAnyOf(inner, names); };
+    auto calls_none = [&](const IFunctionBase & inner) { return !callsAnyOf(inner, is_carrier); };
     for (const auto & node : body->getNodes())
         if (!allNodeFunctions(node, calls_none))
             return true;
@@ -180,21 +181,31 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
         deviating_functions.insert("h3ToGeo");
     if (settings[Setting::geotoh3_argument_order].value != baseline[Setting::geotoh3_argument_order].value)
         deviating_functions.insert("geoToH3");
-    if (settings[Setting::geo_distance_returns_float64_on_float64_arguments]
-        != baseline[Setting::geo_distance_returns_float64_on_float64_arguments])
-    {
-        /// One FunctionGeoDistance behind three names, and the setting picks Float32 arithmetic for all
-        /// of them, so the value is rounded rather than merely returned under a narrower type.
-        deviating_functions.insert("geoDistance");
-        deviating_functions.insert("greatCircleDistance");
-        deviating_functions.insert("greatCircleAngle");
-    }
-    if (deviating_functions.empty())
+    /// One FunctionGeoDistance behind three names. The setting only matters when an argument is Float64:
+    /// it then picks Float32 arithmetic, so the value is rounded rather than merely returned under a
+    /// narrower type. Without a Float64 argument both values of the setting compute in Float32.
+    const bool geo_distance_deviates = settings[Setting::geo_distance_returns_float64_on_float64_arguments]
+        != baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
+    if (deviating_functions.empty() && !geo_distance_deviates)
         return result;
+
+    auto is_carrier = [&](const IFunctionBase & function)
+    {
+        const auto & name = function.getName();
+        if (deviating_functions.contains(name))
+            return true;
+        if (!geo_distance_deviates || (name != "geoDistance" && name != "greatCircleDistance" && name != "greatCircleAngle"))
+            return false;
+        return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type)
+        {
+            WhichDataType which(removeLowCardinalityAndNullable(type));
+            return !which.isNumber() || which.isFloat64();
+        });
+    };
 
     /// Actions are linearized children-first, so one pass propagates the taint from a carrier function
     /// to every subexpression computed from it, up to the key column itself.
-    auto calls_none = [&](const IFunctionBase & function) { return !callsAnyOf(function, deviating_functions); };
+    auto calls_none = [&](const IFunctionBase & function) { return !callsAnyOf(function, is_carrier); };
     std::unordered_set<const ActionsDAG::Node *> tainted;
     for (const auto & action : key_expr.getActions())
     {
