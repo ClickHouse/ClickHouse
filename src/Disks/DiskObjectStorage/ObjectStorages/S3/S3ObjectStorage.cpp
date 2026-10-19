@@ -817,6 +817,9 @@ void S3ObjectStorage::applyNewSettings(
         apply_endpoint_settings();
     }
 
+    for (const auto & [name, value] : options.explicit_request_settings)
+        modified_settings->request_settings.setByName(name, value);
+
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 

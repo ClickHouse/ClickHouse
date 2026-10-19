@@ -203,6 +203,12 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
     }
 }
 
+void S3RequestSettings::setByName(const String & name, const String & value)
+{
+    impl->set(name, value);
+    normalizeSettings();
+}
+
 bool S3RequestSettings::hasChangesAffectingClient(const S3RequestSettings & settings) const
 {
     return impl->hasChangesAffectingClient(*settings.impl);

@@ -887,19 +887,16 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
 
-    /// Explicit arguments are applied last, so they take priority over the `<s3>` config when the storage is created.
+    /// Explicit arguments take priority over the `<s3>` config, both here and when the storage refreshes its settings
+    /// (see `StorageS3Configuration::getExplicitRequestSettings`).
     /// Writes re-apply the `s3_*` session settings on top, so `s3_upload_checksum_algorithm` still wins for uploads.
-    /// The algorithm names are upper-case, as `S3RequestSettings` normalizes them.
-    if (auto upload_checksum_algorithm = getFromPositionOrKeyValue<String>("upload_checksum_algorithm", args, {}, key_value_args);
-        upload_checksum_algorithm.has_value())
+    for (const auto * name : {"upload_checksum_algorithm", "delete_checksum_algorithm"})
     {
-        s3_settings->request_settings[S3RequestSetting::upload_checksum_algorithm] = boost::to_upper_copy(upload_checksum_algorithm.value());
-    }
-
-    if (auto delete_checksum_algorithm = getFromPositionOrKeyValue<String>("delete_checksum_algorithm", args, {}, key_value_args);
-        delete_checksum_algorithm.has_value())
-    {
-        s3_settings->request_settings[S3RequestSetting::delete_checksum_algorithm] = boost::to_upper_copy(delete_checksum_algorithm.value());
+        if (auto value = getFromPositionOrKeyValue<String>(name, args, {}, key_value_args); value.has_value())
+        {
+            s3_settings->request_settings.setByName(name, value.value());
+            explicit_request_settings[name] = value.value();
+        }
     }
 
     if (extra_credentials)
@@ -1195,6 +1192,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     url = std::move(parsed_arguments.url);
     s3_settings = std::move(parsed_arguments.s3_settings);
+    explicit_request_settings = std::move(parsed_arguments.explicit_request_settings);
     s3_capabilities = std::move(parsed_arguments.s3_capabilities);
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 }
