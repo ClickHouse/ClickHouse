@@ -14,5 +14,6 @@ CREATE TABLE merge2 (x UInt64) ENGINE = Merge(currentDatabase(), '^merge\\\\d\$'
 SELECT * FROM merge1;
 " 2>&1)
 
-grep -c -F 'Stack size too large' <<< "$output"
-grep -c -F 'address' <<< "$output"
+# `grep -c` exits with code 1 when the count is zero, so do not let it fail the test.
+grep -c -F 'Stack size too large' <<< "$output" ||:
+grep -c -F 'address' <<< "$output" ||:
