@@ -35,7 +35,7 @@ NOT_IMPLEMENTED
 --- a one-argument merge() stored by an older server names its local source ---
 stored one-argument merge(): 1
 OK: one-argument merge() source dumped before its reader
-one-argument merge() reader, bad-select gate emitted: 0
+one-argument merge() reader, bad-select gate emitted: 1
 --- a qualified cross-database dictionary() reference keeps its real dependency ---
 OK: dump succeeded
 OK: qualified dictionary() dependency ordered before its reader

@@ -52,7 +52,7 @@ Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: 1
 correlated subquery materialized view, correlated-subquery gate emitted: 1
 OK: function materialized views replayed
 function materialized views, replayed objects: 7
-scalar subquery joined on Dynamic keys, correlated-subquery gate emitted: 0
+scalar subquery joined on Dynamic keys, correlated-subquery gate emitted: 1
 OK: scalar subquery joined on Dynamic keys replayed
 scalar subquery joined on Dynamic keys, replayed objects: 1
 plain views, function gates emitted: 0
