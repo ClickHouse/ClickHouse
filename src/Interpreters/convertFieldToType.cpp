@@ -49,7 +49,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int INTEGER_TEXT_OVERFLOW;
 }
 
 
@@ -1263,7 +1262,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             catch (Exception & e)
             {
-                if (parse_composite && e.code() == ErrorCodes::INTEGER_TEXT_OVERFLOW)
+                /// Another error with this code, such as an out-of-range date, is thrown again by the unchecked validation read below.
+                if (settings.check_integer_text_overflow && e.code() == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
                     return false;
 
                 /// A value that ends before the deserializer expected is reported as an attempt to read after eof,

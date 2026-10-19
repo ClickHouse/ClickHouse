@@ -49,7 +49,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SYNTAX_ERROR;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int INTEGER_TEXT_OVERFLOW;
 }
 
 /// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
@@ -217,7 +216,7 @@ void throwNumberWithoutDigits()
 
 void throwIntegerTextOverflow()
 {
-    throw Exception(ErrorCodes::INTEGER_TEXT_OVERFLOW, "Integer is out of range of the destination type");
+    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
 }
 
 

@@ -41,6 +41,10 @@ SELECT [toUInt8(0)] < '[11579208923731619542357098500868790785326998466564056403
 SELECT [toUInt8(0)] = '[115792089237316195423570985008687907853269984665640564039457584007913129639980x]'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
 SELECT CAST((toUInt8(43), toUInt8(1)) AS Nullable(Tuple(UInt8, UInt8))) >= '(1,-57896044618658097711785492504343953926634992332820282019728792003956564819969)'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+-- an out-of-range element of another type is still reported, also after an integer that does not fit
+SELECT [toDateTime('2020-01-01 00:00:00', 'UTC')] = '[''2200-01-01 00:00:00'']' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT (toUInt8(1), toDateTime('2020-01-01 00:00:00', 'UTC')) = '(300,''2200-01-01 00:00:00'')' SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
 SELECT * FROM values('x Array(UInt64)', '[18446744073709551616]'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM values('x Array(UInt8)', '[300]'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM values('x Array(UInt8)', '[-1]'); -- { serverError ARGUMENT_OUT_OF_BOUND }
