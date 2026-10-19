@@ -50,11 +50,11 @@ void S3Capabilities::setIsBatchDeleteSupported(bool support_batch_delete_)
     support_batch_delete = support_batch_delete_;
 }
 
-bool S3Capabilities::setBatchDeleteUnsupportedIfUndecided()
+bool S3Capabilities::setBatchDeleteUnsupportedUnlessSupported()
 {
     std::lock_guard lock{mutex};
 
-    if (support_batch_delete.has_value())
+    if (support_batch_delete == true)
         return false;
 
     support_batch_delete = false;
