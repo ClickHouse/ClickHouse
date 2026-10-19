@@ -530,6 +530,14 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     return diff;
 }
 
+static bool hasMinMaxIndexOnColumn(const StorageInMemoryMetadata & metadata, const String & column_name)
+{
+    return std::ranges::any_of(metadata.secondary_indices, [&](const IndexDescription & index)
+    {
+        return index.type == "minmax" && !index.column_names.empty() && index.column_names.front() == column_name;
+    });
+}
+
 StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
@@ -692,6 +700,18 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             stale_implicit_index_columns.insert(column.name);
         if (redefined && (old_column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Alias))
             redefined_alias_columns.insert(column.name);
+
+        /// Implicit indices are not stored in Keeper, so every replicated ALTER regenerates them. An
+        /// earlier ALTER may have deliberately dropped the implicit index of an expression alias
+        /// because the files of the existing parts were built for its previous definition. Keep it
+        /// absent while the alias stays as it is: re-creating it on an unrelated ALTER would reuse
+        /// those stale files and prune wrong. The local ALTER path keeps the absence by editing the
+        /// metadata in place. An expression alias without any `minmax` index in the old metadata is
+        /// only possible after such a drop, after `DROP INDEX` of an explicit `minmax` index (which
+        /// the local path does not replace with an implicit one either), or when the policy does not
+        /// cover the column - and then it is not re-created anyway.
+        if (!redefined && is_expression_alias(column) && !hasMinMaxIndexOnColumn(old_metadata, column.name))
+            stale_implicit_index_columns.insert(column.name);
     }
 
     /// The implicit index of an expression alias is built over its expanded expression, so the
