@@ -74,6 +74,11 @@ struct SQLQueryPiece
     /// Operators and functions drop the metric name, i.e. the tag named '__name__.
     bool metric_name_dropped = false;
 
+    /// The metric name must be dropped from `group` but the SQL doing that isn't emitted yet, see dropMetricName()
+    /// and resolveMetricNameDrop(). While this flag is set `metric_name_dropped` is false and `group` still has the metric name.
+    /// Used only if `store_method` is VECTOR_GRID.
+    bool metric_name_drop_pending = false;
+
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
     /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
     /// They use the scale `ConverterContext::result_timestamp_scale`.

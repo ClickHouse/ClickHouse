@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -506,6 +507,9 @@ namespace
 ASTPtr finalizeSQL(SQLQueryPiece && result, ConverterContext & context)
 {
     ASTPtr res;
+
+    if (result.store_method == StoreMethod::VECTOR_GRID)
+        result = resolveMetricNameDrop(std::move(result), context);
 
     switch (result.type)
     {

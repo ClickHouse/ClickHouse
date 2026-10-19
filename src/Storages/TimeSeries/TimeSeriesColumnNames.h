@@ -51,6 +51,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
     static constexpr const char * ValueCounts = "value_counts";
+    static constexpr const char * SeriesCount = "series_count";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 

@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -104,6 +105,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
     if (phi_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
+    ASTPtr group = foldMetricNameDropIntoAggregation(operator_node, vector_arg);
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 
     /// PromQL evaluates `quantile` with an out-of-range or NaN parameter to a constant
@@ -132,7 +134,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.from_table = context.subqueries.back().name;
 
         ASTPtr new_group = transformGroupASTForAggregationOperator(
-            operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
+            operator_node, std::move(group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);

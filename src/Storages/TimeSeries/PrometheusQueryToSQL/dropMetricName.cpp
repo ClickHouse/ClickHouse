@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
@@ -19,7 +20,7 @@ namespace DB::PrometheusQueryToSQL
 
 SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context)
 {
-    if (query_piece.metric_name_dropped)
+    if (query_piece.metric_name_dropped || query_piece.metric_name_drop_pending)
         return std::move(query_piece);
 
     switch (query_piece.store_method)
@@ -54,6 +55,17 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// {tag1='value1', tag2='value2'}              value_c           value_d
             ///
             /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
+            ///
+            /// The check below regroups every series through anyForEach() and countForEach(), which costs as much as
+            /// the aggregation that usually follows (e.g. `sum(rate(...))`). So for a grid with more than one step the drop
+            /// is deferred: the consumer of the grid either folds it into its own aggregation (an element-wise aggregation
+            /// over series with the same metric name can't produce duplicates) or runs the check only for the series which
+            /// actually get the same tags, see resolveMetricNameDrop().
+            if (stepsInTimeSeriesRange(query_piece.start_time, query_piece.end_time, query_piece.step) > 1)
+            {
+                query_piece.metric_name_drop_pending = true;
+                return std::move(query_piece);
+            }
 
             /// Step 1:
             /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
