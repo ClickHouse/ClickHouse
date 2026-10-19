@@ -26,7 +26,8 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 /// Header of an index analysis result: one row (`part_name`, `ranges`) per part.
 SharedHeader indexAnalysisSampleBlock();
 
-/// Appends the ranges of every part in `block` to `result`.
+/// Appends the ranges of every part in `block` to `result`. `block` must have the structure of `indexAnalysisSampleBlock`:
+/// the column types are checked only by `assert_cast`, so another structure is undefined behavior in release builds.
 void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result);
 
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
