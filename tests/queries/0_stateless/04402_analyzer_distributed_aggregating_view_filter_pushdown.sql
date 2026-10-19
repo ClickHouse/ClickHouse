@@ -182,6 +182,12 @@ FROM (
         HAVING date GLOBAL NOT IN (SELECT toDate('2024-01-05') + number FROM numbers(1))
 );
 
+-- The right-hand side of `IN` may be a subquery, a union or a table, which have no result type.
+SELECT '--- HAVING with IN on a key that is not a Date';
+SELECT login, sum(x) FROM t_dist_04402 GROUP BY login HAVING login IN (SELECT 5) ORDER BY login;
+SELECT login, sum(x) FROM t_dist_04402 GROUP BY login HAVING login IN (SELECT 5 UNION ALL SELECT 7) ORDER BY login;
+SELECT login, sum(x) FROM t_dist_04402 GROUP BY login HAVING login GLOBAL IN (SELECT 5) ORDER BY login;
+
 -- The predicate is not moved for ROLLUP and TOTALS, where it would change the super-aggregate rows.
 SELECT '--- WITH ROLLUP';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date WITH ROLLUP HAVING date = '2024-01-05' ORDER BY date;

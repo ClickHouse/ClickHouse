@@ -54,6 +54,11 @@
 --- HAVING with GLOBAL NOT IN subquery reading a table function
 9
 1	0
+--- HAVING with IN on a key that is not a Date
+5	606
+5	606
+7	600
+5	606
 --- WITH ROLLUP
 2024-01-05	60002
 --- WITH TOTALS

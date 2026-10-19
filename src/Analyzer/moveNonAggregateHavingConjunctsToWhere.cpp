@@ -50,6 +50,14 @@ bool hasImplicitTimeZone(const DataTypePtr & type)
     return false;
 }
 
+/// The type of a function argument, or `nullptr` for a subquery or a table, like the right-hand side of `IN`.
+DataTypePtr getArgumentType(const QueryTreeNodePtr & argument)
+{
+    if (!argument || isTableExpressionNodeType(argument->getNodeType()))
+        return nullptr;
+    return removeLowCardinalityAndNullable(argument->getResultType());
+}
+
 /// Whether the function converts between a Unix timestamp and its calendar representation in the time zone
 /// of the executing server, without a `DateTime` or `DateTime64` value with an implicit time zone in between.
 bool dependsOnServerTimeZone(const FunctionNode & function_node)
@@ -63,11 +71,12 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         return false;
 
     const auto & function_name = function_base->getName();
-    auto first_argument_type = removeLowCardinalityAndNullable(arguments[0]->getResultType());
+    auto first_argument_type = getArgumentType(arguments[0]);
     bool returns_date = isDateOrDate32(removeLowCardinalityAndNullable(function_node.getResultType()));
 
     /// `toUnixTimestamp` parses a string in the time zone of the server.
-    if (function_name == "toUnixTimestamp" && arguments.size() == 1 && isStringOrFixedString(first_argument_type))
+    if (function_name == "toUnixTimestamp" && arguments.size() == 1 && first_argument_type
+        && isStringOrFixedString(first_argument_type))
         return true;
 
     /// A `Date` or `Date32` is converted to a point in time at its midnight in the time zone of the server,
@@ -75,7 +84,10 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
     /// or do not look at the value at all, are known to give the same result on every server.
     if (!returns_date
         && std::ranges::any_of(arguments, [](const QueryTreeNodePtr & argument)
-            { return argument && isDateOrDate32(removeLowCardinalityAndNullable(argument->getResultType())); }))
+            {
+                auto argument_type = getArgumentType(argument);
+                return argument_type && isDateOrDate32(argument_type);
+            }))
     {
         static const std::unordered_set<std::string_view> time_zone_independent_functions
         {
@@ -89,7 +101,7 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         return !time_zone_independent_functions.contains(function_name);
     }
 
-    if (!isNumber(first_argument_type))
+    if (!first_argument_type || !isNumber(first_argument_type))
         return false;
 
     /// `toDate(k)`, `toDate32(k)` and `CAST(k AS Date)` take a number as a Unix timestamp.
