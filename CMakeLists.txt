@@ -232,8 +232,7 @@ if (OS_DARWIN)
     # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
     # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
     # at launch, touching every data page, while chained fixups are applied lazily as pages are
-    # first touched. This reduces `clickhouse local --version` from 29 ms to 23 ms and
-    # `clickhouse local -q "select 1"` from 41 ms to 37 ms, with 11-14 MiB less memory.
+    # first touched, which makes startup faster.
     # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
     # enabled for x86_64, where the deployment target is 10.15.
     # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
