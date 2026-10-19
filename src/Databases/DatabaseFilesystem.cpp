@@ -65,8 +65,7 @@ String getPathToArchive(const String & table_path, const ContextPtr & context)
     return splitToArchiveParts(table_path, context).first;
 }
 
-/// `fs::weakly_canonical`, except that a component stat fails on is kept as written, the way a missing one is,
-/// instead of failing the whole path.
+/// Like `fs::weakly_canonical`, but a component stat fails on is kept as written instead of failing the whole path.
 fs::path canonicalizeResolvablePrefix(const fs::path & path)
 {
     fs::path prefix = path;
@@ -100,8 +99,7 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
-    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop. Containment is
-    /// then checked on the part of the path that resolves, as for a missing path.
+    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
     std::error_code ec;
     const bool path_exists = fs::exists(path, ec);
 
