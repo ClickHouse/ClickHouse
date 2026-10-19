@@ -10,15 +10,15 @@ exports_files([
 
 _GENERATED_HEADER_INPUTS_0 = [
     "@clickhouse//:base/base/time.h",
-    "@clickhouse//:contrib/cityhash102/include/city.h",
-    "@clickhouse//:contrib/cityhash102/include/citycrc.h",
-    "@clickhouse//:contrib/driftsort/driftsort.h",
-    "@clickhouse//:contrib/ipnsort/ipnsort.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/pdqsort/pdqsort.h",
+    "@clickhouse//contrib/cityhash102:include/city.h",
+    "@clickhouse//contrib/cityhash102:include/citycrc.h",
+    "@clickhouse//contrib/driftsort:driftsort.h",
+    "@clickhouse//contrib/ipnsort:ipnsort.h",
+    "@clickhouse//contrib/openssl-cmake:common/include/openssl/configuration.h",
+    "@clickhouse//contrib/openssl-cmake:common/include/openssl/crypto.h",
+    "@clickhouse//contrib/openssl-cmake:common/include/openssl/opensslv.h",
+    "@clickhouse//contrib/openssl-cmake:common/include/openssl/safestack.h",
+    "@clickhouse//contrib/pdqsort:pdqsort.h",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = select({
@@ -309,7 +309,7 @@ ch_cc_library(
     ),
     hdrs = select({
         "@platforms//cpu:x86_64": ([
-            "@clickhouse//:contrib/croaring-cmake/page_aligned_functions.h",
+            "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse_aws//:config/contrib/aws-cmake/include/aws/common/config.h",
             "@clickhouse_aws//:config/contrib/aws-cmake/include/aws/core/SDKConfig.h",
@@ -327,7 +327,7 @@ ch_cc_library(
             "include/**/*.h",
         ]),
         "@platforms//cpu:aarch64": ([
-            "@clickhouse//:contrib/croaring-cmake/page_aligned_functions.h",
+            "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse_aws//:config/contrib/aws-cmake/include/aws/common/config.h",
             "@clickhouse_aws//:config/contrib/aws-cmake/include/aws/core/SDKConfig.h",

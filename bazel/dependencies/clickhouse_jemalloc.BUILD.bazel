@@ -22,8 +22,8 @@ expand_template(
         },
     }),
     template = select({
-        "@platforms//cpu:x86_64": "@clickhouse//:contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in",
-        "@platforms//cpu:aarch64": "@clickhouse//:contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h.in",
+        "@platforms//cpu:x86_64": "@clickhouse//contrib/jemalloc-cmake:include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in",
+        "@platforms//cpu:aarch64": "@clickhouse//contrib/jemalloc-cmake:include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h.in",
     }),
 )
 
@@ -101,13 +101,13 @@ ch_cc_library(
     hdrs = ([
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
     ] + [
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_defs.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_macros.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_rename.h",
-        "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_typedefs.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/internal/jemalloc_preamble.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_macros.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_protos.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_rename.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_typedefs.h",
     ]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -136,6 +136,6 @@ ch_cc_library(
     ] + [
         "config/contrib/jemalloc-cmake/include_linux/jemalloc/internal",
     ]),
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )

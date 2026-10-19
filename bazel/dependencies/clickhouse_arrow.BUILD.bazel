@@ -462,9 +462,9 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config.h",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config_internal.h",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
     ] + glob([
         "cpp/src/**/*.h",
         "cpp/src/**/*.hpp",
@@ -1044,7 +1044,7 @@ ch_cc_library(
 cc_library(
     name = "_arrow",
     deps = [
-        "@clickhouse//:arrow_cmake_headers",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_boost//:_boost_filesystem",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
@@ -1412,9 +1412,9 @@ ch_cc_library(
 )
 
 _GENERATED_DEPS_2 = [
-    "@clickhouse//:clang_rt_builtins",
-    "@clickhouse//:clang_rt_xray",
-    "@clickhouse//:libllvmlibc",
+    "@clickhouse_llvm_project//:clang_rt_builtins",
+    "@clickhouse_llvm_project//:clang_rt_xray",
+    "@clickhouse_llvm_project//:libllvmlibc",
     ":_arrow",
     "@clickhouse_boost//:_boost_filesystem",
     "@clickhouse_boost//:_boost_regex",
@@ -1494,11 +1494,11 @@ _GENERATED_DEPS_2 = [
     "@clickhouse_abseil_cpp//:absl_time_zone",
     "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
     "@clickhouse_openssl//:crypto",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
+    "@clickhouse_llvm_project//:cxx",
+    "@clickhouse_llvm_project//:cxxabi",
+    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
     "@clickhouse_openssl//:ssl",
-    "@clickhouse//:unwind",
+    "@clickhouse_llvm_project//:unwind",
     "@clickhouse_google_protobuf//:utf8_validity",
     "@llvm-project//compiler-rt:headers",
     "@llvm-project//libc:libc_headers",
@@ -1665,7 +1665,7 @@ cc_binary(
     name = "parquet_dump_schema",
     srcs = ([
         "cpp/tools/parquet/parquet_dump_schema.cc",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob([
         "cpp/src/**/*.h",
         "cpp/src/**/*.hpp",
@@ -1690,7 +1690,7 @@ cc_binary(
     name = "parquet_reader",
     srcs = ([
         "cpp/tools/parquet/parquet_reader.cc",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob([
         "cpp/src/**/*.h",
         "cpp/src/**/*.hpp",
@@ -1715,7 +1715,7 @@ cc_binary(
     name = "parquet_scan",
     srcs = ([
         "cpp/tools/parquet/parquet_scan.cc",
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob([
         "cpp/src/**/*.h",
         "cpp/src/**/*.hpp",
@@ -1741,7 +1741,7 @@ cc_library(
     # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
     deps = [
         "@clickhouse//bazel:arrow_flatbuffer_headers",
-        "@clickhouse//:arrow_cmake_headers",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         ":arrow_source_headers",
     ],
 )

@@ -102,7 +102,7 @@ ch_cc_library(
 cc_library(
     name = "_boost_context",
     deps = [
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_boost_context__compile_0",
         ":_boost_context__compile_1",
     ],
@@ -132,11 +132,11 @@ _GENERATED_DEPS_1 = [
     "@llvm-project//libc:libc_headers",
     "@llvm-project//libunwind:headers",
     ":boost_headers",
-    "@clickhouse//:clang_rt_builtins",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
-    "@clickhouse//:unwind",
+    "@clickhouse_llvm_project//:clang_rt_builtins",
+    "@clickhouse_llvm_project//:cxx",
+    "@clickhouse_llvm_project//:cxxabi",
+    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+    "@clickhouse_llvm_project//:unwind",
 ]
 
 ch_cc_library(
@@ -159,7 +159,7 @@ ch_cc_library(
     ],
     deps = [
         ":boost_headers",
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
     alwayslink = False,
 )
@@ -297,7 +297,7 @@ ch_cc_library(
     ],
     deps = [
         ":boost_headers",
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
     alwayslink = False,
 )
@@ -319,7 +319,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":boost_headers",
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
     alwayslink = False,
 )

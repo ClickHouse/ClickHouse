@@ -19,13 +19,13 @@ _GENERATED_DEPS_1 = [
     "@llvm-project//libunwind:headers",
     ":_ai-sdk-cpp-core",
     "@clickhouse_brotli//:_brotli",
-    "@clickhouse//:clang_rt_builtins",
+    "@clickhouse_llvm_project//:clang_rt_builtins",
     "@clickhouse_openssl//:crypto",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
+    "@clickhouse_llvm_project//:cxx",
+    "@clickhouse_llvm_project//:cxxabi",
+    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
     "@clickhouse_openssl//:ssl",
-    "@clickhouse//:unwind",
+    "@clickhouse_llvm_project//:unwind",
 ]
 
 ch_cc_library(

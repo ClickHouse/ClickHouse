@@ -138,8 +138,8 @@ ch_cc_library(
         "libarchive/filter_fork_posix.c",
         "libarchive/filter_fork_windows.c",
         "libarchive/xxhash.c",
-        "@clickhouse//:contrib/libarchive-cmake/config.h",
-        "@clickhouse//:contrib/libarchive-cmake/illumos/config.h",
+        "@clickhouse//contrib/libarchive-cmake:config.h",
+        "@clickhouse//contrib/libarchive-cmake:illumos/config.h",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": [] + glob(["libarchive/**/*.h"]),

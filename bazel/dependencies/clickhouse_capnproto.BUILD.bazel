@@ -104,6 +104,6 @@ ch_cc_library(
     local_includes = [
         "c++/src",
     ],
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )

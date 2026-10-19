@@ -878,6 +878,13 @@ def main():
     ExternalConfigs(ROOT).run(write=True)
     ExternalCodegen(ROOT).run(write=True)
     LlvmOutputs(ROOT).run(write=True)
+    # Capture CMake at repository scope, then render native Bazel packages.
+    # Existing native BUILD files must not hide CMake inputs on a second run.
+    from initial_migration.first_party_packages import Migration as NativePackages
+    native_packages = NativePackages(ROOT, stage='base', from_generator=True)
+    for path, content in native_packages.prepare().items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

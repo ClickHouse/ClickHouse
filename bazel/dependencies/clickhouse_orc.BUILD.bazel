@@ -118,7 +118,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
     ] + [
-        "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+        "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
         "c++/include/orc/BloomFilter.hh",
         "c++/include/orc/ColumnPrinter.hh",
         "c++/include/orc/Common.hh",

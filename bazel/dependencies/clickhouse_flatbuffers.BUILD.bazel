@@ -44,7 +44,7 @@ ch_cc_library(
     local_includes = [
         "include",
     ],
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -271,14 +271,14 @@ cc_binary(
         "grpc",
     ],
     deps = [
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:clang_rt_xray",
-        "@clickhouse//:libllvmlibc",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
         ":_flatbuffers",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
         "@llvm-project//libunwind:headers",

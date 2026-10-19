@@ -83,9 +83,9 @@ ch_cc_library(
         "src/port/**/*.h",
     ]),
     hdrs = [
-        "@clickhouse//:contrib/postgres-cmake/pg_config.h",
-        "@clickhouse//:contrib/postgres-cmake/pg_config_os.h",
-        "@clickhouse//:contrib/postgres-cmake/pg_config_paths.h",
+        "@clickhouse//contrib/postgres-cmake:pg_config.h",
+        "@clickhouse//contrib/postgres-cmake:pg_config_os.h",
+        "@clickhouse//contrib/postgres-cmake:pg_config_paths.h",
     ],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",

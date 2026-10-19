@@ -93,7 +93,7 @@ ch_cc_library(
             "src/bind.c",
             "src/bind_config.c",
             "src/server.c",
-            "@clickhouse//:contrib/libssh-cmake/linux/x86-64/config.h",
+            "@clickhouse//contrib/libssh-cmake:linux/x86-64/config.h",
         ] + glob(["src/**/*.h"]),
         "@platforms//cpu:aarch64": [
             "src/agent.c",
@@ -166,7 +166,7 @@ ch_cc_library(
             "src/bind.c",
             "src/bind_config.c",
             "src/server.c",
-            "@clickhouse//:contrib/libssh-cmake/linux/aarch64/config.h",
+            "@clickhouse//contrib/libssh-cmake:linux/aarch64/config.h",
         ] + glob(["src/**/*.h"]),
     }),
     hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + glob([

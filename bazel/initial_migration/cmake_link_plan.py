@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import subprocess
 
 import sys
 
@@ -291,12 +292,39 @@ class Plan:
         repositories = {"@" + spec["name"]: owner for owner, spec in REPOSITORIES.items()}
         rust_names = {name + "_cc" for name in RUST_ARCHIVES.values()} | {"skim_bridge", "cxx_runtime"}
         declared = {}
+
+        def declarations(owner, filename):
+            key = owner if builds is not None else filename
+            if key not in declared:
+                if builds is not None:
+                    declared[key] = dict.fromkeys(builds[owner].names) if owner in builds else {}
+                else:
+                    parsed = ast.parse(filename.read_text(), filename=str(filename))
+                    declared[key] = {
+                        keyword.value.value: getattr(statement.value.func, "id", "")
+                        for statement in parsed.body
+                        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
+                        for keyword in statement.value.keywords
+                        if keyword.arg == "name" and isinstance(keyword.value, ast.Constant)
+                    }
+            return declared[key]
+
+        def resolved_name(names, name):
+            if name in names:
+                return name
+            collapsed = name.removesuffix("__compile_0")
+            if collapsed != name and collapsed in names and names[collapsed] in ("ch_cc_library", None):
+                return collapsed
+            return None
+
+        main_builds = None
         for index, label in enumerate(self.refs):
             if label.startswith("//bazel/rust:"):
                 if label.removeprefix("//bazel/rust:") not in rust_names:
                     raise ValueError("No declared Rust archive or bridge: " + label)
                 continue
             repository, rest = label.split("//", 1)
+            package, name = rest.split(":", 1)
             if repository:
                 if repository not in repositories:
                     raise ValueError("No declared Bazel repository: " + label)
@@ -304,26 +332,32 @@ class Plan:
                 filename = ROOT / "bazel/dependencies" / (REPOSITORIES[owner]["name"] + ".BUILD.bazel")
             else:
                 owner = None
-                filename = ROOT / "BUILD.bazel"
-            name = rest.removeprefix(":")
-            if owner not in declared:
-                if builds is not None:
-                    declared[owner] = dict.fromkeys(builds[owner].names) if owner in builds else {}
-                else:
-                    parsed = ast.parse(filename.read_text(), filename=str(filename))
-                    declared[owner] = {
-                        keyword.value.value: getattr(statement.value.func, "id", "")
-                        for statement in parsed.body
-                        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
-                        for keyword in statement.value.keywords
-                        if keyword.arg == "name" and isinstance(keyword.value, ast.Constant)
-                    }
-            if name not in declared[owner]:
-                collapsed = name.removesuffix("__compile_0")
-                if (collapsed == name or collapsed not in declared[owner]
-                        or declared[owner][collapsed] not in ("ch_cc_library", None)):
-                    raise ValueError("No Bazel target for " + label + " in " + str(filename))
-                self.refs[index] = repository + "//:" + collapsed
+                filename = ROOT / package / "BUILD.bazel"
+            resolved = resolved_name(declarations(owner, filename), name)
+            if resolved is None and builds is None and not repository and not package:
+                # CMake supplies target names without Bazel packages. Git does
+                # not recurse into the pinned contrib submodules.
+                if main_builds is None:
+                    files = subprocess.check_output([
+                        "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
+                        "src/BUILD.bazel", "src/**/BUILD.bazel",
+                        "base/BUILD.bazel", "base/**/BUILD.bazel",
+                        "programs/BUILD.bazel", "programs/**/BUILD.bazel",
+                        "contrib/BUILD.bazel", "contrib/**/BUILD.bazel",
+                    ], cwd=ROOT).decode().split("\0")
+                    main_builds = sorted({ROOT / path for path in files if path})
+                matches = []
+                for candidate in main_builds:
+                    target = resolved_name(declarations(None, candidate), name)
+                    if target is not None:
+                        matches.append((candidate.parent.relative_to(ROOT).as_posix(), target))
+                if len(matches) == 1:
+                    package, resolved = matches[0]
+                elif matches:
+                    raise ValueError("Multiple Bazel targets for " + label + ": " + repr(matches))
+            if resolved is None:
+                raise ValueError("No Bazel target for " + label + " in " + str(filename))
+            self.refs[index] = repository + "//" + package + ":" + resolved
         if len(set(self.refs)) != len(self.refs):
             raise ValueError("Collapsed compile libraries describe duplicate archive owners")
 

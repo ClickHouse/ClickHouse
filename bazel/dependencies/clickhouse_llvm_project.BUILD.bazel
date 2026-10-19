@@ -4480,11 +4480,11 @@ _GENERATED_HDRS_2 = [
     ":runtime_source_inputs",
     ":runtime_generated_headers",
     "@clickhouse//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
-    "@clickhouse//:contrib/libllvmlibc-cmake/string/aarch64_mem_functions.cpp",
-    "@clickhouse//:contrib/libllvmlibc-cmake/string/mem_functions.cpp",
-    "@clickhouse//:contrib/libllvmlibc-cmake/string/memmem.cpp",
-    "@clickhouse//:contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp",
-    "@clickhouse//:contrib/libllvmlibc-cmake/string/x86_cpu_dispatch.h",
+    "@clickhouse//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
+    "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
+    "@clickhouse//contrib/libllvmlibc-cmake:string/memmem.cpp",
+    "@clickhouse//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
+    "@clickhouse//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
     "@clickhouse//:contrib/libunwind-cmake/unwind-override.c",
 ]
 
@@ -4957,11 +4957,11 @@ _GENERATED_HDRS_3 = select({
         ":runtime_source_inputs",
         ":runtime_generated_headers",
         "@clickhouse//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/aarch64_mem_functions.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/mem_functions.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/memmem.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/x86_cpu_dispatch.h",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/memmem.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
         "@clickhouse//:contrib/libunwind-cmake/unwind-override.c",
     ],
 })
@@ -10948,7 +10948,7 @@ cc_library(
 cmake_runtime_objects(
     name = "libllvmlibc__runtime_objects_0",
     srcs = [
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/mem_functions.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
         "libc/src/math/generic/acos.cpp",
         "libc/src/math/generic/asin.cpp",
         "libc/src/math/generic/asinf.cpp",
@@ -10994,7 +10994,7 @@ cmake_runtime_objects(
         "libc/src/math/generic/sqrtl.cpp",
         "libc/src/math/generic/tan.cpp",
         "libc/src/math/generic/truncl.cpp",
-        "@clickhouse//:contrib/libllvmlibc-cmake/string/memmem.cpp",
+        "@clickhouse//contrib/libllvmlibc-cmake:string/memmem.cpp",
     ],
     hdrs = _GENERATED_HDRS_2,
     arch = select({
@@ -11135,7 +11135,7 @@ cc_library(
         ":libllvmlibc__runtime_objects_0",
     ],
     # Link LLVM math before the glibc-compatibility fallbacks reached through rseq.
-    deps = ["@clickhouse//:glibc-rseq"],
+    deps = ["@clickhouse//base/glibc-rseq:glibc-rseq"],
     alwayslink = True,
 )
 

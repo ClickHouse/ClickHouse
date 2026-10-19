@@ -1,0 +1,102 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["readpassphrase.h"])
+
+ch_cc_library(
+    name = "readpassphrase",
+    srcs = ["readpassphrase.c"],
+    hdrs = (select({
+        "@platforms//cpu:x86_64": [
+            "//bazel:config/x86_64/includes/configs/config_version.cpp",
+        ],
+        "@platforms//cpu:aarch64": [
+            "//bazel:config/aarch64/includes/configs/config_version.cpp",
+        ],
+    }) + [
+        "readpassphrase.h",
+    ]),
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+        "readpassphrase.c",
+    ],
+    copts = [
+        "-fxray-instrument",
+        "-fxray-modes=none",
+        "-fxray-instrumentation-bundle=function",
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
+        "-std=gnu11",
+        "-Wno-unused-result",
+        "-Wno-reserved-id-macro",
+        "-Wno-disabled-macro-expansion",
+        "-I",
+    ] + select({
+        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
+        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
+    }) + [
+        "-I",
+        "base/readpassphrase",
+    ],
+    language = "C",
+    local_defines = [
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "../../" + (llvm_toolchain_path() + "/libunwind/include"),
+        "../../" + (llvm_toolchain_path() + "/libc"),
+        "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
+        "../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
+    ],
+    deps = [
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "//base/glibc-compatibility:glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
+    ],
+    alwayslink = False,
+)
+
+cc_library(
+    name = "headers",
+    hdrs = glob([
+        "**/*.h",
+        "**/*.hh",
+        "**/*.hpp",
+        "**/*.hxx",
+        "**/*.h++",
+        "**/*.tlh",
+        "**/*.tli",
+        "**/*.H",
+        "**/*.tcc",
+    ]),
+    textual_hdrs = glob([
+        "**/*.inc",
+        "**/*.inl",
+        "**/*.ipp",
+        "**/*.tpp",
+        "**/*.icc",
+        "**/*.def",
+        "**/*.defs",
+        "**/*.th",
+        "**/*.td",
+        "**/*.tbl",
+        "**/*.tbi",
+        "**/*.ixx",
+        "**/*.cuh",
+        "**/*.msh",
+    ]),
+)

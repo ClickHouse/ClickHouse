@@ -65,19 +65,19 @@ copy_file(
 
 copy_file(
     name = "configure_include_private_autoconf_h",
-    src = "@clickhouse//:contrib/krb5-cmake/autoconf_linux.h",
+    src = "@clickhouse//contrib/krb5-cmake:autoconf_linux.h",
     out = "config/contrib/krb5-cmake/include_private/autoconf.h",
 )
 
 copy_file(
     name = "configure_include_private_osconf_h",
-    src = "@clickhouse//:contrib/krb5-cmake/osconf.h",
+    src = "@clickhouse//contrib/krb5-cmake:osconf.h",
     out = "config/contrib/krb5-cmake/include_private/osconf.h",
 )
 
 copy_file(
     name = "configure_include_private_profile_h",
-    src = "@clickhouse//:contrib/krb5-cmake/profile.h",
+    src = "@clickhouse//contrib/krb5-cmake:profile.h",
     out = "config/contrib/krb5-cmake/include_private/profile.h",
 )
 

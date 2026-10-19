@@ -168,7 +168,7 @@ ch_cc_library(
         "_XOPEN_SOURCE=600",
     ],
     textual_hdrs = ["src/common/src/mlib/vec.th"],
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )
 

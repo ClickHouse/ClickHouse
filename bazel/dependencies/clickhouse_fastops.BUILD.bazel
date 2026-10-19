@@ -102,7 +102,7 @@ ch_cc_library(
 cc_library(
     name = "_fastops",
     deps = [
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_fastops__compile_0",
         ":_fastops__compile_1",
     ],

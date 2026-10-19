@@ -31,7 +31,7 @@ ch_cc_library(
         "mecab/src/utils.cpp",
         "mecab/src/viterbi.cpp",
         "mecab/src/writer.cpp",
-        "@clickhouse//:contrib/MeCab-cmake/config.h",
+        "@clickhouse//contrib/MeCab-cmake:config.h",
     ],
     hdrs = glob(["mecab/src/**/*.h"]),
     copts = [
@@ -52,6 +52,6 @@ ch_cc_library(
     local_includes = [
         "mecab/src",
     ],
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )

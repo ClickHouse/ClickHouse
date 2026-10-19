@@ -275,11 +275,11 @@ _GENERATED_DEPS_1 = [
     "@llvm-project//compiler-rt:headers",
     "@llvm-project//libc:libc_headers",
     "@llvm-project//libunwind:headers",
-    "@clickhouse//:clang_rt_builtins",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
-    "@clickhouse//:unwind",
+    "@clickhouse_llvm_project//:clang_rt_builtins",
+    "@clickhouse_llvm_project//:cxx",
+    "@clickhouse_llvm_project//:cxxabi",
+    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+    "@clickhouse_llvm_project//:unwind",
 ]
 
 ch_cc_library(
@@ -294,7 +294,7 @@ ch_cc_library(
         ]
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )
 
@@ -310,7 +310,7 @@ ch_cc_library(
         ]
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )
 
@@ -330,6 +330,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )

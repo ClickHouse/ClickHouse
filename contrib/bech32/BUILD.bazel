@@ -1,0 +1,75 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE-MIT",
+    "include/bech32.h",
+])
+
+ch_cc_library(
+    name = "_bech32",
+    srcs = ["src/bech32.cpp"],
+    hdrs = ["include/bech32.h"],
+    additional_compiler_inputs = ["src/bech32.cpp"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        "contrib/bech32/include",
+        "-I",
+        "contrib/bech32/src",
+    ],
+    local_defines = [
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    deps = [
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "//base/glibc-compatibility:glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
+    ],
+    alwayslink = False,
+)
+
+cc_library(
+    name = "headers",
+    hdrs = glob([
+        "**/*.h",
+        "**/*.hh",
+        "**/*.hpp",
+        "**/*.hxx",
+        "**/*.h++",
+        "**/*.tlh",
+        "**/*.tli",
+        "**/*.H",
+        "**/*.tcc",
+    ]),
+    textual_hdrs = glob([
+        "**/*.inc",
+        "**/*.inl",
+        "**/*.ipp",
+        "**/*.tpp",
+        "**/*.icc",
+        "**/*.def",
+        "**/*.defs",
+        "**/*.th",
+        "**/*.td",
+        "**/*.tbl",
+        "**/*.tbi",
+        "**/*.ixx",
+        "**/*.cuh",
+        "**/*.msh",
+    ]),
+)

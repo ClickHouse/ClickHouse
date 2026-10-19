@@ -20,7 +20,7 @@ exports_files(["perfetto_protos.BUILD.bazel"])
 
 openssl_headers(
     name = "openssl_include",
-    configured_headers = "//:openssl_configured_headers",
+    configured_headers = "//contrib/openssl-cmake:openssl_configured_headers",
 )
 
 genrule(
@@ -30,7 +30,7 @@ genrule(
         "skim_bridge.h",
         "skim_bridge.cc",
     ],
-    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location skim_bridge.h) -o $(location skim_bridge.cc)",
+    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location //:skim_bridge.h) -o $(location //:skim_bridge.cc)",
     tools = ["@clickhouse_crates//:cxxbridge_cli"],
 )
 
@@ -89,8 +89,8 @@ alias(
 
 rust_cbindgen(
     name = "delta_ffi_headers",
-    srcs = ["//:delta_cbindgen_sources"],
-    cargo_config = "//:contrib/corrosion-cmake/config.toml.in",
+    srcs = ["//contrib/corrosion-cmake:delta_cbindgen_sources"],
+    cargo_config = "//contrib/corrosion-cmake:config.toml.in",
     cbindgen_tool = "@delta_crates//:cbindgen_cli",
     config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
     crate = "delta_kernel_ffi",
@@ -123,7 +123,7 @@ rust_static_library(
         cargo_package = spec["package"],
         cmake = ":cmake" if name == "wasmtime" else None,
         cmake_files = ":cmake_files" if name == "wasmtime" else None,
-        config = "//:cmake_cargo_config",
+        config = "//contrib/corrosion-cmake:config.toml.in",
         # Each Cargo action owns this directory in a fresh OCI rootfs.
         exec_properties = {
             "workload-isolation-type": "oci",

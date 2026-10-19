@@ -97,7 +97,7 @@ ch_cc_library(
 cc_library(
     name = "_zstd",
     deps = [
-        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_zstd__compile_0",
         ":_zstd__compile_1",
     ],

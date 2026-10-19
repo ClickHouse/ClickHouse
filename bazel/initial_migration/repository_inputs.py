@@ -109,7 +109,7 @@ def archived_sources(owner):
 
 @cache
 def directory_sources(directory):
-    """List the same source inputs as Bazel glob, respecting root packages."""
+    """List CMake source inputs; native generated BUILD files are not CMake inputs."""
     owner = repository(directory)
     if owner:
         relative = directory.removeprefix(owner).lstrip('/')
@@ -118,13 +118,16 @@ def directory_sources(directory):
                      if name.startswith(prefix))
     result = []
     start = ROOT / directory
-    if start != ROOT and any((start / build).is_file() for build in ('BUILD', 'BUILD.bazel')):
+    from initial_migration.first_party_packages import native_directory
+    if (start != ROOT and not native_directory(directory)
+            and any((start / build).is_file() for build in ('BUILD', 'BUILD.bazel'))):
         return ()
     for parent, dirs, names in os.walk(start):
-        # Each child BUILD declares a Bazel package that a parent glob cannot
-        # traverse. contrib http_archives instead remove their BUILD files.
+        # The initial CMake capture precedes native package rendering. Still
+        # respect Bazel infrastructure and independent Rust packages.
         dirs[:] = sorted(d for d in dirs
-                         if not any((Path(parent) / d / build).is_file()
+                         if native_directory((Path(parent) / d).relative_to(ROOT).as_posix())
+                         or not any((Path(parent) / d / build).is_file()
                                     for build in ('BUILD', 'BUILD.bazel')))
         for name in sorted(names):
             if name not in {'BUILD', 'BUILD.bazel'} and (Path(parent) / name).is_file():
@@ -134,18 +137,22 @@ def directory_sources(directory):
 
 @cache
 def package_sources(owner):
-    """List files that globs in a generated root package can reach."""
+    """List files for the initial repository-wide CMake capture."""
     if owner:
         # The archive's BUILD files are removed before Bazel adds the overlay.
         return (*archived_sources(owner), 'BUILD.bazel')
     names = subprocess.check_output(
         ['git', '-C', str(ROOT), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
     ).decode().split('\0')
+    from initial_migration.first_party_packages import native_directory
     packages = {
         name.rsplit('/', 1)[0] for name in names
         if '/' in name and Path(name).name in {'BUILD', 'BUILD.bazel'}
+        and not native_directory(name.rsplit('/', 1)[0])
     }
-    return tuple(name for name in names if name and not any(name.startswith(p + '/') for p in packages))
+    return tuple(name for name in names if name
+                 and Path(name).name not in {'BUILD', 'BUILD.bazel'}
+                 and not any(name.startswith(p + '/') for p in packages))
 
 
 @cache

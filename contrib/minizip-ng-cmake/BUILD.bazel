@@ -1,0 +1,40 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["mz_config.h"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob([
+        "**/*.h",
+        "**/*.hh",
+        "**/*.hpp",
+        "**/*.hxx",
+        "**/*.h++",
+        "**/*.tlh",
+        "**/*.tli",
+        "**/*.H",
+        "**/*.tcc",
+    ]),
+    textual_hdrs = glob([
+        "**/*.inc",
+        "**/*.inl",
+        "**/*.ipp",
+        "**/*.tpp",
+        "**/*.icc",
+        "**/*.def",
+        "**/*.defs",
+        "**/*.th",
+        "**/*.td",
+        "**/*.tbl",
+        "**/*.tbi",
+        "**/*.ixx",
+        "**/*.cuh",
+        "**/*.msh",
+    ]),
+)

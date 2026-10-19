@@ -37,7 +37,7 @@ ch_cc_library(
         "lib/dlopen.c",
         "lib/client.c",
         "lib/checkpw.c",
-        "@clickhouse//:contrib/cyrus-sasl-cmake/config.h",
+        "@clickhouse//contrib/cyrus-sasl-cmake:config.h",
     ] + glob(["**/*.h"]),
     hdrs = [
         ":config/contrib/cyrus-sasl-cmake/prop.h",

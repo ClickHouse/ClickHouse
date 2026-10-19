@@ -61,7 +61,7 @@ ch_cc_library(
         "cram-md5/server.c",
         "cram-md5/digest.c",
     ] + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"])),
-    hdrs = (["@clickhouse//:contrib/libgsasl-cmake/linux_x86_64/include/config.h"] + glob(["**/*.h"])),
+    hdrs = (["@clickhouse//contrib/libgsasl-cmake:linux_x86_64/include/config.h"] + glob(["**/*.h"])),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",

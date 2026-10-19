@@ -1,0 +1,65 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "harmful",
+    srcs = ["harmful.c"],
+    hdrs = [],
+    additional_compiler_inputs = [
+        "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
+        "//base/poco/Foundation:src/Environment_UNIX.cpp",
+        "//base/poco/Foundation:src/Event_POSIX.cpp",
+        "//base/poco/Foundation:src/FPEnvironment_C99.cpp",
+        "//base/poco/Foundation:src/FPEnvironment_SUN.cpp",
+        "//base/poco/Foundation:src/FileStream_POSIX.cpp",
+        "//base/poco/Foundation:src/File_UNIX.cpp",
+        "//base/poco/Foundation:src/LogFile_STD.cpp",
+        "//base/poco/Foundation:src/Mutex_POSIX.cpp",
+        "//base/poco/Foundation:src/NamedEvent_Android.cpp",
+        "//base/poco/Foundation:src/NamedEvent_UNIX.cpp",
+        "//base/poco/Foundation:src/NamedMutex_Android.cpp",
+        "//base/poco/Foundation:src/NamedMutex_UNIX.cpp",
+        "//base/poco/Foundation:src/Path_UNIX.cpp",
+        "//base/poco/Foundation:src/PipeImpl_POSIX.cpp",
+        "//base/poco/Foundation:src/Process_UNIX.cpp",
+        "//base/poco/Foundation:src/RWLock_Android.cpp",
+        "//base/poco/Foundation:src/RWLock_POSIX.cpp",
+        "//base/poco/Foundation:src/Semaphore_POSIX.cpp",
+        "//base/poco/Foundation:src/SharedLibrary_UNIX.cpp",
+        "//base/poco/Foundation:src/SharedMemory_POSIX.cpp",
+        "//base/poco/Foundation:src/Thread_POSIX.cpp",
+        "//base/poco/Foundation:src/Timezone_UNIX.cpp",
+        "//base/poco/XML:src/xmltok_impl.c",
+        "//base/poco/XML:src/xmltok_ns.c",
+        "harmful.c",
+    ],
+    copts = [
+        "-std=gnu11",
+        "-I",
+        "base",
+        "-Wno-error",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    deps = [
+        "@llvm-project//compiler-rt:headers",
+        "//:headers",
+        "//base/glibc-compatibility:headers",
+        "//base/glibc-rseq:headers",
+        "//base/poco/Foundation:headers",
+        "//base/poco/JSON:headers",
+        "//base/poco/Net:headers",
+        "//base/poco/NetSSL_OpenSSL:headers",
+        "//base/poco/Redis:headers",
+        "//base/poco/Util:headers",
+        "//base/poco/XML:headers",
+        "//base/readpassphrase:headers",
+        "//base/widechar_width:headers",
+    ],
+    alwayslink = False,
+)
