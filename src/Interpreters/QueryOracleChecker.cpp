@@ -1197,8 +1197,7 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
             collectReadParts(identifier->createTable(), context, parts, depth);
     }
 
-    for (const auto & child : ast->children)
-        collectReadParts(child, context, parts, depth);
+    forEachChild(ast, [&](const ASTPtr & child) { collectReadParts(child, context, parts, depth); });
 }
 
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
