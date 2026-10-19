@@ -98,7 +98,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
                 <td colSpan={6} style={{ textAlign: "center" }}>
                   <DateCell date="Completed" status="green" />
                 </td>
-                <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
               ) : (
                 <>
                   <td style={groupStartStyle}><DateCell date={release.fast_start_date} note={release.fast_delay_note} status={release.fast_progress} /></td>
@@ -107,9 +106,9 @@ const ReleaseSchedule = ({ releases = [] }) => {
                   <td><DateCell date={release.regular_end_date} status={release.regular_progress} /></td>
                   <td style={groupStartStyle}><DateCell date={release.slow_start_date} note={release.slow_delay_note} status={release.slow_progress} /></td>
                   <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
-                  <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
                 </>
               )}
+              <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
             </tr>
           );
         })}
