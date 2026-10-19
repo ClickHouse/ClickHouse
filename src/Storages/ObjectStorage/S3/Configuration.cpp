@@ -887,7 +887,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
 
-    /// Explicit arguments are applied last, so they take priority over the `<s3>` config and the `s3_*` query settings.
+    /// Explicit arguments are applied last, so they take priority over the `<s3>` config when the storage is created.
+    /// Writes re-apply the `s3_*` session settings on top, so `s3_upload_checksum_algorithm` still wins for uploads.
     /// The algorithm names are upper-case, as `S3RequestSettings` normalizes them.
     if (auto upload_checksum_algorithm = getFromPositionOrKeyValue<String>("upload_checksum_algorithm", args, {}, key_value_args);
         upload_checksum_algorithm.has_value())

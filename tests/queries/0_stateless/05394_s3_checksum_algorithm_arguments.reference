@@ -1,5 +1,5 @@
 Invalid algorithms are rejected
-Argument overrides the query setting
+Argument is applied after the query setting
 Valid algorithms are accepted in any case
 4
 4

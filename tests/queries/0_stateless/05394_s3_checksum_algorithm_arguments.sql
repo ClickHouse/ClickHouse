@@ -5,8 +5,8 @@ SELECT 'Invalid algorithms are rejected';
 SELECT * FROM s3('http://localhost:11111/test/bucket', 'CSV', 'x String', upload_checksum_algorithm='MD4'); -- { serverError INVALID_SETTING_VALUE }
 SELECT * FROM s3('http://localhost:11111/test/bucket', 'CSV', 'x String', delete_checksum_algorithm='MD4'); -- { serverError INVALID_SETTING_VALUE }
 
--- An explicit argument takes priority over the query-level setting.
-SELECT 'Argument overrides the query setting';
+-- The argument is parsed after the query-level setting, so its value is the one validated.
+SELECT 'Argument is applied after the query setting';
 SELECT * FROM s3('http://localhost:11111/test/bucket', 'CSV', 'x String', upload_checksum_algorithm='MD4') SETTINGS s3_upload_checksum_algorithm='SHA256'; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT 'Valid algorithms are accepted in any case';
