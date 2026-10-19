@@ -1,5 +1,13 @@
 """Declared license rendering and copies of source files read by Clang #embed."""
 
+def codegen_for_arch(attrs, arch):
+    """Use the requested generated-file directory for one shared CMake command."""
+    prefix = "gen/" + arch + "/"
+    return {
+        key: [item.replace("gen/{arch}/", prefix) for item in value] if key in ("srcs", "outs", "tools") else value.replace("gen/{arch}/", prefix)
+        for key, value in attrs.items()
+    }
+
 def _licenses_impl(ctx):
     if len(ctx.files.srcs) != len(ctx.attr.source_paths):
         fail("Each source_paths entry must have exactly one input file in srcs")

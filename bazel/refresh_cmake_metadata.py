@@ -12,6 +12,7 @@ import struct
 import tarfile
 
 from build_file import starlark
+from codegen import render_license
 from cmake_metadata import read_metadata, write_metadata
 from generate_build import ARCHES, BUILD_OPTIONS_OUTPUT, LICENSES_OUTPUT, ROOT, cmake_build_options
 from repository_inputs import source_label
@@ -38,6 +39,30 @@ def _codegen_records(source):
 
 def _literal_fields(record):
     return {ast.literal_eval(k): v for k, v in zip(record.keys, record.values)}
+
+
+def _license_inputs(source):
+    return ast.literal_eval(next(
+        statement.value for statement in ast.parse(source).body
+        if isinstance(statement, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == '_LICENSE_INPUTS'
+                for target in statement.targets)
+    ))
+
+
+def _license_fields(record, license_inputs):
+    fields = _literal_fields(record)
+    common = {
+        'source_paths': ('list(_LICENSE_INPUTS)', list(license_inputs)),
+        'srcs': ('list(_LICENSE_INPUTS.values())', list(license_inputs.values())),
+    }
+    result = {}
+    for key, field in fields.items():
+        if key in common and ast.dump(field) == ast.dump(ast.parse(common[key][0], mode='eval').body):
+            result[key] = common[key][1]
+        else:
+            result[key] = ast.literal_eval(field)
+    return result
 
 
 def _license_substitutions(root, reference):
@@ -168,7 +193,8 @@ def _full_reference(root, build, arch, metadata, check):
                          + ', '.join(sorted(differences)))
 
     licenses = 'generate_' + arch + '_licenses'
-    before = ast.literal_eval(records[licenses])
+    license_inputs = _license_inputs(codegen)
+    before = _license_fields(records[licenses], license_inputs)
     inputs = dict(zip(before['source_paths'], before['srcs'], strict=True))
     for replacement in substitutions.values():
         if replacement is not None:
@@ -190,7 +216,7 @@ def _full_reference(root, build, arch, metadata, check):
         'srcs': [inputs[source] for source in sorted(inputs)],
     })
     updates = [(records[licenses].lineno - 1, records[licenses].end_lineno,
-                '  ' + starlark(licenses) + ': ' + starlark(attrs, 2) + ',\n')]
+                '  ' + starlark(licenses) + ': ' + render_license(attrs, license_inputs) + ',\n')]
     for namespace, mtime in mtimes.items():
         record = records['generate_' + arch + '_' + namespace]
         fields = _literal_fields(record)
