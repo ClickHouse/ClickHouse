@@ -38,6 +38,15 @@ SELECT count()
 FROM t_hier_merge_join_left AS l INNER JOIN t_hier_merge_join_right AS r ON l.id = r.id
 SETTINGS join_algorithm = 'hash,ie_join';
 
+SELECT count()
+FROM t_hier_merge_join_left AS l INNER JOIN t_hier_merge_join_right AS r ON l.id = r.id
+SETTINGS join_algorithm = 'auto,full_sorting_merge';
+
+-- With a spill threshold `grace_hash` takes the join and never passes it on to `full_sorting_merge`.
+SELECT count()
+FROM t_hier_merge_join_left AS l INNER JOIN t_hier_merge_join_right AS r ON l.id = r.id
+SETTINGS join_algorithm = 'grace_hash,full_sorting_merge', max_bytes_before_external_join = 1000000000;
+
 SELECT '-- a fragment that really builds a full sort rejects the invalid value --';
 
 SELECT count()
