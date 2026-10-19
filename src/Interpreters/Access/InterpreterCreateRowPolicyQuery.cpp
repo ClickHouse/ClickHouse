@@ -10,6 +10,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Context.h>
@@ -35,6 +36,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -102,20 +108,35 @@ namespace
     void checkFilterResolves(
         const ASTPtr & filter, const ASTPtr & expanded, const StoragePtr & storage, const String & policy_name, const ContextPtr & context)
     {
-        const auto metadata = storage->getInMemoryMetadataPtr(context, false);
-        const auto & columns = metadata->getColumns();
-        if (columns.empty() || readsOtherObjects(*expanded, columns))
-            return;
-
-        TableNodePtr table_node;
-        const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
-        if (proxy && !proxy->tryGetNested() && referencesOnlyDeclaredColumns(*expanded, columns))
-            table_node = std::make_shared<TableNode>(std::make_shared<StorageDummy>(storage->getStorageID(), columns), context);
-        else
-            table_node = std::make_shared<TableNode>(storage, context);
-
         try
         {
+            TableNodePtr table_node;
+            const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+            if (proxy && !proxy->tryGetNested())
+            {
+                const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                const auto & columns = metadata->getColumns();
+                if (columns.empty() || readsOtherObjects(*expanded, columns))
+                    return;
+                if (referencesOnlyDeclaredColumns(*expanded, columns))
+                    table_node = std::make_shared<TableNode>(std::make_shared<StorageDummy>(storage->getStorageID(), columns), context);
+            }
+
+            if (!table_node)
+            {
+                auto lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                if (!lock)
+                    return;
+                /// As a read does, refresh the columns of a storage whose schema lives outside the server.
+                storage->updateExternalDynamicMetadataIfExists(context);
+                auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                const auto & columns = metadata->getColumns();
+                if (columns.empty() || readsOtherObjects(*expanded, columns))
+                    return;
+                auto snapshot = storage->getStorageSnapshot(metadata, context);
+                table_node = std::make_shared<TableNode>(storage, std::move(lock), std::move(snapshot));
+            }
+
             auto filter_query_tree = buildFilterQueryTree(filter->clone(), table_node, context);
             assertNoAggregateFunctionNodes(filter_query_tree, "in row policy filter");
             assertNoWindowFunctionNodes(filter_query_tree, "in row policy filter");

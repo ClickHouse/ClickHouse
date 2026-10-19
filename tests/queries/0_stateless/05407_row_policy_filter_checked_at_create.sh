@@ -97,6 +97,7 @@ CREATE FUNCTION ${FPART} AS () -> _part != '';
 
 CREATE ROW POLICY p_lazy ON ${DB_LAZY}.* USING id >= 0 TO ALL;
 DROP ROW POLICY p_lazy ON ${DB_LAZY}.*;
+CREATE ROW POLICY p_lazy ON ${DB_LAZY}.* USING tuple(id) TO ALL; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 SELECT name, engine FROM system.tables WHERE database = '${DB_LAZY}' ORDER BY name;
 
 CREATE ROW POLICY p_lazy ON ${DB_LAZY}.* USING x = 1 TO ALL; -- { serverError UNKNOWN_IDENTIFIER }
@@ -125,8 +126,10 @@ CREATE ROW POLICY p_arr ON t_arr USING id IN allowed TO ALL;
 SELECT 'arr', count() FROM t_arr;
 DROP ROW POLICY p_arr ON t_arr;
 
--- A row filter cannot aggregate.
+-- A row filter cannot aggregate or use window functions.
 CREATE ROW POLICY p_agg ON t_src USING sum(id) > 0 TO ALL; -- { serverError ILLEGAL_AGGREGATION }
+CREATE ROW POLICY p_agg ON t_src USING row_number() OVER () > 0 TO ALL; -- { serverError ILLEGAL_AGGREGATION }
+CREATE ROW POLICY p_agg ON t_src USING grouping(id) = 0 TO ALL; -- { serverError ILLEGAL_AGGREGATION }
 
 SELECT 'left', count() FROM system.row_policies WHERE database IN (currentDatabase(), '${DB_LAZY}');
 DROP DATABASE ${DB_LAZY} SYNC;
