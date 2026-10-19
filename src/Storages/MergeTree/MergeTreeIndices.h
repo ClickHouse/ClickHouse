@@ -315,7 +315,8 @@ struct IMergeTreeIndex
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
-    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    /// Probes `getPotentialSubstreams`, so reimplement that one to cover another version.
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
@@ -444,8 +445,9 @@ String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
-/// the archive check, which is fine for callers that only see standalone per-file layouts.
+/// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
+/// the archive index of @storage and never asks the disk about the file. Passing a null @storage
+/// skips the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
