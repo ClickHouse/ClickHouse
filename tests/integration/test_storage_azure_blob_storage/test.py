@@ -27,7 +27,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
+            main_configs=[
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+                "configs/blob_log.xml",
+                "configs/dynamic_disk_include.xml",
+                "configs/dynamic_disk_include_source.xml",
+            ],
             user_configs=["configs/disable_profilers.xml", "configs/users.xml", "configs/sync_inserts.xml"],
             with_azurite=True,
             stay_alive=True,
@@ -2075,6 +2081,7 @@ def test_server_credentials_on_reload(cluster):
 
     node.query("DROP TABLE IF EXISTS test_server_credentials_reload SYNC")
     node.query("DROP TABLE IF EXISTS test_server_credentials_disk_reload SYNC")
+    node.query("DROP TABLE IF EXISTS test_server_credentials_include_disk_reload SYNC")
     node.query("DROP NAMED COLLECTION IF EXISTS azure_server_credentials_reload")
     node.query(
         f"CREATE NAMED COLLECTION azure_server_credentials_reload AS storage_account_url = '{url}', container = 'cont',"
@@ -2102,6 +2109,17 @@ def test_server_credentials_on_reload(cluster):
         "SHOW CREATE TABLE test_server_credentials_disk_reload"
     )
 
+    # The same when the endpoint comes from `include`, which is resolved after the marker is written.
+    node.query(
+        "CREATE TABLE test_server_credentials_include_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        " SETTINGS disk = disk(type = azure_blob_storage, include = 'azure_server_identity', container_name = 'cont',"
+        " readonly = 1, container_already_exists = 1, skip_access_check = 1)",
+        settings={"azure_allow_server_credentials_in_user_queries": 1, "dynamic_disk_allow_include": 1},
+    )
+    assert "_azure_server_credentials_allowed" in node.query(
+        "SHOW CREATE TABLE test_server_credentials_include_disk_reload"
+    )
+
     node.restart_clickhouse()
 
     assert node.query("EXISTS TABLE test_server_credentials_reload").strip() == "1"
@@ -2111,8 +2129,10 @@ def test_server_credentials_on_reload(cluster):
     )
 
     assert node.query("EXISTS TABLE test_server_credentials_disk_reload").strip() == "1"
+    assert node.query("EXISTS TABLE test_server_credentials_include_disk_reload").strip() == "1"
     assert not node.contains_in_log("Loading the dynamic Azure disk")
 
     node.query("DROP TABLE test_server_credentials_reload SYNC")
     node.query("DROP TABLE test_server_credentials_disk_reload SYNC")
+    node.query("DROP TABLE test_server_credentials_include_disk_reload SYNC")
     node.query("DROP NAMED COLLECTION azure_server_credentials_reload")

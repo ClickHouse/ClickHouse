@@ -178,7 +178,8 @@ namespace
 {
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
-        bool is_attach)
+        bool is_attach,
+        bool is_loading_from_existing_metadata)
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
@@ -230,7 +231,8 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
-                if (!is_attach)
+                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
+                if (!is_loading_from_existing_metadata)
                     ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
                         queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
                         queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
@@ -357,7 +359,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings_, is_attach);
+    validateSettings(*queue_settings_, is_attach, isLoadingFromExistingMetadata(mode));
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
