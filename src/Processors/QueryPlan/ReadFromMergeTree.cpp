@@ -22,6 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
@@ -346,6 +347,8 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -2824,6 +2827,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 
+    /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
+    if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
+        uk_read_snapshot->dropFullyDeadGranules(analyzed_result_ptr->parts_with_ranges);
+
     return analyzed_result_ptr;
 }
 
@@ -3083,9 +3090,7 @@ void ReadFromMergeTree::buildIndexes(
         auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(metadata_snapshot->getPrimaryKey().data_types);
-            return key_condition;
+            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
@@ -3885,12 +3890,36 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
             /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
-            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
+            if (outputs.size() == 1 && !skip_top_k)
             {
-                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
-                if (top_k_filter_info)
-                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
-                condition_hash = hash;
+                std::optional<size_t> hash;
+                if (isDeterministicAllowingTopKFilter(outputs.front()))
+                {
+                    hash = outputs.front()->getHash();
+                }
+                else if (settings[Setting::use_query_condition_cache_for_time_conditions] && !top_k_filter_info)
+                {
+                    /// A condition involving the current time can be cached under the deterministic
+                    /// condition derived by rounding its time constants onto a grid (issue #115504).
+                    /// This is a write side, so the derived condition must *strengthen* the original
+                    /// one: index analysis proved that no rows of the excluded granules match the
+                    /// condition, hence none match the (stricter) derived condition either.
+                    /// Not for TopK reads, see `deriveDeterministicTimeCondition`.
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            outputs.front(),
+                            TimeConditionRounding::Strengthen,
+                            static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                            time(nullptr)))
+                        hash = derived->hash;
+                }
+
+                if (hash)
+                {
+                    *hash = queryConditionCacheHash(*hash, reader_settings.query_condition_cache_settings_salt);
+                    if (top_k_filter_info)
+                        boost::hash_combine(*hash, top_k_filter_info->condition_hash);
+                    condition_hash = hash;
+                }
             }
         }
 
@@ -4793,13 +4822,25 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
 
+    /// The lazy step re-reads by offset only rows this step already filtered, so it needs no bitmap.
+    StorageSnapshotPtr lazy_storage_snapshot = storage_snapshot;
+    if (tryGetDeleteBitmapSnapshot(*storage_snapshot))
+    {
+        const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+        auto lazy_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        lazy_snapshot_data->storage = snapshot_data.storage;
+        lazy_snapshot_data->parts = snapshot_data.parts;
+        lazy_snapshot_data->mutations_snapshot = snapshot_data.mutations_snapshot;
+        lazy_storage_snapshot = storage_snapshot->clone(std::move(lazy_snapshot_data));
+    }
+
     auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
         info.min_marks_for_concurrent_read,
         reader_settings,
         mutations_snapshot,
-        storage_snapshot,
+        std::move(lazy_storage_snapshot),
         context,
         data.getLogName());
 
@@ -5217,6 +5258,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             stripped_snapshot_data->storage = snapshot_data->storage;
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+            /// Kept: the read pool resolves delete bitmaps through it.
+            stripped_snapshot_data->uk_read_snapshot = snapshot_data->uk_read_snapshot;
         }
 
         /// The snapshot object may be shared with other query plan steps.
@@ -5546,8 +5589,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         const auto & column_type = top_k_filter_info->data_type;
-        /// Also nested inside `Tuple`, `Array`, ...: the threshold is compared as a raw `Field`, which places
-        /// a nested NULL or NaN regardless of NULLS FIRST/LAST.
+        /// Also nested inside `Tuple`, `Array`, ...: there too the primary key places a NULL or NaN by its own
+        /// order, not by the query's NULLS FIRST/LAST.
         bool has_nulls_direction_dependent_part = anyInTypeTree(
             *column_type, [](const IDataType & type) { return type.isNullable() || isFloat(type); });
         auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
@@ -6446,7 +6489,8 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
         }
     }
 
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata));
+    /// Keeps `data`: the read pool resolves delete bitmaps through it.
+    storage_snapshot = storage_snapshot->clone(std::move(new_metadata), storage_snapshot->data);
 
     if (output_header != nullptr)
     {
