@@ -171,8 +171,8 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
         size += getFieldBinarySize(min) + getFieldBinarySize(max);
     if (tracks_string)
         size += sizeof(string_total_bytes);
-    if (tracks_null)
-        size += sizeof(null_count);
+    if (has_default_count)
+        size += sizeof(default_count);
     return size;
 }
 
