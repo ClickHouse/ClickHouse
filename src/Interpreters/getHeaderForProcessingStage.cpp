@@ -113,10 +113,10 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     /// traverses it independently of ORDER BY, so if it were kept, it could still reference columns
     /// of the removed joined table.
     select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
-    /// WINDOW definitions and LIMIT BY expressions are analyzed unconditionally as well
-    /// (ExpressionAnalyzer::makeWindowDescriptions and appendLimitBy), so they must not keep
-    /// references to columns of the removed joined table either. QUALIFY is cleared for the same
-    /// reason (and, like HAVING, it is a filter that cannot affect the header anyway).
+    /// LIMIT BY expressions are analyzed unconditionally as well (appendLimitBy), so they must
+    /// not keep references to columns of the removed joined table either. WINDOW and QUALIFY are
+    /// cleared for the same reason (and QUALIFY, like HAVING, is a filter that cannot affect the
+    /// header anyway).
     select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
     select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});

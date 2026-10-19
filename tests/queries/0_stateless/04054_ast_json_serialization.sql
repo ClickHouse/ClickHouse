@@ -224,8 +224,8 @@ FROM (SELECT parseQueryToJSON('SELECT 1 FROM db.t') AS j);
 
 -- ==========================================================================
 -- 8. ASTFunction
--- Fields: name, is_operator, is_window_function, compute_after_window_functions,
---         is_lambda_function, prefer_subquery_to_function_formatting, no_empty_args,
+-- Fields: name, is_operator, is_window_function, is_lambda_function,
+--         prefer_subquery_to_function_formatting, no_empty_args,
 --         is_compound_name, nulls_action, kind, arguments, parameters,
 --         window_name, window_definition, alias
 -- ==========================================================================

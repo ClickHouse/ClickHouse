@@ -7,7 +7,6 @@
 #include <Interpreters/ArrayJoin.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/WindowDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -70,8 +69,6 @@ struct ExpressionAnalyzerData
     NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
-    /// Columns after window functions.
-    NamesAndTypesList columns_after_window;
     /// Keys of ORDER BY
     NameSet order_by_keys;
 
@@ -81,9 +78,6 @@ struct ExpressionAnalyzerData
     ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
-
-    WindowDescriptions window_descriptions;
-    NamesAndTypesList window_columns;
 
     bool has_global_subqueries = false;
 
@@ -145,17 +139,6 @@ public:
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
-    /// A list of windows for window functions.
-    const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
-
-    void makeWindowDescriptionFromAST(
-        const Context & context,
-        const WindowDescriptions & existing_descriptions,
-        AggregateFunctionPtr aggregate_function,
-        WindowDescription & desc,
-        const IAST * ast);
-    void makeWindowDescriptions(ActionsDAG & actions);
-
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -192,8 +175,6 @@ protected:
     void getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAG & actions, bool only_consts = false);
 
     void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
-
-    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -236,7 +217,6 @@ struct ExpressionAnalysisResult
 
     bool need_aggregate = false;
     bool has_order_by   = false;
-    bool has_window = false;
 
     String where_column_name;
     bool remove_where_filter = false;
@@ -253,7 +233,6 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_having;
     String having_column_name;
     bool remove_having_filter = false;
-    ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
     ActionsAndProjectInputsFlagPtr before_limit_range;
@@ -339,7 +318,6 @@ public:
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
-    bool hasWindow() const { return !syntax->window_function_asts.empty(); }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
@@ -409,10 +387,6 @@ private:
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
-    void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
-
-    void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 

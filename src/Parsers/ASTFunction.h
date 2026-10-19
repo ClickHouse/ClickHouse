@@ -21,19 +21,18 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 11;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
         UInt32 is_window_function : 1;
-        UInt32 compute_after_window_functions : 1;
         UInt32 is_lambda_function : 1;
         UInt32 prefer_subquery_to_function_formatting : 1;
         UInt32 no_empty_args : 1;
         UInt32 is_compound_name : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
         UInt32 kind : 3; /// 3 bits for Kind (8 values)
-        UInt32 unused : 19;
+        UInt32 unused : 20;
     };
 
 public:
@@ -50,9 +49,6 @@ public:
 
     bool isWindowFunction() const { return flags<ASTFunctionFlags>().is_window_function; }
     void setIsWindowFunction(bool value) { flags<ASTFunctionFlags>().is_window_function = value; }
-
-    bool computeAfterWindowFunctions() const { return flags<ASTFunctionFlags>().compute_after_window_functions; }
-    void setComputeAfterWindowFunctions(bool value) { flags<ASTFunctionFlags>().compute_after_window_functions = value; }
 
     bool isLambdaFunction() const { return flags<ASTFunctionFlags>().is_lambda_function; }
     void setIsLambdaFunction(bool value) { flags<ASTFunctionFlags>().is_lambda_function = value; }

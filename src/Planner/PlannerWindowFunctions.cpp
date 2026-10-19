@@ -90,7 +90,6 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
         auto & window_description = it->second;
 
         WindowFunctionDescription window_function;
-        window_function.function_node = nullptr;
         window_function.column_name = calculateActionNodeName(window_function_node, planner_context);
         window_function.aggregate_function = window_function_node_typed.getAggregateFunction();
 
