@@ -127,6 +127,9 @@ namespace
                 auto lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
                     return;
+                /// A storage without columns, such as an `Alias` whose table is gone, is not checked.
+                if (const auto cached_metadata = storage->getInMemoryMetadataPtr(context, false); cached_metadata->getColumns().empty())
+                    return;
                 /// As a read does, refresh the columns of a storage whose schema lives outside the server.
                 storage->updateExternalDynamicMetadataIfExists(context);
                 auto metadata = storage->getInMemoryMetadataPtr(context, false);

@@ -37,6 +37,21 @@ CREATE ROW POLICY p_db ON * USING x = 1 TO ALL; -- { serverError UNKNOWN_IDENTIF
 CREATE ROW POLICY p_db ON * USING id >= 0 TO ALL;
 DROP ROW POLICY p_db ON *;
 
+-- Every table is checked, not only the first one: only z_last lacks id.
+CREATE TABLE z_last (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE ROW POLICY p_db ON * USING id >= 0 TO ALL; -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE z_last;
+
+-- An Alias whose table is gone has no columns, so it is not checked.
+CREATE TABLE t_gone (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE a_gone ENGINE = Alias('t_gone');
+DROP TABLE t_gone;
+CREATE ROW POLICY p_db ON * USING id >= 0 TO ALL;
+DROP ROW POLICY p_db ON *;
+CREATE ROW POLICY p_gone ON a_gone USING nosuch = 1 TO ALL;
+DROP ROW POLICY p_gone ON a_gone;
+DROP TABLE a_gone;
+
 -- ALTER is checked too, and a rejected ALTER keeps the policy.
 CREATE ROW POLICY p_ok ON t_src USING id < 5 TO ALL;
 ALTER ROW POLICY p_ok ON t_src USING nosuchcol = 1; -- { serverError UNKNOWN_IDENTIFIER }
