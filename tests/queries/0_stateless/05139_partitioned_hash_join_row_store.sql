@@ -121,7 +121,7 @@ SELECT 'left any: ANY joins build no row store', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k)), sum(b.a > 0)) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_threads = 1) AS pa)
 SETTINGS log_comment = '05139 left any';
 
--- A budget of 200000 bytes needs all 1024 grace buckets and runs for tens of seconds; the budget below needs few.
+-- A budget of 200000 bytes needs 1024 grace buckets and runs for tens of seconds; 1000000 needs 64.
 SELECT 'spill switch: the build blocks handed to grace are rebuilt from the row store', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000) AS pa)
