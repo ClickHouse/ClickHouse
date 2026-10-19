@@ -57,6 +57,12 @@ SOURCE_HEADER_SUFFIXES = {
     'contrib/postgres': ('.h',),
     'contrib/libpqxx': ('.hxx',),
 }
+# Arrow's checked-in FlatBuffers 24 outputs conflict with FlatBuffers 25.
+# //bazel:arrow_flatbuffer_headers generates the current six outputs.
+# Keep cpp/src/generated/parquet_types.{cpp,h,tcc}, produced by Thrift.
+SOURCE_HEADER_EXCLUDES = {
+    'contrib/arrow': ('cpp/src/generated/*_generated.h',),
+}
 SOURCE_HEADER_TARGETS = {
     owner: (REPOSITORIES[owner]['name'].removeprefix('clickhouse_') + '_headers')
     for owner in SOURCE_HEADER_DIRECTORIES
@@ -561,7 +567,8 @@ class BuildFile:
                                 and not local):
                             fields['deps'].append(':' + SOURCE_HEADER_TARGETS[owner])
                         else:
-                            fields[field].append(Glob(headers, (*excluded, *local)))
+                            fields[field].append(Glob(
+                                headers, (*excluded, *local, *SOURCE_HEADER_EXCLUDES.get(owner, ()))))
                         fields[non_header_field].append(Glob([pattern], (*excluded, *headers)))
                 else:
                     for path in directory_sources(directory):

@@ -199,13 +199,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@lz4//:lz4_frame",
-]
-
 _GENERATED_TEXTUAL_HDRS_0 = [
     "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
 ]
@@ -914,7 +907,6 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
-    ] + [
         "@clickhouse_libhdfs3//:_hdfs3",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -927,7 +919,6 @@ ch_cc_library(
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -985,7 +976,6 @@ ch_cc_library(
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(
@@ -1098,7 +1088,6 @@ ch_cc_library(
         ":_arrow",
         "@clickhouse_grpc//:grpc++",
     ],
-    alwayslink = False,
 )
 
 alias(
@@ -1350,7 +1339,6 @@ ch_cc_library(
         "@clickhouse_thrift//:_thrift",
         "@clickhouse_rapidjson//:rapidjson",
     ],
-    alwayslink = False,
 )
 
 _GENERATED_DEPS_2 = [
@@ -1606,14 +1594,17 @@ cc_binary(
     srcs = ([
         "cpp/tools/parquet/parquet_dump_schema.cc",
         "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
-    ] + glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ])),
+    ] + glob(
+        [
+            "cpp/src/**/*.h",
+            "cpp/src/**/*.hpp",
+            "cpp/src/**/*.tcc",
+        ],
+        exclude = ["cpp/src/generated/*_generated.h"],
+    )),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [],
+    ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -1631,14 +1622,17 @@ cc_binary(
     srcs = ([
         "cpp/tools/parquet/parquet_reader.cc",
         "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
-    ] + glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ])),
+    ] + glob(
+        [
+            "cpp/src/**/*.h",
+            "cpp/src/**/*.hpp",
+            "cpp/src/**/*.tcc",
+        ],
+        exclude = ["cpp/src/generated/*_generated.h"],
+    )),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [],
+    ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -1656,14 +1650,17 @@ cc_binary(
     srcs = ([
         "cpp/tools/parquet/parquet_scan.cc",
         "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
-    ] + glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ])),
+    ] + glob(
+        [
+            "cpp/src/**/*.h",
+            "cpp/src/**/*.hpp",
+            "cpp/src/**/*.tcc",
+        ],
+        exclude = ["cpp/src/generated/*_generated.h"],
+    )),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [],
+    ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -1679,6 +1676,7 @@ cc_binary(
 cc_library(
     name = "arrow_headers",
     # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
+    includes = ["cpp/src"],
     deps = [
         "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
@@ -1696,13 +1694,13 @@ cc_library(
 
 cc_library(
     name = "arrow_source_headers",
-    hdrs = glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ]),
-    includes = [
-        "cpp/src",
-    ],
+    hdrs = glob(
+        [
+            "cpp/src/**/*.h",
+            "cpp/src/**/*.hpp",
+            "cpp/src/**/*.tcc",
+        ],
+        exclude = ["cpp/src/generated/*_generated.h"],
+    ),
     visibility = ["//visibility:private"],
 )

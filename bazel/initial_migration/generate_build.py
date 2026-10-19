@@ -25,7 +25,8 @@ from initial_migration.format_build_files import format_build_files
 from initial_migration.prune_inherited_headers import prune
 from initial_migration.prune_unused_exports import prune_unused_exports
 from initial_migration.build_file import (
-    BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
+    BuildFile, CMakeCxxCompilerVersion, Glob,
+    SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_EXCLUDES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
     dependency_inputs, relocate_compilation,
     relocate_tools, select, starlark, target_label, target_owner,
 )
@@ -788,7 +789,7 @@ def main():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
         patterns = [directory + '/**/*' + suffix for directory in directories
                     for suffix in SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES)]
-        attrs = {'hdrs': Glob(patterns)}
+        attrs = {'hdrs': Glob(patterns, SOURCE_HEADER_EXCLUDES.get(owner, ()))}
         if owner == 'contrib/libpqxx':
             # The pinned include/pqxx extensionless files are the public
             # wrapper headers, e.g. #include <pqxx/connection>.
