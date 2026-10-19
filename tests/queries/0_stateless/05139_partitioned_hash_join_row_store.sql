@@ -1,7 +1,8 @@
 -- Tags: long
 -- `partitioned_hash` stores the right side's fixed-width payload columns row by row while the
 -- build blocks arrive, as the parallel `hash` layout does. The joined output and the RIGHT/FULL
--- non-joined rows read those columns back from that store. Checksums must match `hash`.
+-- non-joined rows read those columns back from that store. So do the blocks handed to `GraceHashJoin`
+-- on a spill. Checksums must match `hash`.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -12,6 +13,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
+SET grace_hash_join_initial_buckets = 1;
+SET grace_hash_join_max_buckets = 1024;
 SET enable_hash_join_row_store = 1;
 -- The planner enables the row store only for an output estimate above this ratio; force it.
 SET min_rows_ratio_for_hash_join_row_store = 0;
@@ -118,16 +121,34 @@ SELECT 'left any: ANY joins build no row store', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k)), sum(b.a > 0)) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_threads = 1) AS pa)
 SETTINGS log_comment = '05139 left any';
 
+-- A budget of 200000 bytes needs 1024 grace buckets and runs for tens of seconds; 1000000 needs 64.
+SELECT 'spill switch: the build blocks handed to grace are rebuilt from the row store', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000) AS pa)
+SETTINGS log_comment = '05139 spill';
+
+SELECT '-- spill switch below parallel_hash_join_threshold: the kept build blocks go to grace as they are';
+-- Below `parallel_hash_join_threshold` one thread inserts each block as it arrives and keeps it; a switch to
+-- grace then hands over those kept blocks, the second of the two spill paths.
+CREATE TABLE t_rs_build_small ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM t_rs_build WHERE k < 30000;
+
+SELECT 'spill below threshold', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000) AS pa)
+SETTINGS log_comment = '05139 spill below threshold';
+
 SYSTEM FLUSH LOGS query_log;
 
-SELECT '-- the row store was built (blocks > 0) where the shape admits it';
+SELECT '-- the row store was built (blocks > 0) where the shape admits it, and the spill queries switched to grace';
 SELECT
     log_comment,
     ProfileEvents['HashJoinRowStoreBlocks'] > 0,
-    ProfileEvents['HashJoinInsertedRows'] > 0
+    ProfileEvents['HashJoinInsertedRows'] > 0,
+    ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05139 %'
 ORDER BY log_comment;
 
 DROP TABLE t_rs_build;
+DROP TABLE t_rs_build_small;
 DROP TABLE t_rs_probe;

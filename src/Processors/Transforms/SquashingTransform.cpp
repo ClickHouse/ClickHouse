@@ -1,6 +1,7 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/Chunk.h>
 
@@ -134,6 +135,57 @@ Chunk SimpleSquashingChunksTransform::getRemaining()
 {
     chassert(!flushed_chunk);
     return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+}
+
+JoinOutputSquashingTransform::JoinOutputSquashingTransform(
+    SharedHeader header,
+    size_t min_block_size_rows,
+    size_t min_block_size_bytes,
+    size_t max_block_size_rows,
+    size_t max_block_size_bytes,
+    std::shared_ptr<IJoin> join_)
+    : SimpleSquashingChunksTransform(header, min_block_size_rows, min_block_size_bytes, max_block_size_rows, max_block_size_bytes)
+    , join(std::move(join_))
+{
+}
+
+void JoinOutputSquashingTransform::consume(Chunk chunk)
+{
+    if (!pass_through)
+        pass_through = join->emitsSizedOutputBlocks();
+
+    if (!*pass_through)
+    {
+        SimpleSquashingChunksTransform::consume(std::move(chunk));
+        return;
+    }
+
+    if (chunk.hasRows())
+        passed_chunk = std::move(chunk);
+}
+
+bool JoinOutputSquashingTransform::canGenerate()
+{
+    if (pass_through && *pass_through)
+        return passed_chunk.hasRows();
+    return SimpleSquashingChunksTransform::canGenerate();
+}
+
+Chunk JoinOutputSquashingTransform::generate()
+{
+    if (!pass_through || !*pass_through)
+        return SimpleSquashingChunksTransform::generate();
+
+    Chunk result;
+    result.swap(passed_chunk);
+    return result;
+}
+
+Chunk JoinOutputSquashingTransform::getRemaining()
+{
+    if (pass_through && *pass_through)
+        return {};
+    return SimpleSquashingChunksTransform::getRemaining();
 }
 
 }
