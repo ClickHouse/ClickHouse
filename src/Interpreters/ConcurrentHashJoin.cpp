@@ -458,10 +458,8 @@ public:
         if (data.is_last)
         {
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
-            if (data.next_block)
-                dispatched_blocks[next_block] = std::move(*data.next_block);
-            else
-                ++next_block;
+            chassert(!data.next_block);
+            ++next_block;
             current_result.reset();
         }
 
