@@ -183,6 +183,7 @@ STACK_DIGEST_FIELD = "Fuzz stack digest"
 STACK_DIGEST_LINE_RE = re.compile(
     rf"^{STACK_DIGEST_FIELD}: ([0-9a-f]{{16}})\r?$", re.MULTILINE
 )
+FOUND_BY_LINE_RE = re.compile(r"^Found by [^\n]*? in CI: (\S+)\r?$", re.MULTILINE)
 MACHINE_LINE_RE = re.compile(
     rf"^[\s`>*-]*({FINGERPRINT_FIELD}|{STACK_DIGEST_FIELD}|{FOUND_WHILE_TESTING_FIELD}"
     rf"|Found by [^\n]*? in CI|Caused by|Related):[^\n]*\n?",
@@ -382,8 +383,9 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
             issues += f"  - {url}, text in `{_known_issue_file(url).resolve()}` ({stack})\n"
         return (
             f"- Possible earlier occurrences: these open issues carry this failure's\n"
-            f"  fingerprint and were filed before this {change}, not by triage of a PR\n"
-            f"  run. The fingerprint keeps only the names of the top stack frames, cut at\n"
+            f"  fingerprint and were filed before this {change} by post-merge runs on\n"
+            f"  `{occurrences.branch}`, the branch the {change} is tested against. The\n"
+            f"  fingerprint keeps only the names of the top stack frames, cut at\n"
             f"  `<`, so two bugs can share it, and none of these is known to be this one:\n{issues}"
             f"  Compare the stack and error in each issue's text with this failure's (an\n"
             f"  optimized and a sanitizer build may inline different frames). Only if one\n"
@@ -401,10 +403,12 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
             f"  triage, so do not look for one here.\n"
         )
     return f"""\
-- No open issue with this failure's fingerprint was filed before this {change},
-  other than by triage of a PR run. Any other issue carrying the fingerprint
-  was written by this same triage (an earlier run, a sibling job on this commit,
-  or another PR's verdict): it is not evidence, so do not look for one here.
+- No open issue with this failure's fingerprint was filed before this {change}
+  by a post-merge run on the branch it is tested against; one seen on another
+  branch does not show the failure was already on this one. Any other issue
+  carrying the fingerprint was written by this same triage (an earlier run, a
+  sibling job on this commit, or another PR's verdict): it is not evidence, so
+  do not look for one here.
   Judge from the code and the logs alone.
 """
 
@@ -937,6 +941,8 @@ class Occurrences(NamedTuple):
     mismatched: list = []
     # `{url: body}` of `older`, written to disk for the agent, which cannot reach GitHub.
     bodies: dict = {}
+    # The branch `older` was observed on: the PR's target, or the branch of a post-merge run.
+    branch: str = ""
 
     @property
     def regression(self):
@@ -944,18 +950,32 @@ class Occurrences(NamedTuple):
         return bool(self.fixed) and not set(self.older) - set(self.mismatched)
 
 
-def fixed_occurrences(issues, fingerprint):
+def fixed_occurrences(issues, fingerprint, digest):
     """URLs of the closed issues with this fingerprint: the bug was fixed once.
 
     A closed issue says nothing about whether the failure predates the change;
-    the change may be what brought it back.
+    the change may be what brought it back. One recording another stack is another
+    bug sharing the fingerprint, so its fix says nothing about this failure.
     """
     return sorted(
         issue["url"]
         for issue in issues
         if (issue.get("state") or "").upper() == "CLOSED"
         and _tracks_fingerprint(issue, fingerprint)
+        and not _records_other_stack(issue, digest)
     )
+
+
+def _issue_branch(issue):
+    """The branch of the run that filed the issue, from its `Found by` line, or "" if unknown.
+
+    Only `_issue_text` writes that line, with the report URL of a post-merge run (`REF=<branch>`).
+    """
+    found = FOUND_BY_LINE_RE.findall(issue.get("body") or "")
+    if len(found) != 1:
+        return ""
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(found[0]).query)
+    return (query.get("REF") or [""])[0]
 
 
 def _has_fuzz_label(issue):
@@ -972,13 +992,16 @@ def _tracks_fingerprint(issue, fingerprint):
     return bool(fingerprint) and found == [fingerprint]
 
 
-def independent_occurrences(issues, fingerprint, cutoff):
+def independent_occurrences(issues, fingerprint, cutoff, branch):
     """URLs of the open issues that prove the failure predates the tested change.
 
     Only a record this triage cannot have written counts: one opened before the
     change existed and not filed by triage of a PR run, which holds that run's
     verdict rather than an observation on a branch. Otherwise an earlier run, or
     a sibling job on the same commit, would confirm its own verdict.
+
+    It must have been observed on `branch`, the one the change goes to: a bug seen
+    on master is new to a release branch that a backport brings it to.
 
     It must also be a tracking issue `_verify_issue_marker` accepts, `fuzz` label
     included: linking one that is not would skip the agent that files a real one.
@@ -991,6 +1014,8 @@ def independent_occurrences(issues, fingerprint, cutoff):
             and _tracks_fingerprint(issue, fingerprint)
             and _has_fuzz_label(issue)
             and not FOUND_WHILE_TESTING_RE.search(body)
+            and branch
+            and _issue_branch(issue) == branch
             and _parse_github_time(issue["createdAt"]) < cutoff
         ):
             urls.append(issue["url"])
@@ -1026,7 +1051,8 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
             "url,state,createdAt,body,labels",
         )
         issues = json.loads(output or "[]")
-        older = independent_occurrences(issues, fingerprint, cutoff)
+        branch = info.base_branch if pr_mode else info.git_branch
+        older = independent_occurrences(issues, fingerprint, cutoff, branch)
         older_issues = [issue for issue in issues if issue["url"] in older]
         exact = sorted(
             issue["url"]
@@ -1040,7 +1066,12 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         )
         bodies = {issue["url"]: issue.get("body") or "" for issue in older_issues}
         return Occurrences(
-            older, fixed_occurrences(issues, fingerprint), exact, mismatched, bodies
+            older,
+            fixed_occurrences(issues, fingerprint, digest),
+            exact,
+            mismatched,
+            bodies,
+            branch,
         )
     except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
         print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
