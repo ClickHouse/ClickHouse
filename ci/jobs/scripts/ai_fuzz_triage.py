@@ -88,6 +88,10 @@ REPRO_FILE = TRIAGE_DIR / "repro.json"
 AGENT_LOG = TRIAGE_DIR / "agent.log"
 # Fetched for the agent, which has no GitHub access of its own.
 PR_DIFF_FILE = TRIAGE_DIR / "pr.diff"
+KNOWN_ISSUES_DIR = TRIAGE_DIR / "known_issues"
+# The checkout has depth 1, too shallow to attribute a post-merge failure to a merge.
+RECENT_HISTORY_MERGES = 30
+GIT_FETCH_TIMEOUT_SEC = 300
 
 OPENAI_API_ORIGIN = "https://api.openai.com"
 # Hop-by-hop headers, and the ones the proxy sets itself.
@@ -361,14 +365,25 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
   its fingerprint may have been written by this same triage, so it is not
   evidence: do not look for one here. Judge from the code and the logs alone.
 """
-    if occurrences.older:
-        urls = "".join(f"  - {url}\n" for url in occurrences.older)
+    if occurrences.older and not occurrences.regression:
+        # An issue with this failure's stack digest never gets here: `known_issue_verdict` takes it.
+        issues = ""
+        for url in occurrences.older:
+            stack = (
+                "records another stack"
+                if url in occurrences.mismatched
+                else "records no stack digest"
+            )
+            issues += f"  - {url}, text in `{_known_issue_file(url).resolve()}` ({stack})\n"
         return (
-            f"- Known occurrences: these open issues carry this failure's fingerprint\n"
-            f"  and were filed before this {change}, not by triage of a PR run, so the\n"
-            f"  failure predates the {change}. That {weight}:\n{urls}"
-            f"  The fingerprint keeps only the names of the top stack frames, cut at `<`,\n"
-            f"  so two bugs can share it: check that the issue's stack is this one.\n"
+            f"- Possible earlier occurrences: these open issues carry this failure's\n"
+            f"  fingerprint and were filed before this {change}, not by triage of a PR\n"
+            f"  run. The fingerprint keeps only the names of the top stack frames, cut at\n"
+            f"  `<`, so two bugs can share it, and none of these is known to be this one:\n{issues}"
+            f"  Compare the stack and error in each issue's text with this failure's (an\n"
+            f"  optimized and a sanitizer build may inline different frames). Only if one\n"
+            f"  is the same failure does it predate the {change}, and that {weight}.\n"
+            f"  An issue that describes another failure is not evidence.\n"
         )
     if occurrences.fixed:
         urls = "".join(f"  - {url}\n" for url in occurrences.fixed)
@@ -389,7 +404,23 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
 """
 
 
-def _relatedness_task(info, pr_mode, fingerprint, occurrences):
+def _history_lines(history_available):
+    if not history_available:
+        return """\
+- Recent history could not be fetched: the checkout holds the tested commit
+  only, so no commit can be attributed. Leave `culprit_commit` empty.
+"""
+    return f"""\
+- The checkout is at the tested commit, with its recent merges fetched. List
+  them with `git log --first-parent --oneline -{RECENT_HISTORY_MERGES}`, and see what one
+  merged with `git diff <sha>^ <sha>`.
+- Compare the crash stack / error signature with what those merges touch.
+- Confident attribution to one commit -> verdict `related`, and set
+  `culprit_commit` to its full sha; this job maps it to the merged PR.
+"""
+
+
+def _relatedness_task(info, pr_mode, fingerprint, occurrences, history_available):
     if pr_mode:
         occurrences = _occurrences_note(
             fingerprint,
@@ -428,12 +459,7 @@ This is a post-merge run on `{info.git_branch}`; there is no PR to blame.
 Decide whether this failure is a REGRESSION from a recently merged change or a
 pre-existing bug:
 
-- The checkout is at the tested commit. List recent history:
-  `git log --oneline -30`.
-- Compare the crash stack / error signature with what those commits touch.
-- Confident attribution to one commit -> verdict `related`, and set
-  `culprit_commit` to its full sha; this job maps it to the merged PR.
-{occurrences}\
+{_history_lines(history_available)}{occurrences}\
 - If you cannot decide, answer `uncertain`.
 """
 
@@ -479,6 +505,7 @@ def _build_prompt(
     fingerprint,
     occurrences,
     timeout_sec,
+    history_available=False,
 ):
     report_url = _report_url(info)
     if pr_mode:
@@ -523,7 +550,7 @@ You are triaging a failed `{job_kind}` CI job {run_kind}.
 - Do not reduce a reproducer or replay queries: a separate step does that when
   it is needed. Read the code and the logs, and finish within {timeout_sec // 60} minutes.
 
-{_relatedness_task(info, pr_mode, fingerprint, occurrences)}
+{_relatedness_task(info, pr_mode, fingerprint, occurrences, history_available)}
 {_issue_task(pr_mode, fingerprint, _tracked_signature(failures))}
 ## Task 3 - verdict file (MANDATORY)
 
@@ -901,11 +928,15 @@ class Occurrences(NamedTuple):
     fixed: list  # `fixed_occurrences`
     # Among `older`, the issues whose stack digest matches this failure's: only they stand in for the agent.
     exact: list = []
+    # Among `older`, the issues that record another stack digest: likely another bug sharing the fingerprint.
+    mismatched: list = []
+    # `{url: body}` of `older`, written to disk for the agent, which cannot reach GitHub.
+    bodies: dict = {}
 
     @property
     def regression(self):
         """A fixed bug is back and nothing shows it was back before the change."""
-        return bool(self.fixed) and not self.older
+        return bool(self.fixed) and not set(self.older) - set(self.mismatched)
 
 
 def fixed_occurrences(issues, fingerprint):
@@ -991,15 +1022,69 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         )
         issues = json.loads(output or "[]")
         older = independent_occurrences(issues, fingerprint, cutoff)
+        older_issues = [issue for issue in issues if issue["url"] in older]
         exact = sorted(
             issue["url"]
-            for issue in issues
-            if issue["url"] in older and digest and _issue_stack_digest(issue) == digest
+            for issue in older_issues
+            if digest and _issue_stack_digest(issue) == digest
         )
-        return Occurrences(older, fixed_occurrences(issues, fingerprint), exact)
+        mismatched = sorted(
+            issue["url"]
+            for issue in older_issues
+            if digest and _issue_stack_digest(issue) not in ("", digest)
+        )
+        bodies = {issue["url"]: issue.get("body") or "" for issue in older_issues}
+        return Occurrences(
+            older, fixed_occurrences(issues, fingerprint), exact, mismatched, bodies
+        )
     except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
         print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
         return None
+
+
+def _known_issue_file(issue_url):
+    return KNOWN_ISSUES_DIR / f"{issue_url.rstrip('/').rsplit('/', 1)[-1]}.md"
+
+
+def _write_known_issues(occurrences):
+    """Put the text of each `older` issue where the agent can compare its stack."""
+    if not occurrences or not occurrences.older:
+        return
+    KNOWN_ISSUES_DIR.mkdir(parents=True, exist_ok=True)
+    for url in occurrences.older:
+        _known_issue_file(url).write_text(
+            f"{url}\n\n{occurrences.bodies.get(url, '')}", encoding="utf-8"
+        )
+
+
+def _fetch_recent_history(sha, deadline):
+    """Deepen the checkout to the recent merges for post-merge attribution; False if that failed."""
+    if not COMMIT_SHA_RE.match(sha or ""):
+        return False
+    # At most a quarter of what is left, so the agents keep most of the budget.
+    timeout_sec = min(GIT_FETCH_TIMEOUT_SEC, (deadline - time.monotonic()) / 4)
+    if timeout_sec <= 0:
+        return False
+    try:
+        subprocess.run(
+            [
+                "git",
+                "fetch",
+                "--no-tags",
+                "--quiet",
+                f"--depth={RECENT_HISTORY_MERGES + 1}",
+                "origin",
+                sha,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"WARNING: AI fuzz triage: cannot fetch recent history: {e}")
+        return False
 
 
 def _verify_issue_marker(issue_url, fingerprint, repo_name):
@@ -1728,7 +1813,11 @@ def triage_and_apply(
                 _write_pr_diff(info, repo_name)
             budget = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
             deadline = time.monotonic() + budget
-            verdict_timeout = min(VERDICT_TIMEOUT_SEC, budget)
+            history_available = not pr_mode and _fetch_recent_history(
+                info.sha, deadline
+            )
+            _write_known_issues(occurrences)
+            verdict_timeout = min(VERDICT_TIMEOUT_SEC, int(_remaining_sec(deadline)))
             prompt = _build_prompt(
                 info,
                 job_kind,
@@ -1738,6 +1827,7 @@ def triage_and_apply(
                 fingerprint,
                 occurrences,
                 verdict_timeout,
+                history_available,
             )
             verdict = _run_agent(
                 prompt,
