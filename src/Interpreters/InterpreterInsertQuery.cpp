@@ -879,11 +879,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
+    /// Pinning them on the context above is not enough: the nested interpreter re-applies the SELECT's own
     /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
-    /// bringing the plan-based implementation back for the plans built below. `execute` restores
+    /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
+    /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    static constexpr std::array settings_overridden_for_this_path{
+        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
