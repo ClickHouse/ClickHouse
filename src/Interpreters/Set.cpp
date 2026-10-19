@@ -1075,9 +1075,8 @@ bool isWorthBuildingRoaring(const Container & data)
     for (size_t i = 1; i < data.size(); ++i)
         distinct += data[i] != data[i - 1];
 
-    /// A small set costs almost nothing to build either way, and keeping it on the fast path is what
-    /// makes the cross-bucket behaviour of `Roaring64Map` reachable from a test.
-    static constexpr size_t max_size_always_worth = 65536;
+    /// A tiny set is as fast either way, and keeping it lets a test reach the cross-bucket path.
+    static constexpr size_t max_size_always_worth = 1024;
     if (distinct <= max_size_always_worth)
         return true;
 
