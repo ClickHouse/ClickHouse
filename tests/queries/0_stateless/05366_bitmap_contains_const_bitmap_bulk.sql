@@ -13,6 +13,14 @@ SELECT sum(bitmapContains(bm, toUInt32(299999 - number))), count() FROM numbers(
 WITH (SELECT groupBitmapState(toUInt32(number * 3)) FROM numbers(100000)) AS bm
 SELECT sum(bitmapContains(bm, toUInt32((number * 65537) % 300000))) FROM numbers(300000);
 
+-- Sparse bitmap: most containers are absent, both for sorted and for random lookups. Compare with the per-row path.
+WITH (SELECT groupBitmapState(toUInt32(cityHash64(number))) FROM numbers(1000)) AS bm
+SELECT
+    sum(bitmapContains(bm, toUInt32(number * 4096))) = sum(bitmapContains(materialize(bm), toUInt32(number * 4096))),
+    sum(bitmapContains(bm, toUInt32(cityHash64(number % 2000)))) = sum(bitmapContains(materialize(bm), toUInt32(cityHash64(number % 2000)))),
+    sum(bitmapContains(bm, toUInt32(cityHash64(number % 2000))))
+FROM numbers(1048576);
+
 -- Values beyond the bitmap range and beyond UInt32.
 WITH (SELECT groupBitmapState(toUInt32(number * 3)) FROM numbers(100000)) AS bm
 SELECT bitmapContains(bm, 299997), bitmapContains(bm, 300000), bitmapContains(bm, 4294967295), bitmapContains(bm, 4294967296), bitmapContains(bm, -1);
