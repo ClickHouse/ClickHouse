@@ -9,7 +9,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
@@ -145,7 +145,8 @@ namespace
             header,
             context,
             "parquet",
-            /* partition_columns_in_data_file */false);
+            /* partition_columns_in_data_file */false,
+            /* compression_method */"auto");
     }
 }
 
@@ -156,6 +157,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     ContextPtr context_,
     SharedHeader sample_block_,
     const std::optional<FormatSettings> & format_settings_,
+    FormatFilterInfoPtr format_filter_info_,
     const String & write_format_,
     const String & write_compression_method_)
     : SinkToStorage(sample_block_)
@@ -164,6 +166,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , partition_columns(partition_columns_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
+    , format_filter_info(std::move(format_filter_info_))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
@@ -394,7 +397,8 @@ DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
         write_format_header,
         getContext(),
         write_format,
-        write_compression_method);
+        write_compression_method,
+        format_filter_info);
 }
 
 void DeltaLakePartitionedSink::onFinish()

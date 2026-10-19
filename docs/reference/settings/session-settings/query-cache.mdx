@@ -41,7 +41,9 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-The maximum number of query results the current user may store in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum number of query results the current user may store in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
@@ -51,7 +53,9 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
@@ -88,6 +92,25 @@ Possible values:
 - `'throw'` - Throw an exception and don't cache the query result.
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
+
+## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "New setting to store entries of the query cache on disk in the named filesystem cache."}]}]}/>
+
+The name of a filesystem cache (an entry of the `filesystem_caches` section of the server configuration) which stores entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk. If a name is given (and [use_query_cache](/reference/settings/session-settings/use-query#use_query_cache) is enabled), query results are additionally cached in (and served from) the specified filesystem cache. The on-disk query cache provides more space than the in-memory query cache, survives server restarts, and works independently of the in-memory query cache: settings [enable_reads_from_query_cache_on_disk](/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) and [enable_writes_to_query_cache_on_disk](/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) control it separately from the in-memory query cache. The entries in the filesystem cache are ordinary entries of the filesystem cache: they are not held from deletion and they are evicted by the same rules as any other data in it. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem cache, and `SYSTEM CLEAR QUERY CACHE` removes the entries of the query cache on disk from the filesystem cache named by this setting, leaving all other data in place. A dedicated filesystem cache for query results is recommended.
+
+Possible values:
+
+- Empty string - The query cache on disk is disabled
+- The name of a preconfigured filesystem cache
+
+## query_cache_on_disk_codec {#query_cache_on_disk_codec}
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "New setting to control the compression codec of query cache entries on disk."}]}]}/>
+
+The compression codec for entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk (see [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)). Only affects writing; reading is independent of this setting because the compressed data is self-describing.
 
 ## query_cache_share_between_users {#query_cache_share_between_users}
 

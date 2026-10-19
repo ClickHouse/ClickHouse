@@ -10,6 +10,7 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -37,6 +38,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool http_allow_path_requests;
 }
 
 namespace
@@ -667,13 +673,18 @@ void addCatchAllQueryHandlerFactory(
         return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
-    /// default off), evaluated here at routing time — before authentication, where the connecting
+    /// default on), evaluated here at routing time — before authentication, where the connecting
     /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
     /// `http_allow_filters_as_path` settings then control, after authentication, whether a routed
     /// path is actually interpreted (see `HTTPHandler::processQuery`). When the server flag is off,
-    /// path requests are not claimed at all, so unknown paths keep returning a plain pre-auth 404
+    /// path requests are not claimed at all, so unknown paths return a plain pre-auth 404
     /// (`NotFoundHandler`).
-    const bool allow_path_requests = config.getBool("http_allow_path_requests", false);
+    ///
+    /// The value is read from the configuration and not from `Context::getServerSettings`, which
+    /// holds the startup-time snapshot; the fallback is taken from the settings declaration so the
+    /// two cannot drift apart.
+    static const bool default_allow_path_requests = ServerSettings{}[ServerSetting::http_allow_path_requests];
+    const bool allow_path_requests = config.getBool("http_allow_path_requests", default_allow_path_requests);
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([allow_path_requests](const auto & request)
         {
