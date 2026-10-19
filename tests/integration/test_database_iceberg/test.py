@@ -838,6 +838,15 @@ def test_tables_with_same_location(started_cluster):
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
 
+    # Dropping one of them with its data keeps the files of the other.
+    files = list_s3_objects(started_cluster.minio_client, "warehouse-rest", prefix="data/")
+    drop_table_delete_data(node, namespace, table_name)
+    assert len(list_s3_objects(started_cluster.minio_client, "warehouse-rest", prefix="data/")) < len(files)
+    assert 'bbb\nbbb\nbbb' == node.query(
+        f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`",
+        settings={"use_iceberg_metadata_files_cache": 0},
+    ).strip()
+
 
 def test_backup_database(started_cluster):
     node = started_cluster.instances["node1"]

@@ -39,6 +39,14 @@ rm -rf "${TABLE_PATH}"
 # The first delete takes effect and then throws: ignored, the table is dropped.
 drop_with_failpoint local_object_storage_network_error_during_remove
 ls -A "${TABLE_PATH}" 2>/dev/null | wc -l
+rm -rf "${TABLE_PATH}"
+
+# No data files, so the first file that exists is a metadata file: its failed delete fails the DROP.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB}.t (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${DB}.t SYNC" 2>&1 | grep -o -m1 "FAULT_INJECTED"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB}.t"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB}"
 rm -rf "${TABLE_PATH}"

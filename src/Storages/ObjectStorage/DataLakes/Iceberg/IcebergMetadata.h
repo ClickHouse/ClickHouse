@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <optional>
+#include <unordered_set>
 #include <base/defines.h>
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -257,6 +258,8 @@ private:
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
+    /// Reused by a retried drop(): the metadata listing these files may be partly deleted by then.
+    std::optional<std::unordered_set<String>> files_to_drop;
 
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 

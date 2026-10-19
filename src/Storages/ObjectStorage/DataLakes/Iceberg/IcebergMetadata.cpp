@@ -82,6 +82,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
@@ -1790,6 +1791,9 @@ void IcebergMetadata::drop(
 
     auto remove_object = [&](const String & file, const char * kind, bool after_catalog_drop, const char * inject_failpoint)
     {
+        /// Some listed files may not exist, and deleting nothing is not a deleted file.
+        if (policy == DropCleanupPolicy::Reattaching && !any_object_deleted && !object_storage->exists(StoredObject(file)))
+            return;
         try
         {
             if (inject_failpoint)
@@ -1825,8 +1829,35 @@ void IcebergMetadata::drop(
         }
     };
 
-    /// `listFiles` lists `path / prefix`, so an empty prefix lists the whole table.
-    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
+    /// Only the files of this table: other tables can share its location.
+    if (policy != DropCleanupPolicy::AsyncRetry || !files_to_drop)
+    {
+        auto reachable = Iceberg::collectReachableFiles(
+            object_storage, persistent_components, data_lake_settings, context, log, catalog, storage_id.getTableName());
+
+        auto read_metadata = [&](const String & path)
+        {
+            return getMetadataJSONObject(
+                path, object_storage, persistent_components.metadata_cache, context, log,
+                getCompressionMethodFromMetadataFile(path), persistent_components.table_uuid);
+        };
+        /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
+        auto root = read_metadata(reachable.metadata_path);
+        if (root->has(Iceberg::f_table_uuid))
+        {
+            const String table_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
+            for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
+            {
+                if (reachable.files.contains(path))
+                    continue;
+                auto metadata = read_metadata(path);
+                if (metadata->has(Iceberg::f_table_uuid) && normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid)) == table_uuid)
+                    reachable.files.insert(path);
+            }
+        }
+        files_to_drop = std::move(reachable.files);
+    }
+    const auto & files = *files_to_drop;
 
     /// Everything but the data files goes after the catalog drop: a retried DROP resolves the table from it.
     std::vector<String> metadata_files;

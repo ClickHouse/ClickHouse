@@ -36,4 +36,15 @@ echo 1 > "${TABLE_PATH}metadata/version-hint.text"
 create_table "SETTINGS iceberg_use_version_hint = 1" 2>&1 | grep -o -m1 "TABLE_ALREADY_EXISTS"
 [ -f "${TABLE_PATH}metadata/v1.metadata.json" ] || echo "hint: no metadata written"
 
+# Setting on: a table stored inside the dropped table's directory keeps its files.
+rm -rf "${TABLE_PATH}"
+create_table
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_inner (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}inner/')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_inner SETTINGS allow_insert_into_iceberg = 1 VALUES (2)"
+${CLICKHOUSE_CLIENT} --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
+echo "inner: $(find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}inner/*" | wc -l) outer files left"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_inner"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_inner SYNC"
+
 rm -rf "${TABLE_PATH}"
