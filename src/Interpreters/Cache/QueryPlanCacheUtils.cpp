@@ -44,6 +44,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 
 #include <base/scope_guard.h>
@@ -280,8 +281,11 @@ bool isViewExpandedInCacheablePlan(const StoragePtr & storage)
 /// planning chose at store time.
 bool storageRechecksColumnAccessOnRead(const StoragePtr & storage)
 {
-    return typeid_cast<const StorageMaterializedView *>(storage.get()) != nullptr
-        || typeid_cast<const StorageBuffer *>(storage.get()) != nullptr;
+    /// A lazily loaded table is reached through `StorageTableProxy`, which forwards `read` to the
+    /// concrete engine but not its type, so test the engine behind the proxy.
+    const auto * nested = unwrapStorageProxy(storage).get();
+    return typeid_cast<const StorageMaterializedView *>(nested) != nullptr
+        || typeid_cast<const StorageBuffer *>(nested) != nullptr;
 }
 
 /// True if the storage checks access to *another* object while executing its own `read`: besides
@@ -292,7 +296,7 @@ bool storageRechecksColumnAccessOnRead(const StoragePtr & storage)
 bool storageChecksAccessToAnotherObjectOnRead(const StoragePtr & storage)
 {
     return storageRechecksColumnAccessOnRead(storage)
-        || typeid_cast<const StorageDictionary *>(storage.get()) != nullptr;
+        || typeid_cast<const StorageDictionary *>(unwrapStorageProxy(storage).get()) != nullptr;
 }
 
 /// Returns false if the storage's engine or view security makes the plan uncacheable. This is
@@ -310,7 +314,7 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
     if (database == DatabaseCatalog::TEMPORARY_DATABASE
         || (database == DatabaseCatalog::SYSTEM_DATABASE && !isAllowedSystemTable(database, table))
         || storage->isRemote()
-        || typeid_cast<const StorageMerge *>(storage.get()))
+        || typeid_cast<const StorageMerge *>(unwrapStorageProxy(storage).get()))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: dependency {}.{} is temporary, system, remote or Merge",
             database, table);
@@ -333,7 +337,7 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
     ///     grants are revalidated on a hit.
     /// Modelling all of this would mean resolving the target and recording it as a second
     /// dependency with the combined filter; until then, refuse to cache reads through an `Alias`.
-    if (typeid_cast<const StorageAlias *>(storage.get()))
+    if (typeid_cast<const StorageAlias *>(unwrapStorageProxy(storage).get()))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
             "Not caching plan: dependency {}.{} is an Alias, whose target table's row policies and column grants "
