@@ -67,13 +67,7 @@ single_version_override(
 
 include("//bazel:llvm.MODULE.bazel")
 
-cc_toolchains = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
-cc_toolchains.exec(arch = "x86_64", os = "linux")
-cc_toolchains.exec(arch = "aarch64", os = "linux")
-cc_toolchains.target(arch = "x86_64", os = "linux")
-cc_toolchains.target(arch = "aarch64", os = "linux")
-use_repo(cc_toolchains, "llvm_toolchains")
-register_toolchains("@llvm_toolchains//:all")
+register_toolchains("@llvm//toolchain:all")
 
 rust_toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
 rust_toolchains.toolchain(
