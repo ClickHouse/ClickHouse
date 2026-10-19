@@ -397,16 +397,18 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     const ScatteredBlock::Selector & selector,
     JoinStuff::JoinUsedFlags & used_flags)
 {
-    if (added_columns.need_filter)
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+    /// The join kinds that filter always set `added_columns.need_filter`.
+    if constexpr (!join_features.need_filter)
     {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        if (!added_columns.need_filter)
+        {
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        }
     }
-    else
-    {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
-    }
+    return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -445,49 +447,46 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         added_columns.join_on_keys,
         [](const auto & elem) { return !elem.null_map && elem.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue; });
 
+    if (mapv.size() > 1 || added_columns.join_on_keys.empty())
+    {
+        /// Several clauses have no required right keys (see the `HashJoin` constructor) and no scattered
+        /// blocks (`ConcurrentHashJoin` takes one clause), so only these copies can run.
+        if constexpr (need_filter == join_features.need_filter)
+        {
+            if (selector.isContinuousRange())
+            {
+                if (fast_path)
+                    return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                        std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
+                else
+                    return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                        std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
+            }
+        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected hash join of {} clauses with need_filter = {} on a {} block",
+            mapv.size(), need_filter, selector.isContinuousRange() ? "continuous" : "scattered");
+    }
+
+    chassert(key_getter_vector.size() == 1);
     if (selector.isContinuousRange())
     {
-        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
-        {
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-        }
+        if (fast_path)
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
         else
-        {
-            chassert(key_getter_vector.size() == 1);
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-        }
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
     }
     else
     {
-        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
-        {
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
-        }
+        if (fast_path)
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
         else
-        {
-            chassert(key_getter_vector.size() == 1);
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
-        }
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
     }
 }
 
