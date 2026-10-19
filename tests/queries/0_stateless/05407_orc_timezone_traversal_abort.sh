@@ -43,6 +43,10 @@ for zone in ("UTC", "America/Vancouver"):
 (work_dir / "outside").write_bytes(b"")
 if (tz_dir / "../../../outside").resolve() != (work_dir / "outside").resolve():
     raise SystemExit("private timezone traversal fixture is misconfigured")
+(work_dir / "dev").mkdir()
+(work_dir / "dev" / "null").write_bytes(b"")
+if (tz_dir / "../../../dev/null").resolve() != (work_dir / "dev" / "null").resolve():
+    raise SystemExit("private ORC metadata traversal fixture is misconfigured")
 
 env = os.environ.copy()
 env["TZDIR"] = str(tz_dir)
@@ -75,6 +79,15 @@ if fixture.returncode != 0 or not fixture.stdout.startswith(b"ORC"):
     diagnostic = (fixture.stderr + fixture.stdout).decode(errors="replace")
     raise SystemExit(f"could not create valid ORC fixture: {diagnostic[:1000]}")
 
+# Preserve the ORC file's byte lengths while replacing its writer timezone metadata
+# with the path from the customer reproducer. This exercises a file supplied by a
+# reader, without requiring a malicious query setting.
+safe_name = b"America/Vancouver"
+unsafe_name = b"../../../dev/null"
+if len(safe_name) != len(unsafe_name) or fixture.stdout.count(safe_name) != 1:
+    raise SystemExit("valid ORC fixture has unexpected timezone metadata")
+malicious_file = fixture.stdout.replace(safe_name, unsafe_name, 1)
+
 malicious_writer_query = (
     "SELECT toDateTime(0, 'America/Vancouver') AS t FORMAT ORC "
     "SETTINGS output_format_orc_writer_time_zone_name='../../../outside', "
@@ -88,9 +101,15 @@ reader = run_local(
     query="SELECT * FROM table",
     input_data=fixture.stdout,
 )
+reader_file = run_local(
+    work_dir / "reader_file",
+    "--input-format=ORC",
+    query="SELECT * FROM table",
+    input_data=malicious_file,
+)
 
 failed = False
-for label, result in (("writer", writer), ("reader", reader)):
+for label, result in (("writer", writer), ("reader", reader), ("reader file", reader_file)):
     if result.returncode < 0:
         print(f"{label}: terminated by signal {-result.returncode}")
         failed = True
