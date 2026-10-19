@@ -795,6 +795,8 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
+    /// The SDK resolver `EndpointResolver::EndpointSource` also falls back to the global `AWS_ENDPOINT_URL`.
+    /// On-prem setups sometimes point that at MinIO. So read only the STS-specific variable here.
     if (auto sts_endpoint = Aws::Environment::GetEnv("AWS_ENDPOINT_URL_STS"); !sts_endpoint.empty())
     {
         LOG_INFO(logger, "Using STS endpoint {} from AWS_ENDPOINT_URL_STS", sts_endpoint);

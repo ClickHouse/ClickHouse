@@ -792,6 +792,22 @@ TEST(IOTestAwsS3Client, StsCredentialsClientEndpoint)
     EXPECT_EQ(endpoint_for("eusc-de-east-1", "http://localhost:1234"), "http://localhost:1234");
 }
 
+/// The configuration keeps a reference to the filter, so the caller owns it.
+static DB::S3::PocoHTTPClientConfiguration createWebIdentityClientConfiguration(const DB::RemoteHostFilter & remote_host_filter)
+{
+    return DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-west-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {});
+}
+
 TEST(IOTestAwsS3Client, WebIdentityUsesStsEndpointFromEnvironment)
 {
     static constexpr std::string_view role_access_key = "web_identity_access_key";
@@ -815,17 +831,7 @@ TEST(IOTestAwsS3Client, WebIdentityUsesStsEndpointFromEnvironment)
     ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", sts_http.getUrl());
 
     DB::RemoteHostFilter remote_host_filter;
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "eu-west-1",
-        remote_host_filter,
-        /* s3_max_redirects = */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {});
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
 
     auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
         client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
@@ -847,6 +853,26 @@ TEST(IOTestAwsS3Client, WebIdentityUsesStsEndpointFromEnvironment)
         else if (param == "WebIdentityToken")
             ASSERT_EQ(value, token);
     }
+}
+
+TEST(IOTestAwsS3Client, WebIdentityIgnoresGlobalEndpointFromEnvironment)
+{
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_global_endpoint");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_global_endpoint");
+    /// Only the STS-specific variable is honored. On-prem setups point the global one at MinIO.
+    ScopedEnvVarForAwsS3ClientTests global_endpoint_env("AWS_ENDPOINT_URL", "http://localhost:1234");
+    (void)::unsetenv("AWS_ENDPOINT_URL_STS"); // NOLINT(concurrency-mt-unsafe)
+
+    DB::RemoteHostFilter remote_host_filter;
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+    /// The provider writes the resolved endpoint into the configuration, so no request is needed.
+    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
+    ASSERT_TRUE(provider);
+
+    EXPECT_TRUE(client_configuration.endpointOverride.empty());
 }
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
