@@ -290,6 +290,7 @@ def aggregate_generators(docs_dir):
             "params": {"function_name": fn},
             "outfile": "temp-aggregate-function.md",
             "dest": f"docs/sql-reference/aggregate-functions/reference/{fn}.md",
+            "dest_mintlify": f"reference/functions/aggregate-functions/{name}",
             "method": "markers",
             "skip_if_empty": True,  # non-aggregate name -> empty output -> skip
         })

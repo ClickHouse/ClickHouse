@@ -34,7 +34,7 @@ CREATE TABLE samples_table
 ) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket)
 SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS version = 9, samples_bucket_step_seconds = 60
+CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS version = 10, samples_bucket_step_seconds = 60
 SAMPLES samples_table TAGS tags_table TIME RANGES time_ranges_table;
 
 INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);

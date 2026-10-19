@@ -64,6 +64,7 @@ namespace TimeSeriesSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int INCORRECT_DATA;
@@ -825,8 +826,28 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
 
-    /// Precompute converting actions from our source block types to the pipeline's expected types.
     const Block & target_header = pipeline->executor->getHeader();
+    if (time_series_storage.getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
+        && (kind == ViewTarget::Tags || kind == ViewTarget::TimeRanges
+            || kind == ViewTarget::Samples || kind == ViewTarget::RecentSamples))
+    {
+        /// Legacy all-external definitions may not declare an ID type. Preserve the shared ID representation
+        /// in the actual bound INSERT pipelines instead of allowing the converting actions to narrow it.
+        const auto & source_id_type = header.getByName(TimeSeriesColumnNames::ID).type;
+        const auto & target_id_type = target_header.getByName(TimeSeriesColumnNames::ID).type;
+        if (!target_id_type->equals(*source_id_type))
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} target table {} has type {}, but expected {}",
+                time_series_storage.getStorageID().getNameForLogs(),
+                TimeSeriesColumnNames::ID,
+                kind,
+                target_table_id.getNameForLogs(),
+                target_id_type->getName(),
+                source_id_type->getName());
+    }
+
+    /// Precompute converting actions from our source block types to the pipeline's expected types.
     auto converting_dag = ActionsDAG::makeConvertingActions(
         header.getColumnsWithTypeAndName(),
         target_header.getColumnsWithTypeAndName(),

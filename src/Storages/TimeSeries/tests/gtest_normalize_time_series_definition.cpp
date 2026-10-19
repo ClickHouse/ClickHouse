@@ -183,7 +183,9 @@ namespace
     const String DEFAULT_ID_GENERATOR = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
     const String DEFAULT_SAMPLES_COLUMNS = "`id` " + DEFAULT_ID_TYPE + ", `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3))";
     const String DEFAULT_SAMPLES_ENGINE = "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768";
-    const String DEFAULT_RECENT_SAMPLES_ENGINE = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+    const String LEGACY_RECENT_SAMPLES_ENGINE = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+        "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+    const String DEFAULT_RECENT_SAMPLES_ENGINE = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
     const String DEFAULT_BUCKETED_SAMPLES_COLUMNS = "`id` " + DEFAULT_ID_TYPE
         + ", `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)), "
@@ -221,7 +223,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 9")) << definition;
+    EXPECT_TRUE(definition.contains("version = 10")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
     EXPECT_TRUE(definition.contains("samples_bucket_step_seconds = 3600")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_bucket_step_seconds = 900")) << definition;
@@ -261,10 +263,356 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, Version8DefinitionKeepsRowSamples)
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"), DEFAULT_METRIC_FAMILIES_COLUMNS);
 
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), DEFAULT_SAMPLES_ENGINE);
-    EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+    EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), LEGACY_RECENT_SAMPLES_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"), DEFAULT_TAGS_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "TIME RANGES"), DEFAULT_TIME_RANGES_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), DEFAULT_METRIC_FAMILIES_ENGINE);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, Version9DefinitionKeepsRowSamples)
+{
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 9");
+
+    EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
+    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
+    EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), DEFAULT_SAMPLES_ENGINE);
+    EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+    EXPECT_FALSE(definition.contains("samples_bucket_step_seconds")) << definition;
+
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.ts ENGINE = TimeSeries SETTINGS version = 9", definition);
+    EXPECT_EQ(extractInnerColumns(copy, "SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
+    EXPECT_EQ(extractInnerColumns(copy, "RECENT SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
+    EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, BucketedRecentSamplesTTLRejectsOverflow)
+{
+    for (const String ttl : {"18446744073709551615", "9223372036854774908", "9223372036854775806"})
+    {
+        SCOPED_TRACE(ttl);
+        auto normalize = [&]
+        {
+            normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10, recent_samples_ttl_seconds = " + ttl);
+        };
+        EXPECT_EQ(getExceptionCode(normalize), ErrorCodes::INVALID_SETTING_VALUE);
+        EXPECT_TRUE(getExceptionMessage(normalize).contains("must not exceed 9223372036854775807"))
+            << getExceptionMessage(normalize);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, BucketedRecentSamplesTTLAcceptsIntervalBoundary)
+{
+    /// This checks the generated interval, not whether adding it to a timestamp is representable.
+    auto definition = normalizeNewTable(
+        "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10, recent_samples_ttl_seconds = 9223372036854774907");
+    EXPECT_TRUE(extractInnerEngine(definition, "RECENT SAMPLES").contains("TTL bucket + toIntervalSecond(9223372036854775807)"))
+        << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, BucketStepsAreValidatedOnFullAttachButPreservedOnReplay)
+{
+    const auto stored_definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10");
+    for (const String setting : {"samples_bucket_step_seconds", "recent_samples_bucket_step_seconds"})
+    {
+        const String old_setting = setting + (setting == "samples_bucket_step_seconds" ? " = 3600" : " = 900");
+        for (const String value : {"0", "4294967296"})
+        {
+            SCOPED_TRACE(setting + " = " + value);
+            auto definition = stored_definition;
+            const auto position = definition.find(old_setting);
+            ASSERT_NE(position, String::npos);
+            definition.replace(position, old_setting.size(), setting + " = " + value);
+            definition.replace(0, 6, "ATTACH");
+
+            NormalizeTimeSeriesDefinitionParams params;
+            params.mode = LoadingStrictnessLevel::ATTACH;
+            auto attach = [&] { normalizeNewTable(definition, params); };
+            EXPECT_EQ(getExceptionCode(attach), ErrorCodes::INVALID_SETTING_VALUE);
+            EXPECT_TRUE(getExceptionMessage(attach).contains(setting)) << getExceptionMessage(attach);
+            EXPECT_TRUE(getExceptionMessage(attach).contains("must be in the range [1, 4294967295]")) << getExceptionMessage(attach);
+
+            for (auto mode : {LoadingStrictnessLevel::FORCE_ATTACH, LoadingStrictnessLevel::FORCE_RESTORE})
+            {
+                params.mode = mode;
+                EXPECT_EQ(normalizeNewTable(definition, params), definition);
+            }
+            params.mode = LoadingStrictnessLevel::ATTACH;
+            params.is_restore_from_backup = true;
+            EXPECT_EQ(normalizeNewTable(definition, params), definition);
+        }
+    }
+
+    for (const String value : {"1", "4294967295"})
+    {
+        SCOPED_TRACE(value);
+        auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10, samples_bucket_step_seconds = "
+            + value + ", recent_samples_bucket_step_seconds = " + value);
+        definition.replace(0, 6, "ATTACH");
+        EXPECT_EQ(normalizeExistingTable(definition), definition);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsRejectsSourceBucketStepsBeforeOverrides)
+{
+    const auto stored_definition = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 10");
+    for (const String setting : {"samples_bucket_step_seconds", "recent_samples_bucket_step_seconds"})
+    {
+        const String old_setting = setting + (setting == "samples_bucket_step_seconds" ? " = 3600" : " = 900");
+        for (const String value : {"0", "4294967296"})
+        {
+            auto source = stored_definition;
+            const auto position = source.find(old_setting);
+            ASSERT_NE(position, String::npos);
+            source.replace(position, old_setting.size(), setting + " = " + value);
+            std::vector<String> overrides = {old_setting, setting + " = DEFAULT"};
+            if (setting == "recent_samples_bucket_step_seconds")
+                overrides.emplace_back("recent_samples_ttl_seconds = 0");
+
+            for (const auto & override_settings : overrides)
+            {
+                SCOPED_TRACE(setting + " = " + value + "; " + override_settings);
+                auto copy = [&] { normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + override_settings, source); };
+                EXPECT_EQ(getExceptionCode(copy), ErrorCodes::INVALID_SETTING_VALUE);
+                EXPECT_TRUE(getExceptionMessage(copy).contains("must be in the range [1, 4294967295]")) << getExceptionMessage(copy);
+            }
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsRejectsSourceRecentSamplesTTLOverflowBeforeOverrides)
+{
+    auto source = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 10");
+    const String ttl_setting = "recent_samples_ttl_seconds = 345600";
+    const auto ttl_position = source.find(ttl_setting);
+    ASSERT_NE(ttl_position, String::npos);
+    source.replace(ttl_position, ttl_setting.size(), "recent_samples_ttl_seconds = 18446744073709551615");
+
+    for (const String overrides : {
+             "",
+             " SETTINGS recent_samples_ttl_seconds = 345600",
+             " SETTINGS recent_samples_ttl_seconds = 0",
+             " SETTINGS recent_samples_ttl_seconds = 345600 RECENT SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)"})
+    {
+        SCOPED_TRACE(overrides);
+        auto copy = [&] { normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + overrides, source); };
+        EXPECT_EQ(getExceptionCode(copy), ErrorCodes::INVALID_SETTING_VALUE);
+        EXPECT_TRUE(getExceptionMessage(copy).contains("must not exceed 9223372036854775807")) << getExceptionMessage(copy);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, FullAttachRejectsRecentSamplesTTLOverflowButReplayPreservesMetadata)
+{
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10");
+    const String ttl_setting = "recent_samples_ttl_seconds = 345600";
+    const auto ttl_position = definition.find(ttl_setting);
+    ASSERT_NE(ttl_position, String::npos);
+    definition.replace(ttl_position, ttl_setting.size(), "recent_samples_ttl_seconds = 18446744073709551615");
+    definition.replace(0, 6, "ATTACH");
+
+    NormalizeTimeSeriesDefinitionParams params;
+    params.mode = LoadingStrictnessLevel::ATTACH;
+    auto attach = [&] { normalizeNewTable(definition, params); };
+    EXPECT_EQ(getExceptionCode(attach), ErrorCodes::INVALID_SETTING_VALUE);
+
+    params.mode = LoadingStrictnessLevel::FORCE_ATTACH;
+    EXPECT_EQ(normalizeNewTable(definition, params), definition);
+    params.mode = LoadingStrictnessLevel::ATTACH;
+    params.is_restore_from_backup = true;
+    EXPECT_EQ(normalizeNewTable(definition, params), definition);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, ScalarRecentSamplesTTLDoesNotUseBucketedIntervalGuard)
+{
+    auto source = normalizeNewTable(
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 18446744073709551615");
+    EXPECT_TRUE(extractInnerEngine(source, "RECENT SAMPLES").contains("toIntervalSecond(18446744073709551615)")) << source;
+
+    for (const String overrides : {
+             " SETTINGS recent_samples_ttl_seconds = 0",
+             " SETTINGS recent_samples_ttl_seconds = 345600 RECENT SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)"})
+    {
+        SCOPED_TRACE(overrides);
+        EXPECT_NO_THROW(normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + overrides, source));
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, ScalarBucketLayoutSettingsAreRejectedOnFullAttachButPreservedOnReplay)
+{
+    const auto stored_definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 9");
+    const String settings_prefix = "SETTINGS ";
+    const auto position = stored_definition.find(settings_prefix);
+    ASSERT_NE(position, String::npos);
+    for (const String setting : {
+             "samples_bucket_step_seconds = 3600", "samples_partition_by = 'toYYYYMM(bucket)'",
+             "samples_index_granularity_bytes = 524288", "samples_compression_codec = 'ZSTD(3)'",
+             "recent_samples_bucket_step_seconds = 900", "recent_samples_index_granularity_bytes = 262144",
+             "recent_samples_compression_codec = 'ZSTD(3)'"})
+    {
+        SCOPED_TRACE(setting);
+        auto definition = stored_definition;
+        definition.insert(position + settings_prefix.size(), setting + ", ");
+        definition.replace(0, 6, "ATTACH");
+        NormalizeTimeSeriesDefinitionParams params;
+        params.mode = LoadingStrictnessLevel::ATTACH;
+        auto attach = [&] { normalizeNewTable(definition, params); };
+        EXPECT_EQ(getExceptionCode(attach), ErrorCodes::INVALID_SETTING_VALUE);
+        EXPECT_TRUE(getExceptionMessage(attach).contains("Bucket-layout settings require `version` to be at least 10"))
+            << getExceptionMessage(attach);
+
+        params.mode = LoadingStrictnessLevel::FORCE_ATTACH;
+        EXPECT_EQ(normalizeNewTable(definition, params), definition);
+        params.mode = LoadingStrictnessLevel::ATTACH;
+        params.is_restore_from_backup = true;
+        EXPECT_EQ(normalizeNewTable(definition, params), definition);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsChecksSourceBucketLayoutSettingsWithoutExternalTargets)
+{
+    for (UInt64 version : {8, 9})
+    {
+        for (const String target : {"SAMPLES", "RECENT SAMPLES"})
+        {
+            const String source = "CREATE TABLE db.src (samples Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SETTINGS version = "
+                + std::to_string(version) + ", id_type = 'UInt64' " + target + " db.unavailable";
+            const String inner_target = " " + target + " INNER COLUMNS (extra UInt8)";
+
+            /// Stored source types suffice: no source external target metadata is supplied, even for a valid copy.
+            for (const String settings : {"", " SETTINGS version = 9", " SETTINGS version = 10"})
+            {
+                SCOPED_TRACE(source + settings);
+                auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + settings + inner_target, source);
+                const bool scalar = (settings == " SETTINGS version = 9");
+                EXPECT_EQ(extractInnerEngine(copy, target), target == "SAMPLES"
+                    ? (scalar ? DEFAULT_SAMPLES_ENGINE : DEFAULT_BUCKETED_SAMPLES_ENGINE)
+                    : (scalar ? DEFAULT_RECENT_SAMPLES_ENGINE : DEFAULT_BUCKETED_RECENT_SAMPLES_ENGINE));
+                EXPECT_FALSE(copy.contains("db.unavailable")) << copy;
+            }
+
+            if (version != 9)
+                continue;
+            const String setting = (target == "SAMPLES") ? "samples_bucket_step_seconds" : "recent_samples_bucket_step_seconds";
+            const String value = (target == "SAMPLES") ? "3600" : "900";
+            auto malformed_source = source;
+            const auto position = malformed_source.find("SETTINGS ");
+            ASSERT_NE(position, String::npos);
+            malformed_source.insert(position + String("SETTINGS ").size(), setting + " = " + value + ", ");
+            for (const String & settings : {
+                     " SETTINGS version = 9, " + setting + " = DEFAULT",
+                     " SETTINGS version = 10, " + setting + " = " + value,
+                     " SETTINGS " + setting + " = DEFAULT",
+                     String(" SETTINGS recent_samples_ttl_seconds = 0")})
+            {
+                SCOPED_TRACE(malformed_source + settings);
+                const String replacement = (target == "RECENT SAMPLES" && settings.contains("ttl_seconds = 0")) ? "" : inner_target;
+                auto copy = [&]
+                {
+                    normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + settings + replacement, malformed_source);
+                };
+                EXPECT_EQ(getExceptionCode(copy), ErrorCodes::INVALID_SETTING_VALUE);
+                EXPECT_TRUE(getExceptionMessage(copy).contains("Bucket-layout settings require `version` to be at least 10"))
+                    << getExceptionMessage(copy);
+            }
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, LegacyBucketedInnerSamplesAreRejectedBeforeNormalization)
+{
+    for (UInt64 version : {8, 9})
+    {
+        for (const String target : {"SAMPLES", "RECENT SAMPLES"})
+        {
+            const String definition = "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = " + std::to_string(version)
+                + " " + target + " INNER COLUMNS (" + DEFAULT_BUCKETED_SAMPLES_COLUMNS + ") "
+                + target + " INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)";
+            for (const auto mode : {LoadingStrictnessLevel::CREATE, LoadingStrictnessLevel::ATTACH})
+            {
+                auto query = definition;
+                if (mode == LoadingStrictnessLevel::ATTACH)
+                    query.replace(0, 6, "ATTACH");
+                SCOPED_TRACE(query);
+                NormalizeTimeSeriesDefinitionParams params;
+                params.mode = mode;
+                auto normalize = [&] { normalizeNewTable(query, params); };
+                EXPECT_EQ(getExceptionCode(normalize), ErrorCodes::INCORRECT_QUERY);
+                EXPECT_TRUE(getExceptionMessage(normalize).contains("bucketed samples require version 10")) << getExceptionMessage(normalize);
+            }
+
+            NormalizeTimeSeriesDefinitionParams restore_params;
+            restore_params.is_restore_from_backup = true;
+            auto restore = [&] { normalizeNewTable(definition, restore_params); };
+            EXPECT_EQ(getExceptionCode(restore), ErrorCodes::INCORRECT_QUERY);
+            EXPECT_TRUE(getExceptionMessage(restore).contains("bucketed samples require version 10")) << getExceptionMessage(restore);
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsRejectsStoredLegacyBucketedInnerSamples)
+{
+    for (UInt64 version : {8, 9})
+    {
+        for (const String target : {"SAMPLES", "RECENT SAMPLES"})
+        {
+            const String stored_definition = "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = " + std::to_string(version)
+                + " " + target + " INNER COLUMNS (" + DEFAULT_BUCKETED_SAMPLES_COLUMNS + ") "
+                + target + " INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)";
+            for (const String copy_settings : {"", " SETTINGS version = 9"})
+            {
+                SCOPED_TRACE(stored_definition + copy_settings);
+                auto copy = [&]
+                {
+                    normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + copy_settings, stored_definition);
+                };
+                EXPECT_EQ(getExceptionCode(copy), ErrorCodes::INCORRECT_QUERY);
+                EXPECT_TRUE(getExceptionMessage(copy).contains("bucketed samples require version 10")) << getExceptionMessage(copy);
+            }
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, FullAttachRejectsLegacyBucketedExternalSamples)
+{
+    const auto bucket_columns = makeColumns({
+        makeColumn("id", DEFAULT_ID_TYPE),
+        makeColumn("samples", "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))"),
+        makeColumn("bucket", "DateTime64(3)"),
+        makeColumn("min_time", "SimpleAggregateFunction(min, DateTime64(3))"),
+        makeColumn("max_time", "SimpleAggregateFunction(max, DateTime64(3))")});
+    for (UInt64 version : {8, 9})
+    {
+        for (const auto kind : {ViewTarget::Samples, ViewTarget::RecentSamples})
+        {
+            const String target = (kind == ViewTarget::Samples) ? "SAMPLES" : "RECENT SAMPLES";
+            const String definition = "ATTACH TABLE db.ts ENGINE = TimeSeries SETTINGS version = " + std::to_string(version)
+                + " " + target + " db.ext_samples";
+            SCOPED_TRACE(definition);
+            NormalizeTimeSeriesDefinitionParams params;
+            params.mode = LoadingStrictnessLevel::ATTACH;
+            params.external_target_columns[kind] = bucket_columns;
+            auto attach = [&] { normalizeNewTable(definition, params); };
+            EXPECT_EQ(getExceptionCode(attach), ErrorCodes::INCORRECT_QUERY);
+            EXPECT_TRUE(getExceptionMessage(attach).contains("bucketed samples require version 10")) << getExceptionMessage(attach);
+
+            /// Metadata replay cannot require an external target to have loaded already.
+            params.mode = LoadingStrictnessLevel::FORCE_ATTACH;
+            params.external_target_columns.clear();
+            EXPECT_NO_THROW(normalizeNewTable(definition, params));
+        }
+    }
 }
 
 
@@ -447,6 +795,72 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, IdTypeSetting)
     {
         normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS id_type = 'Nullable(UInt64)'");
     }), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredIdTypeFromEachCarrier)
+{
+    const std::vector<String> declarations = {
+        "SAMPLES INNER COLUMNS (id UInt64)",
+        "RECENT SAMPLES INNER COLUMNS (id UInt64)",
+        "TAGS INNER COLUMNS (id UInt64 DEFAULT toUInt64(4294967297))",
+        "TIME RANGES INNER COLUMNS (id UInt64)",
+        "SETTINGS id_type = 'UInt64'"};
+
+    for (const auto & declaration : declarations)
+    {
+        SCOPED_TRACE(declaration);
+        auto query = parseCreateQuery("CREATE TABLE db.ts ENGINE = TimeSeries " + declaration);
+        const auto definition = query->formatWithSecretsOneLine();
+        auto id_type = getTimeSeriesDeclaredIdType(*query);
+        ASSERT_TRUE(id_type);
+        EXPECT_EQ(id_type->getName(), "UInt64");
+        EXPECT_EQ(query->formatWithSecretsOneLine(), definition);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredIdTypeMustAgreeAcrossCarriers)
+{
+    auto query = parseCreateQuery(
+        "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10, id_type = 'UInt64' "
+        "SAMPLES INNER COLUMNS (id UInt64) RECENT SAMPLES INNER COLUMNS (id UInt64) "
+        "TAGS INNER COLUMNS (id UInt64) TIME RANGES INNER COLUMNS (id UInt64)");
+    auto id_type = getTimeSeriesDeclaredIdType(*query);
+    ASSERT_TRUE(id_type);
+    EXPECT_EQ(id_type->getName(), "UInt64");
+
+    for (const auto & target : {"SAMPLES", "RECENT SAMPLES", "TAGS", "TIME RANGES"})
+    {
+        SCOPED_TRACE(target);
+        query = parseCreateQuery("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS id_type = 'UInt64' "
+            + String(target) + " INNER COLUMNS (id UInt32)");
+        EXPECT_EQ(getExceptionCode([&] { getTimeSeriesDeclaredIdType(*query); }), ErrorCodes::BAD_TYPE_OF_FIELD);
+    }
+
+    query = parseCreateQuery(
+        "CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES INNER COLUMNS (id UInt64) TAGS INNER COLUMNS (id UInt32)");
+    EXPECT_EQ(getExceptionCode([&] { getTimeSeriesDeclaredIdType(*query); }), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredIdTypeDoesNotInferDefaults)
+{
+    const std::vector<String> definitions = {
+        "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10",
+        "ATTACH TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10, id_generator = 'sipHash64(tags)' "
+            "SAMPLES db.ext_samples RECENT SAMPLES db.ext_recent TAGS db.ext_tags "
+            "TIME RANGES db.ext_time_ranges METRIC FAMILIES db.ext_metrics",
+        "CREATE TABLE db.ts ENGINE = TimeSeries TAGS INNER COLUMNS (metric_name String)"};
+
+    for (const auto & definition : definitions)
+    {
+        SCOPED_TRACE(definition);
+        auto query = parseCreateQuery(definition);
+        const auto original = query->formatWithSecretsOneLine();
+        EXPECT_FALSE(getTimeSeriesDeclaredIdType(*query));
+        EXPECT_EQ(query->formatWithSecretsOneLine(), original);
+    }
 }
 
 
@@ -720,7 +1134,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 8 SAMPLES ENGINE = MergeTree RECENT SAMPLES ENGINE = MergeTree "
         "TAGS ENGINE = ReplacingMergeTree TIME RANGES ENGINE = AggregatingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree");
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), DEFAULT_SAMPLES_ENGINE);
-    EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+    EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), LEGACY_RECENT_SAMPLES_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"), DEFAULT_TAGS_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "TIME RANGES"), DEFAULT_TIME_RANGES_ENGINE);
     EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), DEFAULT_METRIC_FAMILIES_ENGINE);
@@ -735,6 +1149,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
 TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 {
     /// An explicit supported version is accepted, an unknown one is rejected.
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10").contains("version = 10"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 9").contains("version = 9"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 8").contains("version = 8"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 7").contains("version = 7"));
@@ -750,8 +1165,59 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 9")) << definition;
+    EXPECT_TRUE(definition.contains("version = 10")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
+{
+    /// The timezone is named only from the version that introduced it, so an earlier version keeps
+    /// generating the expression it always generated and stays reproducible.
+    EXPECT_EQ(
+        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 7"), "RECENT SAMPLES"),
+        LEGACY_RECENT_SAMPLES_ENGINE);
+    EXPECT_EQ(
+        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 8"), "RECENT SAMPLES"),
+        LEGACY_RECENT_SAMPLES_ENGINE);
+    EXPECT_EQ(extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 9"), "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+    EXPECT_EQ(extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries"), "RECENT SAMPLES"), DEFAULT_BUCKETED_RECENT_SAMPLES_ENGINE);
+
+    /// A scalar v9 copy gets the UTC partition key. The source's own spelling is what identifies its
+    /// key as generated, so it is stripped rather than carried over as if it had been declared.
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 9",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 7"));
+    EXPECT_TRUE(copy.contains("version = 9")) << copy;
+    EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
+
+    static constexpr std::string_view legacy_replicated_engine
+        = "ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+          "PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+    static constexpr std::string_view pinned_replicated_engine
+        = "ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+          "PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+
+    /// The engine and its arguments are preserved on copy, while the generated partition
+    /// key is recognized, stripped, and regenerated with UTC on the new table.
+    auto replicated_src = normalizeNewTable(
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 7 "
+        "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}')");
+    EXPECT_EQ(extractInnerEngine(replicated_src, "RECENT SAMPLES"), legacy_replicated_engine);
+
+    auto replicated_copy = normalizeNewTableAs(
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 9", replicated_src);
+    EXPECT_TRUE(replicated_copy.contains("version = 9")) << replicated_copy;
+    EXPECT_EQ(extractInnerEngine(replicated_copy, "RECENT SAMPLES"), pinned_replicated_engine);
+
+    /// An explicit custom partition key is preserved on copy even when the engine has arguments.
+    auto custom_partition_copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 9",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 7 "
+            "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+            "PARTITION BY toYYYYMM(timestamp)"));
+    EXPECT_TRUE(extractInnerEngine(custom_partition_copy, "RECENT SAMPLES").contains("PARTITION BY toYYYYMM(timestamp)"))
+        << custom_partition_copy;
 }
 
 
@@ -768,6 +1234,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
     const std::vector<std::pair<String, NormalizeTimeSeriesDefinitionParams>> definitions =
     {
         {"CREATE TABLE db.ts ENGINE = TimeSeries", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 10", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 9", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 8", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 7", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6", {}},
@@ -907,6 +1375,68 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsMergesSettings)
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_time_ranges = 0, store_time_ranges = DEFAULT", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_with_job);
     EXPECT_FALSE(definition.contains("TIME RANGES")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsRegeneratesSamplesSettingsForDestinationVersion)
+{
+    for (UInt64 version : {8, 9, 10})
+    {
+        const auto source = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = " + std::to_string(version));
+        for (const String settings : {"", " SETTINGS version = 9", " SETTINGS version = 10"})
+        {
+            SCOPED_TRACE(std::to_string(version) + settings);
+            const auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + settings, source);
+            const bool scalar = (settings == " SETTINGS version = 9");
+            EXPECT_EQ(extractInnerEngine(copy, "SAMPLES"), scalar ? DEFAULT_SAMPLES_ENGINE : DEFAULT_BUCKETED_SAMPLES_ENGINE);
+            EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), scalar ? DEFAULT_RECENT_SAMPLES_ENGINE : DEFAULT_BUCKETED_RECENT_SAMPLES_ENGINE);
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPreservesCustomScalarSamplesSettings)
+{
+    for (UInt64 version : {8, 9})
+    {
+        SCOPED_TRACE(version);
+        const auto version_setting = " SETTINGS version = " + std::to_string(version);
+        const auto source = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries" + version_setting
+            + " SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 512, index_granularity_bytes = 524288"
+              " RECENT SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 256, index_granularity_bytes = 262144");
+        const auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries" + version_setting, source);
+        EXPECT_TRUE(extractInnerEngine(source, "SAMPLES").contains("index_granularity = 512, index_granularity_bytes = 524288")) << source;
+        EXPECT_TRUE(extractInnerEngine(source, "RECENT SAMPLES").contains("index_granularity = 256, index_granularity_bytes = 262144")) << source;
+        EXPECT_EQ(extractInnerEngine(copy, "SAMPLES"), extractInnerEngine(source, "SAMPLES"));
+        EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), extractInnerEngine(source, "RECENT SAMPLES"));
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsMergesSamplesGranularitySettings)
+{
+    for (UInt64 source_version : {8, 9, 10})
+    {
+        const auto source = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = " + std::to_string(source_version)
+            + ", samples_index_granularity = 1024, recent_samples_index_granularity = 2048");
+        for (UInt64 destination_version : {9, 10})
+        {
+            SCOPED_TRACE(std::to_string(source_version) + " -> " + std::to_string(destination_version));
+            const String query = "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = " + std::to_string(destination_version);
+            auto copy = normalizeNewTableAs(query, source);
+            EXPECT_TRUE(extractInnerEngine(copy, "SAMPLES").contains("index_granularity = 1024")) << copy;
+            EXPECT_TRUE(extractInnerEngine(copy, "RECENT SAMPLES").contains("index_granularity = 2048")) << copy;
+
+            copy = normalizeNewTableAs(query + ", samples_index_granularity = DEFAULT, recent_samples_index_granularity = DEFAULT", source);
+            const bool scalar = (destination_version == 9);
+            EXPECT_EQ(extractInnerEngine(copy, "SAMPLES"), scalar ? DEFAULT_SAMPLES_ENGINE : DEFAULT_BUCKETED_SAMPLES_ENGINE);
+            EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), scalar ? DEFAULT_RECENT_SAMPLES_ENGINE : DEFAULT_BUCKETED_RECENT_SAMPLES_ENGINE);
+
+            copy = normalizeNewTableAs(query + ", samples_index_granularity = 4096, recent_samples_index_granularity = 1024", source);
+            EXPECT_TRUE(extractInnerEngine(copy, "SAMPLES").contains("index_granularity = 4096")) << copy;
+            EXPECT_TRUE(extractInnerEngine(copy, "RECENT SAMPLES").contains("index_granularity = 1024")) << copy;
+        }
+    }
 }
 
 

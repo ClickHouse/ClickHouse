@@ -265,7 +265,7 @@ Infinity plus finite values remains infinity. Any NaN or opposing infinities pro
 Each state uses a fixed-width integer accumulator and a checked `UInt64` input count. Exceeding that count raises an exception.
 This accuracy contract applies to the inputs of this aggregate, not to rounding performed by earlier functions in a PromQL expression.
 Only `Float64` arguments are accepted. Nullable inputs and array inputs use the normal `Nullable` and `ForEach` combinators.
-    )";
+)";
     FunctionDocumentation::Syntax syntax_promql = R"(
 sumPromQL(value)
     )";

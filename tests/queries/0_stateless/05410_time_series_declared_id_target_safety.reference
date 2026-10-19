@@ -1,0 +1,16 @@
+samples read: rejected
+samples insert: rejected
+samples replay read: rejected
+samples replay insert: rejected
+samples failed inserts: no writes
+samples same-type replacement: high ID preserved
+recent main samples: available
+recent read: rejected
+recent insert: rejected
+recent replay read: rejected
+recent replay insert: rejected
+recent failed inserts: no writes
+recent same-type replacement: high ID preserved
+legacy full ATTACH: no ID pin
+legacy replay without targets: admitted, no ID pin
+legacy restored targets: high ID preserved

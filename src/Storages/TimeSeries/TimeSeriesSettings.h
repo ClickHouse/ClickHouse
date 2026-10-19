@@ -56,6 +56,12 @@ struct TimeSeriesSettings
     /// Whether the table has the "recent samples" target.
     bool isRecentSamplesTargetEnabled() const;
 
+    /// Returns the bucketed recent samples retention including the bucket step, checked to fit in `IntervalSecond`.
+    UInt64 getBucketedRecentSamplesTTLSeconds() const;
+
+    /// Checks settings which determine the bucketed samples layout, including settings loaded from stored metadata.
+    void checkBucketedSamplesSettings() const;
+
     /// Whether the table has the "time ranges" target.
     bool isTimeRangesTargetEnabled() const;
 

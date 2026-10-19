@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/LoadingStrictnessLevel.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/ColumnsDescription.h>
@@ -59,11 +60,16 @@ struct NormalizeTimeSeriesDefinitionParams
 /// and the query context, then calls this function.
 void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const NormalizeTimeSeriesDefinitionParams & params);
 
+/// Returns the ID type declared by inner columns or `id_type`, checking that all declarations agree.
+/// Returns null for legacy all-external definitions with no recorded ID type. Does not consult the catalog or apply defaults.
+DataTypePtr getTimeSeriesDeclaredIdType(const ASTCreateQuery & create_query);
+
 /// Checks the physical bucketed samples target before using it. The target can differ from the engine and
 /// columns recorded in a `TimeSeries` definition after `ATTACH`, `RESTORE`, or an independent target `ALTER`.
 void checkTimeSeriesBucketedSamplesTarget(
     const ColumnsDescription & outer_columns,
     const ColumnsDescription & target_columns,
+    const DataTypePtr & expected_id_type,
     std::string_view engine_name,
     const ASTPtr & sorting_key,
     ViewTarget::Kind target_kind,

@@ -1527,6 +1527,8 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
     const bool has_bucketed_samples = time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
+    if (has_bucketed_samples)
+        time_series_settings->checkBucketedSamplesSettings();
 
     const auto table_time_range
         = makeTableTimeRange(config.table_timestamp_type, config.min_time, config.max_time, config.time_scale);

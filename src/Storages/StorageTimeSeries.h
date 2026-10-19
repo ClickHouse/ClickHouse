@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/IDataType_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -198,6 +199,9 @@ private:
     void createOrDropMetricFamiliesDeduplicationCache();
 
     MultiVersion<TimeSeriesSettings> storage_settings;
+
+    /// The definition's ID type, independent of mutable target metadata. Null for unpinned legacy definitions.
+    DataTypePtr expected_id_type;
 
     std::vector<Target> targets;
     bool has_inner_tables = false;

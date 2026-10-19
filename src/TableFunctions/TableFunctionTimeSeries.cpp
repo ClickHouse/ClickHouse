@@ -249,7 +249,7 @@ the function selects the samples with `min_time <= timestamp <= max_time` exactl
 
 ## Returned value {#returned-value}
 
-For `TimeSeries` table version 9 and newer, the function returns two columns:
+For `TimeSeries` table version 10 and newer, the function returns two columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
 - `time_series` - Contains samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
 
@@ -262,7 +262,7 @@ FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTE
 GROUP BY id
 ```
 
-For `TimeSeries` table versions before 9, the function returns `id`, `timestamp`, and `value`, with one sample per row.
+For `TimeSeries` table versions through 9, the function returns `id`, `timestamp`, and `value`, with one sample per row.
 There is no specific order for returned rows in this layout either.
 
 ## Example {#example}
