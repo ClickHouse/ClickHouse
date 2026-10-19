@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-fasttest, no-replicated-database, no-ordinary-database
+-- Tags: no-parallel, no-fasttest, no-replicated-database, no-ordinary-database, no-shared-merge-tree
 -- no-parallel: the failpoint is server-wide.
+-- no-shared-merge-tree: the failpoint is in the on-disk version metadata, which SharedMergeTree does not use.
 
 -- A rolled back transaction must take the part it created out of the active set even when the
 -- version metadata of its parts cannot be written. Otherwise the created part stays active next to
