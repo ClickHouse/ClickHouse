@@ -86,19 +86,15 @@ bool isUnknownCommitStatus();
 
 /// A freshly created `version-hint.text` is only useful if later commits can advance it under a
 /// compare-and-swap on its `ETag`, and that header is optional. Reads the tag back through the same
-/// read path later commits use and, when the object storage reports none, removes the hint together
-/// with `files_to_take_back` (the files published by the same operation) and throws
-/// `UNSUPPORTED_METHOD`. Otherwise the table would become uncommittable on its first later write,
-/// which refuses to advance a hint without a tag. The hint is removed first, and the files only once
-/// that has succeeded. Nothing is removed when the hint cannot be read back or no longer holds
-/// `version`, the one this operation wrote - unless `no_concurrent_writer` is set, in which case a
-/// failed read also takes the files back before the error propagates. Without `no_concurrent_writer`
-/// (a commit that has already published its snapshot), a failed read or a failed removal of the hint
-/// returns normally: the snapshot stays published, and an error would make the caller clean up the
-/// files it references. A removal that throws counts as done only if the object is then known to be
-/// absent. If the hint is gone but a file is known to remain, the hint is restored and the function
-/// returns normally, so the publication is retained as a whole. If the hint is gone and whether a file
-/// remains is unknown, throws `UNKNOWN_STATUS_OF_INSERT` (see `isUnknownCommitStatus`).
+/// read path later commits use and acts only when the object storage reports none while the hint
+/// still holds `version`, the one this operation wrote. Otherwise the table would become
+/// uncommittable on its first later write, which refuses to advance a hint without a tag.
+/// With `no_concurrent_writer` (`CREATE TABLE`, whose files nobody can have built on yet), removes the
+/// hint and then, once it is known to be gone, `files_to_take_back`, and throws `UNSUPPORTED_METHOD`;
+/// a failed read takes the files back the same way before the error propagates.
+/// Without it (a commit whose metadata file is already visible to listing-based readers, which may
+/// have built on it), removes only the hint and returns normally, so the commit is kept without a
+/// hint; `files_to_take_back` is not used. A failed read leaves everything in place.
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,

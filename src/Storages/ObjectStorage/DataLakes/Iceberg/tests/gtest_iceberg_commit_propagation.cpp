@@ -239,11 +239,6 @@ public:
     bool read_fails = false;
     /// How every removal of the hint fails.
     RemovalFailure hint_removal_failure = RemovalFailure::None;
-    /// How every removal of the metadata file fails.
-    RemovalFailure metadata_removal_failure = RemovalFailure::None;
-    /// Every existence check of the metadata file after an attempt to remove it fails, as a transient
-    /// network error would.
-    bool metadata_exists_fails_after_removal = false;
     /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
     /// this content before the commit reads it back.
     std::optional<std::string> advanced_by_another_writer_to;
@@ -291,13 +286,12 @@ public:
     {
         if (object.remote_path.ends_with(version_hint_name))
             return hint_present;
-        if (metadata_exists_fails_after_removal && metadata_removal_attempted)
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot check {}", object.remote_path);
         return object.remote_path.ends_with(metadata_file_name) && metadata_present;
     }
 
     bool hintPresent() const { return hint_present; }
     bool metadataPresent() const { return metadata_present; }
+    bool metadataRemovalAttempted() const { return metadata_removal_attempted; }
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -349,7 +343,7 @@ public:
     void removeObjectIfExists(const StoredObject & object) override
     {
         const bool is_hint = object.remote_path.ends_with(version_hint_name);
-        const auto failure = is_hint ? hint_removal_failure : metadata_removal_failure;
+        const auto failure = is_hint ? hint_removal_failure : RemovalFailure::None;
         if (!is_hint)
             metadata_removal_attempted = true;
         if (failure == RemovalFailure::BeforeApplying)
@@ -474,46 +468,15 @@ TEST(IcebergCommitPropagation, VersionHintWithoutETagFailsTheCommitBeforeAnythin
     EXPECT_TRUE(commit.writes().empty()) << commit.writes().size() << " objects were written";
 }
 
-TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitTakesTheMetadataFileBack)
+TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitKeepsThePublishedMetadataFile)
 {
     /// The hint is absent when the commit checks for it, and by the time the commit tries to create
     /// it another writer has, so the exclusive create loses and the retry reads a hint that carries
-    /// no tag. The metadata file is published by then, so the commit removes it again before
-    /// refusing - otherwise a snapshot no command committed would stay visible to listing-based
-    /// readers.
+    /// no tag. The metadata file is published by then, and another writer that resolves the table by
+    /// listing may already have built its own snapshot on top of it. So the metadata file stays, and
+    /// the commit must not fail in the ordinary way, which would make its caller clean up the files
+    /// it references: the status is reported as unknown instead.
     CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to refuse to advance the version hint, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
-    }
-
-    /// The metadata file, then the exclusive create of the hint that lost the race.
-    const auto & writes = commit.writes();
-    ASSERT_EQ(writes.size(), 2u);
-    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
-    EXPECT_EQ(writes[0].write_if_none_match, "*");
-    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
-    EXPECT_EQ(writes[1].write_if_none_match, "*");
-
-    const auto & removed = commit.removed();
-    ASSERT_EQ(removed.size(), 1u);
-    EXPECT_EQ(removed[0], writes[0].path);
-}
-
-TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitKeepsAMetadataFileItCannotTakeBack)
-{
-    /// The same, but removing the published metadata file fails before it takes effect. The snapshot
-    /// stays visible to listing-based readers, so the commit must not fail in the ordinary way, which
-    /// would make its caller clean up the files that snapshot references: the status is reported as
-    /// unknown instead.
-    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
-    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
 
     try
     {
@@ -526,27 +489,17 @@ TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitKeepsAMetadataFileIt
         EXPECT_TRUE(Iceberg::isUnknownCommitStatus());
     }
 
+    /// The metadata file, then the exclusive create of the hint that lost the race.
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_EQ(writes[0].write_if_none_match, "*");
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_none_match, "*");
+
     EXPECT_TRUE(commit.removed().empty());
+    EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
     EXPECT_TRUE(commit.object_storage->metadataPresent());
-}
-
-TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitWithAnUnconfirmedTakeBackReportsAnUnknownStatus)
-{
-    /// The removal of the metadata file takes effect, but its response and the existence check after
-    /// it are both lost. Whether the snapshot is published is unknown.
-    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
-    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
-    commit.object_storage->metadata_exists_fails_after_removal = true;
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to report an unknown status, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
-    }
 }
 
 TEST(IcebergCommitPropagation, HintCreatedAfterThePreCheckIsStillAdvancedByAWriterThatDoesNotCreateHints)
@@ -598,32 +551,30 @@ TEST(IcebergCommitPropagation, CreatedVersionHintIsKeptWhenItHasAnETag)
     EXPECT_TRUE(commit.removed().empty());
 }
 
-TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagTakesBothFilesBack)
+TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagIsTakenBackAndTheCommitKept)
 {
     /// The exclusive create of the hint succeeds, but the backend reports no tag for it. Keeping it
     /// would make the table uncommittable: the next commit refuses to advance a hint it cannot
-    /// compare-and-swap. The same "no `ETag`, no hint" rule applies to the create, so the commit
-    /// removes the hint and the metadata file it has published, and fails.
+    /// compare-and-swap. So the hint is removed. The metadata file is not: it has been visible to
+    /// listing-based readers since it was written, and another writer may already have committed a
+    /// snapshot that inherits the manifests and data files it references (without ever looking at
+    /// the hint). Removing it and failing the commit, so that the caller cleans up those files, would
+    /// corrupt that snapshot. The commit succeeds without a hint, as with `iceberg_use_version_hint = 0`.
     CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
-    }
+    EXPECT_TRUE(commit.run());
 
     const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
     EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
 
     const auto & removed = commit.removed();
-    ASSERT_EQ(removed.size(), 2u);
+    ASSERT_EQ(removed.size(), 1u);
     EXPECT_EQ(removed[0], writes[1].path);
-    EXPECT_EQ(removed[1], writes[0].path);
+
+    EXPECT_FALSE(commit.object_storage->hintPresent());
+    EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
 }
 
 TEST(IcebergCommitPropagation, CreatedVersionHintIsJudgedByTheTagTheNextCommitReads)
@@ -673,100 +624,18 @@ TEST(IcebergCommitPropagation, CreatedVersionHintThatCannotBeRemovedKeepsItsMeta
     EXPECT_TRUE(commit.removed().empty());
 }
 
-TEST(IcebergCommitPropagation, CreatedVersionHintWhoseRemovalLostItsResponseTakesBothFilesBack)
+TEST(IcebergCommitPropagation, CreatedVersionHintWhoseRemovalLostItsResponseKeepsTheCommit)
 {
-    /// The removal of the created hint takes effect, but its response is lost. The hint is known to
-    /// be gone once it is checked, so the metadata file is taken back as well, and the commit fails
-    /// with nothing published.
+    /// The removal of the created hint takes effect, but its response is lost. Either way the
+    /// metadata file stays and the commit succeeds.
     CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
     commit.object_storage->hint_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
-    }
-
-    EXPECT_EQ(commit.writes().size(), 2u);
-    EXPECT_FALSE(commit.object_storage->hintPresent());
-    EXPECT_FALSE(commit.object_storage->metadataPresent());
-}
-
-TEST(IcebergCommitPropagation, CreatedVersionHintIsRestoredWhenItsMetadataFileCannotBeRemoved)
-{
-    /// The created hint has no tag and is removed, but removing the metadata file fails before it
-    /// takes effect. The snapshot is still visible to listing-based readers, and the caller must not
-    /// clean up the files it references, so the commit has to succeed - and then readers with
-    /// `iceberg_use_version_hint = 1` need the hint, so it is put back.
-    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
-    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::BeforeApplying;
     EXPECT_TRUE(commit.run());
 
-    /// The metadata file, the hint, and the hint again.
-    const auto & writes = commit.writes();
-    ASSERT_EQ(writes.size(), 3u);
-    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
-    EXPECT_EQ(writes[2].path, writes[1].path);
-    EXPECT_EQ(writes[2].write_if_none_match, "*");
-
-    const auto & removed = commit.removed();
-    ASSERT_EQ(removed.size(), 1u);
-    EXPECT_EQ(removed[0], writes[1].path);
-
-    EXPECT_TRUE(commit.object_storage->hintPresent());
+    EXPECT_EQ(commit.writes().size(), 2u);
+    EXPECT_FALSE(commit.object_storage->hintPresent());
+    EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
     EXPECT_TRUE(commit.object_storage->metadataPresent());
-}
-
-TEST(IcebergCommitPropagation, CreatedVersionHintWhoseMetadataFileRemovalLostItsResponseFailsTheCommit)
-{
-    /// The same, but the removal of the metadata file takes effect and only its response is lost.
-    /// Both files are known to be gone once checked, so nothing is published, and the commit fails
-    /// instead of acknowledging a snapshot that no longer exists.
-    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
-    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
-    }
-
-    EXPECT_EQ(commit.writes().size(), 2u);
-    EXPECT_FALSE(commit.object_storage->hintPresent());
-    EXPECT_FALSE(commit.object_storage->metadataPresent());
-}
-
-TEST(IcebergCommitPropagation, CreatedVersionHintWhoseMetadataFileRemovalCannotBeConfirmedReportsAnUnknownStatus)
-{
-    /// The removal of the metadata file takes effect, but its response is lost, and so is the
-    /// existence check after it. The hint is gone, and whether the snapshot is still there is
-    /// unknown: success could acknowledge a snapshot that no longer exists, an ordinary failure would
-    /// make the caller clean up the files a still published snapshot references, and a restored hint
-    /// could point at nothing. The status is reported as unknown, and the hint is not restored.
-    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
-    commit.object_storage->metadata_removal_failure = ExistingVersionHintObjectStorage::RemovalFailure::AfterApplying;
-    commit.object_storage->metadata_exists_fails_after_removal = true;
-
-    try
-    {
-        bool committed = commit.run();
-        FAIL() << "Expected the commit to report an unknown status, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
-    }
-
-    EXPECT_EQ(commit.writes().size(), 2u);
-    EXPECT_FALSE(commit.object_storage->hintPresent());
 }
 
 TEST(IcebergCommitPropagation, CreatedVersionHintOfCreateThatCannotBeRemovedKeepsItsMetadataFile)

@@ -498,64 +498,13 @@ void takeBackVersionHintWithoutETag(
     const DB::ContextPtr & context,
     bool no_concurrent_writer)
 {
-    /// Remove the hint first and the files it references only after that. If the hint cannot be
-    /// removed it may still point at the metadata file, so the files must stay: removing them would
-    /// leave a published hint that resolves to nothing. Only a file known to be absent counts as
-    /// taken back (see `removeObjectAndReconcile`).
-    enum class TakeBack
-    {
-        /// The hint and all the files are known to be gone.
-        Done,
-        /// The hint may still be there; the files were not touched.
-        HintKept,
-        /// The hint is gone, and some of the files are known to be still there.
-        Incomplete,
-        /// The hint is gone, and whether some of the files are still there is unknown.
-        Unknown,
-    };
-
-    auto take_back = [&]
-    {
-        if (removeObjectAndReconcile(object_storage, storage_version_hint_path) != RemovalOutcome::Removed)
-            return TakeBack::HintKept;
-
-        auto result = TakeBack::Done;
-        for (const auto & path : files_to_take_back)
-        {
-            const auto removal = removeObjectAndReconcile(object_storage, path);
-            if (removal == RemovalOutcome::Unknown)
-                result = TakeBack::Unknown;
-            else if (removal == RemovalOutcome::Kept && result == TakeBack::Done)
-                result = TakeBack::Incomplete;
-        }
-        return result;
-    };
-
-    /// A commit has already published its snapshot by the time it gets here: the metadata file and
-    /// the hint pointing at it are both in place. If that cannot be taken back entirely, the
-    /// snapshot stays visible, and the commit must be reported as successful - its caller would
-    /// otherwise clean up the data files, manifests and manifest lists the retained metadata
-    /// references, and corrupt the table. Such a table cannot be committed to later, but that
-    /// later commit fails with its own error before publishing anything.
-    auto keep_published_commit = [&](const std::string & reason)
-    {
-        LOG_WARNING(
-            getLogger("IcebergVersionHint"),
-            "The newly created {} could not be checked for an ETag or taken back ({}). Keeping the commit "
-            "published; later commits may be unable to advance the hint under a compare-and-swap.",
-            storage_version_hint_path,
-            reason);
-    };
-
     /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
     /// request may legitimately disagree with a read about whether the optional header is there,
     /// and only the tag the next commit will see decides whether it can advance the hint.
     ///
-    /// Taking the files back is destructive, so do it only once the check proves that the hint is
-    /// still the one this operation created. If the read fails, nothing is proven: another writer
-    /// may already have advanced the hint and published a metadata file on top of ours, and
-    /// removing either would break the table for every reader. Both files stay, and the commit is
-    /// kept published.
+    /// If the read fails, nothing is proven: another writer may already have advanced the hint and
+    /// published a metadata file on top of ours, and removing either would break the table for every
+    /// reader. Everything stays, and the commit is kept published.
     ///
     /// The exception is an operation that knows no other writer can have built on its files yet
     /// (`CREATE TABLE` right after the exclusive creates of the first metadata file and the hint).
@@ -571,10 +520,19 @@ void takeBackVersionHintWithoutETag(
     {
         if (no_concurrent_writer)
         {
-            take_back();
+            /// Remove the hint first and the files it references only after that. If the hint cannot
+            /// be removed it may still point at the metadata file, so the files must stay.
+            if (removeObjectAndReconcile(object_storage, storage_version_hint_path) == RemovalOutcome::Removed)
+                for (const auto & path : files_to_take_back)
+                    removeObjectAndReconcile(object_storage, path);
             throw;
         }
-        keep_published_commit(getCurrentExceptionMessage(false));
+        LOG_WARNING(
+            getLogger("IcebergVersionHint"),
+            "The newly created {} could not be checked for an ETag ({}). Keeping it; later commits may be "
+            "unable to advance it under a compare-and-swap.",
+            storage_version_hint_path,
+            getCurrentExceptionMessage(false));
         return;
     }
 
@@ -587,52 +545,34 @@ void takeBackVersionHintWithoutETag(
     if (!hint.etag.empty())
         return;
 
-    const auto outcome = take_back();
-    if (outcome == TakeBack::HintKept && !no_concurrent_writer)
+    if (!no_concurrent_writer)
     {
-        keep_published_commit("removing the hint failed");
+        /// A commit has already published its metadata file by the time it gets here, and the
+        /// listing makes it visible before the hint does: another writer that resolves the table by
+        /// listing may already have built its own snapshot on top of it, inheriting the manifests and
+        /// data files it references, and committed without ever looking at the hint. Taking the
+        /// metadata file back, and letting the caller clean up the files it references, would corrupt
+        /// that acknowledged snapshot. So only the hint is taken back, which leaves the table exactly
+        /// as a commit without `iceberg_use_version_hint` would, and the commit succeeds. Whether the
+        /// removal takes effect does not matter: a hint that stays points at a metadata file that
+        /// stays too.
+        const auto removal = removeObjectAndReconcile(object_storage, storage_version_hint_path);
+        LOG_WARNING(
+            getLogger("IcebergVersionHint"),
+            "The object storage did not report an ETag for the newly created {}, so later commits could not "
+            "advance it under a compare-and-swap. {} it; the commit is kept without a version hint. Disable "
+            "`iceberg_use_version_hint` for this object storage.",
+            storage_version_hint_path,
+            removal == RemovalOutcome::Removed ? "Removed" : "Tried to remove");
         return;
     }
 
-    if (outcome == TakeBack::Unknown && !no_concurrent_writer)
-    {
-        /// The hint is gone, and the metadata file it pointed at may or may not be there. Neither
-        /// success (the snapshot may not exist) nor an ordinary failure (the caller would clean up the
-        /// files a still published metadata file references) is right. Restoring the hint is not right
-        /// either: it could point at nothing. Report the status as unknown, so the caller keeps the
-        /// referenced files.
-        throwUnknownCommitStatus(
-            files_to_take_back.empty() ? storage_version_hint_path : files_to_take_back.front(),
-            "taking back a version hint without an ETag removed the hint, but whether the files it pointed at are gone is unknown");
-    }
-
-    if (outcome == TakeBack::Incomplete && !no_concurrent_writer)
-    {
-        /// The hint is gone, but the metadata file it pointed at is still there. Reporting the
-        /// commit as successful in this state would leave readers with `iceberg_use_version_hint = 1`
-        /// unable to open the table, and reporting it as failed would make the caller clean up the
-        /// files that metadata references while listing-based readers can still see it. Put the
-        /// hint back, so the publication is retained as a whole, as when the hint cannot be removed.
-        try
-        {
-            Iceberg::writeMessageToFile(
-                std::to_string(version), storage_version_hint_path, object_storage, context, /* write-if-none-match */ "*", "");
-        }
-        catch (...)
-        {
-            /// Nothing else can be done without risking the files the retained metadata may
-            /// reference: keep them and report the commit as published.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            LOG_ERROR(
-                getLogger("IcebergVersionHint"),
-                "Could not restore {} after failing to take back the files of its commit. Readers with "
-                "`iceberg_use_version_hint = 1` cannot open the table until the hint is restored.",
-                storage_version_hint_path);
-            return;
-        }
-        keep_published_commit("removing the published files failed, the hint was restored");
-        return;
-    }
+    /// Nobody can have built on the files of this operation yet, so take all of them back. Remove the
+    /// hint first and the files it references only after that: if the hint cannot be removed it may
+    /// still point at the metadata file, and the files must stay.
+    if (removeObjectAndReconcile(object_storage, storage_version_hint_path) == RemovalOutcome::Removed)
+        for (const auto & path : files_to_take_back)
+            removeObjectAndReconcile(object_storage, path);
 
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
@@ -744,17 +684,15 @@ bool tryWriteVersionHintFile(
         {
             /// `writeMetadataFileAndVersionHint` checks this before publishing the metadata file,
             /// so there the hint was created concurrently after that check. The new metadata file
-            /// is already published, and this commit is about to fail, so take it back first -
-            /// otherwise listing-based readers would observe a snapshot that no command ever
-            /// committed. If the metadata file may remain, the snapshot may still be visible to them,
-            /// and an ordinary failure would make the caller clean up the files it references: report
-            /// the status as unknown instead, so the caller keeps them.
-            if (removeObjectAndReconcile(object_storage, storage_metadata_path) != RemovalOutcome::Removed)
-                throwUnknownCommitStatus(
-                    storage_metadata_path,
-                    fmt::format("{} was created without an ETag during the commit, and the metadata file could not be taken back",
-                        storage_version_hint_path));
-            throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+            /// is already published and visible to listing-based readers, and another writer may
+            /// already have built its own snapshot on top of it, inheriting the files it references.
+            /// Taking it back, or failing in the ordinary way so that the caller cleans up those
+            /// files, could corrupt that snapshot. The hint cannot be advanced either, so report the
+            /// status as unknown: the caller keeps the referenced files.
+            throwUnknownCommitStatus(
+                storage_metadata_path,
+                fmt::format("{} was created without an ETag during the commit, so it cannot be advanced, and the "
+                    "already published metadata file is kept", storage_version_hint_path));
         }
 
         /// lastly, let's update it
@@ -779,15 +717,15 @@ bool tryWriteVersionHintFile(
         if (written)
         {
             /// A hint this commit has just created must be advanceable by the next one, the same
-            /// rule applied above to an existing hint. If it is not, take back both files, so the
-            /// refused commit leaves nothing published. If that is not possible, the commit stays
-            /// published and is reported as successful (see `takeBackVersionHintWithoutETag`).
+            /// rule applied above to an existing hint. If it is not, it is taken back, while the
+            /// already published metadata file stays and the commit succeeds without a hint (see
+            /// `takeBackVersionHintWithoutETag`).
             if (!version_hint.exists)
                 takeBackVersionHintWithoutETag(
                     object_storage,
                     storage_version_hint_path,
                     metadata_file_info.version,
-                    {storage_metadata_path},
+                    /*files_to_take_back=*/ {},
                     context,
                     /*no_concurrent_writer=*/ false);
 
