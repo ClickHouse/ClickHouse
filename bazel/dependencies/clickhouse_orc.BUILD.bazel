@@ -4,6 +4,7 @@ load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
+
 exports_files([
     "BUILD.bazel",
     "LICENSE",
@@ -31,7 +32,6 @@ exports_files([
 
 expand_template(
     name = "configure_x86_64_12e6f6bdb894c631",
-    template = ":c++/src/Adaptor.hh.in",
     out = "config/x86_64/contrib/orc/c++/include/Adaptor.hh",
     substitutions = {
         "#cmakedefine HAS_BUILTIN_OVERFLOW_CHECK": "/* #undef HAS_BUILTIN_OVERFLOW_CHECK */",
@@ -45,11 +45,11 @@ expand_template(
         "#cmakedefine HAS_STRPTIME": "#define HAS_STRPTIME",
         "#cmakedefine HAS_PREAD": "#define HAS_PREAD",
     },
+    template = ":c++/src/Adaptor.hh.in",
 )
 
 expand_template(
     name = "configure_aarch64_12e6f6bdb894c631",
-    template = ":c++/src/Adaptor.hh.in",
     out = "config/aarch64/contrib/orc/c++/include/Adaptor.hh",
     substitutions = {
         "#cmakedefine HAS_BUILTIN_OVERFLOW_CHECK": "/* #undef HAS_BUILTIN_OVERFLOW_CHECK */",
@@ -63,9 +63,8 @@ expand_template(
         "#cmakedefine HAS_STRPTIME": "#define HAS_STRPTIME",
         "#cmakedefine HAS_PREAD": "#define HAS_PREAD",
     },
+    template = ":c++/src/Adaptor.hh.in",
 )
-
-
 
 ch_cc_library(
     name = "_orc",
@@ -164,50 +163,7 @@ ch_cc_library(
         ":c++/src/wrap/snappy-wrapper.h",
         ":c++/src/wrap/zero-copy-stream-wrapper.h",
     ]),
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-include",
-        (repository_path('contrib/google-protobuf') + "/src/google/protobuf/stubs/port.h"),
-        "-nostdinc++",
-        "-I",
-        (repository_path('contrib/zstd') + "/lib"),
-    ],
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/orc') + '/config/x86_64/contrib/orc/c++/include', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/orc') + '/c++/include', 'contrib/orc'),
-            repository_local_include('contrib/arrow-cmake/cpp/src/orc/c++/include', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/orc') + '/c++/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/arrow') + '/config/x86_64/contrib/arrow-cmake', 'contrib/orc'),
-            repository_local_include('$(GENDIR)/bazel/gen/x86_64/contrib/arrow-cmake', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/arrow') + '/cpp/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/google-protobuf') + '/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/google-protobuf') + '/third_party/utf8_range', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/zlib-ng'), 'contrib/orc'),
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/zlib-ng') + '/config/x86_64/contrib/zlib-ng-cmake', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/abseil-cpp'), 'contrib/orc'),
-            repository_local_include(repository_path('contrib/snappy'), 'contrib/orc'),
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/snappy') + '/config/x86_64/contrib/snappy-cmake', 'contrib/orc'),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/orc') + '/config/aarch64/contrib/orc/c++/include', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/orc') + '/c++/include', 'contrib/orc'),
-            repository_local_include('contrib/arrow-cmake/cpp/src/orc/c++/include', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/orc') + '/c++/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/arrow') + '/config/aarch64/contrib/arrow-cmake', 'contrib/orc'),
-            repository_local_include('$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/arrow') + '/cpp/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/google-protobuf') + '/src', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/google-protobuf') + '/third_party/utf8_range', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/zlib-ng'), 'contrib/orc'),
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/zlib-ng') + '/config/aarch64/contrib/zlib-ng-cmake', 'contrib/orc'),
-            repository_local_include(repository_path('contrib/abseil-cpp'), 'contrib/orc'),
-            repository_local_include(repository_path('contrib/snappy'), 'contrib/orc'),
-            repository_local_include('$(GENDIR)/' + repository_path('contrib/snappy') + '/config/aarch64/contrib/snappy-cmake', 'contrib/orc'),
-        ],
-    }),
-    hdrs = ((select({
+    hdrs = (select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
             "@clickhouse_arrow//:config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
@@ -251,84 +207,8 @@ ch_cc_library(
         ":c++/include/orc/sargs/Literal.hh",
         ":c++/include/orc/sargs/SearchArgument.hh",
         ":c++/include/orc/sargs/TruthValue.hh",
-    ])),
-    textual_hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-    }),
-    local_defines = (select({
-        "@platforms//cpu:x86_64": [
-            "ARROW_ENABLE_THREADING",
-            "ARROW_WITH_BROTLI",
-            "ARROW_WITH_BZ2",
-            "ARROW_WITH_LZ4",
-            "ARROW_WITH_SNAPPY",
-            "ARROW_WITH_ZLIB",
-            "ARROW_WITH_ZSTD",
-            "HAVE_ATTRIBUTE_ALIGNED",
-            "HAVE_BUILTIN_CTZ",
-            "HAVE_BUILTIN_CTZLL",
-            "HAVE_POSIX_MEMALIGN",
-            "HAVE_VISIBILITY_HIDDEN",
-            "HAVE_VISIBILITY_INTERNAL",
-            "PARQUET_THRIFT_VERSION_MAJOR=0",
-            "PARQUET_THRIFT_VERSION_MINOR=16",
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "UNALIGNED_OK",
-            "WITH_GZFILEOP",
-            "X86_64",
-            "X86_AVX2",
-            "X86_FEATURES",
-            "X86_PCLMULQDQ_CRC",
-            "X86_SSE2",
-            "X86_SSE42",
-            "X86_SSSE3",
-        ],
-        "@platforms//cpu:aarch64": [
-            "ARM_ACLE",
-            "ARM_ASM_HWCAP",
-            "ARM_AUXV_HAS_CRC32",
-            "ARM_AUXV_HAS_NEON",
-            "ARM_FEATURES",
-            "ARM_NEON",
-            "ARM_NEON_HASLD4",
-            "ARROW_ENABLE_THREADING",
-            "ARROW_WITH_BROTLI",
-            "ARROW_WITH_BZ2",
-            "ARROW_WITH_LZ4",
-            "ARROW_WITH_SNAPPY",
-            "ARROW_WITH_ZLIB",
-            "ARROW_WITH_ZSTD",
-            "HAVE_ARM_ACLE_H",
-            "HAVE_ATTRIBUTE_ALIGNED",
-            "HAVE_BUILTIN_CTZ",
-            "HAVE_BUILTIN_CTZLL",
-            "HAVE_POSIX_MEMALIGN",
-            "HAVE_SYS_AUXV_H",
-            "HAVE_VISIBILITY_HIDDEN",
-            "HAVE_VISIBILITY_INTERNAL",
-            "PARQUET_THRIFT_VERSION_MAJOR=0",
-            "PARQUET_THRIFT_VERSION_MINOR=16",
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "UNALIGNED_OK",
-            "WITH_GZFILEOP",
-            "X86_64",
-        ],
-    }) + [
-        "ZLIB_COMPAT",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    features = [
-        "system_include_paths",
-    ],
-    alwayslink = False,
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_google_protobuf//:src/README.md",
         "@clickhouse_google_protobuf//:src/file_lists.cmake",
@@ -2441,7 +2321,197 @@ ch_cc_library(
         ":c++/src/sargs/SargsApplier.cc",
         ":c++/src/sargs/SearchArgument.cc",
         ":c++/src/sargs/TruthValue.cc",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-include",
+        (repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h"),
+        "-nostdinc++",
+        "-I",
+        (repository_path("contrib/zstd") + "/lib"),
+    ],
+    features = [
+        "system_include_paths",
+    ],
+    local_defines = (select({
+        "@platforms//cpu:x86_64": [
+            "ARROW_ENABLE_THREADING",
+            "ARROW_WITH_BROTLI",
+            "ARROW_WITH_BZ2",
+            "ARROW_WITH_LZ4",
+            "ARROW_WITH_SNAPPY",
+            "ARROW_WITH_ZLIB",
+            "ARROW_WITH_ZSTD",
+            "HAVE_ATTRIBUTE_ALIGNED",
+            "HAVE_BUILTIN_CTZ",
+            "HAVE_BUILTIN_CTZLL",
+            "HAVE_POSIX_MEMALIGN",
+            "HAVE_VISIBILITY_HIDDEN",
+            "HAVE_VISIBILITY_INTERNAL",
+            "PARQUET_THRIFT_VERSION_MAJOR=0",
+            "PARQUET_THRIFT_VERSION_MINOR=16",
+            "STD_EXCEPTION_HAS_STACK_TRACE=1",
+            "UNALIGNED_OK",
+            "WITH_GZFILEOP",
+            "X86_64",
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "ARROW_ENABLE_THREADING",
+            "ARROW_WITH_BROTLI",
+            "ARROW_WITH_BZ2",
+            "ARROW_WITH_LZ4",
+            "ARROW_WITH_SNAPPY",
+            "ARROW_WITH_ZLIB",
+            "ARROW_WITH_ZSTD",
+            "HAVE_ARM_ACLE_H",
+            "HAVE_ATTRIBUTE_ALIGNED",
+            "HAVE_BUILTIN_CTZ",
+            "HAVE_BUILTIN_CTZLL",
+            "HAVE_POSIX_MEMALIGN",
+            "HAVE_SYS_AUXV_H",
+            "HAVE_VISIBILITY_HIDDEN",
+            "HAVE_VISIBILITY_INTERNAL",
+            "PARQUET_THRIFT_VERSION_MAJOR=0",
+            "PARQUET_THRIFT_VERSION_MINOR=16",
+            "STD_EXCEPTION_HAS_STACK_TRACE=1",
+            "UNALIGNED_OK",
+            "WITH_GZFILEOP",
+            "X86_64",
+        ],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/orc") + "/c++/include",
+                "contrib/orc",
+            ),
+            repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
+            repository_local_include(
+                repository_path("contrib/orc") + "/c++/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/arrow") + "/config/x86_64/contrib/arrow-cmake",
+                "contrib/orc",
+            ),
+            repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/arrow-cmake", "contrib/orc"),
+            repository_local_include(
+                repository_path("contrib/arrow") + "/cpp/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/google-protobuf") + "/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/google-protobuf") + "/third_party/utf8_range",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/zlib-ng"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/x86_64/contrib/zlib-ng-cmake",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/abseil-cpp"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/snappy"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/snappy") + "/config/x86_64/contrib/snappy-cmake",
+                "contrib/orc",
+            ),
+        ],
+        "@platforms//cpu:aarch64": [
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/orc") + "/c++/include",
+                "contrib/orc",
+            ),
+            repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
+            repository_local_include(
+                repository_path("contrib/orc") + "/c++/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/arrow") + "/config/aarch64/contrib/arrow-cmake",
+                "contrib/orc",
+            ),
+            repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake", "contrib/orc"),
+            repository_local_include(
+                repository_path("contrib/arrow") + "/cpp/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/google-protobuf") + "/src",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/google-protobuf") + "/third_party/utf8_range",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/zlib-ng"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/aarch64/contrib/zlib-ng-cmake",
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/abseil-cpp"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                repository_path("contrib/snappy"),
+                "contrib/orc",
+            ),
+            repository_local_include(
+                "$(GENDIR)/" + repository_path("contrib/snappy") + "/config/aarch64/contrib/snappy-cmake",
+                "contrib/orc",
+            ),
+        ],
+    }),
+    textual_hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
+        ],
+        "@platforms//cpu:aarch64": [
+            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
+        ],
+    }),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -2523,4 +2593,5 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "@clickhouse_arrow//:arrow_headers",
     ],
+    alwayslink = False,
 )

@@ -214,6 +214,18 @@ Run it after updating either reference configuration:
 python3 bazel/initial_migration/generate_build.py
 ```
 
+The generator formats all BUILD files with `buildifier` on `PATH`. To format
+or check BUILD files without regenerating them:
+
+```sh
+python3 bazel/initial_migration/format_build_files.py
+python3 bazel/initial_migration/format_build_files.py --check
+```
+
+`.buildifier.json` preserves CMake source and dependency order. It also keeps
+overlay labels unchanged: overlays are Bazel packages in external repositories,
+although the files live under `bazel/dependencies` in this checkout.
+
 `initial_migration/coverage.json` retains target/action counts, untranslated outputs, and an
 explicit inventory of CMake-only commands. All current custom outputs are
 either translated or classified: cache/install/test entry points, replaced

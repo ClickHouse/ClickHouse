@@ -1,17 +1,20 @@
-load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//bazel:rust_archive.bzl", "rust_archive")
-load("//bazel:cmake_cargo.bzl", "cmake_cargo")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
 load("//bazel:cbindgen.bzl", "rust_cbindgen")
+load("//bazel:cmake_cargo.bzl", "cmake_cargo")
+load("//bazel:openssl_headers.bzl", "openssl_headers")
+load("//bazel:rust_archive.bzl", "rust_archive")
 load("//bazel/initial_migration:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/initial_migration:rust_cxx_flags.bzl", "RUST_CXX")
 load("//bazel/initial_migration:rust_localization_data.bzl", "RUST_LOCALIZATION_GROUPS")
-load("//bazel:openssl_headers.bzl", "openssl_headers")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(glob(["*/Cargo.toml", "*/Cargo.lock"]))
+exports_files(glob([
+    "*/Cargo.toml",
+    "*/Cargo.lock",
+]))
 
 exports_files(["perfetto_protos.BUILD.bazel"])
 
@@ -23,9 +26,12 @@ openssl_headers(
 genrule(
     name = "skim_cxx_codegen",
     srcs = ["//rust/workspace:skim/src/lib.rs"],
-    outs = ["skim_bridge.h", "skim_bridge.cc"],
-    tools = ["@clickhouse_crates//:cxxbridge_cli"],
+    outs = [
+        "skim_bridge.h",
+        "skim_bridge.cc",
+    ],
     cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location skim_bridge.h) -o $(location skim_bridge.cc)",
+    tools = ["@clickhouse_crates//:cxxbridge_cli"],
 )
 
 [
@@ -45,8 +51,23 @@ genrule(
     )
     for name, srcs, hdrs, standard, deps in [
         # cxx/build.rs selects C++11; skim/build.rs uses Clang's C++17 default.
-        ("cxx_runtime", ["@clickhouse_crates//:cxx_source"], ["@clickhouse_crates//:cxx_header"], "c++11", []),
-        ("skim_bridge", ["skim_bridge.cc", "//rust/workspace:skim/src/check_abi.cpp"], ["skim_bridge.h"], "gnu++17", [":cxx_runtime"]),
+        (
+            "cxx_runtime",
+            ["@clickhouse_crates//:cxx_source"],
+            ["@clickhouse_crates//:cxx_header"],
+            "c++11",
+            [],
+        ),
+        (
+            "skim_bridge",
+            [
+                "skim_bridge.cc",
+                "//rust/workspace:skim/src/check_abi.cpp",
+            ],
+            ["skim_bridge.h"],
+            "gnu++17",
+            [":cxx_runtime"],
+        ),
     ]
 ]
 
@@ -69,16 +90,16 @@ alias(
 rust_cbindgen(
     name = "delta_ffi_headers",
     srcs = ["//:delta_cbindgen_sources"],
-    crate = "delta_kernel_ffi",
-    manifest = "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
-    config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
     cargo_config = "//:contrib/corrosion-cmake/config.toml.in",
-    vendor = "@clickhouse_rust_vendor//:BUILD.bazel",
+    cbindgen_tool = "@delta_crates//:cbindgen_cli",
+    config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
+    crate = "delta_kernel_ffi",
     headers = {
         "c++": "delta_kernel_ffi.hpp",
         "c": "delta_kernel_ffi.h",
     },
-    cbindgen_tool = "@delta_crates//:cbindgen_cli",
+    manifest = "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
+    vendor = "@clickhouse_rust_vendor//:BUILD.bazel",
 )
 
 rust_static_library(
@@ -98,15 +119,11 @@ rust_static_library(
 [
     cmake_cargo(
         name = name + "_cargo",
-        cargo_package = spec["package"],
         cargo_features = spec.get("features", []),
-        path_crates = spec.get("path_crates", []),
-        native_compilation = spec.get("native_compilation", False),
-        openssl_headers = ":openssl_include" if name == "delta_kernel_ffi" else None,
+        cargo_package = spec["package"],
         cmake = ":cmake" if name == "wasmtime" else None,
         cmake_files = ":cmake_files" if name == "wasmtime" else None,
-        # ClickHouse_SOURCE_DIR and CMAKE_HOME_DIRECTORY in the native CMakeCache.
-        native_source_root = "/home/buildbuddy/workspace/repo-root",
+        config = "//:cmake_cargo_config",
         # Each Cargo action owns this directory in a fresh OCI rootfs.
         exec_properties = {
             "workload-isolation-type": "oci",
@@ -115,15 +132,22 @@ rust_static_library(
             "network": "off",
             "dockerRunAsRoot": "true",
         },
-        manifest = spec.get("manifest", "//rust/workspace:" + name + "/Cargo.toml"),
-        workspace_manifest = "//rust/workspace:Cargo.toml",
-        workspace_sources = "//rust/workspace:cmake_cargo_sources",
+        manifest = spec.get(
+            "manifest",
+            "//rust/workspace:" + name + "/Cargo.toml",
+        ),
+        native_compilation = spec.get("native_compilation", False),
+        # ClickHouse_SOURCE_DIR and CMAKE_HOME_DIRECTORY in the native CMakeCache.
+        native_source_root = "/home/buildbuddy/workspace/repo-root",
+        openssl_headers = ":openssl_include" if name == "delta_kernel_ffi" else None,
+        path_crates = spec.get("path_crates", []),
         repositories = {
             "@clickhouse_pcodec//:cmake_cargo_sources": "contrib/pcodec",
             "@clickhouse_wasmtime//:cmake_cargo_sources": "contrib/wasmtime",
             "@clickhouse_rust_vendor//:sources": "contrib/rust_vendor",
         } | spec.get("repositories", {}),
-        config = "//:cmake_cargo_config",
+        workspace_manifest = "//rust/workspace:Cargo.toml",
+        workspace_sources = "//rust/workspace:cmake_cargo_sources",
     )
     for name, spec in RUST_ARCHIVES.items()
 ]
@@ -142,10 +166,13 @@ RUST_LOCALIZATION_REFERENCES = select({
         name = name + "_processed",
         src = select({
             "//bazel:use_cmake_metadata": ":" + name + "_cargo",
-            "//conditions:default": spec.get("rules_rs", "//rust/workspace:" + name),
+            "//conditions:default": spec.get(
+                "rules_rs",
+                "//rust/workspace:" + name,
+            ),
         }),
-        references = RUST_LOCALIZATION_REFERENCES,
         keep_symbols = spec.get("keep_symbols", []),
+        references = RUST_LOCALIZATION_REFERENCES,
     )
     for name, spec in RUST_ARCHIVES.items()
 ]

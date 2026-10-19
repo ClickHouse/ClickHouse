@@ -3,6 +3,7 @@ load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
+
 exports_files([
     "BUILD.bazel",
     "LICENSE",
@@ -40,8 +41,6 @@ exports_files([
     "include/dmlc/type_traits.h",
 ])
 
-
-
 ch_cc_library(
     name = "_dmlc_core",
     srcs = [
@@ -78,31 +77,6 @@ ch_cc_library(
         ":src/io/threaded_input_split.h",
         ":src/io/uri_spec.h",
     ],
-    copts = ([
-        "-w",
-        "-std=c++23",
-        "-Wall",
-        "-Wno-unknown-pragmas",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-msse2",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "-nostdinc++",
-    ]),
-    local_includes = select({
-        "@platforms//cpu:x86_64": ([
-            repository_local_include(repository_path('contrib/dmlc-core') + '/include', 'contrib/dmlc-core'),
-        ] + [
-            repository_local_include(repository_path('contrib/xgboost') + '/config/x86_64/contrib/xgboost/dmlc-core', 'contrib/dmlc-core'),
-        ]),
-        "@platforms//cpu:aarch64": ([
-            repository_local_include(repository_path('contrib/dmlc-core') + '/include', 'contrib/dmlc-core'),
-        ] + [
-            repository_local_include(repository_path('contrib/xgboost') + '/config/aarch64/contrib/xgboost/dmlc-core', 'contrib/dmlc-core'),
-        ]),
-    }),
     hdrs = (select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_xgboost//:config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
@@ -144,24 +118,6 @@ ch_cc_library(
         ":include/dmlc/timer.h",
         ":include/dmlc/type_traits.h",
     ]),
-    local_defines = [
-        "DMLC_CORE_USE_CMAKE",
-        "DMLC_USE_CXX11=1",
-        "DMLC_USE_CXX14=1",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_DARWIN_C_SOURCE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-        "_POSIX_C_SOURCE=200809L",
-        "_POSIX_SOURCE",
-        "_XOPEN_SOURCE=700",
-        "__USE_XOPEN2K8",
-    ],
-    features = [
-        "system_include_paths",
-    ],
-    alwayslink = False,
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         ":src/io/azure_filesys.cc",
@@ -178,6 +134,60 @@ ch_cc_library(
         ":src/io/filesys.cc",
         ":src/config.cc",
     ],
+    copts = ([
+        "-w",
+        "-std=c++23",
+        "-Wall",
+        "-Wno-unknown-pragmas",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-msse2",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "-nostdinc++",
+    ]),
+    features = [
+        "system_include_paths",
+    ],
+    local_defines = [
+        "DMLC_CORE_USE_CMAKE",
+        "DMLC_USE_CXX11=1",
+        "DMLC_USE_CXX14=1",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_DARWIN_C_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_POSIX_C_SOURCE=200809L",
+        "_POSIX_SOURCE",
+        "_XOPEN_SOURCE=700",
+        "__USE_XOPEN2K8",
+    ],
+    local_includes = select({
+        "@platforms//cpu:x86_64": ([
+            repository_local_include(
+                repository_path("contrib/dmlc-core") + "/include",
+                "contrib/dmlc-core",
+            ),
+        ] + [
+            repository_local_include(
+                repository_path("contrib/xgboost") + "/config/x86_64/contrib/xgboost/dmlc-core",
+                "contrib/dmlc-core",
+            ),
+        ]),
+        "@platforms//cpu:aarch64": ([
+            repository_local_include(
+                repository_path("contrib/dmlc-core") + "/include",
+                "contrib/dmlc-core",
+            ),
+        ] + [
+            repository_local_include(
+                repository_path("contrib/xgboost") + "/config/aarch64/contrib/xgboost/dmlc-core",
+                "contrib/dmlc-core",
+            ),
+        ]),
+    }),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -188,4 +198,5 @@ ch_cc_library(
         "@clickhouse//:glibc-compatibility",
         "@clickhouse//:unwind",
     ],
+    alwayslink = False,
 )

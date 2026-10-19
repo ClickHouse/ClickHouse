@@ -1,0 +1,7 @@
+{
+  "buildifier_disable": [
+    "listsort",
+    "label"
+  ],
+  "lint": "off"
+}

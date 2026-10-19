@@ -4,14 +4,30 @@ load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["Cargo.toml", "Cargo.lock"] + glob(["*/include/*.h", "*/Cargo.toml"]))
-exports_files(["skim/src/lib.rs", "skim/src/check_abi.cpp"])
+exports_files([
+    "Cargo.toml",
+    "Cargo.lock",
+] + glob([
+    "*/include/*.h",
+    "*/Cargo.toml",
+]))
+
+exports_files([
+    "skim/src/lib.rs",
+    "skim/src/check_abi.cpp",
+])
 
 filegroup(
     name = "cmake_cargo_sources",
     srcs = glob(
         ["**"],
-        exclude = ["BUILD", "BUILD.bazel", "**/BUILD", "**/BUILD.bazel", "target/**"],
+        exclude = [
+            "BUILD",
+            "BUILD.bazel",
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "target/**",
+        ],
     ),
 )
 
@@ -19,13 +35,22 @@ filegroup(
     rust_static_library(
         name = name,
         srcs = glob([name + "/src/**/*.rs"]),
+        aliases = aliases(package_name = "rust/workspace/" + name),
         crate_name = "_ch_rust_" + ("skim_rust" if name == "skim" else name),
         crate_root = name + "/src/lib.rs",
         edition = "2021",
-        aliases = aliases(package_name = "rust/workspace/" + name),
-        deps = all_crate_deps(normal = True, package_name = "rust/workspace/" + name),
+        deps = all_crate_deps(
+            package_name = "rust/workspace/" + name,
+            normal = True,
+        ),
     )
-    for name in ["skim", "prql", "polyglot", "pco", "wasmtime"]
+    for name in [
+        "skim",
+        "prql",
+        "polyglot",
+        "pco",
+        "wasmtime",
+    ]
 ]
 
 [
@@ -34,5 +59,9 @@ filegroup(
         size = "small",
         crate = ":" + name,
     )
-    for name in ["pco", "prql", "polyglot"]
+    for name in [
+        "pco",
+        "prql",
+        "polyglot",
+    ]
 ]
