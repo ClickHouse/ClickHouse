@@ -17,13 +17,7 @@ ch_cc_library(
         "src/utils/whmac_openssl.c",
         "src/utils/yaotp_uri.c",
     ]) + glob(["src/**/*.h"]),
-    hdrs = [
-        "src/cotp.h",
-        "src/utils/pct.h",
-        "src/utils/secure_zero.h",
-        "src/whash.h",
-        "src/whmac.h",
-    ],
+    hdrs = glob(["src/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
