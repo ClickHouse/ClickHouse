@@ -194,7 +194,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             from_recomputed_dependencies = DatabaseCatalog::getDependenciesRecomputedForNewName(
                 *database,
                 elem.from_table_name,
-                database->getTable(elem.from_table_name, getContext()),
+                database->tryGetTable(elem.from_table_name, getContext()),
                 to_table_id.getQualifiedName(),
                 getContext());
 
@@ -204,7 +204,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 to_recomputed_dependencies = DatabaseCatalog::getDependenciesRecomputedForNewName(
                     *to_database,
                     elem.to_table_name,
-                    to_database->getTable(elem.to_table_name, getContext()),
+                    to_database->tryGetTable(elem.to_table_name, getContext()),
                     from_table_id.getQualifiedName(),
                     getContext());
             }
