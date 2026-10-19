@@ -1434,13 +1434,15 @@ class CHServer:
             strip=False,
         )
         duration = sw.duration
-        clean = not long or "teardown-complete" in out.splitlines()
+        lines = out.splitlines()
+        # A skipped test exits before it connects, so it created nothing.
+        clean = "teardown-complete" in lines or any(line.startswith("skipped\t") for line in lines)
         if long:
             print(f"test-end {format_utc_date_time(utc_now())}")
             if res != 0:
                 err += f"{test_name}: perf.py exited with status {res} (124 = wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s expired, 137 = killed)\n"
-            if not clean:
-                err += f"{test_name}: teardown incomplete, stopping the batch\n"
+        if not clean:
+            err += f"{test_name}: teardown incomplete, stopping the batch\n"
         if res != 0 or not clean:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
