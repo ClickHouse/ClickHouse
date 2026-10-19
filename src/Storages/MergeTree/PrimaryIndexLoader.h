@@ -15,9 +15,10 @@ struct ReadSettings;
 String getPrimaryIndexFileName(const IDataPartStorage & data_part_storage);
 
 /// Drops the key columns after the first prefix that changes between at least `ratio_to_drop_suffix_columns` of the
-/// adjacent marks. No-op when the ratio is outside (0, 1).
+/// adjacent marks. Returns false without looking at the columns when there are no marks, one key column, or the
+/// ratio is outside (0, 1).
 template <typename Columns>
-void dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, Float64 ratio_to_drop_suffix_columns);
+bool dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, Float64 ratio_to_drop_suffix_columns);
 
 /// Reads `marks_count` rows of the primary index from the part storage alone, so it works without an `IMergeTreeDataPart`.
 /// The caller decides which memory tracker and arena the columns are charged to.
