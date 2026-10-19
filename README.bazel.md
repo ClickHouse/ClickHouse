@@ -205,6 +205,19 @@ they do not depend on rerunning the unchanged CMake build for every Bazel edit.
 | Use local directory names for the 36 same-repository include expressions (`3a652da04`) | [61415215](https://app.buildbuddy.io/invocation/61415215-0c82-4ef5-8af1-4b908b6c5bf2) | [d4593dc6](https://app.buildbuddy.io/invocation/d4593dc6-a400-4dbb-851f-5d6d82ae4545) |
 | Publish AWS CRT public headers and includes through library dependencies; remove captured foreign inputs (`120811fec`) | [2dfd2546](https://app.buildbuddy.io/invocation/2dfd2546-fb33-4c2c-aa26-b4071cc47001) | [99f08d57](https://app.buildbuddy.io/invocation/99f08d57-c4bd-4651-97dc-b4fa86722c54) |
 
+The external dependency ownership cleanup was also verified directly with
+normalized binaries on both platforms. The ARM comparison ran LLVM's strip
+tool on an ARM64 executor against the recorded native CMake result.
+
+| Cleanup batch | x86-64 normalized SHA-256 | ARM64 normalized SHA-256 |
+| --- | --- | --- |
+| Native header ownership, private Asio, Arrow generation order, unused compiler inputs and banners (`23471423b`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/34e4eac9-d6c5-4499-9850-78f61eeba610) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/9ef5527b-d761-4f49-aff6-04d304a03c55) |
+| Remove unused NuRaft source inputs, inherit liburing generated headers, and remove unused BUILD imports | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/7538721e-11ac-4734-9be5-1958be61135e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/f7b1b89a-4500-4659-bc34-dc7e697db713) |
+
+Both x86-64 comparisons passed `cmp` and `PARITY_STATUS=0`; both ARM64
+comparisons reported `ARM_STRIPPED_STATUS=0`. Both batches also reproduced
+the exact original Bazel ELF hashes from the preceding tables on both CPUs.
+
 `@chdig_crates//:perfetto_protos-0.51.1` also compiled using the registered
 `@protobuf//:protoc` on both
 [x86-64](https://app.buildbuddy.io/invocation/1b34c694-6e96-459d-a72b-b408f9796fa9)
