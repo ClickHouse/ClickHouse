@@ -107,8 +107,9 @@ const std::unordered_set<String> & nonDeterministicFunctions()
         "indexHint",
         /// These report whether a `JSON` path or a `Dynamic` value has its own subcolumn or sits in shared data,
         /// which depends on the column holding the value (a join or a merge can change it), not on the value.
+        /// `byteSize` measures that representation, so it depends on it too.
         "JSONDynamicPaths", "JSONDynamicPathsWithTypes", "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
-        "isDynamicElementInSharedData",
+        "isDynamicElementInSharedData", "byteSize",
         /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
         /// returns the query plan as rows. The plan text legitimately changes when
         /// DQP toggles an optimizer setting, so comparing such results is comparing
