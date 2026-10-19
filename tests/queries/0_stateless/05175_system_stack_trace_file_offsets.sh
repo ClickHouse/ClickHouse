@@ -14,12 +14,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A statically linked binary (`USE_MUSL`) carries the C library inside the main executable, so there
 # the second kind appears only when a thread happens to be caught inside the vDSO, and the second
 # column is not measured.
+# Only the idle `BgSchPool` threads are sampled: `system.stack_trace` signals every selected thread and
+# runs one query at a time, so sampling all ~1000 threads of a loaded server took minutes per query when
+# copies of this test ran concurrently.
 query="
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
     countIf(x > (SELECT max(address_end) FROM system.symbols)) > 0
         OR (SELECT value IN ('1', 'ON') FROM system.build_options WHERE name = 'USE_MUSL')
-FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace)
+FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace WHERE thread_name = 'BgSchPool')
 SETTINGS allow_introspection_functions = 1"
 
 # Signalling a thread can time out, leaving a snapshot with no deep trace to measure. Only that case is
