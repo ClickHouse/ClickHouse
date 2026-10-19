@@ -10,6 +10,11 @@ DROP TABLE IF EXISTS t_fall_min;
 DROP TABLE IF EXISTS t_out_of_lut;
 DROP TABLE IF EXISTS t_fall64;
 DROP TABLE IF EXISTS t_one_day;
+DROP TABLE IF EXISTS t_nullable;
+DROP TABLE IF EXISTS t_lc_nullable;
+DROP TABLE IF EXISTS t_nullable64;
+DROP TABLE IF EXISTS t_one_day_nullable;
+DROP TABLE IF EXISTS t_skip_nullable;
 
 -- One row per day at local midnight: the offset is -05:00 at both ends of the part and -04:00 in between.
 CREATE TABLE t_daily (dt DateTime('America/New_York')) ENGINE = MergeTree ORDER BY dt SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
@@ -45,7 +50,7 @@ CREATE TABLE t_out_of_lut (dt DateTime64(0, 'UTC')) ENGINE = MergeTree ORDER BY 
 INSERT INTO t_out_of_lut SELECT fromUnixTimestamp64Second(toInt64(253402297200 + number * 3600), 'UTC') FROM numbers(72);
 SELECT 'out_of_lut = 05:00', (SELECT count() FROM t_out_of_lut WHERE toTimeWithFixedDate(dt) = toDateTime('1970-01-02 05:00:00', 'UTC')), (SELECT countIf(toTimeWithFixedDate(dt) = toDateTime('1970-01-02 05:00:00', 'UTC')) FROM t_out_of_lut);
 
--- Two rows 0.5 s apart just before the fall-back of 1969-10-26; before the epoch, `toTimeWithFixedDate` truncates the second one to 01:00:00 -05:00.
+-- Two rows 0.5 s apart just before the fall-back of 1969-10-26; before the epoch, the fractional part is rounded down, so both are at 01:59:59 -04:00.
 CREATE TABLE t_fall64 (dt DateTime64(3, 'America/New_York')) ENGINE = MergeTree ORDER BY dt SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
 INSERT INTO t_fall64 VALUES (toDateTime64('1969-10-26 05:59:59.000', 3, 'UTC')), (toDateTime64('1969-10-26 05:59:59.500', 3, 'UTC'));
 SELECT 'fall64 = 01:59:59', (SELECT count() FROM t_fall64 WHERE toTimeWithFixedDate(dt) = toDateTime('1970-01-02 01:59:59', 'America/New_York')), (SELECT countIf(toTimeWithFixedDate(dt) = toDateTime('1970-01-02 01:59:59', 'America/New_York')) FROM t_fall64);
@@ -56,6 +61,33 @@ INSERT INTO t_one_day SELECT toDateTime('2024-11-03 04:00:00', 'UTC') + INTERVAL
 SELECT 'one_day = -14400', count() FROM t_one_day WHERE timezoneOffset(dt) = -14400 SETTINGS max_rows_to_read = 2, parallel_replicas_index_analysis_only_on_coordinator = 0;
 SELECT 'one_day = 03:00', count() FROM t_one_day WHERE toTimeWithFixedDate(dt) = toDateTime('1970-01-02 03:00:00', 'America/New_York') SETTINGS max_rows_to_read = 3, parallel_replicas_index_analysis_only_on_coordinator = 0;
 
+-- Over a Nullable or LowCardinality key the factor must use the time zone of the nested type, not the session one.
+SET session_timezone = 'UTC';
+SET allow_suspicious_low_cardinality_types = 1;
+
+CREATE TABLE t_nullable (dt Nullable(DateTime('America/New_York'))) ENGINE = MergeTree ORDER BY dt SETTINGS allow_nullable_key = 1, index_granularity = 3, index_granularity_bytes = '10Mi';
+INSERT INTO t_nullable SELECT toDateTime('2024-11-02 00:00:00', 'UTC') + number * 900 FROM numbers(300);
+SELECT 'nullable = -14400', (SELECT count() FROM t_nullable WHERE timezoneOffset(dt) = -14400), (SELECT countIf(timezoneOffset(dt) = -14400) FROM t_nullable);
+SELECT 'nullable = -18000', (SELECT count() FROM t_nullable WHERE timezoneOffset(dt) = -18000), (SELECT countIf(timezoneOffset(dt) = -18000) FROM t_nullable);
+SELECT 'nullable toHour = 23', (SELECT count() FROM t_nullable WHERE toHour(dt) = 23), (SELECT countIf(toHour(dt) = 23) FROM t_nullable);
+SELECT 'nullable 01:00 - 01:29', (SELECT count() FROM t_nullable WHERE toTimeWithFixedDate(dt) BETWEEN toDateTime('1970-01-02 01:00:00', 'America/New_York') AND toDateTime('1970-01-02 01:29:00', 'America/New_York')), (SELECT countIf(toTimeWithFixedDate(dt) BETWEEN toDateTime('1970-01-02 01:00:00', 'America/New_York') AND toDateTime('1970-01-02 01:29:00', 'America/New_York')) FROM t_nullable);
+
+CREATE TABLE t_lc_nullable (dt LowCardinality(Nullable(DateTime('America/New_York')))) ENGINE = MergeTree ORDER BY dt SETTINGS allow_nullable_key = 1, index_granularity = 3, index_granularity_bytes = '10Mi';
+INSERT INTO t_lc_nullable SELECT toDateTime('2024-11-02 00:00:00', 'UTC') + number * 900 FROM numbers(300);
+SELECT 'lc_nullable = -14400', (SELECT count() FROM t_lc_nullable WHERE timezoneOffset(dt) = -14400), (SELECT countIf(timezoneOffset(dt) = -14400) FROM t_lc_nullable);
+
+CREATE TABLE t_nullable64 (dt Nullable(DateTime64(3, 'America/New_York'))) ENGINE = MergeTree ORDER BY dt SETTINGS allow_nullable_key = 1, index_granularity = 3, index_granularity_bytes = '10Mi';
+INSERT INTO t_nullable64 SELECT toDateTime64(toDateTime('2024-11-02 00:00:00', 'UTC') + number * 900, 3, 'UTC') FROM numbers(300);
+SELECT 'nullable64 = -14400', (SELECT count() FROM t_nullable64 WHERE timezoneOffset(dt) = -14400), (SELECT countIf(timezoneOffset(dt) = -14400) FROM t_nullable64);
+
+CREATE TABLE t_one_day_nullable (dt Nullable(DateTime('America/New_York'))) ENGINE = MergeTree ORDER BY dt SETTINGS allow_nullable_key = 1, index_granularity = 1, index_granularity_bytes = '10Mi';
+INSERT INTO t_one_day_nullable SELECT toDateTime('2024-11-03 04:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(25);
+SELECT 'one_day_nullable = -14400', count() FROM t_one_day_nullable WHERE timezoneOffset(dt) = -14400 SETTINGS max_rows_to_read = 2, parallel_replicas_index_analysis_only_on_coordinator = 0;
+
+CREATE TABLE t_skip_nullable (dt Nullable(DateTime('America/New_York')), INDEX i dt TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
+INSERT INTO t_skip_nullable SELECT toDateTime('2024-11-02 00:00:00', 'UTC') + number * 900 FROM numbers(300);
+SELECT 'skip_nullable toHour = 23', (SELECT count() FROM t_skip_nullable WHERE toHour(dt) = 23), (SELECT countIf(toHour(dt) = 23) FROM t_skip_nullable);
+
 DROP TABLE t_daily;
 DROP TABLE t_daily64;
 DROP TABLE t_hourly;
@@ -64,3 +96,8 @@ DROP TABLE t_fall_min;
 DROP TABLE t_out_of_lut;
 DROP TABLE t_fall64;
 DROP TABLE t_one_day;
+DROP TABLE t_nullable;
+DROP TABLE t_lc_nullable;
+DROP TABLE t_nullable64;
+DROP TABLE t_one_day_nullable;
+DROP TABLE t_skip_nullable;
