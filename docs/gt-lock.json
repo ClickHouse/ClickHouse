@@ -7,44 +7,44 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-17T05:49:39.340Z",
+          "updatedAt": "2026-10-19T17:26:02.589Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "ja": {
-          "updatedAt": "2026-10-17T05:49:39.532Z",
+          "updatedAt": "2026-10-19T17:26:02.797Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "ko": {
-          "updatedAt": "2026-10-17T05:49:39.730Z",
+          "updatedAt": "2026-10-19T17:26:03.103Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-17T05:49:39.917Z",
+          "updatedAt": "2026-10-19T17:26:03.296Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "ru": {
-          "updatedAt": "2026-10-17T05:49:40.113Z",
+          "updatedAt": "2026-10-19T17:26:03.489Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "zh": {
-          "updatedAt": "2026-10-17T05:49:40.302Z",
+          "updatedAt": "2026-10-19T17:26:03.740Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "ar": {
-          "updatedAt": "2026-10-17T05:49:40.491Z",
+          "updatedAt": "2026-10-19T17:26:03.996Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         },
         "fr": {
-          "updatedAt": "2026-10-17T05:49:40.695Z",
+          "updatedAt": "2026-10-19T17:26:04.198Z",
           "fileName": "docs.json",
-          "postProcessHash": "d2425a5cc73289475c14c1bc9518f44553d73a54ad8b79f0cd7af6beaa99481c"
+          "postProcessHash": "9c85e31c97a8ec6e075f7d616a309263d148f00abc2b1f487235f2b251858f69"
         }
       },
       "fileName": "docs.json"
@@ -41425,51 +41425,50 @@
     },
     {
       "fileId": "68ba1b5188088096294b3b116b0236c64140e7423bf7ca3fa95701b526e07709",
-      "versionId": "a8257239be15a070783f6c6af4fa939f5887c490ed04ab8937f8adfcb3c0cd4b",
+      "versionId": "edb93a4817a617f31c87e9d209962e35842fe7e0cf031d524d1f1fcdb90d133b",
       "translations": {
+        "fr": {
+          "updatedAt": "2026-10-19T17:26:07.758Z",
+          "fileName": "fr/integrations/language-clients/java/client.mdx",
+          "postProcessHash": "086cd625fb0ba9d429b3cc330683d9d13f3ac3c0bf329ecae1a72f0ab2c57404"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:06.629Z",
+          "updatedAt": "2026-10-19T17:26:07.759Z",
           "fileName": "es/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "392306047e1208d04426d771a39eff2d0423c8464fc45c78e168f84b834e1576"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.629Z",
-          "fileName": "ja/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "b8ba5652a88c47d96a794501122b84cd2c1c4dddafd3f2ab6c217b7bc6b3db2d"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.630Z",
-          "fileName": "ko/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "152b18963a410d96667df759ae7e3021c4e0faa5915cbe5e1ab0c88c746bd030"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.630Z",
-          "fileName": "pt-BR/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "caebb91c8eafaec0ff922c32ba67b9392cfecc6a7e7a420b3d2a52a92d6ebc61"
+          "postProcessHash": "f7dfc08a9ac914ef579169f3cbf9f9b52def83dfe3080df2c68fc908c1ffda6d"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.630Z",
+          "updatedAt": "2026-10-19T17:26:07.760Z",
           "fileName": "ru/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "8d5e0131264fc5f7193741677fd096552f6ccd3e225a8b6231ea8eafc47c75de"
+          "postProcessHash": "cb83f7d89e238077f4034cbc4d5f9aa478ec184196f28501cb6eb62ef522ac99"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.631Z",
-          "fileName": "zh/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "dd1f6df703c2e1b46ece5e92ff42d51af52b2654e5a92266ec2114766a12aba1"
+        "pt-BR": {
+          "updatedAt": "2026-10-19T17:26:07.761Z",
+          "fileName": "pt-BR/integrations/language-clients/java/client.mdx",
+          "postProcessHash": "babf94be2059d571886c557c2b52493e77d1fc30e1fc4f1ac3b02159931e0fe0"
+        },
+        "ko": {
+          "updatedAt": "2026-10-19T17:26:07.762Z",
+          "fileName": "ko/integrations/language-clients/java/client.mdx",
+          "postProcessHash": "c37b2207acfed67073783fc885e85daf6b16cca9978f111150b778a48e120bce"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.631Z",
+          "updatedAt": "2026-10-19T17:26:07.763Z",
           "fileName": "ar/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "e5fb56a266cfc3e524bba41a539856085a47cd5eeb896050131d01c9c9b4a2a1"
+          "postProcessHash": "ed791a38f16d895c2f7c22ce49ec9c450ae419c8f82cbc8c511e65cb286c3f37"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.631Z",
-          "fileName": "fr/integrations/language-clients/java/client.mdx",
-          "postProcessHash": "854f1f613bd44d31d2f96c68c5ccd9d9585ccaad0cd089c57e8a231b9f891c14"
+        "ja": {
+          "updatedAt": "2026-10-19T17:26:07.766Z",
+          "fileName": "ja/integrations/language-clients/java/client.mdx",
+          "postProcessHash": "1b322a41412ebbaeec8caa8879bd80beb86f87950f735dbbe883ef1d28d3f9c9"
+        },
+        "zh": {
+          "updatedAt": "2026-10-19T17:26:07.767Z",
+          "fileName": "zh/integrations/language-clients/java/client.mdx",
+          "postProcessHash": "3cdb44cceef50bbe517b4f0690e0660dc3a44a77858a1a20c74208d524228dd7"
         }
       },
-      "fileName": "integrations/language-clients/java/client.mdx",
-      "staged": false
+      "fileName": "integrations/language-clients/java/client.mdx"
     },
     {
       "fileId": "23d67c33c47818982777ce3b6e985e16d747a8ae305d468fe9fd33033df3aebe",
@@ -41569,47 +41568,47 @@
     },
     {
       "fileId": "52b1100e32fdef17945c04d6f8495f8707dace586d3ebb22230fb324737e562a",
-      "versionId": "e3c2c081caf5fef60d7ea0817585deec8101f762dd3fe260580d06f1fcd4e02a",
+      "versionId": "40bc8c472d508eaf9c272d34582db8017d83e3272d699d9a64247535d27bc035",
       "translations": {
         "es": {
-          "updatedAt": "2026-09-24T10:24:05.060Z",
+          "updatedAt": "2026-10-19T17:26:07.754Z",
           "fileName": "es/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "068f3955f335385f39474914141d7ae62f1d194a46c03a80e5529e0fef991646"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:05.061Z",
-          "fileName": "ja/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "0f1de128bb37f37760d30286d3da2cf6dbe2d264c82858a5137c4cf0d8e48ded"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:05.062Z",
-          "fileName": "ko/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "30a634088f4a690abbdf2b8588b758c12fc17cd265331b214570feac275f3281"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:05.063Z",
-          "fileName": "pt-BR/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "0b6cb511fce2150ab96c46f53083184355858cdb8a4238c27907b4269f90b048"
+          "postProcessHash": "8fe3b89e569874e147b3b047444fce603207dfba8dd77f9c6fa9cc036f45d96f"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:05.064Z",
+          "updatedAt": "2026-10-19T17:26:07.755Z",
           "fileName": "ru/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "08209465b2ad1a0b614adffea4915f11365f0c0c22435a69919d6f73e72f719c"
+          "postProcessHash": "7d4be05c9e9c4bcc8594b7ccaceeebe29e56d98c366d05a73ac97102d7226648"
         },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:05.064Z",
-          "fileName": "zh/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "e068b1d8507da7a8948093f274c1dcdeac45988f1979148ffcfc54004b4478e8"
+        "pt-BR": {
+          "updatedAt": "2026-10-19T17:26:07.756Z",
+          "fileName": "pt-BR/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "9369b61c558610a4acf813ea1df0cc7fc7facf9baeb2b3cbfdcd45d6c97a4abd"
         },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:05.065Z",
-          "fileName": "ar/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "baae9b1d3700496b0f5b65ae1d9416df4a728989f8358ce2dd1c6b86e5234f48"
+        "ko": {
+          "updatedAt": "2026-10-19T17:26:07.757Z",
+          "fileName": "ko/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "6bdb6fb4df630d8a39de983a98eed7717429fb3265191608d1b61adcd8bdd559"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:05.066Z",
+          "updatedAt": "2026-10-19T17:26:07.762Z",
           "fileName": "fr/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "37e1547bc41cebf588ddcded79b0b90def22c3e0b18eb7f8828b8c14fb341e29"
+          "postProcessHash": "b6368a15fd4d1b33e24832c3c718e4c7782699746dfba86e1411cfb339101412"
+        },
+        "zh": {
+          "updatedAt": "2026-10-19T17:26:07.764Z",
+          "fileName": "zh/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "58b35b47aca5df6a58322c3a0b7dc65fe9e8badf9ae0dae05e88ecb29454e258"
+        },
+        "ar": {
+          "updatedAt": "2026-10-19T17:26:07.765Z",
+          "fileName": "ar/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "38287725447a4a60f3dfa8b62952f4198430be6da74a2a0ee65aa16c7c700b6b"
+        },
+        "ja": {
+          "updatedAt": "2026-10-19T17:26:07.767Z",
+          "fileName": "ja/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "5eecf1ba6992127f161f690b47a4e1ff7dc67412a7f9dad9e044a1470dfd7409"
         }
       },
       "fileName": "integrations/language-clients/java/jdbc.mdx"
