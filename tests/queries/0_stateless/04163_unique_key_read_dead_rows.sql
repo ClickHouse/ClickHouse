@@ -4,7 +4,7 @@
 --   2. granule skip: a fully dead granule is skipped, the live one after it is not
 --   3. PREWHERE on `_part_offset`: the bitmap still finds its offsets
 --   4. lazy materialization: the bitmap is not applied twice
---   5. text index: a hasToken read honours the bitmap
+--   5. text index: a hasToken read honours the bitmap, and a merge rebuilds the index
 --   6. make_distributed_plan: the read falls back to local execution, which applies the bitmap
 
 SET enable_unique_key = 1;
@@ -125,7 +125,8 @@ SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_
 
 DROP TABLE uk_po_lazy;
 
--- 5. text index: red if a text-index read skips the bitmap (`token_search` 2).
+-- 5. text index: red if a text-index read skips the bitmap (`token_search` 2), or if the merge
+-- remaps the rebuilt index through its row mapping (OPTIMIZE: corrupted data in text index).
 -- Force the text-index direct-read path; the runner randomizes both settings.
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -150,6 +151,12 @@ DELETE FROM uk_txt WHERE id = 2;
 
 SELECT 'token_search' AS step, id FROM uk_txt WHERE hasToken(txt, 'alpha') ORDER BY id;  -- 1,3
 SELECT 'plain_scan' AS step, id FROM uk_txt ORDER BY id;  -- 1,3
+
+SYSTEM START MERGES uk_txt;
+INSERT INTO uk_txt VALUES (4, 'alpha delta'), (5, 'zeta'), (6, 'alpha zeta');
+OPTIMIZE TABLE uk_txt FINAL;
+SELECT 'token_search_after_merge' AS step, id FROM uk_txt WHERE hasToken(txt, 'alpha') ORDER BY id;  -- 1,3,4,6
+SELECT 'zeta_after_merge' AS step, id FROM uk_txt WHERE hasToken(txt, 'zeta') ORDER BY id;  -- 5,6
 
 DROP TABLE uk_txt;
 

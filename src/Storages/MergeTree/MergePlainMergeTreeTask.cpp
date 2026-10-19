@@ -4,12 +4,15 @@
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionManager.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
@@ -18,6 +21,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char unique_key_merge_pause_before_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -95,6 +103,12 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    if (metadata_snapshot->hasUniqueKey())
+    {
+        const MergeTreeTransactionPtr query_txn = txn_holder.getTransaction() ? nullptr : txn;
+        uk_txn = beginUniqueKeyTransaction(query_txn, "OPTIMIZE", future_part->parts);
+    }
+
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -148,7 +162,7 @@ void MergePlainMergeTreeTask::prepare()
         deduplicate_by_columns,
         cleanup,
         storage.merging_params,
-        txn);
+        uk_txn.getTransaction() ? uk_txn.getTransaction() : txn);
 }
 
 
@@ -157,9 +171,25 @@ void MergePlainMergeTreeTask::finish()
     new_part = merge_task->getFuture().get();
     new_part->getDataPartStorage().commitTransaction();
 
-    MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
-    transaction.commit();
+    if (uk_txn.getTransaction())
+    {
+        /// Holds open the window between the merge's snapshot and its commit, where a kill is a late one.
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_merge_pause_before_commit);
+
+        UniqueKeyTxnCommit::merge(
+            storage,
+            {.transaction = uk_txn,
+            .source_parts = future_part->parts,
+            .merged_part = new_part,
+            .read_snapshot = merge_task->getDeleteBitmapSnapshot(),
+            .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets()});
+    }
+    else
+    {
+        MergeTreeData::Transaction transaction(storage, txn.get());
+        storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
+        transaction.commit();
+    }
 
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
