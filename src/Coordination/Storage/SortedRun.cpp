@@ -27,7 +27,11 @@ namespace DB::CoordinationSetting
 namespace Coordination::Storage
 {
 
-AppendWriteBuffer::AppendWriteBuffer(WriteBuffer * out_) : WriteBuffer(out_->position(), out_->available()), out(out_) {}
+AppendWriteBuffer::AppendWriteBuffer(WriteBuffer * out_) : WriteBuffer(nullptr, 0), out(out_)
+{
+    out->nextIfAtEnd();
+    set(out->position(), out->available());
+}
 
 void AppendWriteBuffer::nextImpl()
 {
