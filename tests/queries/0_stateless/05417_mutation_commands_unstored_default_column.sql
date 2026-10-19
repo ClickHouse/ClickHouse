@@ -139,6 +139,36 @@ ALTER TABLE t_materialized_input UPDATE d = -1 WHERE id = 100, UPDATE x = 100 WH
 SELECT 'materialized_input', id, x, m, d FROM t_materialized_input ORDER BY id;
 DROP TABLE t_materialized_input;
 
+-- MATERIALIZE COLUMN of an unstored input stores it, so an UPDATE of the input's own input does not change what the DEFAULT reads.
+DROP TABLE IF EXISTS t_barrier;
+CREATE TABLE t_barrier (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_barrier SELECT number, number FROM numbers(3);
+ALTER TABLE t_barrier ADD COLUMN b Int64 DEFAULT x + 1;
+ALTER TABLE t_barrier ADD COLUMN d Int64 DEFAULT b * 10;
+ALTER TABLE t_barrier UPDATE d = -1 WHERE id = 1, MATERIALIZE COLUMN b, UPDATE x = 100 WHERE id = 2, MATERIALIZE COLUMN d;
+SELECT 'barrier', id, x, b, d FROM t_barrier ORDER BY id;
+DROP TABLE t_barrier;
+
+-- Same with MATERIALIZE COLUMN of the input before the UPDATE of the column.
+DROP TABLE IF EXISTS t_barrier_first;
+CREATE TABLE t_barrier_first (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_barrier_first SELECT number, number FROM numbers(3);
+ALTER TABLE t_barrier_first ADD COLUMN b Int64 DEFAULT x + 1;
+ALTER TABLE t_barrier_first ADD COLUMN d Int64 DEFAULT b * 10;
+ALTER TABLE t_barrier_first MATERIALIZE COLUMN b, UPDATE d = -1 WHERE id = 1, UPDATE x = 100 WHERE id = 2, MATERIALIZE COLUMN d;
+SELECT 'barrier_first', id, x, b, d FROM t_barrier_first ORDER BY id;
+DROP TABLE t_barrier_first;
+
+-- Same with an unstored MATERIALIZED input.
+DROP TABLE IF EXISTS t_materialized_barrier;
+CREATE TABLE t_materialized_barrier (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_materialized_barrier SELECT number, number FROM numbers(3);
+ALTER TABLE t_materialized_barrier ADD COLUMN c Int64 MATERIALIZED x + 1;
+ALTER TABLE t_materialized_barrier ADD COLUMN d Int64 DEFAULT c * 10;
+ALTER TABLE t_materialized_barrier UPDATE d = -1 WHERE id = 1, MATERIALIZE COLUMN c, MATERIALIZE COLUMN d;
+SELECT 'materialized_barrier', id, x, c, d FROM t_materialized_barrier ORDER BY id;
+DROP TABLE t_materialized_barrier;
+
 -- A stored column is not recomputed.
 DROP TABLE IF EXISTS t_stored;
 CREATE TABLE t_stored (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;

@@ -52,6 +52,15 @@ ephemeral	2	100	3	30
 materialized_input	0	0	1	10
 materialized_input	1	1	2	20
 materialized_input	2	100	101	1010
+barrier	0	0	1	10
+barrier	1	1	2	-1
+barrier	2	100	3	30
+barrier_first	0	0	1	10
+barrier_first	1	1	2	-1
+barrier_first	2	100	3	30
+materialized_barrier	0	0	1	10
+materialized_barrier	1	1	2	-1
+materialized_barrier	2	2	3	30
 stored	0	0
 stored	1	10
 stored	2	20

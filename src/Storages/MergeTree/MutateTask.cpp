@@ -606,6 +606,7 @@ static void splitAndModifyMutationCommands(
     /// a MATERIALIZE COLUMN of it, or an UPDATE of it with no later command that may change what its DEFAULT reads.
     std::unordered_map<String, NameSet> updated_ordinary_columns; /// -> columns its DEFAULT reads
     NameSet materialized_ordinary_columns;
+    NameSet stored_by_materialize; /// columns the part does not store that an earlier MATERIALIZE COLUMN wrote
     const bool has_materialize_column = std::ranges::any_of(
         commands, [](const auto & command) { return command.type == MutationCommand::Type::MATERIALIZE_COLUMN; });
     auto is_ordinary = [&](const String & name) { return table_columns.tryGetColumn(GetColumnsOptions::Ordinary, name).has_value(); };
@@ -614,6 +615,8 @@ static void splitAndModifyMutationCommands(
     {
         if (!table_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
             return false;
+        if (stored_by_materialize.contains(name))
+            return true;
         const auto name_in_part = nameInPart(name);
         if (part->getSerializationInfos().isMissingColumn(name_in_part))
             return true;
@@ -655,10 +658,23 @@ static void splitAndModifyMutationCommands(
             }
             case MutationCommand::Type::MATERIALIZE_COLUMN:
             {
-                if (is_ordinary(command.column_name))
-                    materialized_ordinary_columns.insert(command.column_name);
-                else
-                    std::erase_if(updated_ordinary_columns, [&](const auto & entry) { return entry.second.contains(command.column_name); });
+                const auto & name = command.column_name;
+                if (is_ordinary(name))
+                    materialized_ordinary_columns.insert(name);
+
+                if (!part_stores(name))
+                {
+                    /// From here on the part stores the column, with the value it reads as now.
+                    stored_by_materialize.insert(name);
+                    for (auto & [column, inputs] : updated_ordinary_columns)
+                        if (inputs.contains(name))
+                            inputs = MutationsInterpreter::getColumnsReadByDefault(table_columns, column, part_stores);
+                }
+                else if (!is_ordinary(name))
+                {
+                    /// A stored MATERIALIZED column is recomputed.
+                    std::erase_if(updated_ordinary_columns, [&](const auto & entry) { return entry.second.contains(name); });
+                }
                 break;
             }
             case MutationCommand::Type::DELETE:
@@ -674,6 +690,7 @@ static void splitAndModifyMutationCommands(
             default:
                 updated_ordinary_columns.clear();
                 materialized_ordinary_columns.clear();
+                stored_by_materialize.clear();
         }
     };
     auto written_by_previous_command = [&](const String & name)
