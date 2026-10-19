@@ -202,7 +202,7 @@ void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
         election_to_stop->shutdown();
 
     std::lock_guard lock(state_mutex);
-    region_holder.reset();
+    removeRegionNodeIfOwned();
     leader_lease_holder.reset();
     leader_election.reset();
     /// A callback that had already passed the `shutdown` check could have republished the lease while we were
@@ -381,7 +381,61 @@ void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
     ops.emplace_back(zkutil::makeCreateRequest(region_path, region, zkutil::CreateMode::Ephemeral));
     current_zookeeper->multi(ops);
 
-    region_holder = zkutil::EphemeralNodeHolder::existing(region_path, *current_zookeeper);
+    region_node_zookeeper = current_zookeeper;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::removeRegionNodeIfOwned()
+{
+    if (!region_node_zookeeper)
+        return;
+
+    auto zookeeper = std::exchange(region_node_zookeeper, nullptr);
+
+    auto replica_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName();
+    auto region_path = replica_path / "region";
+    auto is_active_path = replica_path / "is_active";
+
+    /// This is called from the destructor and the shutdown path, so it must not throw. An expired session has
+    /// already removed the ephemeral node.
+    try
+    {
+        if (zookeeper->expired())
+            return;
+
+        /// Another startup that does not see `is_active` replaces the `region` node with its own (see
+        /// `createEphemeralRegionNode`). If that startup then wins `activateReplica`, this one unwinds through
+        /// `stop` and must not delete the winner's node: remove it only while it is still the node this session
+        /// created, and only while no other server owns the replica name. The checks and the removal go into one
+        /// `multi`.
+        Coordination::Stat region_stat;
+        if (!zookeeper->exists(region_path, &region_stat) || region_stat.ephemeralOwner != zookeeper->getClientID())
+            return;
+
+        Coordination::Requests ops;
+        String is_active_content;
+        Coordination::Stat is_active_stat;
+        if (zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat))
+        {
+            if (is_active_content != active_node_identifier)
+                return;
+            ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
+        }
+        else
+        {
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper, is_active_path);
+        }
+        ops.emplace_back(zkutil::makeRemoveRequest(region_path, region_stat.version));
+
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+        if (code != Coordination::Error::ZOK)
+            LOG_DEBUG(getLogger(log_name), "Did not remove the region node {}: it changed concurrently ({})",
+                region_path.string(), code);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log_name.c_str());
+    }
 }
 
 }

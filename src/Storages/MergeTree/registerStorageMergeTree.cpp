@@ -976,9 +976,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// A non-empty region opts the table into the experimental geo-location-aware fetching (region leader
         /// election, fetching within the region only). The region may also come from the `replicated_merge_tree`
-        /// server config, so it is checked against the effective settings, not only against the query. Gate on
-        /// `CREATE` only: `ATTACH` must load the existing tables regardless of the session setting.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        /// server config, so it is checked against the effective settings, not only against the query. Gate every
+        /// fresh definition, including a full-definition `ATTACH`, which is user input like a `CREATE`; a definition
+        /// stored on this server (short `ATTACH`, restart) must load regardless of the session setting.
+        if (is_fresh_definition
             && !(*storage_settings)[MergeTreeSetting::geo_replication_control_region].value.empty()
             && !local_settings[Setting::allow_experimental_geo_replication_control])
         {

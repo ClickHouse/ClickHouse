@@ -87,7 +87,10 @@ private:
     zkutil::ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(state_mutex);
     zkutil::LeaderElectionPtr leader_election TSA_GUARDED_BY(state_mutex);
     zkutil::EphemeralNodeHolderPtr leader_lease_holder TSA_GUARDED_BY(state_mutex);
-    zkutil::EphemeralNodeHolderPtr region_holder TSA_GUARDED_BY(state_mutex);
+    /// The session that created this replica's `region` node, or null if this controller has not published it.
+    /// Not an `EphemeralNodeHolder`: its destructor removes the path unconditionally, which would delete a node
+    /// that another server holding this replica name has put in place of ours (see `removeRegionNodeIfOwned`).
+    zkutil::ZooKeeperPtr region_node_zookeeper TSA_GUARDED_BY(state_mutex);
     String active_node_identifier TSA_GUARDED_BY(state_mutex);
     std::atomic_bool shutdown = false;
     /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
@@ -102,6 +105,7 @@ private:
     void resetPreviousTerm();
     /// These three run with `state_mutex` held.
     void createEphemeralRegionNode() TSA_REQUIRES(state_mutex);
+    void removeRegionNodeIfOwned() TSA_REQUIRES(state_mutex);
     void enterLeaderElection() TSA_REQUIRES(state_mutex);
     void onLeader() TSA_REQUIRES(state_mutex);
 };
