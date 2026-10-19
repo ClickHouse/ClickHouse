@@ -206,9 +206,11 @@ def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
     for i in KEEPER_INDEXES:
         _, err_log, stderr_log = get_keeper_workspace_logs(workspace_path, i)
         files = " ".join(str(p) for p in (err_log, stderr_log) if p.is_file())
-        # A Fatal other than the watchdog's SIGKILL record, or a raw sanitizer report.
+        # A Fatal other than the watchdog's SIGKILL record, or a raw sanitizer report: one
+        # cut short by the abort may be only its `CHECK failed` or `DEADLYSIGNAL` line.
         if files and Shell.get_output(
-            f"rg --text '<Fatal>|^(==[0-9]+==)?(ERROR|WARNING|SUMMARY): [a-zA-Z]+Sanitizer:|: runtime error: ' {files}"
+            "rg --text '<Fatal>|^(==[0-9]+==)?(ERROR|WARNING|SUMMARY): [a-zA-Z]+Sanitizer:"
+            f"|[a-zA-Z]+Sanitizer: CHECK failed:|[a-zA-Z]+Sanitizer:DEADLYSIGNAL|: runtime error: ' {files}"
             " | rg --text -v 'Child process was terminated by signal 9'"
         ):
             return _parse_logs(err_log, stderr_log, fuzzer_out) or Result(
