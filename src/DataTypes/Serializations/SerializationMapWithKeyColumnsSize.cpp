@@ -107,10 +107,28 @@ void SerializationMapWithKeyColumnsSize::deserializeBinaryBulkStatePrefix(
     auto size_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumnsSize>();
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
 
-    /// Read the manifest (shared, cached) but prepare our OWN exists/overflow
-    /// states so we never touch the value streams.
-    map_with_key_columns_serialization->deserializeBinaryBulkStatePrefix(settings, size_state->with_key_columns_state, cache);
-    const auto & manifest = key_columns.getManifestFromState(size_state->with_key_columns_state);
+    /// `length(m)` loads the manifest and opens only `.exists_` streams. The full map prefix
+    /// would prepare every key's value state and open those files.
+    settings.path.push_back(ISerialization::Substream::MapKeysInfo);
+    MapKeyManifest manifest;
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        if (const auto * cached = dynamic_cast<const SerializationMapWithKeyColumns::DeserializeBinaryBulkStateMapWithKeyColumns *>(cached_state.get()))
+            manifest = cached->manifest;
+        size_state->with_key_columns_state = std::move(cached_state);
+    }
+    else
+    {
+        if (!settings.map_key_columns_manifest)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing key_columns manifest for with_key_columns Map");
+
+        manifest = *settings.map_key_columns_manifest;
+        auto stored = std::make_shared<SerializationMapWithKeyColumns::DeserializeBinaryBulkStateMapWithKeyColumns>();
+        stored->manifest = manifest;
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, stored);
+        size_state->with_key_columns_state = std::move(stored);
+    }
+    settings.path.pop_back();
 
     size_state->exists_states.resize(manifest.keys.size());
     for (size_t i = 0; i < manifest.keys.size(); ++i)

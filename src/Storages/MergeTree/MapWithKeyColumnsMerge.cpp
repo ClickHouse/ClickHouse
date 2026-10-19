@@ -47,12 +47,12 @@ String getMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeS
 
 std::optional<String> findMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeDataPartChecksums & checksums)
 {
-    const String logical = mapKeyColumnsLogicalFileName(name_in_storage);
+    String logical = mapKeyColumnsLogicalFileName(name_in_storage);
     if (checksums.files.contains(logical))
         return logical;
 
     /// `replaceFileNameToHashIfNeeded` hashes the whole name, including `.txt`, not the stem.
-    const String hashed = sipHash128String(logical);
+    String hashed = sipHash128String(logical);
     if (checksums.files.contains(hashed))
         return hashed;
 

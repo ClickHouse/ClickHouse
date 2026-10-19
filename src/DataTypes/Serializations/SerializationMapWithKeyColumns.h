@@ -72,8 +72,8 @@ public:
     };
 
     /// Pivot a `ColumnMap` into one dense value column and presence bitmap per key.
-    /// Duplicate keys in a row keep the first match, matching `arrayElement`.
-    /// `limit = 0` means "to the end of the column".
+    /// One pass over the pairs fills every requested key. Duplicate keys in a row keep the
+    /// first match, matching `arrayElement`. `limit = 0` means "to the end of the column".
     static std::vector<PivotedKeyColumn> pivot(
         const IColumn & column,
         const DataTypePtr & key_type,

@@ -32,10 +32,11 @@ void extractKeyPresenceFromMap(
     size_t start,
     size_t end);
 
-/// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
+/// Whether the name has the `map.key_<serialized_key>` or `map.exists_<serialized_key>` shape
+/// used for a single Map key subcolumn.
 bool looksLikeMapSubcolumnName(const String & column_name);
 
-/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
+/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` or `map.exists_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
 /// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows

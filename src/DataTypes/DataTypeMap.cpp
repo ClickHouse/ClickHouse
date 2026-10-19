@@ -219,25 +219,9 @@ MutableColumnPtr parseMapSubcolumnKey(const DataTypePtr & key_type, std::string_
 ColumnPtr makePresenceColumnFromMap(const ColumnMap & column_map, const IColumn & key_column)
 {
     auto result = ColumnUInt8::create();
-    auto & data = result->getData();
-    const size_t rows = column_map.size();
-    data.resize_fill(rows, 0);
-
-    const auto & keys_column = column_map.getNestedData().getColumn(0);
-    const auto & offsets = column_map.getNestedColumn().getOffsets();
-    for (size_t row = 0; row < rows; ++row)
-    {
-        const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-        const size_t end = offsets[row];
-        for (size_t pos = begin; pos < end; ++pos)
-        {
-            if (keys_column.compareAt(pos, 0, key_column, 0) == 0)
-            {
-                data[row] = 1;
-                break;
-            }
-        }
-    }
+    /// `compareAt` with a zero hint treats `NaN` and a nested `Nullable` NULL as equal to every
+    /// other key. `extractKeyPresenceFromMap` uses the same non-zero hint as `m['key']`.
+    extractKeyPresenceFromMap(*column_map.getNestedColumnPtr(), key_column, *result, 0, column_map.size());
     return result;
 }
 

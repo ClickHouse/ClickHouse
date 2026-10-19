@@ -21,6 +21,7 @@
 #include <Common/typeid_cast.h>
 #include <base/EnumReflection.h>
 
+#include <algorithm>
 #include <limits>
 #include <set>
 
@@ -305,7 +306,7 @@ size_t SerializationMapWithKeyColumns::getRegisteredKeyCount(const SerializeBina
 
 std::vector<SerializationMapWithKeyColumns::PivotedKeyColumn> SerializationMapWithKeyColumns::pivot(
     const IColumn & column,
-    const DataTypePtr & key_type,
+    const DataTypePtr & /*key_type*/,
     const DataTypePtr & value_type,
     const std::vector<Field> & keys,
     size_t offset,
@@ -325,32 +326,53 @@ std::vector<SerializationMapWithKeyColumns::PivotedKeyColumn> SerializationMapWi
     std::vector<PivotedKeyColumn> result;
     result.reserve(keys.size());
 
-    for (const auto & key : keys)
+    /// `Field` equality matches `m['key']`, including `NaN` and nested `Nullable` keys.
+    std::map<Field, std::vector<size_t>> slots_by_key;
+    for (size_t i = 0; i < keys.size(); ++i)
     {
         PivotedKeyColumn pivoted;
-        pivoted.key = key;
+        pivoted.key = keys[i];
         pivoted.values = value_type->createColumn();
+        pivoted.values->reserve(rows);
         pivoted.presence.assign(rows, 0);
+        slots_by_key[keys[i]].push_back(i);
+        result.push_back(std::move(pivoted));
+    }
 
-        auto key_column = key_type->createColumn();
-        key_column->insert(key);
-        extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column, *pivoted.values, offset, offset + rows);
+    const auto & values_column = column_map.getNestedData().getColumn(1);
+    constexpr size_t not_found = std::numeric_limits<size_t>::max();
+    std::vector<size_t> matched(keys.size(), not_found);
 
-        for (size_t row = 0; row < rows; ++row)
+    for (size_t row = 0; row < rows; ++row)
+    {
+        std::fill(matched.begin(), matched.end(), not_found);
+        const size_t begin = offsets[static_cast<ssize_t>(offset + row) - 1];
+        const size_t end = offsets[offset + row];
+        for (size_t pos = begin; pos < end; ++pos)
         {
-            const size_t begin = offsets[static_cast<ssize_t>(offset + row) - 1];
-            const size_t end = offsets[offset + row];
-            for (size_t pos = begin; pos < end; ++pos)
+            Field key;
+            keys_column.get(pos, key);
+            const auto it = slots_by_key.find(key);
+            if (it == slots_by_key.end())
+                continue;
+
+            for (const size_t slot : it->second)
             {
-                if (keys_column.compareAt(pos, 0, *key_column, 0) == 0)
-                {
-                    pivoted.presence[row] = 1;
-                    break;
-                }
+                if (matched[slot] == not_found)
+                    matched[slot] = pos;
             }
         }
 
-        result.push_back(std::move(pivoted));
+        for (size_t slot = 0; slot < result.size(); ++slot)
+        {
+            if (matched[slot] == not_found)
+                result[slot].values->insertDefault();
+            else
+            {
+                result[slot].values->insertFrom(values_column, matched[slot]);
+                result[slot].presence[row] = 1;
+            }
+        }
     }
 
     return result;
