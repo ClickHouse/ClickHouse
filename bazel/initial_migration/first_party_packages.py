@@ -35,6 +35,7 @@ LABEL_FIELDS = {
 }
 LOCATION = re.compile(r'\$\((locations?|execpaths?|rootpaths?)\s+([^\s)]+)\)')
 MAIN_LABEL = re.compile(r'^(?P<repo>@clickhouse)?//(?P<pkg>[^:]*):(?P<name>[^\s]*)$')
+DEPENDENCY_LABEL = re.compile(r'^(?P<repo>@[^/]+)?//(?P<pkg>[^:]*)(?::(?P<name>[^\s]*))?$')
 
 
 def quoted(value):
@@ -75,6 +76,16 @@ def relative_label(package, name, current='', repo=''):
     return repo + '//' + package + ':' + name
 
 
+def canonical_dependency(value, package, repo):
+    match = DEPENDENCY_LABEL.fullmatch(value)
+    if match:
+        owner = match['repo'] or repo
+        pkg = match['pkg']
+        name = match['name'] if match['name'] is not None else posixpath.basename(pkg)
+        return owner + '//' + pkg + ':' + name
+    return repo + '//' + package + ':' + value.removeprefix(':')
+
+
 def git_inventory(root):
     """Native CMake inputs, regardless of generated BUILD package boundaries."""
     listing = subprocess.check_output(
@@ -99,6 +110,7 @@ def native_directory(directory):
 
 class Build:
     def __init__(self, root, path, inventory, packages, text=None):
+        self.root = root
         self.path = path
         self.package = path.parent.relative_to(root).as_posix().removeprefix('.')
         self.text = path.read_text() if text is None else text
@@ -157,6 +169,79 @@ class Build:
             # all branches separately in validation, never infer a file order.
             return [value for key, branch in table.items() for value in self.values(branch, cpu)]
         return []
+
+
+def deduplicate_dependencies(build, stats):
+    """Remove repeated C++ deps after aliases become their actual labels."""
+    external = build.path.name.endswith('.BUILD.bazel') and build.path.parent.name == 'dependencies'
+    repo = '@' + build.path.name.removesuffix('.BUILD.bazel') if external else '@clickhouse'
+    package = '' if external else build.package
+    edits = []
+    expected = {}
+    rules = list(build.source.rules())
+    for index, (_, rule) in enumerate(rules):
+        for attr in rule.keywords:
+            if attr.arg not in {'deps', 'implementation_deps'}:
+                continue
+            expanded = build.expand(attr.value)
+            for node in ast.walk(expanded):
+                if not isinstance(node, ast.Call):
+                    continue
+                if (call_name(node) != 'select' or not node.args or
+                        not isinstance(node.args[0], ast.Dict)):
+                    raise ValueError(f'{build.path}: cannot evaluate {attr.arg}: {render(node)}')
+                conditions = {ast.literal_eval(key) for key in node.args[0].keys}
+                if conditions - {'@platforms//cpu:' + cpu for cpu in CPUS} - {'//conditions:default'}:
+                    raise ValueError(f'{build.path}: unsupported {attr.arg} conditions: {conditions}')
+            outputs = {}
+            changed = False
+            for cpu in CPUS:
+                original = build.values(expanded, cpu)
+                seen = set()
+                kept = []
+                for value in original:
+                    label = canonical_dependency(value, package, repo)
+                    if label in seen:
+                        stats['duplicate_dependencies'] += 1
+                        changed = True
+                    else:
+                        seen.add(label)
+                        kept.append(value)
+                outputs[cpu] = kept
+                expected[index, attr.arg, cpu] = [canonical_dependency(v, package, repo) for v in kept]
+                stats['verified_dependency_lists'] += 1
+            if changed:
+                if outputs[CPUS[0]] == outputs[CPUS[1]]:
+                    result = list_expr(outputs[CPUS[0]])
+                else:
+                    result = ast.Call(
+                        func=ast.Name(id='select', ctx=ast.Load()),
+                        args=[ast.Dict(keys=[quoted('@platforms//cpu:' + cpu) for cpu in CPUS],
+                                       values=[list_expr(outputs[cpu]) for cpu in CPUS])],
+                        keywords=[],
+                    )
+                edits.append((*build.source.span(attr.value), render(result)))
+                stats['deduplicated_dependency_attributes'] += 1
+    if not edits:
+        return build.text
+    text = build.source.rewrite(edits)
+    rewritten = Build(build.root, build.path, (), (), text)
+    after_rules = list(rewritten.source.rules())
+    for index, ((_, before), (_, after)) in enumerate(zip(rules, after_rules, strict=True)):
+        old_attrs, new_attrs = attributes(before), attributes(after)
+        if (call_name(before) != call_name(after) or old_attrs.keys() != new_attrs.keys()):
+            raise ValueError(f'{build.path}: dependency pruning changed rule declarations')
+        for attr in old_attrs:
+            if attr not in {'deps', 'implementation_deps'}:
+                if ast.dump(old_attrs[attr]) != ast.dump(new_attrs[attr]):
+                    raise ValueError(f'{build.path}: dependency pruning changed {attr}')
+            else:
+                for cpu in CPUS:
+                    actual = [canonical_dependency(v, package, repo)
+                              for v in rewritten.values(new_attrs[attr], cpu)]
+                    if actual != expected[index, attr, cpu] or len(actual) != len(set(actual)):
+                        raise ValueError(f'{build.path}: {attr} changed dependency order for {cpu}')
+    return text
 
 
 class Migration:
@@ -689,8 +774,10 @@ class Migration:
                         value)
                 if value != node.value:
                     edits.append((*source.span(node), json.dumps(value)))
-            if edits:
-                result = source.rewrite(edits)
+            result = source.rewrite(edits)
+            if cross_repo:
+                result = deduplicate_dependencies(Build(self.root, path, (), (), result), self.stats)
+            if result != path.read_text():
                 ast.parse(result, filename=filename)
                 output[path] = result
         return output
@@ -718,6 +805,9 @@ class Migration:
             text = simplify_globs(
                 '\n\n'.join(lines) + '\n', self.package_inventory(package), self.stats,
             )
+            text = deduplicate_dependencies(
+                Build(self.root, self.root / package / 'BUILD.bazel', (), (), text), self.stats,
+            )
             # compact() preserves statement indentation. ast.unparse() places
             # whole rules on one line, so it must be formatted first.
             text = subprocess.run(
@@ -740,7 +830,31 @@ def main():
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--stage', choices=('base', 'all'), default='all')
     parser.add_argument('--write', action='store_true')
+    parser.add_argument('--deduplicate-deps', action='store_true',
+                        help='Only remove repeated native and external dependency labels.')
     args = parser.parse_args()
+    if args.deduplicate_deps:
+        files = subprocess.check_output(
+            ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
+             '--', 'BUILD.bazel', '**/BUILD.bazel', '*.BUILD.bazel'], cwd=args.root,
+        ).decode().split('\0')
+        stats = Counter()
+        for filename in dict.fromkeys(files):
+            if not filename:
+                continue
+            path = args.root / filename
+            package = path.parent.relative_to(args.root).as_posix().removeprefix('.')
+            external = package == 'bazel/dependencies' and path.name.endswith('.BUILD.bazel')
+            if path.is_file() and (external or not package or native_directory(package)):
+                build = Build(args.root, path, (), ())
+                result = deduplicate_dependencies(build, stats)
+                if result != build.text:
+                    stats['rewritten_builds'] += 1
+                    if args.write:
+                        path.write_text(result)
+                stats['verified_builds'] += 1
+        print(json.dumps(stats, indent=2))
+        return
     migration = Migration(args.root, args.stage)
     result = migration.prepare()
     print(json.dumps(dict(migration.stats, files=len(result)), indent=2))
