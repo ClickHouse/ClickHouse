@@ -1006,7 +1006,6 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
-                    last_read_file_has_name = true;
                     last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
                     is_first = false;
 
@@ -1052,8 +1051,6 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
-                    /// All entries of an archive stored without a name share this path, so they are not cached.
-                    last_read_file_has_name = file_enumerator->getFileInfo().has_name;
                     last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
                     is_first = false;
 
@@ -1066,7 +1063,7 @@ namespace
                             format = format_from_file;
                     }
 
-                    if (auto cached_schema = last_read_file_has_name ? tryGetSchemaFromCache(archive, last_read_file_cache_key) : std::nullopt)
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
@@ -1092,7 +1089,7 @@ namespace
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
-            if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] || !last_read_file_has_name)
+            if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
             auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
@@ -1101,7 +1098,7 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file] || !last_read_file_has_name)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files in archive, so we need to
@@ -1191,7 +1188,6 @@ namespace
         bool is_first = true;
 
         std::string last_read_file_path;
-        bool last_read_file_has_name = true;
         std::string last_read_file_cache_key;
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -1819,7 +1815,7 @@ void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
 
 bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 {
-    if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] || !current_path_has_name)
+    if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
     auto num_rows_from_cache = tryGetNumRowsFromCache(current_archive_entry_cache_key.value_or(current_path), file_stat.st_mtime);
@@ -1879,7 +1875,6 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_path_has_name = true;
                         current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
@@ -1954,8 +1949,6 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        /// All entries of an archive stored without a name share `current_path`, so their row counts are not cached.
-                        current_path_has_name = file_enumerator->getFileInfo().has_name;
                         current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
@@ -1978,7 +1971,6 @@ Chunk StorageFileSource::generate()
                 else
                 {
                     current_path = files_iterator->next();
-                    current_path_has_name = true;
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
                         return {};
@@ -2392,7 +2384,7 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && current_path_has_name && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
             addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;

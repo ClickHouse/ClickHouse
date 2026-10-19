@@ -3,6 +3,10 @@ s3 glob		hello
 s3Cluster glob		hello
 file two		hello
 file two		world
+s3 two		hello
+s3 two		world
+s3Cluster two		hello
+s3Cluster two		world
 file count	4
 file rows	1	\N
 file rows	\N	2
@@ -11,4 +15,3 @@ file rows	\N	4
 file count	4
 a	Nullable(Int64)					
 b	Nullable(Int64)					
-s3 mixed	good.csv	g1\ng2\n
