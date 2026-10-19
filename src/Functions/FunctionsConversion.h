@@ -184,6 +184,7 @@ struct FunctionConvertSettings
         hash.update(input_format_ipv6_default_on_conversion_error);
         hash.update(check_conversion_from_numbers_to_enum);
         hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+        hash.update(allow_named_tuple_conversion_with_extra_source_fields);
         hash.update(cast_keep_nullable);
         hash.update(cast_string_to_date_time_mode);
         hash.update(format_settings_hash);
