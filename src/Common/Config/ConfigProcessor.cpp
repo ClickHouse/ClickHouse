@@ -16,6 +16,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/NumberParser.h>
 #include <Poco/SAX/InputSource.h>
+#include <Poco/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -690,10 +691,17 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 /// the symlink. The path is kept as the system id, so relative external entities still resolve against it.
 static XMLDocumentPtr parseXMLConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
 {
+    errno = 0;
     std::ifstream stream(config_path);
     if (!stream)
+    {
+        /// `DOMParser::parse` with a path threw `Poco::FileNotFoundException` for a missing file, and callers match
+        /// on its message, so keep it for that case.
+        if (errno == ENOENT)
+            throw Poco::FileNotFoundException(config_path);
         throw Exception(
             ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot open the configuration file '{}': {}", config_path, errnoToString());
+    }
 
     Poco::XML::InputSource input_source(stream);
     input_source.setSystemId(config_path);
