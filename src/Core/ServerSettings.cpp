@@ -1645,11 +1645,13 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
-    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+    ALIAS(Bool, load_table_anonymously_if_credentials_restricted, true, R"(
+The old name `s3_load_table_anonymously_if_credentials_restricted` is kept as an alias.
+
 Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
 `DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
 its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
-queries by `s3_allow_server_credentials_in_user_queries`.
+queries by `allow_server_credentials_in_user_queries`.
 
 When enabled (the default), the object is loaded without those credentials instead of aborting startup: an
 `S3`/`S3Queue` table or a dynamic S3 disk is built with an anonymous S3 client, and a `DataLakeCatalog`
@@ -1666,14 +1668,16 @@ no credentials. `RESTORE` creates Azure tables like `CREATE`, so such a table is
 such a dynamic Azure disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree` table
 with local metadata; a table with data parts, or a disk with `plain_rewritable` metadata, may still fail to load,
 because those requests are denied as well. A dynamic Azure disk created with
-`s3_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+`allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
 
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
-)", 0) \
-    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+)", 0, s3_load_table_anonymously_if_credentials_restricted) \
+    ALIAS(Bool, allow_server_credentials_for_system_table_disks, false, R"(
+The old name `s3_allow_server_credentials_for_system_table_disks` is kept as an alias.
+
 Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
-S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
+S3 credentials, exempting it from the `allow_server_credentials_in_user_queries` restriction. This is for
 server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
 cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
 exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
@@ -1681,8 +1685,8 @@ database, which ordinary users cannot create tables in, so it does not relax the
 
 It applies to a dynamic `disk(type = azure_blob_storage, ...)` the same way: such a disk may use the server's own
 Azure identity (the AKS workload identity or the machine's managed identity) despite
-`s3_allow_server_credentials_in_user_queries`.
-)", 0) \
+`allow_server_credentials_in_user_queries`.
+)", 0, s3_allow_server_credentials_for_system_table_disks) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
@@ -2178,6 +2182,29 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
+
+        /// A setting may also be configured under one of its aliases, but only under one name.
+        String configured_alias;
+        if (path.empty())
+        {
+            const auto & aliases = ServerSettingsTraits::settingsToAliases();
+            if (auto it = aliases.find(name); it != aliases.end())
+            {
+                for (const auto & alias : it->second)
+                {
+                    if (!config.has(String(alias)))
+                        continue;
+                    const String & other = configured_alias.empty() && config.has(name) ? name : configured_alias;
+                    if (!other.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Server setting `{}` is configured under more than one name: `{}` and `{}`", name, other, alias);
+                    configured_alias = alias;
+                }
+            }
+        }
+        if (!configured_alias.empty())
+            path_or_name = &configured_alias;
+
         /// `set` names the setting and the value it was given, so nothing has to be added here.
         if (config.has(*path_or_name))
             set(name, config.getString(*path_or_name));
@@ -2274,6 +2301,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
+        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+            known_keys.insert(String(alias));
     }
 
     /// Known config sections that have complex/dynamic structure
