@@ -1,0 +1,460 @@
+---
+title: 'DataStore 快速入门'
+sidebarTitle: '快速入门'
+slug: /chdb/datastore/quickstart
+description: '开始使用 DataStore：安装、从 pandas 一行迁移以及基本用法'
+keywords: ['chdb', 'datastore', '快速入门', '安装', 'pandas', '迁移']
+doc_type: 'guide'
+---
+
+几分钟内即可上手 DataStore。本指南介绍安装、从 pandas 迁移以及基本用法。
+
+<div id="installation">
+  ## 安装
+</div>
+
+使用 pip 安装 chDB：
+
+```bash
+pip install "chdb>=4.0"
+```
+
+对于可选依赖：
+
+```bash
+# 用于支持 pandas DataFrame
+pip install "chdb[pandas]>=4.0"
+
+# 用于支持 PyArrow
+pip install "chdb[arrow]>=4.0"
+
+# 安装所有可选依赖
+pip install "chdb[all]>=4.0"
+```
+
+<div id="verify">
+  ### 验证安装
+</div>
+
+```python
+import chdb
+print(chdb.__version__)  # 应显示 4.x.x 或更高版本
+
+from chdb import datastore as pd
+print("DataStore ready!")
+```
+
+<div id="migration">
+  ## 从 Pandas 一行迁移
+</div>
+
+开始使用 DataStore 最简单的方法是修改导入语句：
+
+```python
+# 之前（pandas）
+import pandas as pd
+
+# 之后（DataStore）
+from chdb import datastore as pd
+```
+
+就是这样！您现有的 pandas 代码现在将使用 DataStore，并从 SQL 优化中受益。
+
+<div id="migration-example">
+  ### 迁移示例
+</div>
+
+```python
+from pathlib import Path
+Path("employees.csv").write_text("""\
+name,age,city,salary,department,dept_id,status,email
+Alice,28,NYC,75000,Engineering,1,active,alice@company.com
+Bob,35,LA,85000,Engineering,1,active,bob@company.com
+Charlie,52,NYC,95000,Product,2,active,charlie@company.com
+Diana,32,SF,70000,Design,3,active,diana@company.com
+Eve,23,LA,48000,Product,2,inactive,eve@company.com
+""")
+
+# 原始 pandas 代码
+import pandas as pd
+
+df = pd.read_csv("employees.csv")
+result = (df[df['salary'] > 50000]
+          .groupby('department')['salary']
+          .agg(['mean', 'count'])
+          .sort_values('mean', ascending=False))
+print(result)
+
+# DataStore 版本——只需修改导入语句！
+from chdb import datastore as pd
+
+df = pd.read_csv("employees.csv")
+result = (df[df['salary'] > 50000]
+          .groupby('department')['salary']
+          .agg(['mean', 'count'])
+          .sort_values('mean', ascending=False))
+print(result)  # 结果相同，但执行速度更快！
+```
+
+<div id="basic-usage">
+  ## 基本用法
+</div>
+
+<div id="creating">
+  ### 创建 DataStore
+</div>
+
+```python
+from chdb import datastore as pd
+
+# 从字典创建
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [25, 30, 35],
+    'city': ['NYC', 'LA', 'NYC']
+})
+
+# 从 pandas DataFrame 创建
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+ds = pd.DataFrame(pdf)
+
+# 从 CSV 文件创建
+ds = pd.read_csv("data.csv")
+
+# 从 Parquet 文件创建（推荐用于大型数据集）
+ds = pd.read_parquet("data.parquet")
+```
+
+<div id="filtering">
+  ### 筛选数据
+</div>
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("employees.csv")
+
+# 单一条件
+senior = ds[ds['age'] > 30]
+
+# 多个条件（与）
+senior_nyc = ds[(ds['age'] > 30) & (ds['city'] == 'NYC')]
+
+# 多个条件（或）
+young_or_senior = ds[(ds['age'] < 25) | (ds['age'] > 50)]
+
+# 使用过滤器方法（SQL 风格）
+result = ds.filter(ds['salary'] > 50000)
+```
+
+<div id="selecting">
+  ### 选择列
+</div>
+
+```python
+# Pandas 风格
+subset = ds[['name', 'age']]
+
+# SQL 风格
+subset = ds.select('name', 'age')
+```
+
+<div id="sorting">
+  ### 排序
+</div>
+
+```python
+# Pandas 风格
+sorted_ds = ds.sort_values('salary', ascending=False)
+
+# SQL 风格
+sorted_ds = ds.sort('salary', ascending=False)
+```
+
+<div id="groupby">
+  ### 分组与聚合
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# 按单列分组
+by_region = ds.groupby('region')['amount'].sum()
+
+# 按多列分组
+by_region_product = ds.groupby(['region', 'product']).agg({
+    'amount': ['sum', 'mean'],
+    'quantity': 'sum'
+})
+
+# 多重聚合
+summary = ds.groupby('category').agg({
+    'price': ['min', 'max', 'mean'],
+    'quantity': 'sum'
+})
+```
+
+<div id="joining">
+  ### 连接多个 DataStore
+</div>
+
+```python
+from pathlib import Path
+Path("departments.csv").write_text("""\
+dept_id,department_name
+1,Engineering
+2,Product
+3,Design
+""")
+
+from chdb import datastore as pd
+
+employees = pd.read_csv("employees.csv")
+departments = pd.read_csv("departments.csv")
+
+# 内连接
+result = employees.join(departments, on='dept_id', how='inner')
+
+# 左连接
+result = employees.join(departments, on='dept_id', how='left')
+
+# 使用 merge（pandas 风格）
+result = pd.merge(employees, departments, on='dept_id')
+```
+
+<div id="results">
+  ## 获取结果
+</div>
+
+DataStore 使用惰性求值——只有在你需要结果时，操作才会执行。
+
+<div id="execution-triggers">
+  ### 触发执行
+</div>
+
+```python
+# 自动触发
+print(ds)           # 显示结果
+len(ds)             # 获取行数
+ds.columns          # 访问属性
+list(ds)            # 转换为列表
+
+# 显式转换
+df = ds.to_df()     # 转换为 pandas DataFrame
+df = ds.to_pandas() # 与 to_df() 相同
+```
+
+<div id="view-sql">
+  ### 查看生成的 SQL
+</div>
+
+```python title="Query"
+# 查看 DataStore 将执行的 SQL
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+print(query.to_sql())
+```
+
+```sql title="Response"
+SELECT city, AVG(salary) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE age > 25
+GROUP BY city
+```
+
+<div id="data-sources">
+  ## 使用不同数据源
+</div>
+
+<div id="local-files">
+  ### 本地文件
+</div>
+
+```python
+from chdb import datastore as pd
+
+# CSV
+ds = pd.read_csv("data.csv")
+
+# Parquet（性能最佳）
+ds = pd.read_parquet("data.parquet")
+
+# JSON
+ds = pd.read_json("data.json")
+```
+
+<div id="cloud-storage">
+  ### 云存储
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# S3（匿名）
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+
+# S3（使用凭据）
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="KEY",
+    secret_access_key="SECRET"
+)
+
+# HTTP/HTTPS
+ds = DataStore.uri("https://example.com/data.csv")
+```
+
+<div id="databases">
+  ### 数据库
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# MySQL
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="pass"
+)
+
+# PostgreSQL
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="pass"
+)
+
+# 使用 URI
+ds = DataStore.uri("mysql://user:pass@localhost:3306/mydb/users")
+```
+
+<div id="accessors">
+  ## String 与 DateTime 操作
+</div>
+
+<div id="string-ops">
+  ### 字符串操作
+</div>
+
+```python
+# pandas 的所有 .str 方法都能正常使用
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_len'] = ds['name'].str.len()
+ds['has_a'] = ds['name'].str.contains('a')
+```
+
+<div id="datetime-ops">
+  ### DateTime 操作
+</div>
+
+```python
+# 所有 pandas .dt 方法均可使用
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="extensions">
+  ### ClickHouse 扩展
+</div>
+
+```python
+# URL 解析（pandas 中不可用！）
+ds['domain'] = ds['url'].url.domain()
+
+# JSON 提取
+ds['user_name'] = ds['json_data'].json.get_string('name')
+
+# IP 地址操作
+ds['is_ipv4'] = ds['ip_addr'].ip.is_ipv4_string()
+```
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="use-parquet-for-large-files">
+  ### 1. 大文件使用 Parquet
+</div>
+
+```python
+# CSV - 较慢，读取整个文件
+ds = pd.read_csv("large_data.csv")
+
+# Parquet - 较快，列式格式，仅读取所需列
+ds = pd.read_parquet("large_data.parquet")
+```
+
+<div id="filter-early">
+  ### 2. 尽早过滤数据
+</div>
+
+```python
+# 好的做法 - 先过滤，再聚合
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .groupby('category')['amount'].sum()
+)
+
+# 次优做法 - 先聚合
+result = ds.groupby('category')['amount'].sum()
+```
+
+<div id="select-only-needed-columns">
+  ### 3. 只选择必要的列
+</div>
+
+```python
+# 好的做法 - 只选择特定列
+result = ds.select('name', 'age', 'city').filter(ds['age'] > 25)
+
+# 次优做法 - 处理所有列
+result = ds.filter(ds['age'] > 25)
+```
+
+<div id="use-sql-for-complex-operations">
+  ### 4. 使用 SQL 进行复杂操作
+</div>
+
+```python
+# 对于复杂查询，直接使用 SQL
+ds = DataStore()
+result = ds.sql("""
+    SELECT category, 
+           SUM(amount) as total,
+           COUNT(*) as count,
+           AVG(amount) as avg
+    FROM file('sales.csv', 'CSVWithNames')
+    WHERE date >= '2024-01-01'
+    GROUP BY category
+    HAVING total > 10000
+    ORDER BY total DESC
+    LIMIT 10
+""")
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 了解创建 DataStore 的所有[工厂方法](/zh/products/chdb/datastore/factory-methods)
+* 了解用于 SQL 风格操作的[查询构建](/zh/products/chdb/datastore/query-building)
+* 查看用于字符串、日期时间等操作的[访问器](/zh/products/chdb/datastore/accessors)
+* 阅读[性能指南](/zh/products/chdb/guides/pandas-performance)，获取优化建议

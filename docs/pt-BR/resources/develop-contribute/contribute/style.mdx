@@ -360,7 +360,7 @@ Em todos os outros casos, use um nome que descreva seu significado.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Os nomes de `define`s e constantes globais usam ALL&#95;CAPS com sublinhados.
+**9.** Os nomes de `define`s e constantes globais usam ALL&#95;CAPS com underscores.
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -392,7 +392,7 @@ FileQueueProcessor(
 }
 ```
 
-O sufixo com sublinhado pode ser omitido se o argumento não for usado no corpo do construtor.
+O sufixo com underscore pode ser omitido se o argumento não for usado no corpo do construtor.
 
 **13.** Não há diferença entre os nomes de variáveis locais e os membros da classe (não é necessário usar prefixos).
 
@@ -425,12 +425,6 @@ Palavras incompletas são aceitáveis se a forma abreviada for de uso comum.
 Você também pode usar uma abreviação se o nome completo estiver incluído ao lado dela nos comentários.
 
 **17.** Nomes de arquivos com código-fonte em C++ devem ter a extensão `.cpp`. Arquivos de cabeçalho devem ter a extensão `.h`.
-
-**18.** O nome do produto é escrito como `ClickHouse` — uma palavra, com `C` e `H` maiúsculos. A verificação de estilo `clickhouse_spelling` também aceita as grafias convencionais dos tokens `clickhouse` e `CLICKHOUSE`; todas as outras variantes são erros de grafia. Ela verifica código, comentários, mensagens, documentação e nomes de arquivos. Use `clickhouse` para tokens formados apenas por letras minúsculas, como nomes de pacotes, binários e hosts; use `ClickHouse` em identificadores CamelCase; e use `CLICKHOUSE` para macros e variáveis de ambiente.
-
-`ClickHouse`, `clickhouse-client`, `CLICKHOUSE_DATABASE`
-
-Não `Clickhouse`, `clickHouse`, `click_house`, `CLICK_HOUSE`, `click-house`, `Click House`
 
 <div id="how-to-write-code">
   ## Como escrever código

@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "التغييرات غير المتوافقة"
+sidebarTitle: "التغييرات غير المتوافقة"
+description: "التغييرات غير المتوافقة الخاصة بكل إصدار لمكوّنات ClickHouse Private."
+---
+
+التغييرات غير المتوافقة الخاصة بكل إصدار لمكوّنات ClickHouse Private. راجع هذه الصفحة قبل الترقية.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` الإصدار `1.1.245` — ‏Shared Catalog وStateless Servers مفعَّلان افتراضيًا
+</div>
+
+اعتبارًا من إصدار chart `1.1.245`، تكون القيمتان `featureFlags.enableSharedCatalog` و`featureFlags.disableMetadataPersistentVolumes` مضبوطة افتراضيًا على `true`. ستستخدم عمليات التثبيت الجديدة محرّك قاعدة البيانات [Shared](https://clickhouse.com/docs/engines/database-engines/shared) وعُقد Server عديمة الحالة بشكل افتراضي.
+
+**عمليات التثبيت الجديدة** لا تتطلب أي إجراء — إذ تُطبَّق القيم الافتراضية الجديدة تلقائيًا.
+
+**عمليات التثبيت الحالية التي لا تستخدم Shared Catalog بعد** يجب أن تضبط صراحةً القيم الافتراضية السابقة لتجنّب ترحيل غير مقصود عند الترقية:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+عندما تصبح مستعدًا للترحيل، اتبع دليل [الترحيل إلى Shared Catalog](/ar/products/clickhouse-private/guides/migrate-to-shared-catalog).
+
+**عمليات التثبيت الحالية التي تستخدم Shared Catalog بالفعل** لا تتطلب أي إجراء — فالإعدادات الافتراضية الجديدة تتطابق مع إعداداتك الحالية.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` الإصدار `1.1.210`
+</div>
+
+اعتبارًا من إصدار chart `1.1.210`، يتم تضمين قيود الإعدادات الجديدة افتراضيًا. إذا كنت تستخدم إصدار خادم ClickHouse **أقل من 25.10**، فيجب استبعاد هذه القيود بإضافة ما يلي إلى إعدادات الخادم:
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+من دون هذا التكوين، سيتعذر على ClickHouse بدء التشغيل، لأن الإصدارات السابقة لـ 25.10 لا تتعرّف على هذه الإعدادات.

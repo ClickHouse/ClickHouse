@@ -1,0 +1,11 @@
+ok
+Array(Tuple(UInt32, Float32))
+`id` UUID, `timestamp` UInt32, `value` Float32
+metric_name	String
+tags	Map(String, String)
+time_series	Array(Tuple(DateTime64(3), Float64))
+metric_family	String
+type	String
+unit	String
+help	String
+attach round-trip ok

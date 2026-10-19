@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
 
-## 字典布局类型 {#storing-dictionaries-in-memory}
+<div id="storing-dictionaries-in-memory">
+  ## 字典布局类型
+</div>
 
 字典可通过多种方式存储在内存中，每种方式都需要在 CPU 和 RAM 占用之间进行权衡。
 
@@ -30,9 +32,6 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
 | [direct](/zh/reference/statements/create/dictionary/layouts/direct)                                                              | 不在内存中存储，而是针对每个请求直接查询 source。                                    |
 | [complex&#95;key&#95;direct](/zh/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | 类似 `direct`，用于复合键。                                              |
 | [ip&#95;trie](/zh/reference/statements/create/dictionary/layouts/ip-trie)                                                        | 用于快速进行 IP 前缀查找 (基于 CIDR) 的 Trie 结构。                             |
-| [hierarchical](/zh/reference/statements/create/dictionary/layouts/hierarchical)                                                  | 支持层级结构，使用数值键描述父子关系。                                             |
-| [polygon](/zh/reference/statements/create/dictionary/layouts/polygon)                                                            | 高效执行点是否位于多边形内的查找 (反向地理编码) 。                                     |
-| [regexp&#95;tree](/zh/reference/statements/create/dictionary/layouts/regexp-tree)                                                | 将键与正则表达式树进行匹配。                                                  |
 
 <Tip>
   **推荐布局**
@@ -41,11 +40,9 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
   不推荐使用缓存类布局，因为其性能可能较差，且参数调优困难——详见 [cache](/zh/reference/statements/create/dictionary/layouts/cache)。
 </Tip>
 
-<Note>
-  基于缓存的布局无法可靠地支持写入时富集，因为已预热的条目仅保存在各个服务器本地，一旦服务器重启或被替换就会丢失。而 ClickHouse Cloud 的自动扩缩容和托管节点替换会使这种情况更容易发生。请改用完全加载的布局；详见 [摄取路径中的缓存字典](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)。
-</Note>
-
-## 指定字典布局 {#specify-dictionary-layout}
+<div id="specify-dictionary-layout">
+  ## 指定字典布局
+</div>
 
 <CloudDetails />
 
@@ -139,7 +136,9 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-## 提高字典性能 {#improve-performance}
+<div id="improve-performance">
+  ## 提高字典性能
+</div>
 
 有几种方法可以提高字典性能：
 

@@ -25,13 +25,13 @@ def sts():
     access_key = "minio"
     secret_access_key = "wrong_key"
 
-    # The parameters arrive form-encoded in the POST body, as the AWS SDK sends them.
-    form = request.forms
-    role_ok = form.get("RoleSessionName") == expected_role
+    url = str(request.url)
+    role_ok = f"RoleSessionName={expected_role}" in url
     # ExternalId is optional; when the request carries one it must match the
     # expected value. Requests without an ExternalId keep the previous behaviour.
-    external_id = form.get("ExternalId")
-    external_id_ok = external_id is None or external_id == expected_external_id
+    external_id_ok = ("ExternalId=" not in url) or (
+        f"ExternalId={expected_external_id}" in url
+    )
 
     if role_ok and external_id_ok:
         secret_access_key = "ClickHouse_Minio_P@ssw0rd"

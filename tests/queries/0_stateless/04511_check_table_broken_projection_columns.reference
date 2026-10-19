@@ -1,0 +1,6 @@
+part check passed: 0
+reports the misleading columns mismatch: 0
+reports the real corruption in serialization.json: 1
+lagging part check passed: 0
+lagging part reports the misleading columns mismatch: 0
+lagging part reports the real corruption in serialization.json: 1

@@ -27,14 +27,9 @@ namespace Silk
 namespace
 {
 
-FiberStreamSocketImpl * getUnderlyingSocket(BIO * bio)
-{
-    return static_cast<FiberStreamSocketImpl *>(static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio)));
-}
-
 int silkBioRead(BIO * bio, char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
 
     /// Do not schedule a fiber-aware read or wait for its future here. This callback runs
@@ -65,7 +60,7 @@ int silkBioRead(BIO * bio, char * buf, int len)
 
 int silkBioWrite(BIO * bio, const char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
 
     /// See `silkBioRead`: never suspend from inside an OpenSSL operation.
@@ -172,12 +167,7 @@ private:
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
-    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl, context)
-{
-}
-
-SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
-    : Poco::Net::SecureStreamSocketImpl(underlying_, context)
+    : Poco::Net::SecureStreamSocketImpl(new FiberStreamSocketImpl, context)
 {
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());

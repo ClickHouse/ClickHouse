@@ -1,10 +1,14 @@
 ---
-title: Configuration d’AWS PrivateLink pour exposer un RDS privé à ClickPipes
+title: Configuration d’AWS PrivateLink pour exposer une instance RDS privée à ClickPipes
 description: Étapes de configuration pour exposer une instance RDS privée à ClickPipes via AWS PrivateLink.
 date: 2024-11-27
 tags: ['Sécurité et authentification', 'Gestion du Cloud']
-keywords: ['AWS PrivateLink', 'RDS privé', 'ClickPipes']
+keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 ---
+
+{frontMatter.description}
+
+{/* truncate */}
 
 <div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
   ## Configuration d’AWS PrivateLink pour rendre un RDS privé accessible à ClickPipes
@@ -14,7 +18,7 @@ keywords: ['AWS PrivateLink', 'RDS privé', 'ClickPipes']
 
 <Info>
   Cette méthode utilise AWS Endpoint Service et convient principalement à l’accès interrégional. Si vous avez besoin d’un accès dans la même région,
-  [la création d’une ressource VPC](/fr/integrations/clickpipes/networking/aws-privatelink#vpc-resource) est
+  [la création d’une ressource VPC](/fr/integrations/clickpipes/aws-privatelink#vpc-resource) est
   recommandée à la place.
 </Info>
 
@@ -61,7 +65,7 @@ instances RDS nécessitant des services de point de terminaison (ou si différen
 7. **Facultatif** : activez la prise en charge interrégionale si la région de votre base de données est différente de celle de ClickPipes
    * Sous `Endpoint Services` dans la console VPC, sélectionnez votre service de point de terminaison.
    * Cliquez sur le bouton `Actions`, puis sélectionnez `Modify supported Regions`.
-   * Ajoutez les régions dans lesquelles vous souhaitez autoriser l’accès au service de point de terminaison ; [voir ici](/fr/integrations/clickpipes/networking/static-ips) la liste des régions ClickPipes.
+   * Ajoutez les régions dans lesquelles vous souhaitez autoriser l’accès au service de point de terminaison ; [voir ici](/fr/integrations/clickpipes/home#list-of-static-ips) la liste des régions ClickPipes.
 
 8. **Recommandé pour MySQL**
    * Si vous utilisez MySQL, il est recommandé de définir `skip_name_resolve=1` comme paramètre dans la base de données source.
@@ -73,7 +77,7 @@ instances RDS nécessitant des services de point de terminaison (ou si différen
   ## Établir la connexion
 </div>
 
-Une fois l’opération terminée, vous pouvez suivre le guide pour [établir la connexion](/fr/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
+Une fois l’opération terminée, vous pouvez suivre le guide pour [établir la connexion](/fr/integrations/clickpipes/aws-privatelink#creating-clickpipe)
 
 Lorsque le statut passe à `Ready` dans la Console, vous pouvez suivre la section suivante pour créer votre ClickPipe.
 

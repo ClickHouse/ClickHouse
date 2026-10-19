@@ -20,8 +20,6 @@ If the array is empty, `arrayJoin` produces no rows.
 To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](/reference/functions/regular-functions/array-functions#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
-`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the [`ARRAY JOIN`](/reference/statements/select/array-join) clause for those queries.
-
 For example:
 
 ```sql title="Query"
@@ -52,8 +50,6 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 │           2 │
 └─────────────┘
 ```
-
-There is one exception: `arrayJoin`, including via its `unnest` alias, is not allowed in a `JOIN ON` condition that is evaluated during the join, because such a condition must preserve the number of rows and is evaluated separately for each batch of joined rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 
 A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 For example:

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
@@ -85,9 +83,9 @@ private:
     std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
     std::unordered_map<Int32, size_t> out_of_order_buckets; /// Mapping bucket_id -> number of inputs delayed that bucket.
 
-    MapWithMemoryTracking<Int32, VectorWithMemoryTracking<Chunk>> chunks_map; /// bucket -> chunks
-    VectorWithMemoryTracking<Chunk> overflow_chunks;
-    VectorWithMemoryTracking<Chunk> single_level_chunks;
+    std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
+    Chunks overflow_chunks;
+    Chunks single_level_chunks;
     Int32 current_bucket = 0; /// Currently processing bucket.
     Int32 next_bucket_to_push = 0; /// Always <= current_bucket.
     bool has_two_level = false;
@@ -116,7 +114,7 @@ private:
     /// Push overflow chunks if has any.
     bool tryPushOverflowData();
     /// Push chunks from bucket to output port.
-    void pushData(VectorWithMemoryTracking<Chunk> chunks, Int32 bucket, bool is_overflows);
+    void pushData(Chunks chunks, Int32 bucket, bool is_overflows);
 };
 
 /// Merge aggregated data from single bucket.
@@ -172,7 +170,7 @@ private:
 
 struct ChunksToMerge : public ChunkInfoCloneable<ChunksToMerge>
 {
-    std::shared_ptr<VectorWithMemoryTracking<Chunk>> chunks;
+    std::shared_ptr<Chunks> chunks;
     Int32 bucket_num = -1;
     bool is_overflows = false;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order

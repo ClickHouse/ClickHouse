@@ -11,8 +11,8 @@ ts	Nullable(DateTime64(6, \'Fixed/UTC-08:00:00\'))
 ts	Nullable(DateTime64(6, \'UTC\'))					
 2024-06-06 12:00:00.000000
 --- Europe/Amsterdm (invalid) ---
-Time zone Europe/Amsterdm is not supported
+Cannot load time zone Europe/Amsterdm
 --- 12 (bare hour, invalid) ---
-Time zone 12 is not supported
+Cannot load time zone 12
 --- +05 (bare hour, invalid) ---
-Time zone +05 is not supported
+Cannot load time zone +05

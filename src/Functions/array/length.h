@@ -16,7 +16,6 @@ namespace ErrorCodes
 struct LengthImpl
 {
     static constexpr auto is_fixed_to_constant = true;
-    static constexpr auto is_volume_reducing = true;
 
     /// The length of a QBit is the dimension of the vector, which is a property of the type, so it is a constant.
     static constexpr auto supports_qbit = true;

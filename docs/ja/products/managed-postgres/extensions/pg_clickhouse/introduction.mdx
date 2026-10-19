@@ -7,10 +7,12 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '拡張機能']
 ---
 
-## はじめに {#introduction}
+<div id="introduction">
+  ## はじめに
+</div>
 
 オープンソースの PostgreSQL 拡張機能である[pg&#95;clickhouse]を使うと、SQL を書き換えることなく、
-PostgreSQL から直接 ClickHouse に分析クエリを実行できます。PostgreSQL 14 以降と
+PostgreSQL から直接 ClickHouse に分析クエリを実行できます。PostgreSQL 13 以降と
 ClickHouse v23 以降をサポートしています。
 
 [ClickPipes](/ja/integrations/clickpipes/home) による ClickHouse へのデータ同期が開始されたら、
@@ -19,7 +21,9 @@ pg&#95;clickhouse を使用して [外部テーブルをインポート] し、
 テーブルに対して既存の PostgreSQL クエリを実行すれば、既存のコードベースを維持したまま、
 実行処理を ClickHouse 側にプッシュダウンできます。
 
-## はじめに {#getting-started}
+<div id="introduction">
+  ## はじめに
+</div>
 
 pg&#95;clickhouse を試す最も簡単な方法は [Docker image] を使うことです。これには、
 pg&#95;clickhouse と [re2] 拡張機能を含む標準の PostgreSQL 用 Docker image が含まれています。
@@ -33,38 +37,48 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 ClickHouseテーブルのインポートとクエリのプッシュダウンを始めるには、
 [tutorial]を参照してください。
 
-## テストケース: TPC-H {#test-case-tpc-h}
+<div id="test-case-tpc-h">
+  ## テストケース: TPC-H
+</div>
 
-この表は、通常の PostgreSQL テーブルと ClickHouse に接続した pg&#95;clickhouse について、スケーリング係数 1 でデータをロードした場合の [TPC-H] クエリパフォーマンスを比較したものです。✔︎ は単一の foreign scan として完全にプッシュダウンされることを、✼ は複数の foreign scan として完全にプッシュダウンされることを示します。すべてのテストは、メモリ 36 GB を搭載した MacBook Pro M4 Max で実行しました。
+この表は、通常の PostgreSQL
+テーブルと、ClickHouse に接続した pg&#95;clickhouse における [TPC-H] クエリの性能を比較したものです。両者とも
+スケール係数 1 でロードされています。✔︎ は完全なプッシュダウンを示し、ダッシュは 1 分後にクエリが
+キャンセルされたことを示します。すべてのテストは、36 GB の
+メモリを搭載した MacBook Pro M4 Max 上で実行されています。
 
-|      クエリ | PostgreSQL | pg&#95;clickhouse | Pushdown |
-| -------: | ---------: | ----------------: | :------: |
-|  [クエリ 1] |    4483 ms |             59 ms |     ✔    |
-|  [クエリ 2] |     588 ms |             24 ms |     ✔    |
-|  [クエリ 3] |     786 ms |             62 ms |     ✔    |
-|  [クエリ 4] |     550 ms |             38 ms |     ✔    |
-|  [クエリ 5] |     721 ms |           1439 ms |     ✔    |
-|  [クエリ 6] |     592 ms |             17 ms |     ✔    |
-|  [クエリ 7] |     639 ms |             29 ms |     ✔    |
-|  [クエリ 8] |     398 ms |            383 ms |     ✔    |
-|  [クエリ 9] |    2842 ms |            162 ms |     ✔    |
-| [クエリ 10] |     860 ms |            125 ms |     ✔    |
-| [クエリ 11] |     276 ms |             21 ms |     ✼    |
-| [クエリ 12] |     963 ms |             26 ms |     ✔    |
-| [クエリ 13] |    1037 ms |           1354 ms |          |
-| [クエリ 14] |     675 ms |             30 ms |     ✔    |
-| [クエリ 15] |    2520 ms |            387 ms |          |
-| [クエリ 16] |     539 ms |            823 ms |          |
-| [クエリ 17] |    2107 ms |             37 ms |     ✔    |
-| [クエリ 18] |    5230 ms |           7228 ms |          |
-| [クエリ 19] |      68 ms |             47 ms |     ✔    |
-| [クエリ 20] |     473 ms |             28 ms |          |
-| [クエリ 21] |    1145 ms |           4470 ms |          |
-| [クエリ 22] |     270 ms |             45 ms |     ✼    |
+|        クエリ | PostgreSQL | pg&#95;clickhouse | プッシュダウン |
+| ---------: | ---------: | ----------------: | :------: |
+|  [Query 1] |    4693 ms |            268 ms |    ✔︎    |
+|  [Query 2] |     458 ms |           3446 ms |          |
+|  [Query 3] |     742 ms |            111 ms |    ✔︎    |
+|  [Query 4] |     270 ms |            130 ms |    ✔︎    |
+|  [Query 5] |     337 ms |           1460 ms |    ✔︎    |
+|  [Query 6] |     764 ms |             53 ms |    ✔︎    |
+|  [Query 7] |     619 ms |             96 ms |    ✔︎    |
+|  [Query 8] |     342 ms |            156 ms |    ✔︎    |
+|  [Query 9] |    3094 ms |            298 ms |    ✔︎    |
+| [Query 10] |     581 ms |            197 ms |    ✔︎    |
+| [Query 11] |     212 ms |             24 ms |          |
+| [Query 12] |    1116 ms |             84 ms |    ✔︎    |
+| [Query 13] |     958 ms |           1368 ms |          |
+| [Query 14] |     181 ms |             73 ms |    ✔︎    |
+| [Query 15] |    1118 ms |            557 ms |          |
+| [Query 16] |     497 ms |           1714 ms |          |
+| [Query 17] |    1846 ms |          32709 ms |          |
+| [Query 18] |    5823 ms |          10649 ms |          |
+| [Query 19] |      53 ms |            206 ms |    ✔︎    |
+| [Query 20] |     421 ms |                 - |          |
+| [Query 21] |    1349 ms |           4434 ms |          |
+| [Query 22] |     258 ms |           1415 ms |          |
 
-### ソースからコンパイル {#compile-from-source}
+<div id="compile-from-source">
+  ### ソースからコンパイル
+</div>
 
-#### General Unix {#general-unix}
+<div id="general-unix">
+  #### General Unix
+</div>
 
 PostgreSQL と curl の開発パッケージでは、`pg_config` と
 `curl-config` が PATH に含まれるため、`make` (または
@@ -72,7 +86,9 @@ PostgreSQL と curl の開発パッケージでは、`pg_config` と
 データベースで
 `CREATE EXTENSION pg_clickhouse` を実行できるはずです。
 
-#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
+<div id="debian--ubuntu--apt">
+  #### Debian / Ubuntu / APT
+</div>
 
 PostgreSQL Apt リポジトリからの取得方法の詳細は、[PostgreSQL Apt]を参照してください。
 
@@ -87,7 +103,9 @@ sudo apt install \
   g++
 ```
 
-#### RedHat / CentOS / Yum {#redhat--centos--yum}
+<div id="redhat--centos--yum">
+  #### RedHat / CentOS / Yum
+</div>
 
 ```sh
 sudo yum install \
@@ -102,7 +120,9 @@ sudo yum install \
 
 PostgreSQL Yum リポジトリからパッケージを取得する方法の詳細は、[PostgreSQL Yum] を参照してください。
 
-#### PGXN からインストール {#install-from-pgxn}
+<div id="install-from-pgxn">
+  #### PGXN からインストール
+</div>
 
 上記の依存関係を満たしたら、[PGXN client] ([Homebrew]、[Apt]、および `pgxnclient` という名前の Yum パッケージで提供) を使用して、`pg_clickhouse` をダウンロード、コンパイル、インストールします:
 
@@ -110,7 +130,9 @@ PostgreSQL Yum リポジトリからパッケージを取得する方法の詳�
 pgxn install pg_clickhouse
 ```
 
-#### コンパイルとインストール {#compile-and-install}
+<div id="compile-and-install">
+  #### コンパイルとインストール
+</div>
 
 ClickHouseライブラリと`pg_clickhouse`をビルドしてインストールするには、以下を実行します。
 
@@ -118,6 +140,18 @@ ClickHouseライブラリと`pg_clickhouse`をビルドしてインストール�
 make
 sudo make install
 ```
+
+{/* XXX DSO は現在無効です。
+  デフォルトでは、`make` は `clickhouse-cpp` ライブラリを動的リンクします（ただし、
+  動的 `clickhouse-cpp` ライブラリがまだサポートされていない macOS は除きます）。
+  ClickHouse ライブラリを `pg_clickhouse` に静的リンクしてコンパイルするには、
+  `CH_BUILD=static` を指定します:
+
+  ```sh
+  make CH_BUILD=static
+  sudo make install CH_BUILD=static
+  ```
+  */}
 
 ホストに複数の PostgreSQL がインストールされている場合は、適切なバージョンの `pg_config` を
 指定する必要がある場合があります:
@@ -183,7 +217,9 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-#### テスト {#testing}
+<div id="testing">
+  #### テスト
+</div>
 
 テストスイートを実行するには、拡張機能のインストール後に次を実行します
 
@@ -204,7 +240,9 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-### 読み込み {#loading}
+<div id="loading">
+  ### 読み込み
+</div>
 
 `pg_clickhouse` をインストールしたら、スーパーユーザーとして接続し、次を実行することで
 データベースに追加できます：
@@ -221,13 +259,17 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-## 依存関係 {#dependencies}
+<div id="dependencies">
+  ## 依存関係
+</div>
 
-`pg_clickhouse` 拡張機能には、[PostgreSQL] 14 以降、[libcurl]、
+`pg_clickhouse` 拡張機能には、[PostgreSQL] 13 以降、[libcurl]、
 [libuuid] が必要です。拡張機能をビルドするには、C および C++ コンパイラ、[libSSL]、[GNU
 make]、[CMake] が必要です。
 
-## ロードマップ {#road-map}
+<div id="road-map">
+  ## ロードマップ
+</div>
 
 現在最も注力しているのは、DML 機能を追加する前に、分析ワークロード向けのプッシュダウン対応を完成させることです。
 ロードマップは次のとおりです。
@@ -246,15 +288,17 @@ make]、[CMake] が必要です。
 * すべてがリモート
   データベースをクエリする場合の UNION クエリのプッシュダウン対応を追加する
 
-## 著者 {#authors}
+<div id="authors">
+  ## 著者
+</div>
 
 * [David E. Wheeler](https://justatheory.com/)
-* [serprex](https://github.com/serprex)
-* [Josh Ventura](https://github.com/JoshDreamland)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-## 著作権 {#copyright}
+<div id="copyright">
+  ## 著作権
+</div>
 
 * Copyright (c) 2025-2026, ClickHouse
 * 一部 Copyright (c) 2023-2025, Ildus Kurbangaliev

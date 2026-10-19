@@ -12,7 +12,9 @@ doc_type: 'reference'
 لإعداد الاتصال، راجع [التهيئة](/ar/integrations/language-clients/go/configuration).
 للاطلاع على أنواع البيانات المدعومة وتعيينات الأنواع في Go، راجع [أنواع البيانات](/ar/integrations/language-clients/go/data-types).
 
-## الاتصال {#connecting}
+<div id="connecting">
+  ## الاتصال
+</div>
 
 يوضح المثال التالي، الذي يعرض إصدار الخادم، كيفية الاتصال بـ ClickHouse، على افتراض أن ClickHouse غير مؤمَّن ويمكن الوصول إليه باستخدام المستخدم default.
 
@@ -38,7 +40,9 @@ fmt.Println(v)
 
 **في جميع الأمثلة التالية، ما لم يُذكر خلاف ذلك صراحةً، نفترض أن المتغير `conn` الخاص بـ ClickHouse قد تم إنشاؤه وهو متاح.**
 
-## التنفيذ {#execution}
+<div id="execution">
+  ## التنفيذ
+</div>
 
 يمكن تنفيذ عبارات مختلفة عبر الطريقة `Exec`. وهذا مفيد لعبارات DDL والعبارات البسيطة. ولا ينبغي استخدامها لعمليات الإدراج الكبيرة أو للتكرار على نتائج الاستعلامات.
 
@@ -60,7 +64,9 @@ conn.Exec(context.Background(), "INSERT INTO example VALUES (1, 'test-1')")
 
 لاحظ أنه يمكن تمرير `Context` إلى الاستعلام. ويمكن استخدام ذلك لتمرير إعدادات محددة على مستوى الاستعلام — راجع [استخدام Context](#using-context).
 
-## الإدراج على دفعات {#batch-insert}
+<div id="batch-insert">
+  ## الإدراج على دفعات
+</div>
 
 لإدراج عدد كبير من الصفوف، يوفّر العميل آلية العمل على دفعات. ويتطلب ذلك تجهيز دفعة يمكن إلحاق الصفوف بها، ثم إرسالها في النهاية باستخدام الأسلوب `Send()`. وتبقى الدفعات في الذاكرة إلى أن يُنفَّذ `Send`.
 
@@ -152,7 +158,9 @@ return batch.Send()
 
 للاطّلاع على ملخص كامل لأنواع Go المدعومة لكل نوع من الأعمدة، راجع [تحويلات الأنواع](/ar/integrations/language-clients/go/data-types#type-conversions).
 
-## الأعمدة المؤقتة {#ephemeral-columns}
+<div id="ephemeral-columns">
+  ## الأعمدة المؤقتة
+</div>
 
 [الأعمدة المؤقتة](/ar/reference/statements/create/table#ephemeral) هي أعمدة للكتابة فقط، ولا توجد إلا أثناء الإدراج — فهي لا تُخزَّن ولا يمكن الاستعلام عنها. وهي مفيدة لحساب قيم الأعمدة المشتقة وقت الإدراج.
 
@@ -183,7 +191,9 @@ rows, err := conn.Query(ctx, "SELECT id, hexed, hex(hexed) FROM test")
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ephemeral_native.go)
 
-## الاستعلام عن الصفوف {#querying-rows}
+<div id="querying-rows">
+  ## الاستعلام عن الصفوف
+</div>
 
 يمكنك إما الاستعلام عن صف واحد باستخدام الدالة `QueryRow`، أو الحصول على مؤشر للتكرار عبر مجموعة النتائج باستخدام `Query`. وبينما تتيح الأولى تمرير وجهة تُسلسَل البيانات إليها، تتطلب الثانية استدعاء `Scan` لكل صف.
 
@@ -233,7 +243,9 @@ return rows.Err()
 
 أخيرًا، لاحظ إمكانية تمرير `Context` إلى الطريقتين `Query` و`QueryRow`. ويمكن استخدام ذلك لإعدادات على مستوى الاستعلام — راجع [استخدام Context](#using-context) لمزيد من التفاصيل.
 
-## الإدراج غير المتزامن {#async-insert}
+<div id="async-insert">
+  ## الإدراج غير المتزامن
+</div>
 
 تدعم عمليات الإدراج غير المتزامنة عبر الطريقة Async. ويتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو أن يستجيب بمجرد استلام البيانات. وهذا يتحكم فعليًا في المعلَمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert).
 
@@ -272,7 +284,9 @@ for i := 0; i < 100; i++ {
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
 
-## الإدراج بصيغة الأعمدة {#columnar-insert}
+<div id="columnar-insert">
+  ## الإدراج بصيغة الأعمدة
+</div>
 
 يمكن تنفيذ عمليات الإدراج بصيغة الأعمدة. وقد يوفّر ذلك مزايا في الأداء إذا كانت البيانات منظَّمة مسبقًا بهذه البنية، لأنه يجنّب الحاجة إلى تحويلها إلى صفوف.
 
@@ -313,11 +327,15 @@ return batch.Send()
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/columnar_insert.go)
 
-## استخدام structs {#using-structs}
+<div id="using-structs">
+  ## استخدام structs
+</div>
 
 توفّر structs في Golang للمستخدمين تمثيلًا منطقيًا لصف من البيانات في ClickHouse. ولتسهيل ذلك، توفّر الواجهة الأصلية عدة دوال ملائمة.
 
-### Select مع serialize {#select-with-serialize}
+<div id="select-with-serialize">
+  ### Select مع serialize
+</div>
 
 تتيح الطريقة Select تحويل مجموعة من صفوف الاستجابة إلى slice من structs عبر استدعاء واحد.
 
@@ -339,7 +357,9 @@ for _, v := range result {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/select_struct.go)
 
-### Scan struct {#scan-struct}
+<div id="scan-struct">
+  ### Scan struct
+</div>
 
 يتيح `ScanStruct` تحويل صف واحد من استعلام إلى `struct`.
 
@@ -355,7 +375,9 @@ if err := conn.QueryRow(context.Background(), "SELECT Col1, COUNT() AS count FRO
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/scan_struct.go)
 
-### إلحاق struct {#append-struct}
+<div id="append-struct">
+  ### إلحاق struct
+</div>
 
 يتيح `AppendStruct` إلحاق struct بـ [دفعة](#batch-insert) موجودة وتفسيرها على أنها صف كامل. ويتطلب ذلك أن تتطابق أعمدة struct مع الجدول من حيث الاسم والنوع. وبينما يجب أن يكون لكل الأعمدة حقل مكافئ في struct، قد لا يكون لبعض حقول struct عمود مكافئ. وسيتم تجاهل هذه الحقول ببساطة.
 
@@ -382,68 +404,9 @@ for i := 0; i < 1_000; i++ {
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/append_struct.go)
 
-## معلمات الاستعلام من جانب الخادم {#server-side-query-parameters}
-
-تستخدم معلمات الاستعلام من جانب خادم ClickHouse عناصر نائبة محددة النوع بالصيغة `{name:Type}`. يُرسَل الاستعلام وقيم المعلمات كلٌّ على حدة، ولذلك لا تُدمَج قيم المعلمات في نص SQL.
-
-في ClickHouse API، مرِّر المعلمات عبر سياق الاستعلام:
-
-```go
-ctx := clickhouse.Context(context.Background(),
-    clickhouse.WithParameters(clickhouse.Parameters{
-        "user_id": "12345",
-        "message": `line 1\nline 2`,
-    }),
-)
-
-row := conn.QueryRow(ctx, `
-    SELECT *
-    FROM events
-    WHERE user_id = {user_id:UInt64}
-      AND message = {message:String}`)
-```
-
-يمكنك أيضًا تمرير القيم باستخدام `clickhouse.Named`:
-
-```go
-row := conn.QueryRow(context.Background(),
-    "SELECT {user_id:UInt64}, {message:String}",
-    clickhouse.Named("user_id", uint64(12345)),
-    clickhouse.Named("message", `line 1\nline 2`),
-)
-```
-
-تتطلب معلمات الاستعلام من جهة الخادم الإصدار 22.8 من ClickHouse أو أحدث. تعمل `clickhouse.Named` أيضًا مع صيغة الربط `@name` من جهة العميل، إذ إن العنصر النائب المستخدم في الاستعلام (`{name:Type}` أو `@name`) هو الذي يحدد الآلية المعتمدة.
-
-### قيم String وتسلسلات الهروب {#query-parameter-escaping}
-
-تعتمد طريقة تفسير قيمة string على الطريقة التي تُمرِّرها بها.
-
-**تتعامل `clickhouse.Named` (أو `sql.Named`) مع قيمة من النوع `string`/`*string` أو `[]byte`/`*[]byte`** باعتبار قيمة Go هي القيمة الحرفية للمعلمة. يتولى المشغّل إفلات محارف التحكم تلقائيًا، لذا تُكتب القيمة وتُقرأ مجددًا مطابقةً للأصل بايتًا ببايت على كلا البروتوكولين. ولا مانع من أن تحتوي القيمة على محرف سطر جديد أو محرف جدولة فعلي:
-
-```go
-row := conn.QueryRow(context.Background(),
-    "SELECT {s:String}",
-    clickhouse.Named("s", "line 1\nline 2"), // literal newline — round-trips
-)
-```
-
-يحتوي **`clickhouse.Parameters` / `WithParameters`** دائمًا على نص معلمة مُسلسَل مسبقًا بصيغة `Escaped` الخاصة بـ ClickHouse، ولا يُطبَّق عليه الإفلات تلقائيًا. يفك ClickHouse تسلسلات الهروب المبدوءة بالشرطة المائلة العكسية أثناء تحليل المعلمة: `\n` (سطر جديد)، و`\t` (محرف الجدولة)، و`\r` (محرف الإرجاع)، و`\0` (بايت فارغ)، و`\\` (شرطة مائلة عكسية حرفية). أما `\N` فهو وسم `NULL` الذي يمثّل القيمة بأكملها في الأنواع القابلة للقيم الفارغة.
-
-تعالج Go القيم الحرفية من نوع string المُفسَّرة (`"..."`) قبل أن تصل إلى clickhouse-go، بينما تُبقي القيم الحرفية من نوع string الخام (`` `...` ``) على الشرطات المائلة العكسية كما هي. لذا، عند استخدام `Parameters`، اكتب نص المعلمة على النحو التالي:
-
-| القيمة التي يتلقاها ClickHouse | قيمة حرفية من نوع string خام في Go     | قيمة حرفية من نوع string مُفسَّرة في Go |
-| ------------------------------ | ----------------------------- | ------------------------------ |
-| سطر جديد ومحرف جدولة           | `` `line 1\nline 2\tend` ``   | `"line 1\\nline 2\\tend"`      |
-| النص الحرفي `\n` و`\t`         | `` `line 1\\nline 2\\tend` `` | `"line 1\\\\nline 2\\\\tend"`  |
-
-لا تستخدم `"line 1\nline 2"` أو `"column 1\tcolumn 2"` عند إنشاء `Parameters`، إذ تحتوي هاتان القيمتان الحرفيتان في Go أصلًا على سطر جديد أو محرف جدولة فعلي. وفي صيغة `Escaped` الخاصة بـ ClickHouse، تُستخدم بايتات السطر الجديد ومحرف الجدولة الفعلية فواصلَ بين الحقول، فيرفض الخادم المعلمة لأن تحليلها لم يكتمل. استخدم `Named` بدلًا من ذلك إذا أردت أن تُعامَل string في Go على أنها قيمة حرفية.
-
-قيم المعلمات ليست قيمًا حرفية في SQL: فعند تمرير `String` في المستوى الأعلى عبر `Named`، مرِّر القيمة دون علامات اقتباس SQL؛ أي استخدم `hello` وليس `'hello'`، لأن علامات الاقتباس هذه ستصبح جزءًا من القيمة. أما الأنواع المركبة فتظل تستخدم صيغتها النصية، مثل `['a', 'b']` لنوع `Array(String)`، ويمكنك تمريرها كذلك عبر `Named` ما دام النص خاليًا من تسلسلات الهروب بالشرطة المائلة العكسية ومن محارف التحكم الخام. وإذا احتاج النص المركب إلى تسلسلات الهروب `\'` لقيم من نوع string متداخلة، فمرِّره عبر `Parameters` بدلًا من ذلك.
-
-[مثال كامل على واجهة برمجة التطبيقات الأصلية](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/query_parameters.go)
-
-## ربط المعلمات {#parameter-binding}
+<div id="parameter-binding">
+  ## ربط المعلمات
+</div>
 
 يدعم العميل ربط المعلمات في الطرق `Exec` و`Query` و`QueryRow`. وكما هو موضح في المثال أدناه، يُدعَم ذلك باستخدام المعلمات المُسمّاة والمرقّمة والموضعية. ونورد أمثلة على ذلك أدناه.
 
@@ -471,7 +434,9 @@ fmt.Printf("Named bind count: %d\n", count)
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bind.go)
 
-### حالات خاصة {#special-cases}
+<div id="special-cases">
+  ### حالات خاصة
+</div>
 
 بشكل افتراضي، ستُفكّك المقاطع إلى قائمة قيم مفصولة بفواصل إذا مُرِّرت كمُعامل إلى query. وإذا كنت بحاجة إلى إدراج مجموعة من القيم محاطةً بـ `[ ]`، فيجب استخدام `ArraySet`.
 
@@ -510,7 +475,9 @@ fmt.Printf("NamedDate count: %d\n", count)
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bind_special.go)
 
-## استخدام السياق {#using-context}
+<div id="using-context">
+  ## استخدام السياق
+</div>
 
 توفّر سياقات Go وسيلةً لتمرير المهل الزمنية، وإشارات الإلغاء، وغيرها من القيم المرتبطة بنطاق الطلب عبر حدود واجهة برمجة تطبيقات. تقبل جميع الطرائق على الاتصال سياقًا بوصفه المعامل الأول. وبينما استخدمت الأمثلة السابقة `context.Background()`، يمكنك استخدام هذه الإمكانية لتمرير الإعدادات والمهل الزمنية وإلغاء الاستعلامات.
 
@@ -598,7 +565,9 @@ for i := 1; i <= 6; i++ {
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/context.go)
 
-## معلومات Progress وProfile وLog {#progress-profile-log}
+<div id="progress-profile-log">
+  ## معلومات Progress وProfile وLog
+</div>
 
 يمكن طلب معلومات Progress وProfile وLog مع الاستعلامات. تعرض معلومات Progress إحصاءات عن عدد الصفوف والبايتات التي تمت قراءتها ومعالجتها في ClickHouse. في المقابل، توفّر معلومات Profile ملخصًا للبيانات المُعادة إلى العميل، بما في ذلك إجماليات البايتات (غير المضغوطة) والصفوف والكتل. وأخيرًا، توفّر معلومات Log إحصاءات عن سلاسل التنفيذ، مثل استخدام الذاكرة وسرعة البيانات.
 
@@ -634,7 +603,9 @@ rows.Close()
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/progress.go)
 
-## المسح الديناميكي {#dynamic-scanning}
+<div id="dynamic-scanning">
+  ## المسح الديناميكي
+</div>
 
 قد تحتاج إلى قراءة جداول لا تعرف مخططها أو أنواع الحقول التي تُرجعها. ويشيع هذا في الحالات التي يُجرى فيها تحليل بيانات مخصّص أو تُطوَّر فيها أدوات عامة. ولتحقيق ذلك، تتوفر معلومات أنواع الأعمدة ضمن استجابات الاستعلام. ويمكن استخدام ذلك مع `reflection` في Go لإنشاء مثيلات وقت التشغيل لمتغيرات ذات أنواع صحيحة، بحيث يمكن تمريرها إلى Scan.
 
@@ -677,7 +648,9 @@ if err := rows.Err(); err != nil {
 
 [المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/dynamic_scan_types.go)
 
-## الجداول الخارجية {#external-tables}
+<div id="external-tables">
+  ## الجداول الخارجية
+</div>
 
 تسمح [الجداول الخارجية](/ar/reference/engines/table-engines/special/external-data) للعميل بإرسال بيانات إلى ClickHouse مع استعلام SELECT. وتُوضَع هذه البيانات في جدول مؤقت، ويمكن استخدامها داخل الاستعلام نفسه أثناء تنفيذ الاستعلام.
 
@@ -747,7 +720,9 @@ fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
 
 [مثال كامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/external_data.go)
 
-## OpenTelemetry {#open-telemetry}
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
 
 يدعم ClickHouse [تمرير سياق التتبّع](/ar/guides/oss/deployment-and-scaling/monitoring/opentelemetry) عبر بروتوكولي النقل TCP وHTTP. عند استخدام TCP، يقوم العميل بتسلسل `span` ضمن البروتوكول الثنائي الأصلي. استخدم `clickhouse.WithSpan` لإرفاق `span` باستعلام عبر الـ context.
 

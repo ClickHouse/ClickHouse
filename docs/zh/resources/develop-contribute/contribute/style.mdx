@@ -322,7 +322,7 @@ size_t max_block_size;
 std::string getName() const override { return "Memory"; }
 ```
 
-**3.** 类名 (结构体) 应使用首字母大写的 CamelCase。interface 不使用 I 以外的前缀。
+**3.** 类名 (struct) 应使用首字母大写的 CamelCase。interface 不使用 I 以外的前缀。
 
 ```cpp
 class StorageMemory : public IStorage
@@ -425,12 +425,6 @@ enum class CompressionMethod
 如果在注释中同时给出了全称，也可以使用缩写。
 
 **17.** 包含 C++ 源代码的文件名必须使用 `.cpp` 扩展名。头文件必须使用 `.h` 扩展名。
-
-**18.** 产品名称应写作 `ClickHouse`——一个单词，`C` 和 `H` 均大写。`clickhouse_spelling` 风格检查也接受惯用的标记拼写 `clickhouse` 和 `CLICKHOUSE`；其他所有变体均为拼写错误。它会检查代码、注释、消息、文档和文件名。对于软件包、二进制文件和主机名等仅使用小写字母的标记，请使用 `clickhouse`；在 CamelCase 标识符中使用 `ClickHouse`；对于宏和环境变量，则使用 `CLICKHOUSE`。
-
-`ClickHouse`, `clickhouse-client`, `CLICKHOUSE_DATABASE`
-
-不要使用 `Clickhouse`, `clickHouse`, `click_house`, `CLICK_HOUSE`, `click-house`, `Click House`
 
 <div id="how-to-write-code">
   ## 如何编写代码

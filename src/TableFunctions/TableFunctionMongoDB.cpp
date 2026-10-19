@@ -242,7 +242,7 @@ mongodb(_named_collection_[, host][, port][, database][, collection][, user][, p
 mongodb(_named_collection_[, uri][, structure][, oid_columns])
 ```
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with the same columns as the original MongoDB table.
 
@@ -306,7 +306,7 @@ SELECT * FROM mongodb(
 
 - [The `MongoDB` table engine](/reference/engines/table-engines/integrations/mongodb)
 - [Using MongoDB as a dictionary source](/reference/statements/create/dictionary/sources/mongodb)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mongoDBSecretArguments());
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

@@ -1,0 +1,4 @@
+<clickhouse>
+    <http_connections_rcvbuf>262144</http_connections_rcvbuf>
+    <http_connections_sndbuf>262144</http_connections_sndbuf>
+</clickhouse>

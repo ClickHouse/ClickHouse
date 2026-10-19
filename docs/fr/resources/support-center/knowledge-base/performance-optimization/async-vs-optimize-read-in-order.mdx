@@ -8,7 +8,7 @@ keywords: ['Synchrone', 'Asynchrone', 'Lecture des données']
 
 Le nouveau paramètre allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree permet que le nombre de threads de lecture (flux) soit supérieur au nombre de threads dans le reste du pipeline d’exécution de la requête.
 
-Normalement, le paramètre [max&#95;threads](/fr/reference/settings/session-settings/max-threads#max_threads) [contrôle](https://clickhouse.com/company/events/query-performance-introspection) le nombre de threads de lecture parallèles et de threads de traitement des requêtes parallèles :
+Normalement, le paramètre [max&#95;threads](/fr/reference/settings/session-settings#max_threads) [contrôle](https://clickhouse.com/company/events/query-performance-introspection) le nombre de threads de lecture parallèles et de threads de traitement des requêtes parallèles :
 
 <Image img={sync_read} size="md" alt="Schéma de lecture synchrone des données" />
 

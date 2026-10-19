@@ -75,7 +75,7 @@ function wait_for_row_count()
     done
 }
 
-wait_for_row_count 10
+wait_for_row_count 1
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 
@@ -84,7 +84,7 @@ do
 	echo $i >> ${logs_dir}/a.txt
 done
 
-wait_for_row_count 20
+wait_for_row_count 11
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 

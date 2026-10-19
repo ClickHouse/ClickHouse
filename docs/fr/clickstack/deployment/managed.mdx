@@ -22,11 +22,11 @@ Ce **guide s’adresse aux utilisateurs existants de ClickHouse Cloud**. Si vous
 
 Dans ce modèle de déploiement, ClickHouse et l’interface utilisateur de ClickStack (HyperDX) sont tous deux hébergés dans ClickHouse Cloud, ce qui réduit au minimum le nombre de composants que l’utilisateur doit auto-héberger.
 
-En plus d’alléger la gestion de l’infrastructure, ce modèle de déploiement garantit que l’authentification est intégrée au SSO/SAML de ClickHouse Cloud. Contrairement aux déploiements auto-hébergés, il n’est pas non plus nécessaire de provisionner une instance MongoDB pour stocker l’état de l’application — comme les tableaux de bord, les recherches enregistrées, les paramètres utilisateur et les alertes. Les utilisateurs bénéficient également de :
+En plus d’alléger la gestion de l’infrastructure, ce modèle de déploiement garantit que l’authentification est intégrée au SSO/SAML de ClickHouse Cloud. Contrairement aux déploiements auto-hébergés, il n’est pas non plus nécessaire de provisionner une instance MongoDB pour stocker l’état de l’application — comme les tableaux de bord, les recherches enregistrées, les paramètres utilisateur et les alertes. Les utilisateurs bénéficient également de :
 
 * La mise à l’échelle automatique des ressources de calcul, indépendamment du stockage
 * Une rétention à faible coût et pratiquement illimitée grâce au stockage objet
-* La possibilité d’[isoler indépendamment les charges de travail de lecture et d’écriture](/fr/clickstack/managing/isolating-read-write) avec les Warehouses.
+* La possibilité d’isoler indépendamment les charges de travail de lecture et d’écriture avec les Warehouses.
 * Une authentification intégrée
 * Des sauvegardes automatisées
 * Des fonctionnalités de sécurité et de conformité
@@ -55,23 +55,31 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
     <br />
 
     <Steps>
-      <Step title="Créer un nouveau service" id="create-a-service">
+      <Step>
+        ### Créer un nouveau service
+
         Sur la page d’accueil de ClickHouse Cloud, sélectionnez `New service` pour créer un nouveau service.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Service Service" border />
       </Step>
 
-      <Step title="Indiquez votre fournisseur, votre région et votre ressource" id="specify-your-region-and-resources">
+      <Step>
+        ### Indiquez votre fournisseur, votre région et votre ressource
+
         <ProviderSelection />
       </Step>
 
-      <Step title="Configurer l’ingestion" id="setup-ingestion-create-new">
+      <Step>
+        ### Configurer l’ingestion
+
         Une fois votre service provisionné, assurez-vous que ce service est sélectionné, puis cliquez sur &quot;ClickStack&quot; dans le menu de gauche.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
+      <Step>
+        ### Accéder à l’interface de ClickStack
+
         <NavigateClickStackUI />
 
         <br />
@@ -83,7 +91,9 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
     <br />
 
     <Steps>
-      <Step title="Sélectionner un service" id="select-service">
+      <Step>
+        ### Sélectionner un service
+
         Depuis la page d’accueil de ClickHouse Cloud, sélectionnez le service pour lequel vous souhaitez activer Managed ClickStack.
 
         <Warning>
@@ -97,7 +107,9 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
         <Image img="/images/clickstack/select_service.webp" alt="Sélectionner un service" size="lg" />
       </Step>
 
-      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-the-clickstack-ui-existing">
+      <Step>
+        ### Accédez à la ClickStack UI
+
         Sélectionnez &#39;ClickStack&#39; dans le menu de navigation de gauche. Vous serez redirigé vers la ClickStack UI et authentifié automatiquement selon vos permissions ClickHouse Cloud.
 
         Si des tables OpenTelemetry existent déjà dans votre service, elles seront détectées automatiquement et les sources de données correspondantes seront créées.
@@ -112,15 +124,17 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
         <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
 
-        Si cette étape réussit, c’est terminé : tout est prêt 🎉. Sinon, passez à la configuration de l’ingestion.
+        Si cette étape réussit, c’est terminé : tout est prêt 🎉. Sinon, passez à la configuration de l’ingestion.
       </Step>
 
-      <Step title="Configurer l’ingestion" id="setup-ingestion-existing-service">
+      <Step>
+        ### Configurer l&#39;ingestion
+
         Si la détection automatique échoue ou si vous n&#39;avez aucune table existante, vous serez invité à configurer l&#39;ingestion.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Configurer l’ingestion dans l’interface utilisateur de ClickStack" size="lg" />
 
-        Sélectionnez &quot;Start Ingestion&quot; et vous serez invité à choisir une source d&#39;ingestion. Managed ClickStack prend en charge OpenTelemetry et [Vector](https://vector.dev/) comme principales sources d&#39;ingestion. Les utilisateurs peuvent également envoyer des données directement à ClickHouse avec leur propre schéma en utilisant l&#39;une des [intégrations compatibles avec ClickHouse Cloud](/fr/integrations/home).
+        Sélectionnez &quot;Start Ingestion&quot; et vous serez invité à choisir une source d&#39;ingestion. Managed ClickStack prend en charge OpenTelemetry et [Vector](https://vector.dev/) comme principales sources d&#39;ingestion. Les utilisateurs sont également libres d&#39;envoyer des données directement à ClickHouse dans leur propre schéma en utilisant l&#39;une des [intégrations compatibles avec ClickHouse Cloud](/fr/integrations/home).
 
         <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="Sélection de la source - ClickStack UI" border />
 
@@ -137,9 +151,9 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             Si vous n’en avez pas déjà un en cours d’exécution, démarrez un collecteur en suivant les étapes ci-dessous. Si vous avez déjà des collecteurs en place, un exemple de configuration est également fourni.
 
-### Démarrer un collecteur
+            ### Démarrer un collecteur
 
-            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors-existing)
+            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors)
 
             Pour démarrer rapidement, copiez et exécutez la commande Docker affichée.
 
@@ -155,7 +169,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             L’exécution de cette seule commande démarre le collecteur ClickStack avec des endpoints OTLP exposés sur les ports 4317 (gRPC) et 4318 (HTTP). Si vous disposez déjà d’une instrumentation OpenTelemetry et d’agents, vous pouvez immédiatement commencer à envoyer des données de télémétrie vers ces endpoints.
 
-### Configurer des collecteurs existants
+            ### Configurer des collecteurs existants
 
             Vous pouvez également configurer vos propres OpenTelemetry Collectors existants ou utiliser votre propre distribution du collector.
 
@@ -173,7 +187,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             Pour plus de détails sur la configuration des collecteurs OpenTelemetry, consultez [&quot;Ingestion avec OpenTelemetry.&quot;](/fr/clickstack/ingesting-data/opentelemetry)
 
-### Démarrer l’ingestion (facultatif)
+            ### Démarrer l’ingestion (facultatif)
 
             Si vous avez déjà des applications ou une infrastructure à instrumenter avec OpenTelemetry, consultez les guides pertinents accessibles depuis &quot;Connecter une application&quot;.
 
@@ -197,7 +211,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             La suite suppose qu’une instance de Vector est en cours d’exécution, préconfigurée avec des pipelines d’ingestion et qu’elle achemine les données.
 
-### Créer une base de données et une table
+            ### Créer une base de données et une table
 
             Vector exige qu’une table et un schéma soient définis avant l’ingestion des données.
 
@@ -246,7 +260,9 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
         </Tabs>
       </Step>
 
-      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-clickstack-ui-existing-service">
+      <Step>
+        ### Accédez à l’interface ClickStack
+
         Une fois la configuration de l’ingestion terminée et l’envoi des données démarré, sélectionnez &quot;Next&quot;.
 
         <Tabs>
@@ -289,21 +305,23 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
   ## Tâches supplémentaires
 </div>
 
-### Accorder l’accès à Managed ClickStack {#configure-access}
+<div id="configure-access">
+  ### Accorder l’accès à Managed ClickStack
+</div>
 
 1. Accédez à votre service dans la console ClickHouse Cloud
 2. Accédez à **Settings** → **SQL Console Access**
 3. Définissez le niveau d’autorisation approprié pour chaque utilisateur :
-   * **Service Admin → Full Access** - Requis pour activer les alertes
-   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des tableaux de bord
+   * **Service Admin → Full Access** - Requis pour activer les alerts
+   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des dashboards
    * **No access** - Ne permet pas d’accéder à HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Lecture seule" size="md" />
 
 <Warning>
-  **Les alertes nécessitent des droits d’administrateur**
+  **Les alerts nécessitent des droits d’administrateur**
 
-  Pour activer les alertes, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerte.
+  Pour activer les alerts, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerts.
 </Warning>
 
 <div id="clickstack-read-only-compute">
@@ -329,17 +347,13 @@ Aucune configuration supplémentaire dans ClickStack n’est nécessaire pour ga
   #### Configuration recommandée
 </div>
 
-Pour exécuter ClickStack sur des ressources de calcul en lecture seule :
+Pour exécuter ClickStack sur des ressources de calcul en lecture seule :
 
 1. Créez ou repérez un service ClickHouse Cloud dans le warehouse configuré en lecture seule.
 2. Dans la console ClickHouse Cloud, sélectionnez le service en lecture seule.
 3. Lancez ClickStack depuis le menu de navigation de gauche.
 
-Une fois lancé, l’interface utilisateur de ClickStack s&#39;associera automatiquement à ce service en lecture seule.
-
-Notez que les tableaux de bord, les recherches enregistrées, les alertes et les sources sont limités au service depuis lequel ClickStack a été lancé : tout ce qui a été enregistré sur un autre service du warehouse n&#39;est donc pas disponible ici et doit être recréé. Les sources utilisant le schéma OpenTelemetry standard sont détectées automatiquement, la recherche sur ces données fonctionne donc immédiatement — ce n&#39;est pas le cas des sources personnalisées ou configurées manuellement, qui doivent être reconfigurées.
-
-Pour la topologie complète — notamment vers où diriger l&#39;ingestion, sur quel service exécuter les requêtes DDL et comment se comportent les alertes — consultez [« Isoler les charges de travail de lecture et d&#39;écriture »](/fr/clickstack/managing/isolating-read-write).
+Une fois lancé, ClickStack UI s’associera automatiquement à ce service en lecture seule.
 
 <div id="adding-data-sources">
   ### Ajouter d’autres sources de données
@@ -349,7 +363,9 @@ ClickStack est nativement compatible avec OpenTelemetry, sans lui être exclusif
 
 La section suivante explique comment ajouter des sources de données supplémentaires en plus de celles configurées automatiquement.
 
-#### Utiliser les schémas OpenTelemetry {#using-otel-schemas}
+<div id="using-otel-schemas">
+  #### Utiliser les schémas OpenTelemetry
+</div>
 
 Si vous utilisez un OTel collector pour créer la base de données et les tables dans ClickHouse, conservez toutes les valeurs par défaut dans le formulaire de création de source et renseignez le champ `Table` avec la valeur `otel_logs` afin de créer une source de logs. Tous les autres paramètres devraient être détectés automatiquement, ce qui vous permettra de cliquer sur `Enregistrer la nouvelle source`.
 

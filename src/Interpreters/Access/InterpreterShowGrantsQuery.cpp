@@ -3,7 +3,6 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
@@ -93,25 +92,13 @@ namespace
         ASTs res;
 
         boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
-        grantees->names = make_intrusive<ASTUserNamesWithHost>(grantee.getName());
+        grantees->names.push_back(grantee.getName());
 
-        AccessRights access_copy;
-
+        AccessRights access = grantee.access;
         if (final)
-        {
-            access_copy = grantee.access;
-            unionAccessFromRoles(access_copy, grantee, access_control);
-        }
+            unionAccessFromRoles(access, grantee, access_control);
 
-        const AccessRights & access = final ? access_copy : grantee.access;
-
-        getGrantsFromAccess(
-            res,
-            access,
-            grantees,
-            access_control,
-            attach_mode,
-            with_implicit);
+        getGrantsFromAccess(res, access, grantees, access_control, attach_mode, with_implicit);
 
         if (!final)
         {
@@ -209,8 +196,8 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
         bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
             && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
 
-        if (is_current_user /* Any user can see his own grants */
-            || is_enabled_or_granted_role /* and grants from the granted roles */
+        if ((is_current_user /* Any user can see his own grants */)
+            || (is_enabled_or_granted_role /* and grants from the granted roles */)
             || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
             || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
             entities.push_back(entity);
