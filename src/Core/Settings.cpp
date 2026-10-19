@@ -5509,6 +5509,9 @@ the identity.
 Disks defined in the server configuration are unaffected and keep using workload or managed identity. A dynamic
 disk defined in user SQL with `disk(type = azure_blob_storage, ...)` is restricted like a table.
 
+The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string
+or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys.
+
 Durability for persistent `AzureBlobStorage` and `AzureQueue` tables and for dynamic Azure disks: when the
 server reloads such a table from its stored definition at startup it re-applies the restriction with the startup
 context, so a table that relied on server-managed credentials is loaded with a client that has no credentials and

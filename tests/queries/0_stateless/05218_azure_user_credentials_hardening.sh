@@ -17,6 +17,7 @@ NC_ACCOUNT_KEY="azure_account_key_${DB}"
 TABLE="azure_hardening_${DB}"
 DISK_TABLE="azure_hardening_disk_${DB}"
 OPT_IN_TABLE="azure_hardening_opt_in_${DB}"
+QUEUE="azure_hardening_queue_${DB}"
 
 # The Azure SDK attaches a bearer token only to an `https` endpoint.
 URL="https://localhost:11111/${DB}"
@@ -34,6 +35,7 @@ cleanup() {
         DROP TABLE IF EXISTS ${TABLE};
         DROP TABLE IF EXISTS ${DISK_TABLE} SYNC;
         DROP TABLE IF EXISTS ${OPT_IN_TABLE} SYNC;
+        DROP TABLE IF EXISTS ${QUEUE} SYNC;
         DROP NAMED COLLECTION IF EXISTS ${NC_URL_ONLY};
         DROP NAMED COLLECTION IF EXISTS ${NC_ACCOUNT_KEY};
     " 2>/dev/null
@@ -109,6 +111,19 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont',
             _azure_server_credentials_allowed = 1); -- { serverError ACCESS_DENIED }
+"
+
+# As for `S3Queue`, a move destination must carry its own credentials, whoever creates or alters the queue.
+$CLICKHOUSE_CLIENT --azure_allow_server_credentials_in_user_queries=1 -m -q "
+    CREATE TABLE ${QUEUE} (x UInt8) ENGINE = AzureQueue('${CONN_STRING}', '${CONTAINER}', 'queue/*', 'CSV')
+        SETTINGS mode = 'unordered', after_processing = 'move',
+            after_processing_move_connection_string = '${URL}', after_processing_move_container = 'cont'; -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${QUEUE} (x UInt8) ENGINE = AzureQueue('${CONN_STRING}', '${CONTAINER}', 'queue/*', 'CSV')
+        SETTINGS mode = 'unordered', after_processing = 'move',
+            after_processing_move_connection_string = '${CONN_STRING}', after_processing_move_container = '${CONTAINER}';
+"
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE ${QUEUE} MODIFY SETTING after_processing_move_connection_string = '${URL}'; -- { serverError ACCESS_DENIED }
 "
 
 # Permitted: explicit credentials read and write for real.

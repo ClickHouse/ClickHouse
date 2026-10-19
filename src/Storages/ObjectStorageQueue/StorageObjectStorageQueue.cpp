@@ -230,6 +230,10 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
+                if (!is_attach)
+                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
+                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
+                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
             }
             else if (!move_prefix)
             {
@@ -1610,6 +1614,25 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     const auto mode = metadata->getTableMetadata().getMode();
     const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+
+    /// A move destination set by this query must carry its own credentials, as at `CREATE`.
+    String move_connection_string;
+    String move_container;
+    bool move_destination_changed = false;
+    for (const auto & setting : new_settings)
+    {
+        if (setting.name == "after_processing_move_connection_string")
+            move_connection_string = setting.value.safeGet<String>();
+        else if (setting.name == "after_processing_move_container")
+            move_container = setting.value.safeGet<String>();
+        else
+            continue;
+
+        const auto * old_value = old_settings ? old_settings->tryGet(setting.name) : nullptr;
+        move_destination_changed |= !old_value || *old_value != setting.value;
+    }
+    if (type == ObjectStorageType::Azure && move_destination_changed && !move_connection_string.empty())
+        ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
 
     for (const auto & setting : new_settings)
     {
