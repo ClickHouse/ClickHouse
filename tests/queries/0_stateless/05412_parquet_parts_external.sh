@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "
         n Nested(a UInt32, b String)
     )
     ENGINE = MergeTree ORDER BY key
-    SETTINGS min_rows_for_parquet_part = 1, parquet_row_group_granularity_rows = 300, storage_policy = 'default', min_bytes_for_full_part_storage = 0;
+    SETTINGS min_rows_for_parquet_part = 1, parquet_row_group_granularity_rows = 300, storage_policy = 'default', min_bytes_for_full_part_storage = 0, default_compression_codec = 'LZ4';
     INSERT INTO t_parquet_external SELECT number, toString(number), number * 3, number / 7, if(number % 2, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String)), [number, number + 1], ['a', 'b'] FROM numbers(1000);
 "
 

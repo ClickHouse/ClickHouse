@@ -164,7 +164,9 @@ DataTypePtr getInnermostPrimitiveType(DataTypePtr type)
 
 std::optional<Int64> getCodecLevel(const ICompressionCodec & codec)
 {
-    const auto * function = codec.getCodecDescription()->as<ASTFunction>();
+    /// Keep the description alive while it is inspected.
+    ASTPtr description = codec.getCodecDescription();
+    const auto * function = description->as<ASTFunction>();
     if (!function || !function->arguments || function->arguments->children.empty())
         return {};
     const auto * literal = function->arguments->children[0]->as<ASTLiteral>();
