@@ -459,11 +459,43 @@ ALWAYS_INLINE inline char * writeHeadAndSixteenDigits(UInt64 head, UInt64 tail, 
 /// They share the chunks of 16 digits.
 /// ----------------------------------------------------------------------------------------------------
 
+namespace
+{
+/// The high 128 bits of the product of `a` and `b`, from four 64 x 64 bit multiplications.
+ALWAYS_INLINE inline unsigned __int128 multiplyHigh(unsigned __int128 a, unsigned __int128 b)
+{
+    unsigned __int128 low_low = static_cast<unsigned __int128>(static_cast<UInt64>(a)) * static_cast<UInt64>(b);
+    unsigned __int128 low_high = static_cast<unsigned __int128>(static_cast<UInt64>(a)) * static_cast<UInt64>(b >> 64);
+    unsigned __int128 high_low = static_cast<unsigned __int128>(static_cast<UInt64>(a >> 64)) * static_cast<UInt64>(b);
+    unsigned __int128 high_high = static_cast<unsigned __int128>(static_cast<UInt64>(a >> 64)) * static_cast<UInt64>(b >> 64);
+    unsigned __int128 middle = (low_low >> 64) + static_cast<UInt64>(low_high) + static_cast<UInt64>(high_low);
+    return high_high + (low_high >> 64) + (high_low >> 64) + (middle >> 64);
+}
+
+/// The divisions of 128 bits by a constant are written as the multiplications by the reciprocal that clang 23 emits for
+/// them: clang 22 calls `__udivti3` instead, which is several times slower. The reciprocals are rounded up, and exact
+/// for every value in the range given (Granlund and Montgomery's condition).
+
+/// Any 128-bit `value` divided by 10^16: the high half of the product by ceil(2^179 / 10^16), as zmij's `divmod_1e16`.
+ALWAYS_INLINE inline unsigned __int128 divideByTenToSixteen(unsigned __int128 value)
+{
+    constexpr unsigned __int128 reciprocal = (static_cast<unsigned __int128>(0x39a5652fb1137856ULL) << 64) | 0xd30baf9a1e626a6dULL;
+    return multiplyHigh(value, reciprocal) >> 51;
+}
+
+/// `value` below 2^118 divided by 5^32: the high half of the product by ceil(2^192 / 5^32), shifted by 64.
+ALWAYS_INLINE inline UInt64 divideByFiveToThirtyTwo(unsigned __int128 value)
+{
+    constexpr unsigned __int128 reciprocal = (static_cast<unsigned __int128>(0x0033ec47ab514e65ULL) << 64) | 0x2e99f7863b696053ULL;
+    return static_cast<UInt64>(multiplyHigh(value, reciprocal) >> 64);
+}
+}
+
 /// As zmij does: 16 digits at a time. `value` is at least 2^64, so the part above the last 16 digits is at least 1844.
 NO_INLINE char * itoa_impl::writeLargeUInt128Text(unsigned __int128 value, char * p)
 {
     constexpr UInt64 ten_to_16 = 10000000000000000ULL;
-    unsigned __int128 high = value / ten_to_16;
+    unsigned __int128 high = divideByTenToSixteen(value);
     /// In 64 bits: the remainder is below 10^16, and the high half of the product is not needed.
     UInt64 low = static_cast<UInt64>(value) - static_cast<UInt64>(high) * ten_to_16;
     if (likely(high < ten_to_16))
@@ -517,7 +549,7 @@ NO_INLINE char * itoa_impl::writeLargeUInt256Text(unsigned __int128 high, unsign
     /// In 128 bits: the remainder is below 10^32, and the high half of the product is not needed.
     unsigned __int128 rest = low - quotient_low * ten_to_32;
     constexpr UInt64 ten_to_16 = 10000000000000000ULL;
-    UInt64 middle = static_cast<UInt64>(rest / ten_to_16);
+    UInt64 middle = static_cast<UInt64>(divideByTenToSixteen(rest));
     UInt64 last = static_cast<UInt64>(rest) - middle * ten_to_16;
 
     if (quotient_high == 0)
@@ -530,10 +562,9 @@ NO_INLINE char * itoa_impl::writeLargeUInt256Text(unsigned __int128 high, unsign
     /// The quotient is below 2^150, and 10^32 is 2^32 * 5^32: the division by 5^32 of the quotient / 2^32 is one of
     /// 128 bits.
     unsigned __int128 quotient = (quotient_high << 96) | (quotient_low >> 32);
-    constexpr unsigned __int128 five_to_32 = static_cast<unsigned __int128>(152587890625ULL) * 152587890625ULL;
-    UInt64 top = static_cast<UInt64>(quotient / five_to_32);
+    UInt64 top = divideByFiveToThirtyTwo(quotient);
     unsigned __int128 next = quotient_low - top * ten_to_32;
-    UInt64 second = static_cast<UInt64>(next / ten_to_16);
+    UInt64 second = static_cast<UInt64>(divideByTenToSixteen(next));
     UInt64 third = static_cast<UInt64>(next) - second * ten_to_16;
 
     p = writeHeadAndSixteenDigits(top, second, p);
