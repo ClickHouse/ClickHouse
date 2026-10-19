@@ -65,6 +65,11 @@ public:
         delegate_transaction->undo();
     }
 
+    bool canUndoBeforeCommit() const override
+    {
+        return delegate_transaction->canUndoBeforeCommit();
+    }
+
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
     {
         return delegate_transaction->tryCommit(options);

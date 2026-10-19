@@ -23,7 +23,10 @@
 #include <Common/PageCache.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
@@ -35,6 +38,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <future>
 #include <new>
 #include <string>
 #include <thread>
@@ -1382,6 +1386,59 @@ catch (...)
 
 
 #if USE_SSL
+TEST_F(DiskObjectStorageTest, AbandonedEncryptedPartRemovesOnlyItsUncommittedBlobs)
+{
+    auto disk = getDiskObjectStorage();
+    const String key = "1234567890123456";
+    const auto fingerprint = DB::FileEncryption::calculateKeyFingerprint(key);
+    auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = disk;
+    enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    enc_settings->all_keys[fingerprint] = key;
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = fingerprint;
+    auto encrypted_disk = std::make_shared<DB::DiskEncrypted>("encrypted_cleanup_test", std::move(enc_settings));
+    DB::WriteSettings write_settings;
+    write_settings.inline_file_max_bytes = 0;
+    {
+        auto out = encrypted_disk->writeFile("source", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+        DB::writeString("source data", *out);
+        out->finalize();
+    }
+    waitBlobsCount(disk, 1);
+
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", encrypted_disk, 0);
+    DB::DataPartStorageOnDiskFull source(volume, "", "");
+    DB::DataPartStorageOnDiskFull part(volume, "", "tmp_part");
+    part.beginTransaction();
+    part.createDirectories();
+    part.createHardLinkFrom(source, "source", "unchanged");
+    {
+        auto out = part.writeFile("rewritten", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+        DB::writeString("abandoned data", *out);
+        out->finalize();
+    }
+    waitBlobsCount(disk, 2);
+
+    std::async(std::launch::async, [&part]
+    {
+        DB::ThreadStatus status;
+        auto state = std::make_shared<DB::OperationCancellationState>();
+        auto group = DB::ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        DB::ThreadGroupSwitcher attached(group, DB::ThreadName::MERGE_MUTATE);
+        state->request(DB::CancellationRequest::StopWork);
+        EXPECT_THROW(DB::CurrentThread::checkIfNotCancelled(), DB::Exception);
+        part.undoTransactionIfUncommitted();
+        EXPECT_THROW(DB::CurrentThread::checkIfNotCancelled(), DB::Exception);
+    }).get();
+
+    ASSERT_FALSE(part.hasActiveTransaction());
+    EXPECT_FALSE(part.exists());
+    waitBlobsCount(disk, 1);
+    auto in = encrypted_disk->readFile("source", {});
+    EXPECT_EQ(readAll(*in), "source data");
+}
+
 TEST_F(DiskObjectStorageTest, ReadPipelineEncrypted)
 try
 {
