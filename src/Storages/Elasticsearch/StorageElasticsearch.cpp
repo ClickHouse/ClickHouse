@@ -290,7 +290,7 @@ The parameters can also be passed as a [named collection](/concepts/features/con
 | Setting      | Default | Description |
 |--------------|---------|-------------|
 | `keep_alive` | `60`    | How long, in seconds, Elasticsearch keeps the point in time open between two consecutive page requests. |
-| `page_size`  | `10000` | The number of documents requested from Elasticsearch per request. Values above the `index.max_result_window` index setting of Elasticsearch (`10000` by default) are rejected by Elasticsearch. |
+| `page_size`  | `10000` | The number of documents requested from Elasticsearch per request. Each page becomes one block, so this setting also sets the block size of the read; [`max_block_size`](/reference/settings/session-settings/max#max_block_size) has no effect. Values above the `index.max_result_window` index setting of Elasticsearch (`10000` by default) are rejected by Elasticsearch. |
 
 The settings can be changed with `ALTER TABLE ... MODIFY SETTING`.
 
