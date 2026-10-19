@@ -737,21 +737,16 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// so that shard pruning still populates `query_info.optimized_cluster` and
     /// `force_optimize_skip_unused_shards` enforcement still throws
     /// `UNABLE_TO_SKIP_UNUSED_SHARDS` for `WITH CLUSTER` queries.
-    QueryProcessingStage::Enum stage;
-    if (has_with_cluster())
-    {
-        /// With zero shards left (an empty cluster, or `optimize_skip_unused_shards`
-        /// pruned every shard away) `read` builds no remote plan and the planner
-        /// substitutes an empty source with the raw storage header. The initiator
-        /// must then run the whole `GROUP BY` pipeline itself, so keep the regular
-        /// `FetchColumns` answer for this case instead of advertising mergeable states.
-        if (nodes == 0)
-            stage = QueryProcessingStage::FetchColumns;
-        else
-            stage = std::min(to_stage, QueryProcessingStage::WithMergeableState);
-    }
-    else
+    /// With zero shards left (an empty cluster, or `optimize_skip_unused_shards`
+    /// pruned every shard away) `read` builds no remote plan and the planner
+    /// substitutes an empty source with the raw storage header. The initiator
+    /// must then run the whole `GROUP BY` pipeline itself, so keep the regular
+    /// `FetchColumns` answer for this case instead of advertising mergeable states.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::FetchColumns;
+    if (!has_with_cluster())
         stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+    else if (nodes != 0)
+        stage = std::min(to_stage, QueryProcessingStage::WithMergeableState);
 
     /// The query was analyzed against the columns declared here, but a shard resolves the remote
     /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
