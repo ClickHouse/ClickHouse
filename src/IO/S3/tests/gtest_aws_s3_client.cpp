@@ -471,13 +471,13 @@ private:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 response.setContentType("application/xml");
-                response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult/>";
+                response.send() << R"(<?xml version="1.0" encoding="UTF-8"?><DeleteResult/>)";
                 return;
             }
 
             response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             response.setContentType("application/xml");
-            response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            response.send() << R"(<?xml version="1.0" encoding="UTF-8"?>)"
                                "<Error><Code>" << stub.error_code << "</Code><Message>Digest rejected</Message></Error>";
         }
 
