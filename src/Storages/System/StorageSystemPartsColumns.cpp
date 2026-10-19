@@ -165,6 +165,17 @@ void StorageSystemPartsColumns::processNextStorage(
             return estimates->find(column_name);
         };
 
+        /// The cardinality is not a part of the estimates, because computing it for every column of a part
+        /// is relatively expensive, so it is computed from the statistics if it is queried.
+        std::optional<ColumnsStatistics> statistics;
+        auto find_statistics = [&](const auto & column_name)
+        {
+            if (!statistics.has_value())
+                statistics = part->loadStatistics({}, context->getStatisticsCache().get());
+
+            return statistics->find(column_name);
+        };
+
         using State = MergeTreeDataPartState;
 
         /// The rendered text is identical for every column of a part; resolving the key per column
@@ -352,9 +363,9 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
             {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                auto statistics_it = find_statistics(column.name);
+                if (statistics_it != statistics->end() && statistics_it->second->hasCardinality())
+                    columns[res_index++]->insert(statistics_it->second->estimateCardinality());
                 else
                     columns[res_index++]->insertDefault();
             }

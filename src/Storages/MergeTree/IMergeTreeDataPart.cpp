@@ -74,6 +74,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
@@ -1388,10 +1389,10 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::readStatistics() const
     if (auto packed_checksum = checksums.files.find(packed_file); packed_checksum != checksums.files.end())
     {
         /// The archive is small, so it is read entirely in one go instead of reading its index and then every file.
-        String data(packed_checksum->second.file_size, '\0');
+        PODArray<char> data(packed_checksum->second.file_size);
         getDataPartStorage().readFile(packed_file, read_settings, data.size())->readStrict(data.data(), data.size());
 
-        ReadBufferFromString index_buf(data);
+        ReadBufferFromMemory index_buf(data.data(), data.size());
         for (const auto & [filename, file_offset] : PackedFilesReader::readIndex(index_buf))
         {
             if (file_offset.offset > data.size() || file_offset.size > data.size() - file_offset.offset)
