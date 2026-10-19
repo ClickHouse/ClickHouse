@@ -22,8 +22,9 @@ SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={NULL,x
 SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={[],x}/data.jsonl') ORDER BY rid;
 
 -- S3 lists keys in lexicographic order, so `p0=NULL` is sampled.
-INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/p0=NULL/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 1 AS rid;
-INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/p0=x/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 2 AS rid;
-INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/p0=y/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 3 AS rid;
-SELECT rid, p0, toTypeName(p0) FROM s3(s3_conn, filename = currentDatabase() || '/05407/p0=*/data.jsonl', format = JSONEachRow) ORDER BY rid;
-SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05407/p0=*/data.jsonl', format = JSONEachRow) WHERE p0 = 'x';
+-- A query parameter, not `currentDatabase()`: a parallel replica evaluates `currentDatabase()` in its default database.
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05407/p0=NULL/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 1 AS rid;
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05407/p0=x/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 2 AS rid;
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05407/p0=y/data.jsonl', format = JSONEachRow) SETTINGS s3_truncate_on_insert = 1 SELECT 3 AS rid;
+SELECT rid, p0, toTypeName(p0) FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05407/p0=*/data.jsonl', format = JSONEachRow) ORDER BY rid;
+SELECT count() FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05407/p0=*/data.jsonl', format = JSONEachRow) WHERE p0 = 'x';
