@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -11909,6 +11910,8 @@ void MergeTreeData::optimizeDryRun(
         LOG_INFO(log, "OPTIMIZE DRY RUN: part {} passed checkDataPart", new_part->name);
     }
 
+    /// Removal renames the part before deleting it; cancellation must not strand that renamed directory.
+    ThreadStatus::QueryCancellationBlocker cleanup_blocker;
     new_part->remove();
 }
 

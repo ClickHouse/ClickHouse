@@ -52,6 +52,7 @@ static struct InitFiu
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(temporary_part_cancel_after_remove_rename) \
     ONCE(temporary_projection_fail_after_finalize) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     ONCE(remote_query_executor_cancel_in_finish_drain) \
