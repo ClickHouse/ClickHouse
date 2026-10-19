@@ -16,27 +16,29 @@ include("//bazel:contrib.MODULE.bazel")
 # Same CMake release used by bazel/run_cmake_reference.sh.
 # SHA-256 values are from Kitware's cmake-3.28.3-SHA-256.txt.
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
 http_archive(
     name = "clickhouse_cmake_linux_x86_64",
-    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz"],
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/cmake"])
+filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
+""",
     sha256 = "804d231460ab3c8b556a42d2660af4ac7a0e21c98a7f8ee3318a74b4a9a187a6",
     strip_prefix = "cmake-3.28.3-linux-x86_64",
-    build_file_content = """
-package(default_visibility = ["//visibility:public"])
-exports_files(["bin/cmake"])
-filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
-""",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz"],
 )
+
 http_archive(
     name = "clickhouse_cmake_linux_aarch64",
-    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-aarch64.tar.gz"],
-    sha256 = "bbf023139f944cefe731d944f2864d8ea3ea0c4f9310b46ac72b3cb4e314b023",
-    strip_prefix = "cmake-3.28.3-linux-aarch64",
     build_file_content = """
 package(default_visibility = ["//visibility:public"])
 exports_files(["bin/cmake"])
 filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
 """,
+    sha256 = "bbf023139f944cefe731d944f2864d8ea3ea0c4f9310b46ac72b3cb4e314b023",
+    strip_prefix = "cmake-3.28.3-linux-aarch64",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-aarch64.tar.gz"],
 )
 
 # ClickHouse enables the fast decoder on Linux ARM64 as well as x86-64.
@@ -44,6 +46,12 @@ single_version_override(
     module_name = "lz4",
     patch_strip = 1,
     patches = ["//bazel/patches:lz4-fast-decoder.patch"],
+)
+
+single_version_override(
+    module_name = "rules_cc",
+    patch_strip = 1,
+    patches = ["//bazel/patches:rules_cc-implementation-deps-local-includes.patch"],
 )
 
 single_version_override(
@@ -88,6 +96,7 @@ rust_toolchains.toolchain(
     version = "nightly/2026-03-22",
 )
 use_repo(rust_toolchains, "default_rust_toolchains")
+
 register_toolchains("@default_rust_toolchains//...")
 
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
@@ -114,8 +123,8 @@ crate.annotation(
 
 # Compile the native runtime with ClickHouse's patched C++ exception ABI.
 crate.annotation(
-    crate = "cxx",
     additive_build_file_content = "exports_files([\"src/cxx.cc\", \"include/cxx.h\"])\n",
+    crate = "cxx",
     extra_aliased_targets = {
         "cxx_source": "src/cxx.cc",
         "cxx_header": "include/cxx.h",
@@ -131,7 +140,6 @@ crate.annotation(
     gen_build_script = "off",
     repositories = ["clickhouse_crates"],
 )
-
 crate.from_cargo(
     name = "delta_crates",
     cargo_lock = "@clickhouse_cargo_sources//bazel/rust:delta-kernel-rs/Cargo.lock",
@@ -150,6 +158,7 @@ crate.from_cargo(
         "x86_64-unknown-linux-gnu",
     ],
 )
+
 # Cbindgen runs in a separate action with declared offline metadata inputs.
 # The Rust library consumes no output from its cbindgen-only build script.
 crate.annotation(
@@ -157,7 +166,7 @@ crate.annotation(
     gen_build_script = "off",
     repositories = ["delta_crates"],
 )
-use_repo(crate, "delta_crates", "chdig_crates")
+use_repo(crate, "chdig_crates", "delta_crates")
 
 crate.annotation(
     crate = "cbindgen",
@@ -169,14 +178,13 @@ crate.annotation(
 # Reuse the same audited LZ4 implementation for Rust and C++ consumers.
 crate.annotation(
     crate = "lz4-sys",
-    deps = ["@lz4//:lz4_frame"],
     gen_build_script = "off",
+    deps = ["@lz4//:lz4_frame"],
 )
 
 # Match delta-kernel-rs-cmake: probe ClickHouse's OpenSSL headers and leave
 # linking to the C++ binary, which already links its ssl/crypto targets.
 crate.annotation(
-    crate = "openssl-sys",
     build_script_data = ["//bazel/rust:openssl_include"],
     build_script_env = {
         # Build-script location expansion already makes execpath absolute.
@@ -187,18 +195,18 @@ crate.annotation(
         "OPENSSL_NO_VENDOR": "1",
         "OPENSSL_STATIC": "1",
     },
+    crate = "openssl-sys",
     gen_build_script = "on",
 )
-
 crate.annotation(
-    crate = "perfetto_protos",
     additive_build_file = "//bazel/rust:perfetto_protos.BUILD.bazel",
-    deps = ["@chdig_crates//:perfetto_build_script"],
+    crate = "perfetto_protos",
     extra_aliased_targets = {"perfetto_build_script": "_bs"},
     gen_build_script = "off",
     patch_args = ["-p1"],
     patches = ["//bazel/patches:perfetto-protos-protoc.patch"],
     repositories = ["chdig_crates"],
+    deps = ["@chdig_crates//:perfetto_build_script"],
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")

@@ -1,0 +1,11 @@
+diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/cc_compilation_helper.bzl
+--- a/cc/private/compile/cc_compilation_helper.bzl
++++ b/cc/private/compile/cc_compilation_helper.bzl
+@@ -687,6 +687,7 @@ def _init_cc_compilation_context(
+             external_includes = depset(external_include_dirs),
+             system_includes = depset(system_include_dirs_for_context),
+             includes = depset(include_dirs_for_context),
++            local_includes = depset(local_includes),
+             virtual_to_original_headers = depset(virtual_to_original_headers),
+             dependent_cc_compilation_contexts = dependent_cc_compilation_contexts + implementation_deps,
+             non_code_inputs = additional_inputs,

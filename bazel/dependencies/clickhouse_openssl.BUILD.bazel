@@ -5412,6 +5412,11 @@ ch_cc_library(
 
 cc_library(
     name = "crypto",
+    features = ["system_include_paths"],
+    includes = [
+        repository_local_include("contrib/openssl-cmake/common/include", "contrib/openssl"),
+        "include",
+    ],
     deps = [
         "@clickhouse//:clang_rt_builtins",
         "@clickhouse//:cxx",

@@ -12,4 +12,5 @@ exports_files([
     "perfetto-protos-protoc.patch",
     "rules_rs-local-workspaces.patch",
     "zstd-public-headers.patch",
+    "rules_cc-implementation-deps-local-includes.patch",
 ])

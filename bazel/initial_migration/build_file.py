@@ -654,6 +654,14 @@ class BuildFile:
                                             for key, value in features.values.items()})
             else:
                 attrs['features'] = [flag for flag in features if flag not in defaults]
+        if self.owner == 'contrib/openssl' and name == 'crypto':
+            # crypto's compile groups also use private OpenSSL directories.
+            # Only these two roots belong to the published OpenSSL interface.
+            attrs['includes'] = [
+                LocalInclude('contrib/openssl-cmake/common/include', self.owner),
+                'include',
+            ]
+            attrs['features'] = ['system_include_paths']
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -770,6 +778,8 @@ class BuildFile:
             )
             system_includes = {}
             native_includes = {}
+            postgres = self.owner == 'contrib/postgres' and name == '_libpq'
+            implementation_deps = {}
             for arch, group in groups.items():
                 if group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime'):
                     native_includes[arch] = []
@@ -838,8 +848,34 @@ class BuildFile:
                             # libraries. Keep them before the old wrapper's
                             # dependencies and deduplicate after rebasing.
                             value = list(dict.fromkeys(value))
+                    if field == 'deps' and postgres and arch in groups:
+                        if not collapse_single:
+                            raise ValueError('Postgres _libpq must have one native compile group')
+                        openssl = {
+                            self.label(target_label(dep, self.owners))
+                            for dep in ('crypto', 'ssl')
+                        }
+                        supplied = [dep for dep in value if dep in openssl]
+                        if set(supplied) != openssl:
+                            raise ValueError(f'Postgres _libpq no longer links both OpenSSL libraries: {value}')
+                        implementation_deps['@platforms//cpu:' + arch] = supplied + [
+                            '@clickhouse_llvm_project//:libcxxabi_headers',
+                        ]
+                        value = [dep for dep in value if dep not in openssl]
                     values['@platforms//cpu:' + arch] = value
                 attrs[field] = select(values)
+            if postgres:
+                foreign = {
+                    'contrib/openssl-cmake/common/include',
+                    'contrib/openssl/include',
+                    llvm_targets.PREFIX + '/libcxxabi/include',
+                }
+                for arch, includes in system_includes.items():
+                    supplied = {inc.directory for inc in includes if inc.directory in foreign}
+                    if supplied != foreign:
+                        raise ValueError(f'Postgres _libpq {arch} changed its OpenSSL or ABI includes: {supplied}')
+                    system_includes[arch] = [inc for inc in includes if inc.directory not in foreign]
+                attrs['implementation_deps'] = select(implementation_deps)
             if any(system_includes.values()):
                 attrs['local_includes'] = select({
                     '@platforms//cpu:' + arch: system_includes.get(arch, [])
