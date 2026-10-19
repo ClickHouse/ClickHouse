@@ -172,11 +172,13 @@ bool tryEstimateEmpirical(
         step = std::min<size_t>(step, std::max<size_t>(1, (windows_to_scan - 1) / (min_sampled_windows - 1)));
 
     bool sampled = false;
+    std::vector<bool> part_sampled(saved_parts.size());
     UInt64 rows_planned = 0;
     for (size_t i = 0; i < saved_parts.size(); ++i)
     {
         read_ranges[i] = windowsToScan(read_ranges[i], skip_index_granularity, step, saved_parts[i].data_part->name);
-        sampled |= countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
+        part_sampled[i] = countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
+        sampled |= part_sampled[i];
         rows_planned += saved_parts[i].data_part->index_granularity->getRowsCountInRanges(read_ranges[i]);
     }
     if (read_limit != 0 && rows_planned > read_limit)
@@ -221,7 +223,6 @@ bool tryEstimateEmpirical(
 
         if (read_ranges[part_idx].empty())
             continue;
-        const bool part_sampled = countWindows(read_ranges[part_idx], skip_index_granularity) < part_windows[part_idx];
         const UInt64 part_baseline_marks = mark_ranges.getNumberOfMarks();
         const UInt64 total_before = total_data_granules;
         const UInt64 skipped_before = skipped_data_granules;
@@ -302,7 +303,7 @@ bool tryEstimateEmpirical(
                 else if (surviving_marks)
                     for (size_t pos : window_baseline_marks)
                         (*surviving_marks)[pos] = 1;
-                if (part_sampled)
+                if (part_sampled[part_idx])
                     window_survives.push_back(survives);
             };
 
@@ -390,7 +391,7 @@ bool tryEstimateEmpirical(
         const UInt64 part_sampled_marks = total_data_granules - total_before;
         const UInt64 part_survivors = part_sampled_marks - (skipped_data_granules - skipped_before);
         baseline_marks += part_baseline_marks;
-        if (!part_sampled)
+        if (!part_sampled[part_idx])
         {
             estimated_survivors += static_cast<double>(part_survivors);
             continue;
