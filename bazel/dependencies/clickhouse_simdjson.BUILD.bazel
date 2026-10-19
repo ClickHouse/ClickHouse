@@ -11,15 +11,11 @@ ch_cc_library(
     srcs = [
         "src/simdjson.cpp",
     ] + glob(["src/**/*.h"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
+    hdrs = glob([
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
+    additional_compiler_inputs = (glob(
         [
             "include/**",
             "src/**",
@@ -30,8 +26,8 @@ ch_cc_library(
             "src/**/*.h",
             "src/simdjson.cpp",
         ],
-    )) + [
-    ],
+    ) + [
+    ]),
     copts = (([
         "-w",
         "-std=c++23",
@@ -40,9 +36,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "-DSIMDJSON_IMPLEMENTATION_FALLBACK=1",
         ],
-    })) + [
-        "-nostdinc++",
-    ]),
+    })) + []),
     includes = [
         "include",
     ],
@@ -57,15 +51,6 @@ ch_cc_library(
         "include",
         "src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

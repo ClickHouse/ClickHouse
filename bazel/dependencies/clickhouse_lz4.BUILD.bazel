@@ -14,16 +14,8 @@ ch_cc_library(
         "lib/lz4frame.c",
         "lib/xxhash.c",
     ],
-    hdrs = glob(["lib/*.h"]) + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        # lz4hc.c includes lz4.c in addition to the standalone lz4.c object.
-        "lib/lz4.c",
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = glob(["lib/*.h"]),
+    additional_compiler_inputs = ["lib/lz4.c", "@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",

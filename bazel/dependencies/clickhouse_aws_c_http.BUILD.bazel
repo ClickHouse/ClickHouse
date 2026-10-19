@@ -10,12 +10,8 @@ exports_files([
 ch_cc_library(
     name = "aws_c_http",
     srcs = glob(["source/*.c"]),
-    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -40,12 +36,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":aws_c_http_headers",
-    ],
+    deps = [":aws_c_http_headers"],
     alwayslink = False,
 )
 
@@ -54,10 +45,5 @@ cc_library(
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
     textual_hdrs = ["include/aws/http/private/hpack_header_static_table.def"],
-    deps = [
-        "@clickhouse_aws_c_common//:aws_c_common_headers",
-        "@clickhouse_aws_c_compression//:aws_c_compression_headers",
-        "@clickhouse_aws_c_io//:aws_c_io_headers",
-        "@clickhouse_openssl//:ssl",
-    ],
+    deps = ["@clickhouse_aws_c_compression//:aws_c_compression_headers", "@clickhouse_aws_c_io//:aws_c_io_headers"],
 )

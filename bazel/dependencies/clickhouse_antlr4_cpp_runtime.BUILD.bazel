@@ -12,36 +12,10 @@ ch_cc_library(
     srcs = (glob(["runtime/Cpp/runtime/src/*.cpp"]) + glob(["runtime/Cpp/runtime/src/atn/*.cpp"]) + glob(["runtime/Cpp/runtime/src/dfa/*.cpp"]) + [
         "runtime/Cpp/runtime/src/internal/Synchronization.cpp",
     ] + glob(["runtime/Cpp/runtime/src/misc/*.cpp"]) + glob(["runtime/Cpp/runtime/src/support/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/pattern/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/xpath/*.cpp"])),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["runtime/Cpp/runtime/src/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = glob(["runtime/Cpp/runtime/src/**/*.h"]),
+    additional_compiler_inputs = [],
     copts = (
-        [
-            "-w",
-            "-std=c++23",
-            "-nostdinc++",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/atn",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/dfa",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/internal",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/misc",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/support",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/pattern",
-            "-I",
-            repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/xpath",
-        ]
+        ["-w", "-std=c++23", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/atn", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/dfa", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/internal", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/misc", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/support", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/pattern", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/xpath"]
     ),
     features = [],
     local_defines = [
@@ -50,15 +24,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

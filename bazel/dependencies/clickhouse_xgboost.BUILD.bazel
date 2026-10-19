@@ -160,17 +160,8 @@ ch_cc_library(
         "plugin/sycl/**/*.h",
         "src/**/*.h",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["include/**/*.h"])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["include/**/*.h"])),
-    }),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
+    hdrs = glob(["include/**/*.h"]),
+    additional_compiler_inputs = (glob(
         [
             "include/**",
             "plugin/federated/**",
@@ -291,7 +282,7 @@ ch_cc_library(
             "src/tree/updater_refresh.cc",
             "src/tree/updater_sync.cc",
         ],
-    )) + [
+    ) + [
         "src/global_config.cc",
         "src/data/gradient_index_page_source.cc",
         "src/data/data.cc",
@@ -400,15 +391,8 @@ ch_cc_library(
         "src/gbm/gbtree.cc",
         "src/gbm/gblinear.cc",
         "src/context.cc",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-std=c++17",
-        "-include",
-        "exception",
-        "-nostdinc++",
-    ],
+    ]),
+    copts = ["-w", "-std=c++23", "-std=c++17", "-include", "exception"],
     local_defines = [
         "DMLC_CORE_USE_CMAKE",
         "DMLC_USE_CXX11=1",
@@ -428,16 +412,6 @@ ch_cc_library(
             "config/aarch64/contrib/xgboost/dmlc-core",
         ],
     })),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":_dmlc_core",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":_dmlc_core"],
     alwayslink = False,
 )

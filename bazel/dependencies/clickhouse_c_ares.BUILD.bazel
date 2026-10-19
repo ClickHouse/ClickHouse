@@ -58,20 +58,12 @@ ch_cc_library(
         "src/lib/inet_net_pton.c",
         "src/lib/inet_ntop.c",
     ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"])),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-        "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-        "@clickhouse//:contrib/c-ares-cmake/linux/ares_config.h",
-    ] + glob([
+    hdrs = (["@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_config.h"] + glob([
         "include/**/*.h",
         "src/lib/**/*.h",
         "src/lib/**/*.inc",
-    ]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    ])),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -99,15 +91,6 @@ ch_cc_library(
         "include",
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/c-ares"),
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

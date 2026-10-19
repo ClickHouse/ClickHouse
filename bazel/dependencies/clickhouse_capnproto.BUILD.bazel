@@ -13,12 +13,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = [
-    "-w",
-    "-std=c++17",
-    "-fno-char8_t",
-    "-nostdinc++",
-]
+_GENERATED_COPTS_0 = ["-w", "-std=c++17", "-fno-char8_t"]
 
 ch_cc_library(
     name = "_capnp",
@@ -39,28 +34,14 @@ ch_cc_library(
         "c++/src/capnp/dynamic.c++",
         "c++/src/capnp/stringify.c++",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":_kj",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":_kj"],
     alwayslink = False,
 )
 
@@ -79,29 +60,14 @@ ch_cc_library(
         "c++/src/capnp/schema-parser.c++",
         "c++/src/capnp/serialize-text.c++",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":_capnp",
-        ":_kj",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":_capnp"],
     alwayslink = False,
 )
 
@@ -132,26 +98,13 @@ ch_cc_library(
         "c++/src/kj/filesystem-disk-win32.c++",
         "c++/src/kj/parse/char.c++",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["c++/src/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = glob(["c++/src/**/*.h"]),
+    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

@@ -42,14 +42,8 @@ ch_cc_library(
         "src/liblzma/simple/**/*.h",
         "src/liblzma/simple/**/*.inc",
     ]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["src/liblzma/api/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = glob(["src/liblzma/api/**/*.h"]),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -130,15 +124,6 @@ ch_cc_library(
         "src/liblzma/simple",
         "src/common",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

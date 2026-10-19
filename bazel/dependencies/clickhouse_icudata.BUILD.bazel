@@ -11,12 +11,8 @@ ch_cc_library(
     srcs = [
         "icudt78l_dat.S",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = [],
     language = "ASM",
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
@@ -29,15 +25,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

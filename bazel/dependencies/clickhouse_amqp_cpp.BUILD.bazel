@@ -31,17 +31,9 @@ ch_cc_library(
         "src/table.cpp",
         "src/watchable.cpp",
     ]),
-    hdrs = ([
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = (glob(["**/*.h"])),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -52,18 +44,6 @@ ch_cc_library(
         "include",
         ".",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_libuv//:_uv",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_libuv//:_uv", "@clickhouse_openssl//:ssl"],
     alwayslink = False,
 )

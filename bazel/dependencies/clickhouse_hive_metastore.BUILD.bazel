@@ -1,5 +1,4 @@
 load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -17,17 +16,8 @@ ch_cc_library(
         "hive_metastore_types.cpp",
         "ThriftHiveMetastore.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["**/*.h"])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["**/*.h"])),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
+    hdrs = glob(["**/*.h"]),
+    additional_compiler_inputs = glob(
         ["**"],
         exclude = [
             "**/*.h",
@@ -37,11 +27,7 @@ ch_cc_library(
             "hive_metastore_types.cpp",
         ],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    copts = ["-w", "-std=c++23"],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -51,35 +37,9 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ([
+    local_includes = [
         ".",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/thrift") + "/config/x86_64/contrib/thrift-cmake",
-                "contrib/hive-metastore",
-            ),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/thrift") + "/config/aarch64/contrib/thrift-cmake",
-                "contrib/hive-metastore",
-            ),
-        ],
-    })),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_thrift//:_thrift",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
     ],
+    deps = ["@clickhouse_thrift//:_thrift"],
     alwayslink = False,
 )

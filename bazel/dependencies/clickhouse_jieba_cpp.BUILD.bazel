@@ -15,12 +15,8 @@ ch_cc_library(
         "src/jieba_mp_seg.cpp",
         "src/jieba_hmm_seg.cpp",
     ],
-    hdrs = ([
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["include/**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
+    hdrs = (glob(["include/**/*.h"])),
+    additional_compiler_inputs = glob(
         [
             "data/**",
             "include/**",
@@ -34,16 +30,7 @@ ch_cc_library(
             "src/jieba_mp_seg.cpp",
         ],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-        "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data",
-        "-nostdinc++",
-        "-I",
-        repository_path("contrib/Jieba-CPP") + "/data",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-    ],
+    copts = ["-w", "-std=c++23", "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data", "-I", repository_path("contrib/Jieba-CPP") + "/data", "-I", repository_path("contrib/zstd") + "/lib"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -53,17 +40,6 @@ ch_cc_library(
     local_includes = [
         "include",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-        "@clickhouse_darts_clone//:darts_clone",
-    ],
+    deps = ["@clickhouse_zstd//:_zstd", "@clickhouse_darts_clone//:darts_clone"],
     alwayslink = False,
 )

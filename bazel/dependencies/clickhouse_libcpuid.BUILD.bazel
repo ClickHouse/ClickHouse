@@ -27,20 +27,8 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    hdrs = select({"@platforms//cpu:x86_64": glob(["**/*.h"]), "@platforms//cpu:aarch64": []}),
+    additional_compiler_inputs = select({"@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"], "@platforms//cpu:aarch64": []}),
     arches = [
         "x86_64",
     ],
@@ -79,19 +67,9 @@ ch_cc_library(
             "@platforms//:incompatible",
         ],
     }),
-    deps = (select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
+    deps = ((select({
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    }) + [
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ]),
+    })) + (["@clickhouse//:clang_rt_builtins"])),
     alwayslink = False,
 )

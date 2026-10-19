@@ -721,6 +721,17 @@ class BuildFile:
             arches = list(copts.groups)
             if set(arches) != set(ARCHES):
                 attrs['arches'] = arches
+            for field, provided in (
+                    ('hdrs', '@clickhouse_sysroot//:linux_native_headers'),
+                    ('additional_compiler_inputs', '@clickhouse_sysroot//:linux_compile_files')):
+                values = attrs.get(field, [])
+                if isinstance(values, Select):
+                    attrs[field] = select({
+                        cpu: [label for label in branch if label != provided]
+                        for cpu, branch in values.values.items()
+                    })
+                else:
+                    attrs[field] = [label for label in values if label != provided]
             expected_includes = [] if language == 'CXX' else [['-I', 'generated', 'libcxx/include/c++/v1']]
             includes = [group['includes'] for group in copts.groups.values()]
             if all(value == [] for value in includes) and expected_includes:
@@ -900,6 +911,9 @@ class BuildFile:
                                 value = value + ['-Wno-error']
                             value = remove_global_compile_options(value, language)
                             value = [flag for flag in value if flag not in CLICKHOUSE_TARGET_FLAGS[arch]]
+                            if language == 'CXX':
+                                # ch_cc_library adds this after the native sysroot options.
+                                value = [flag for flag in value if flag != '-nostdinc++']
                             if clickhouse_code:
                                 start = value.index(CLICKHOUSE_CODE_FLAGS[0])
                                 value = value[:start] + value[start + len(CLICKHOUSE_CODE_FLAGS):]

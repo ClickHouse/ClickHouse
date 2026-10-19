@@ -17,19 +17,8 @@ ch_cc_library(
         "src/utils/whmac_openssl.c",
         "src/utils/yaotp_uri.c",
     ]) + glob(["src/**/*.h"]),
-    hdrs = [
-        "src/cotp.h",
-        "src/utils/pct.h",
-        "src/utils/secure_zero.h",
-        "src/whash.h",
-        "src/whmac.h",
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = ["src/cotp.h", "src/utils/pct.h", "src/utils/secure_zero.h", "src/whash.h", "src/whmac.h"],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -45,16 +34,6 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_openssl//:crypto"],
     alwayslink = False,
 )

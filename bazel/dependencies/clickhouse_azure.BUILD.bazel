@@ -50,27 +50,15 @@ ch_cc_library(
         "sdk/storage/azure-storage-common/src/**/*.hpp",
         "sdk/storage/azure-storage-files-datalake/src/**/*.hpp",
     ]),
-    hdrs = ([
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
+    hdrs = (glob([
         "sdk/core/azure-core/inc/**/*.hpp",
         "sdk/identity/azure-identity/inc/**/*.hpp",
         "sdk/storage/azure-storage-blobs/inc/**/*.hpp",
         "sdk/storage/azure-storage-common/inc/**/*.hpp",
         "sdk/storage/azure-storage-files-datalake/inc/**/*.hpp",
     ])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-        "-I",
-        repository_path("contrib/libxml2") + "/include",
-        "-I",
-        "contrib/libxml2-cmake/linux_x86_64/include",
-    ],
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/libxml2") + "/include", "-I", "contrib/libxml2-cmake/linux_x86_64/include"],
     includes = [
         "sdk/core/azure-core/inc",
         "sdk/identity/azure-identity/inc",
@@ -92,19 +80,6 @@ ch_cc_library(
         "sdk/storage/azure-storage-blobs/inc",
         "sdk/storage/azure-storage-files-datalake/inc",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_libxml2//:_libxml2",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_libxml2//:_libxml2", "@clickhouse_openssl//:ssl"],
     alwayslink = False,
 )

@@ -1251,34 +1251,14 @@ ch_cc_library(
         "src/time_zone_posix.cc",
         "src/zone_info_source.cc",
     ] + glob(["src/**/*.h"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = glob(["include/**/*.h"]),
+    additional_compiler_inputs = [],
     copts = (
-        [
-            "-w",
-            "-std=c++23",
-            "-nostdinc++",
-            "-I",
-            repository_path("contrib/cctz") + "/include",
-        ]
+        ["-w", "-std=c++23", "-I", repository_path("contrib/cctz") + "/include"]
     ),
     features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        ":tzdata",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":tzdata"],
     alwayslink = False,
 )
 
@@ -1292,9 +1272,7 @@ ch_cc_library(
             ":config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
         ],
     }),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
+    hdrs = [],
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/embedded/contrib/cctz/testdata/zoneinfo/Africa/Abidjan",
@@ -2496,15 +2474,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/embedded/contrib/cctz/testdata/zoneinfo/WET",
             "@clickhouse//bazel:gen/aarch64/embedded/contrib/cctz/testdata/zoneinfo/Zulu",
         ],
-    }) + [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    }),
     copts = (
-        ([
-            "-w",
-            "-std=c++23",
-            "-nostdinc++",
-        ] + select({
+        (["-w", "-std=c++23"] + select({
             "@platforms//cpu:x86_64": [
                 "--embed-dir=$(GENDIR)/bazel/gen/x86_64/embedded",
             ],
@@ -2515,15 +2487,6 @@ ch_cc_library(
     ),
     features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

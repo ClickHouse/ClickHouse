@@ -100,37 +100,10 @@ ch_cc_library(
         "snappy-stubs-internal.cc",
         "snappy.cc",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/snappy-cmake/config.h",
-            ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/snappy-cmake/config.h",
-            ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["**/*.h"]),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/snappy-cmake/config.h", ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/snappy-cmake/config.h", ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]))}),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     includes = [
-        ".",
-    ],
-    local_defines = [
-        "HAVE_CONFIG_H",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = ([
         ".",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -139,16 +112,16 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "config/aarch64/contrib/snappy-cmake",
         ],
-    })),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
+    }),
+    local_defines = [
+        "HAVE_CONFIG_H",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    local_includes = [
+    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

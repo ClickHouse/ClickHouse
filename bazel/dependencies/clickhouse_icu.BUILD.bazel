@@ -14,17 +14,9 @@ alias(
 ch_cc_library(
     name = "_icui18n",
     srcs = glob(["icu4c/source/i18n/*.cpp"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["icu4c/source/i18n/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = glob(["icu4c/source/i18n/**/*.h"]),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -41,35 +33,16 @@ ch_cc_library(
         "icu4c/source/i18n",
         "icu4c/source/common",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":_icudata",
-        ":_icuuc",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":_icuuc"],
     alwayslink = False,
 )
 
 ch_cc_library(
     name = "_icuuc",
     srcs = glob(["icu4c/source/common/*.cpp"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["icu4c/source/common/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = glob(["icu4c/source/common/**/*.h"]),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -85,16 +58,6 @@ ch_cc_library(
     local_includes = [
         "icu4c/source/common",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":_icudata",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":_icudata"],
     alwayslink = False,
 )

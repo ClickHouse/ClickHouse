@@ -82,17 +82,8 @@ ch_cc_library(
         "src/common/**/*.h",
         "src/port/**/*.h",
     ]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-        "@clickhouse//:contrib/postgres-cmake/pg_config.h",
-        "@clickhouse//:contrib/postgres-cmake/pg_config_os.h",
-        "@clickhouse//:contrib/postgres-cmake/pg_config_paths.h",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = ["@clickhouse//:contrib/postgres-cmake/pg_config.h", "@clickhouse//:contrib/postgres-cmake/pg_config_os.h", "@clickhouse//:contrib/postgres-cmake/pg_config_paths.h"],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -117,16 +108,6 @@ ch_cc_library(
         "src/include",
         repository_local_include("contrib/postgres-cmake", "contrib/postgres"),
     ],
-    deps = [
-        ":postgres_headers",
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":postgres_headers"],
     alwayslink = False,
 )

@@ -134,33 +134,25 @@ ch_cc_library(
         "lib/cpp/src/thrift/concurrency/Monitor.cpp",
         "lib/cpp/src/thrift/concurrency/Mutex.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            ":config/x86_64/contrib/thrift-cmake/thrift/config.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "lib/cpp/src/**/*.h",
-            "lib/cpp/src/**/*.tcc",
-        ])),
-        "@platforms//cpu:aarch64": ([
-            ":config/aarch64/contrib/thrift-cmake/thrift/config.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "lib/cpp/src/**/*.h",
-            "lib/cpp/src/**/*.tcc",
-        ])),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/thrift-cmake/thrift/config.h"] + glob([
+        "lib/cpp/src/**/*.h",
+        "lib/cpp/src/**/*.tcc",
+    ])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/thrift-cmake/thrift/config.h"] + glob([
+        "lib/cpp/src/**/*.h",
+        "lib/cpp/src/**/*.tcc",
+    ]))}),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     includes = [
         "lib/cpp/src",
-    ],
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "config/x86_64/contrib/thrift-cmake",
+        ],
+        "@platforms//cpu:aarch64": [
+            "config/aarch64/contrib/thrift-cmake",
+        ],
+    }),
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -170,28 +162,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = (select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/thrift-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/thrift-cmake",
-        ],
-    }) + [
-        "lib/cpp/src",
-    ]),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
+    local_includes = [
     ],
+    deps = ["@clickhouse_boost//:boost_headers", "@clickhouse_openssl//:ssl"],
     alwayslink = False,
 )

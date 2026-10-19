@@ -29,20 +29,12 @@ ch_cc_library(
         "src/reflection.cpp",
         "src/util.cpp",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
+    hdrs = glob([
         "include/**/*.h",
         "src/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     includes = [
         "include",
     ],
@@ -50,16 +42,7 @@ ch_cc_library(
     local_includes = [
         "include",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 

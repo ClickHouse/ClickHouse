@@ -37,18 +37,9 @@ ch_cc_library(
         "src/providers/anthropic/anthropic_stream.cpp",
         "src/providers/anthropic/anthropic_factory.cpp",
     ]) + glob(["src/**/*.h"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++20",
-        "-w",
-        "-nostdinc++",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++20", "-w"],
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -60,9 +51,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
-    deps = (_GENERATED_DEPS_1 + [
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ]),
+    deps = (([":_ai-sdk-cpp-core"])),
     alwayslink = False,
 )
 
@@ -78,16 +67,9 @@ ch_cc_library(
         "src/tools/tool_executor.cpp",
         "src/tools/multi_step_coordinator.cpp",
     ]) + glob(["src/**/*.h"]),
-    hdrs = (["@clickhouse_sysroot//:linux_native_headers"] + glob(["include/**/*.h", "third_party/concurrentqueue-header-only/**/*.h", "third_party/httplib-header-only/**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++20",
-        "-w",
-        "-nostdinc++",
-    ],
+    hdrs = (glob(["include/**/*.h", "third_party/concurrentqueue-header-only/**/*.h", "third_party/httplib-header-only/**/*.h"])),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++20", "-w"],
     local_defines = [
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
@@ -98,20 +80,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_brotli//:_brotli",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ],
+    deps = ["@clickhouse_brotli//:_brotli", "@clickhouse_openssl//:ssl", "@clickhouse_nlohmann_json//:nlohmann_json"],
     alwayslink = False,
 )
 
@@ -124,18 +93,9 @@ ch_cc_library(
         "src/providers/openai/openai_stream.cpp",
         "src/providers/openai/openai_factory.cpp",
     ]) + glob(["src/**/*.h"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++20",
-        "-w",
-        "-nostdinc++",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++20", "-w"],
     local_defines = [
         "AI_SDK_HAS_OPENAI=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -147,8 +107,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
-    deps = (_GENERATED_DEPS_1 + [
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ]),
+    deps = (([":_ai-sdk-cpp-core"])),
     alwayslink = False,
 )

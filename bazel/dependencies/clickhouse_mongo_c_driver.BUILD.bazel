@@ -235,31 +235,14 @@ ch_cc_library(
     srcs = (glob(["src/libbson/src/bson/*.c"]) + [
         "src/libbson/src/jsonsl/jsonsl.c",
     ] + glob(["src/common/src/*.c"])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
-            ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
-            ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/common/src/**/*.h",
-            "src/libbson/src/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h",
-            ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
-            ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/common/src/**/*.h",
-            "src/libbson/src/**/*.h",
-        ]),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h", ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h", ":config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h"] + glob([
+        "src/common/src/**/*.h",
+        "src/libbson/src/**/*.h",
+    ])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h", ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h", ":config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h"] + glob([
+        "src/common/src/**/*.h",
+        "src/libbson/src/**/*.h",
+    ]))}),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -273,9 +256,11 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [
             "config/x86_64/contrib/mongo-c-driver/src/common/src",
+            "config/x86_64/contrib/mongo-c-driver/src/libbson/src",
         ],
         "@platforms//cpu:aarch64": [
             "config/aarch64/contrib/mongo-c-driver/src/common/src",
+            "config/aarch64/contrib/mongo-c-driver/src/libbson/src",
         ],
     }),
     language = "C",
@@ -289,29 +274,10 @@ ch_cc_library(
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
     ],
-    local_includes = ([
-        "src/libbson/src",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/mongo-c-driver/src/libbson/src",
-            "src/common/src",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/mongo-c-driver/src/libbson/src",
-            "src/common/src",
-        ],
-    })),
-    textual_hdrs = ["src/common/src/mlib/vec.th"],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
+    local_includes = [
     ],
+    textual_hdrs = ["src/common/src/mlib/vec.th"],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -320,34 +286,16 @@ ch_cc_library(
     srcs = (glob(["src/libmongoc/src/mongoc/*.c"]) + glob(["src/common/src/*.c"]) + [
         "src/utf8proc-2.11.3/utf8proc.c",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
-            ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
-            ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/libmongoc/src/**/*.h",
-            "src/utf8proc-2.11.3/**/*.h",
-            "src/uthash/**/*.h",
-        ])),
-        "@platforms//cpu:aarch64": ([
-            ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
-            ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
-            ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/libmongoc/src/**/*.h",
-            "src/utf8proc-2.11.3/**/*.h",
-            "src/uthash/**/*.h",
-        ])),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "src/utf8proc-2.11.3/utf8proc_data.c",
-    ],
+    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h", ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h", ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h"] + glob([
+        "src/libmongoc/src/**/*.h",
+        "src/utf8proc-2.11.3/**/*.h",
+        "src/uthash/**/*.h",
+    ])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h", ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h", ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h"] + glob([
+        "src/libmongoc/src/**/*.h",
+        "src/utf8proc-2.11.3/**/*.h",
+        "src/uthash/**/*.h",
+    ]))}),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "src/utf8proc-2.11.3/utf8proc_data.c"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -401,20 +349,6 @@ ch_cc_library(
         ],
     })),
     textual_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_c_ares//:_c-ares",
-        ":_libbson",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_c_ares//:_c-ares", ":_libbson", "@clickhouse_zstd//:_zstd", "@clickhouse_openssl//:ssl"],
     alwayslink = False,
 )

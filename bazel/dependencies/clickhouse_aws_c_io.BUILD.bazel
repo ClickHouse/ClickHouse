@@ -47,12 +47,8 @@ ch_cc_library(
         "source/pkcs11_private.h",
         "source/s2n/s2n_apple_keychain.h",
     ]),
-    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -77,7 +73,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    deps = _GENERATED_DEPS_0,
+    deps = ([":aws_c_io_headers"]),
     alwayslink = False,
 )
 
@@ -90,12 +86,8 @@ ch_cc_library(
         "source/pkcs11_private.h",
         "source/s2n/s2n_apple_keychain.h",
     ],
-    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -121,7 +113,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    deps = _GENERATED_DEPS_0,
+    deps = ([":aws_c_io_headers"]),
     alwayslink = False,
 )
 

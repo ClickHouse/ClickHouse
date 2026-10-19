@@ -43,14 +43,8 @@ ch_cc_library(
         "lib/decompress/zstd_decompress_block.c",
         "lib/decompress/zstd_decompress.c",
     ] + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"])),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["lib/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = glob(["lib/**/*.h"]),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -80,12 +74,8 @@ ch_cc_library(
     srcs = [
         "lib/decompress/huf_decompress_amd64.S",
     ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["lib/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
+    hdrs = glob(["lib/**/*.h"]),
+    additional_compiler_inputs = [],
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
@@ -105,13 +95,5 @@ ch_cc_library(
 
 cc_library(
     name = "_zstd",
-    deps = [
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-        ":_zstd__compile_0",
-        ":_zstd__compile_1",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins", ":_zstd__compile_0", ":_zstd__compile_1"],
 )

@@ -51,21 +51,8 @@ ch_cc_library(
         "src/h3lib/lib/faceijk.c",
         "src/h3lib/lib/baseCells.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/h3/src/h3lib/include/h3api.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["src/h3lib/include/**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/h3/src/h3lib/include/h3api.h",
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob(["src/h3lib/include/**/*.h"]),
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [],
+    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]))}),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -89,15 +76,6 @@ ch_cc_library(
             "config/aarch64/contrib/h3/src/h3lib/include",
         ],
     })),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

@@ -35,14 +35,8 @@ ch_cc_library(
         "src/url.c",
         "src/util.c",
     ] + glob(["src/glib/*.c"]) + glob(["src/unix/*.c"])),
-    hdrs = ([
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["src/**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = (glob(["src/**/*.h"])),
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -62,18 +56,6 @@ ch_cc_library(
         "src/include",
         "src/unix",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_libuv//:_uv",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_libuv//:_uv", "@clickhouse_openssl//:ssl"],
     alwayslink = False,
 )

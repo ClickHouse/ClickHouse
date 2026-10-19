@@ -19,6 +19,8 @@ CLICKHOUSE_CODE_FLAGS = [
 
 def ch_cc_library(
         name,
+        hdrs = [],
+        additional_compiler_inputs = [],
         copts = [],
         clickhouse_code = False,
         language = "CXX",
@@ -33,7 +35,10 @@ def ch_cc_library(
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()
     } | {"//conditions:default": []})
     native_options = {"//conditions:default": []}
+    sysroot_headers = {"//conditions:default": []}
+    sysroot_files = {"//conditions:default": []}
     for arch in arches:
+        cpu = str(Label("@platforms//cpu:" + arch))
         gcc_root = repository_path("contrib/sysroot") + "/linux-" + arch
         options = [
             "--sysroot=" + gcc_root + "/" + arch + "-linux-gnu/libc",
@@ -48,9 +53,13 @@ def ch_cc_library(
                 "$(GENDIR)/" + repository_path("contrib/llvm-project") +
                 "/gen/" + arch + "/libcxx/include/c++/v1",
             ])
-        native_options[str(Label("@platforms//cpu:" + arch))] = options
+        native_options[cpu] = options
+        sysroot_headers[cpu] = [Label("@clickhouse_sysroot//:linux_native_headers")]
+        sysroot_files[cpu] = [Label("@clickhouse_sysroot//:linux_compile_files")]
     cc_library(
         name = name,
+        hdrs = hdrs + select(sysroot_headers),
+        additional_compiler_inputs = additional_compiler_inputs + select(sysroot_files),
         copts = cpu_flags + (CLICKHOUSE_CODE_FLAGS if clickhouse_code else []) + copts +
                 (cmake_prefix_maps(arches) if map_source_files else []) + select(native_options),
         features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,

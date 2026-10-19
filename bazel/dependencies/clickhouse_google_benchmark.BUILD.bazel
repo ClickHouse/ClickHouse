@@ -36,31 +36,14 @@ ch_cc_library(
         "src/sysinfo.cc",
         "src/timers.cc",
     ] + glob(["src/**/*.h"]),
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = glob(["include/**/*.h"]),
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     includes = [
         "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -69,25 +52,9 @@ ch_cc_library(
     srcs = [
         "src/benchmark_main.cc",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    additional_compiler_inputs = [],
+    copts = ["-w", "-std=c++23"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        ":google_benchmark",
-        "@clickhouse//:unwind",
-    ],
+    deps = [":google_benchmark"],
     alwayslink = False,
 )

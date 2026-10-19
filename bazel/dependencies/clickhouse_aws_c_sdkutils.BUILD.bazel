@@ -10,12 +10,8 @@ exports_files([
 ch_cc_library(
     name = "aws_c_sdkutils",
     srcs = glob(["source/*.c"]),
-    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
         "-std=gnu11",

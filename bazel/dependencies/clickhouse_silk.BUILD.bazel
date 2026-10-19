@@ -19,23 +19,9 @@ _GENERATED_LOCAL_DEFINES_0 = [
 ch_cc_library(
     name = "_silk_fibers",
     srcs = (glob(["src/fibers/*.cpp"])) + glob(["src/**/*.h"]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_native_headers",
-        ],
-    }),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "src/util/error.cpp",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = [],
+    additional_compiler_inputs = ["src/util/error.cpp"],
+    copts = ["-w", "-std=c++23"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "include",
@@ -46,53 +32,21 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     })),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_boost//:_boost_context",
-        "@clickhouse_librseq//:_librseq",
-        "@clickhouse_liburing//:_liburing",
-        ":_silk_util",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_boost//:_boost_context", "@clickhouse_liburing//:_liburing", ":_silk_util"],
     alwayslink = False,
 )
 
 ch_cc_library(
     name = "_silk_util",
     srcs = (glob(["src/util/*.cpp"])) + glob(["src/**/*.h"]),
-    hdrs = (["@clickhouse_sysroot//:linux_native_headers"] + glob(["include/**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "src/util/error.cpp",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-    ],
+    hdrs = (glob(["include/**/*.h"])),
+    additional_compiler_inputs = ["src/util/error.cpp"],
+    copts = ["-w", "-std=c++23"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
         "src",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_librseq//:_librseq",
-        "@clickhouse//:clang_rt_builtins",
-        "@clickhouse//:cxx",
-        "@clickhouse//:cxxabi",
-        "@clickhouse//:glibc-compatibility",
-        "@clickhouse//:unwind",
-    ],
+    deps = ["@clickhouse_boost//:boost_headers", "@clickhouse_librseq//:_librseq"],
     alwayslink = False,
 )
