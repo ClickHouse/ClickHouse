@@ -5561,8 +5561,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
           */
         try
         {
-            /// The key of a `key = value` argument is not an identifier, so the argument is never resolved: fold a constant
-            /// value as for a positional argument, otherwise other servers evaluate it in their own context.
+            /// The key of a `key = value` argument does not resolve, so the argument below stays unresolved: fold a constant
+            /// value as positional arguments are, otherwise other servers re-evaluate it in their own context.
             auto * key_value_argument = table_function_argument->as<FunctionNode>();
             if (!positional_arguments_already_resolved && key_value_argument && key_value_argument->getFunctionName() == "equals")
             {
