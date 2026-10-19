@@ -849,6 +849,118 @@ bool compareSupportedNumericConstant(
     return false;
 }
 
+bool isNativeArrayNothingType(const DataTypePtr & type)
+{
+    const auto * array_type = type ? typeid_cast<const DataTypeArray *>(type.get()) : nullptr;
+    if (!array_type || typeid(*array_type) != typeid(DataTypeArray) || type->getCustomName() || type->getCustomSerialization()
+        || array_type->getNumberOfChildren() != 1)
+        return false;
+
+    const auto & nested_type = array_type->getNestedType();
+    const IDataType * nested_type_raw = nested_type.get();
+    return nested_type_raw && typeid(*nested_type_raw) == typeid(DataTypeNothing) && !nested_type->getCustomName()
+        && !nested_type->getCustomSerialization();
+}
+
+bool compareNativeArrayNothingConstants(
+    const DataTypePtr & left_type,
+    const IColumn & left_data,
+    const DataTypePtr & right_type,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    if (!isNativeArrayNothingType(left_type) || !isNativeArrayNothingType(right_type) || !sameType(left_type, right_type, budget))
+        return false;
+
+    const auto * left_array = typeid_cast<const ColumnArray *>(&left_data);
+    const auto * right_array = typeid_cast<const ColumnArray *>(&right_data);
+    if (!left_array || !right_array || typeid(left_data) != typeid(ColumnArray) || typeid(right_data) != typeid(ColumnArray)
+        || left_array->size() != 1 || right_array->size() != 1 || left_array->getOffsets().size() != 1
+        || right_array->getOffsets().size() != 1 || left_array->getOffsets()[0] != 0 || right_array->getOffsets()[0] != 0)
+        return false;
+
+    const IColumn * left_nested = left_array->getDataPtr().get();
+    const IColumn * right_nested = right_array->getDataPtr().get();
+    if (!left_nested || !right_nested || typeid(*left_nested) != typeid(ColumnNothing) || typeid(*right_nested) != typeid(ColumnNothing)
+        || left_nested->size() != 0 || right_nested->size() != 0 || !budget.consume(4))
+        return false;
+
+    return true;
+}
+
+bool isSupportedTupleConstantLeafType(const DataTypePtr & type)
+{
+    const IDataType * type_raw = type.get();
+    if (!type_raw || type_raw->getCustomName() || type_raw->getCustomSerialization())
+        return false;
+
+    return isStringType(type) || typeid(*type_raw) == typeid(DataTypeUInt8) || typeid(*type_raw) == typeid(DataTypeUInt16)
+        || typeid(*type_raw) == typeid(DataTypeUInt32) || typeid(*type_raw) == typeid(DataTypeUInt64)
+        || typeid(*type_raw) == typeid(DataTypeUInt128) || typeid(*type_raw) == typeid(DataTypeUInt256)
+        || typeid(*type_raw) == typeid(DataTypeInt8) || typeid(*type_raw) == typeid(DataTypeInt16)
+        || typeid(*type_raw) == typeid(DataTypeInt32) || typeid(*type_raw) == typeid(DataTypeInt64)
+        || typeid(*type_raw) == typeid(DataTypeInt128) || typeid(*type_raw) == typeid(DataTypeInt256)
+        || typeid(*type_raw) == typeid(DataTypeFloat32) || typeid(*type_raw) == typeid(DataTypeFloat64);
+}
+
+bool compareSupportedTupleLeafValues(
+    const DataTypePtr & left_type,
+    const IColumn & left_data,
+    const DataTypePtr & right_type,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    if (!isSupportedTupleConstantLeafType(left_type) || !isSupportedTupleConstantLeafType(right_type)
+        || !sameType(left_type, right_type, budget))
+        return false;
+
+    if (isStringType(left_type))
+    {
+        const auto * left_string = typeid_cast<const ColumnString *>(&left_data);
+        const auto * right_string = typeid_cast<const ColumnString *>(&right_data);
+        return left_string && right_string && compareColumnStringStorage(*left_string, *right_string, 1, budget);
+    }
+
+    return compareSupportedNumericConstant(left_type, right_type, left_data, right_data, budget);
+}
+
+bool compareOneLevelTupleConstants(
+    const DataTypePtr & left_type,
+    const IColumn & left_data,
+    const DataTypePtr & right_type,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    const auto * left_tuple_type = left_type ? typeid_cast<const DataTypeTuple *>(left_type.get()) : nullptr;
+    const auto * right_tuple_type = right_type ? typeid_cast<const DataTypeTuple *>(right_type.get()) : nullptr;
+    if (!left_tuple_type || !right_tuple_type || left_type->getCustomName() || right_type->getCustomName()
+        || left_type->getCustomSerialization() || right_type->getCustomSerialization() || !sameType(left_type, right_type, budget))
+        return false;
+
+    const auto & left_element_types = left_tuple_type->getElements();
+    const auto & right_element_types = right_tuple_type->getElements();
+    if (left_element_types.empty() || left_element_types.size() != right_element_types.size())
+        return false;
+
+    const auto * left_tuple = typeid_cast<const ColumnTuple *>(&left_data);
+    const auto * right_tuple = typeid_cast<const ColumnTuple *>(&right_data);
+    if (!left_tuple || !right_tuple || typeid(left_data) != typeid(ColumnTuple) || typeid(right_data) != typeid(ColumnTuple)
+        || left_tuple->size() != 1 || right_tuple->size() != 1 || left_tuple->getColumns().size() != left_element_types.size()
+        || right_tuple->getColumns().size() != right_element_types.size() || !budget.consume(left_element_types.size()))
+        return false;
+
+    for (size_t i = 0; i < left_element_types.size(); ++i)
+    {
+        const IColumn & left_element = left_tuple->getColumn(i);
+        const IColumn & right_element = right_tuple->getColumn(i);
+        if (left_element.size() != 1 || right_element.size() != 1
+            || !compareSupportedTupleLeafValues(left_element_types[i], left_element, right_element_types[i], right_element, budget))
+            return false;
+    }
+
+    return true;
+}
+
 bool compareSupportedConstantValues(
     const DataTypePtr & left_type,
     const IColumn & left_data,
@@ -888,6 +1000,17 @@ bool compareSupportedConstantValues(
             && left_null_map[0] == ColumnNullable::IS_NULL_MASK
             && right_null_map[0] == ColumnNullable::IS_NULL_MASK;
     }
+
+    const bool left_is_tuple = left_type && typeid_cast<const DataTypeTuple *>(left_type.get());
+    const bool right_is_tuple = right_type && typeid_cast<const DataTypeTuple *>(right_type.get());
+    if (left_is_tuple || right_is_tuple)
+        return left_is_tuple && right_is_tuple && compareOneLevelTupleConstants(left_type, left_data, right_type, right_data, budget);
+
+    const bool left_is_array_nothing = isNativeArrayNothingType(left_type);
+    const bool right_is_array_nothing = isNativeArrayNothingType(right_type);
+    if (left_is_array_nothing || right_is_array_nothing)
+        return left_is_array_nothing && right_is_array_nothing
+            && compareNativeArrayNothingConstants(left_type, left_data, right_type, right_data, budget);
 
     if (compareSupportedNumericConstant(left_type, right_type, left_data, right_data, budget))
         return true;
@@ -1279,28 +1402,251 @@ bool compareLambdaCarriers(
 
 const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_name)
 {
-    static const auto handles = []
-    {
-        const auto distinct = FunctionFactory::instance().tryGet("arrayDistinct", {});
-        const auto concat = FunctionFactory::instance().tryGet("arrayConcat", {});
-        const auto empty_array_to_single = FunctionFactory::instance().tryGet("emptyArrayToSingle", {});
-        const auto array_map = FunctionFactory::instance().tryGet("arrayMap", {});
-        return std::array<const FunctionCreator *, 4>{
-            distinct ? distinct->getFactoryHandle() : nullptr,
-            concat ? concat->getFactoryHandle() : nullptr,
-            empty_array_to_single ? empty_array_to_single->getFactoryHandle() : nullptr,
-            array_map ? array_map->getFactoryHandle() : nullptr};
-    }();
+    return FunctionFactory::instance().tryGetCanonicalCreator(function_name);
+}
 
-    if (function_name == "arrayDistinct")
-        return handles[0];
-    if (function_name == "arrayConcat")
-        return handles[1];
-    if (function_name == "emptyArrayToSingle")
-        return handles[2];
-    if (function_name == "arrayMap")
-        return handles[3];
+const char * getAuditedDirectFunctionName(const FunctionCreator * handle)
+{
+    /// This is deliberately a closed set. A registered function handle is not enough to
+    /// certify an empty/default semantic hash: its implementation must be admitted here.
+    static constexpr std::array<const char *, 25> names{"lower",        "toYear",         "plus",          "modulo",       "length",
+                                                        "arrayReverse", "arraySort",      "tuple",         "cityHash64",   "arraySlice",
+                                                        "arrayResize",  "arrayIntersect", "mapKeys",       "if",           "isNull",
+                                                        "arraySum",     "arrayMap",       "arrayDistinct", "arrayConcat",  "CAST",
+                                                        "toString",     "toDecimal32",    "toDecimal64",   "toDecimal128", "toDecimal256"};
+
+    if (!handle)
+        return nullptr;
+
+    const auto & factory = FunctionFactory::instance();
+    for (const char * name : names)
+        if (factory.tryGetCanonicalCreator(name) == handle)
+            return name;
     return nullptr;
+}
+
+bool isPrimitiveIntegerType(const DataTypePtr & type)
+{
+    const IDataType * type_raw = type.get();
+    if (!type_raw || type_raw->getCustomName() || type_raw->getCustomSerialization())
+        return false;
+
+    return typeid(*type_raw) == typeid(DataTypeUInt8) || typeid(*type_raw) == typeid(DataTypeUInt16)
+        || typeid(*type_raw) == typeid(DataTypeUInt32) || typeid(*type_raw) == typeid(DataTypeUInt64)
+        || typeid(*type_raw) == typeid(DataTypeUInt128) || typeid(*type_raw) == typeid(DataTypeUInt256)
+        || typeid(*type_raw) == typeid(DataTypeInt8) || typeid(*type_raw) == typeid(DataTypeInt16)
+        || typeid(*type_raw) == typeid(DataTypeInt32) || typeid(*type_raw) == typeid(DataTypeInt64)
+        || typeid(*type_raw) == typeid(DataTypeInt128) || typeid(*type_raw) == typeid(DataTypeInt256);
+}
+
+bool isPrimitiveNumericType(const DataTypePtr & type)
+{
+    const IDataType * type_raw = type.get();
+    return isPrimitiveIntegerType(type)
+        || (type_raw && !type_raw->getCustomName() && !type_raw->getCustomSerialization()
+            && (typeid(*type_raw) == typeid(DataTypeFloat32) || typeid(*type_raw) == typeid(DataTypeFloat64)));
+}
+
+bool isDecimalType(const DataTypePtr & type)
+{
+    const IDataType * type_raw = type.get();
+    return type_raw && !type_raw->getCustomName() && !type_raw->getCustomSerialization()
+        && (typeid(*type_raw) == typeid(DataTypeDecimal32) || typeid(*type_raw) == typeid(DataTypeDecimal64)
+            || typeid(*type_raw) == typeid(DataTypeDecimal128) || typeid(*type_raw) == typeid(DataTypeDecimal256));
+}
+
+bool isSupportedTupleValueType(const DataTypePtr & type, size_t depth, ExpressionMatchBudget & budget)
+{
+    if (!type || type->getCustomName() || type->getCustomSerialization() || !budget.consume())
+        return false;
+
+    if (isSupportedLeafType(*type))
+        return true;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type || depth == 0 || tuple_type->getElements().empty() || !budget.consume(tuple_type->getElements().size()))
+        return false;
+
+    for (const auto & element_type : tuple_type->getElements())
+        if (!isSupportedTupleValueType(element_type, depth - 1, budget))
+            return false;
+    return true;
+}
+
+bool isSupportedIfValueType(const DataTypePtr & type)
+{
+    if (!type || type->getCustomName() || type->getCustomSerialization())
+        return false;
+    if (isSupportedLeafType(*type))
+        return true;
+    if (isSupportedBloomFilterArrayType(type))
+        return true;
+    if (isNullableNothingType(type))
+        return true;
+    const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get());
+    return nullable_type && isSupportedLeafType(*nullable_type->getNestedType());
+}
+
+bool isNativeStringType(const DataTypePtr & type)
+{
+    const IDataType * type_raw = type.get();
+    return type_raw && typeid(*type_raw) == typeid(DataTypeString) && !type_raw->getCustomName() && !type_raw->getCustomSerialization();
+}
+
+bool isSupportedIfNullableStringPromotion(
+    const DataTypePtr & first, const DataTypePtr & second, const DataTypePtr & result, ExpressionMatchBudget & budget)
+{
+    const DataTypePtr * string_branch = nullptr;
+    if (isNullableNothingType(first) && isNativeStringType(second))
+        string_branch = &second;
+    else if (isNativeStringType(first) && isNullableNothingType(second))
+        string_branch = &first;
+    else
+        return false;
+
+    const IDataType * result_raw = result.get();
+    const auto * nullable_result = result_raw ? typeid_cast<const DataTypeNullable *>(result_raw) : nullptr;
+    if (!nullable_result || typeid(*result_raw) != typeid(DataTypeNullable) || result_raw->getCustomName()
+        || result_raw->getCustomSerialization())
+        return false;
+
+    const DataTypePtr & nested_result = nullable_result->getNestedType();
+    return isNativeStringType(nested_result) && sameType(*string_branch, nested_result, budget);
+}
+
+bool isSupportedArrayMapInputType(const DataTypePtr & type)
+{
+    const auto * array_type
+        = type && !type->getCustomName() && !type->getCustomSerialization() ? typeid_cast<const DataTypeArray *>(type.get()) : nullptr;
+    if (!array_type)
+        return false;
+
+    if (isSupportedBloomFilterArrayType(type))
+        return true;
+
+    const auto nested_type = array_type->getNestedType();
+    return nested_type && !nested_type->getCustomName() && !nested_type->getCustomSerialization()
+        && isSupportedBloomFilterArrayType(nested_type);
+}
+
+bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase & function, ExpressionMatchBudget & budget)
+{
+    const auto & arguments = function.getArgumentTypes();
+    const auto & result = function.getResultType();
+    const auto is_array = [](const DataTypePtr & type) { return isSupportedBloomFilterArrayType(type); };
+    const auto same_argument_and_result
+        = [&](size_t argument) { return argument < arguments.size() && sameType(arguments[argument], result, budget); };
+
+    if (name == "lower")
+        return arguments.size() == 1 && isStringType(arguments[0]) && isStringType(result);
+    if (name == "toYear")
+    {
+        if (arguments.size() != 1 || !typeid_cast<const DataTypeUInt16 *>(result.get()))
+            return false;
+        if (typeid_cast<const DataTypeDate *>(arguments[0].get()) || typeid_cast<const DataTypeDate32 *>(arguments[0].get()))
+            return true;
+        const auto * datetime = typeid_cast<const DataTypeDateTime *>(arguments[0].get());
+        return datetime && datetime->hasExplicitTimeZone();
+    }
+    if (name == "plus")
+        return arguments.size() == 2 && isPrimitiveNumericType(arguments[0]) && isPrimitiveNumericType(arguments[1])
+            && isPrimitiveNumericType(result);
+    if (name == "modulo")
+        return arguments.size() == 2 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(arguments[1])
+            && isPrimitiveIntegerType(result);
+    if (name == "length")
+        return arguments.size() == 1 && isArrayOfStringType(arguments[0]) && typeid_cast<const DataTypeUInt64 *>(result.get());
+    if (name == "arrayReverse" || name == "arraySort")
+        return arguments.size() == 1 && isArrayOfStringType(arguments[0]) && same_argument_and_result(0);
+    if (name == "tuple")
+    {
+        const auto * tuple_result = typeid_cast<const DataTypeTuple *>(result.get());
+        if (!tuple_result || arguments.empty() || arguments.size() != tuple_result->getElements().size()
+            || !budget.consume(arguments.size()))
+            return false;
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (!isSupportedTupleValueType(arguments[i], 3, budget) || !sameType(arguments[i], tuple_result->getElements()[i], budget))
+                return false;
+        return true;
+    }
+    if (name == "cityHash64")
+    {
+        if (arguments.empty() || !typeid_cast<const DataTypeUInt64 *>(result.get()) || !budget.consume(arguments.size()))
+            return false;
+        for (const auto & argument : arguments)
+            if (!isSupportedTupleValueType(argument, 3, budget) && !isNativeArrayNothingType(argument))
+                return false;
+        return true;
+    }
+    if (name == "arraySlice" || name == "arrayResize")
+        return arguments.size() == 2 && typeid_cast<const DataTypeArray *>(arguments[0].get())
+            && typeid_cast<const DataTypeUInt64 *>(typeid_cast<const DataTypeArray *>(arguments[0].get())->getNestedType().get())
+            && isPrimitiveIntegerType(arguments[1]) && same_argument_and_result(0);
+    if (name == "arrayIntersect")
+    {
+        if (arguments.size() < 2 || !is_array(result) || !same_argument_and_result(0) || !budget.consume(arguments.size()))
+            return false;
+        for (size_t i = 1; i < arguments.size(); ++i)
+            if (!is_array(arguments[i]) || !sameType(arguments[i], result, budget))
+                return false;
+        return true;
+    }
+    if (name == "mapKeys")
+    {
+        const auto * map_type = arguments.size() == 1 ? typeid_cast<const DataTypeMap *>(arguments[0].get()) : nullptr;
+        const auto * result_array = typeid_cast<const DataTypeArray *>(result.get());
+        return map_type && result_array && isStringType(map_type->getKeyType())
+            && typeid_cast<const DataTypeUInt64 *>(map_type->getValueType().get()) && isStringType(result_array->getNestedType());
+    }
+    if (name == "if")
+    {
+        if (arguments.size() != 3 || !isPrimitiveIntegerType(arguments[0]) || !isSupportedIfValueType(arguments[1])
+            || !isSupportedIfValueType(arguments[2]))
+            return false;
+
+        if (sameType(arguments[1], arguments[2], budget) && sameType(arguments[1], result, budget))
+            return true;
+
+        return isSupportedIfNullableStringPromotion(arguments[1], arguments[2], result, budget);
+    }
+    if (name == "isNull")
+    {
+        const auto * nullable = arguments.size() == 1 ? typeid_cast<const DataTypeNullable *>(arguments[0].get()) : nullptr;
+        const IDataType * nested_type_raw = nullable ? nullable->getNestedType().get() : nullptr;
+        return nullable && nested_type_raw && typeid(*nested_type_raw) == typeid(DataTypeNothing)
+            && typeid_cast<const DataTypeUInt8 *>(result.get());
+    }
+    if (name == "arraySum")
+    {
+        const auto * array = arguments.size() == 1 ? typeid_cast<const DataTypeArray *>(arguments[0].get()) : nullptr;
+        return array && typeid_cast<const DataTypeUInt64 *>(array->getNestedType().get())
+            && typeid_cast<const DataTypeUInt64 *>(result.get());
+    }
+    if (name == "arrayMap")
+    {
+        return arguments.size() == 2 && typeid_cast<const DataTypeFunction *>(arguments[0].get())
+            && isSupportedArrayMapInputType(arguments[1]) && is_array(result);
+    }
+    if (name == "arrayDistinct")
+        return arguments.size() == 1 && is_array(arguments[0]) && same_argument_and_result(0);
+    if (name == "arrayConcat")
+    {
+        if (arguments.size() < 2 || !is_array(result) || !budget.consume(arguments.size()))
+            return false;
+        for (const auto & argument : arguments)
+            if ((!is_array(argument) && !isNativeArrayNothingType(argument))
+                || (!isNativeArrayNothingType(argument) && !sameType(argument, result, budget)))
+                return false;
+        return true;
+    }
+    if (name == "toString")
+        return arguments.size() == 1 && isStringType(result) && (isPrimitiveNumericType(arguments[0]) || isDecimalType(arguments[0]));
+    if (name == "toDecimal32" || name == "toDecimal64" || name == "toDecimal128" || name == "toDecimal256")
+        return arguments.size() == 2 && (isPrimitiveNumericType(arguments[0]) || isDecimalType(arguments[0]))
+            && isPrimitiveIntegerType(arguments[1]) && isDecimalType(result);
+    if (name == "CAST")
+        return arguments.size() == 2;
+    return false;
 }
 
 bool isSupportedArrayFunctionPair(
@@ -1407,17 +1753,22 @@ bool isSupportedDirectFunctionPair(
     if (!left_handle || right.function_base->getFactoryHandle() != left_handle)
         return false;
 
-    const String left_name = left.function_base->getName();
-    const String right_name = right.function_base->getName();
-    if (left_name.size() != right_name.size() || !budget.consume(left_name.size()) || !budget.consume(right_name.size())
-        || left_name != right_name)
+    /// Resolve the implementation through the native registry before invoking any function virtuals.
+    /// Unknown creators may inspect captured values from determinism or hash hooks.
+    const char * audited_name = getAuditedDirectFunctionName(left_handle);
+    if (!audited_name)
         return false;
+    const String function_name(audited_name);
 
     const auto & left_argument_types = left.function_base->getArgumentTypes();
     const auto & right_argument_types = right.function_base->getArgumentTypes();
     if (left_argument_types.size() != right_argument_types.size()
         || left_argument_types.size() != left.children.size() || right_argument_types.size() != right.children.size()
         || !budget.consume(left_argument_types.size()) || !budget.consume(right_argument_types.size()))
+        return false;
+
+    if (!isSupportedDirectFunctionSignature(function_name, *left.function_base, budget)
+        || !isSupportedDirectFunctionSignature(function_name, *right.function_base, budget))
         return false;
 
     bool has_lambda_argument = false;
@@ -1433,8 +1784,7 @@ bool isSupportedDirectFunctionPair(
     /// Only the registered arrayMap wrapper has bounded static safety hooks for a lambda argument.
     /// Other higher-order wrappers can inspect the closure body in these virtual methods.
     if (has_lambda_argument
-        && (inside_lambda_body || left_name != "arrayMap"
-            || left_handle != getCanonicalArrayFunctionHandle("arrayMap")))
+        && (inside_lambda_body || function_name != "arrayMap" || left_handle != getCanonicalArrayFunctionHandle("arrayMap")))
         return false;
 
     if (left.function_base->isStateful() || right.function_base->isStateful()

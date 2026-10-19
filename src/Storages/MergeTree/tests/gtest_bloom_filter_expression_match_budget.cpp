@@ -3,6 +3,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNothing.h>
@@ -12,11 +13,13 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -145,6 +148,192 @@ bool canPruneDecimalToStringIn(const DataTypePtr & query_decimal_type, const Dat
 
     MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
     return !condition.alwaysUnknownOrTrue();
+}
+
+struct TestFormatDateTimeMatch
+{
+    bool can_prune;
+    bool query_is_direct_format_date_time;
+    bool index_is_direct_format_date_time;
+    bool output_name_matches;
+};
+
+TestFormatDateTimeMatch canPruneFormatDateTimeIn()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto datetime_type = std::make_shared<DataTypeDateTime>("UTC");
+    const auto string_type = std::make_shared<DataTypeString>();
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_input = query_dag.addInput("ts", datetime_type);
+    const auto & index_input = index_dag.addInput("ts", datetime_type);
+    const auto & query_format = query_dag.addColumn(string_type->createColumnConst(0, Field(String("%F"))), string_type, "format", true);
+    const auto & index_format = index_dag.addColumn(string_type->createColumnConst(0, Field(String("%F"))), string_type, "format", true);
+    const auto format_date_time = FunctionFactory::instance().get("formatDateTime", context);
+    const auto & query_formatted = query_dag.addFunction(format_date_time, {&query_input, &query_format}, "query_formatted");
+    const auto & index_formatted = index_dag.addFunction(format_date_time, {&index_input, &index_format}, "index_formatted");
+
+    const auto output_name = RPNBuilderTreeNode(&query_formatted, context).getColumnName();
+    const auto & index_output = index_dag.addAlias(index_formatted, output_name);
+    index_dag.getOutputs().push_back(&index_output);
+    Block header(ColumnsWithTypeAndName{{string_type->createColumn(), string_type, output_name}});
+
+    auto set_value = ColumnString::create();
+    set_value->insertData("2020-01-01", 10);
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), string_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node
+        = query_dag.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("in", context), {&query_formatted, &set_node}, "predicate");
+
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    const auto * canonical_creator = FunctionFactory::instance().tryGetCanonicalCreator("formatDateTime");
+    return {
+        .can_prune = !condition.alwaysUnknownOrTrue(),
+        .query_is_direct_format_date_time = query_formatted.function_base->getFactoryHandle() == canonical_creator,
+        .index_is_direct_format_date_time = index_formatted.function_base->getFactoryHandle() == canonical_creator,
+        .output_name_matches = output_name == RPNBuilderTreeNode(&index_formatted, context).getColumnName(),
+    };
+}
+
+bool canPruneLowerStringIn()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto string_type = std::make_shared<DataTypeString>();
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_input = query_dag.addInput("s", string_type);
+    const auto & index_input = index_dag.addInput("s", string_type);
+    const auto lower = FunctionFactory::instance().get("lower", context);
+    const auto & query_lower = query_dag.addFunction(lower, {&query_input}, "query_lower");
+    const auto & index_lower = index_dag.addFunction(lower, {&index_input}, "index_lower");
+    const auto output_name = RPNBuilderTreeNode(&query_lower, context).getColumnName();
+    const auto & index_output = index_dag.addAlias(index_lower, output_name);
+    index_dag.getOutputs().push_back(&index_output);
+    Block header(ColumnsWithTypeAndName{{string_type->createColumn(), string_type, output_name}});
+
+    auto set_value = ColumnString::create();
+    set_value->insertData("x", 1);
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), string_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node
+        = query_dag.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate = query_dag.addFunction(FunctionFactory::instance().get("in", context), {&query_lower, &set_node}, "predicate");
+
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
+struct TestConstantArgumentInResult
+{
+    bool can_prune;
+    bool query_is_native_tuple_constant;
+    bool index_is_native_tuple_constant;
+    bool query_is_native_array_nothing;
+    bool index_is_native_array_nothing;
+};
+
+bool isNativeTupleConstant(const ActionsDAG::Node & node)
+{
+    const auto * tuple_type = node.result_type ? typeid_cast<const DataTypeTuple *>(node.result_type.get()) : nullptr;
+    if (!tuple_type || typeid(*tuple_type) != typeid(DataTypeTuple) || node.result_type->getCustomName()
+        || node.result_type->getCustomSerialization())
+        return false;
+
+    const auto * constant = node.column ? typeid_cast<const ColumnConst *>(node.column.get()) : nullptr;
+    if (!constant)
+        return false;
+
+    const IColumn & data = constant->getDataColumn();
+    const auto * tuple = typeid_cast<const ColumnTuple *>(&data);
+    if (!tuple || typeid(data) != typeid(ColumnTuple) || tuple->size() != 1
+        || tuple->getColumns().size() != tuple_type->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < tuple->getColumns().size(); ++i)
+        if (tuple->getColumn(i).size() != 1)
+            return false;
+
+    return true;
+}
+
+bool isNativeEmptyArrayNothingConstant(const ActionsDAG::Node & node)
+{
+    const auto * array_type = node.result_type ? typeid_cast<const DataTypeArray *>(node.result_type.get()) : nullptr;
+    if (!array_type || typeid(*array_type) != typeid(DataTypeArray) || node.result_type->getCustomName()
+        || node.result_type->getCustomSerialization())
+        return false;
+
+    const auto & nested_type = array_type->getNestedType();
+    const IDataType * nested_type_raw = nested_type.get();
+    if (!nested_type_raw || typeid(*nested_type_raw) != typeid(DataTypeNothing) || nested_type->getCustomName()
+        || nested_type->getCustomSerialization())
+        return false;
+
+    const auto * constant = node.column ? typeid_cast<const ColumnConst *>(node.column.get()) : nullptr;
+    if (!constant)
+        return false;
+
+    const IColumn & data = constant->getDataColumn();
+    const auto * array = typeid_cast<const ColumnArray *>(&data);
+    if (!array || typeid(data) != typeid(ColumnArray) || array->size() != 1 || array->getOffsets().size() != 1
+        || array->getOffsets()[0] != 0)
+        return false;
+
+    const IColumn * nested = array->getDataPtr().get();
+    return nested && typeid(*nested) == typeid(ColumnNothing) && nested->size() == 0;
+}
+
+TestConstantArgumentInResult canPruneCityHash64WithConstantArgument(
+    const DataTypePtr & query_constant_type,
+    const Field & query_constant_value,
+    const DataTypePtr & index_constant_type,
+    const Field & index_constant_value)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & index_input = index_dag.addInput("x", uint64_type);
+    const auto & query_constant
+        = query_dag.addColumn(query_constant_type->createColumnConst(0, query_constant_value), query_constant_type, "query_constant", true);
+    const auto & index_constant
+        = index_dag.addColumn(index_constant_type->createColumnConst(0, index_constant_value), index_constant_type, "index_constant", true);
+    const auto city_hash = FunctionFactory::instance().get("cityHash64", context);
+    const auto & query_hash = query_dag.addFunction(city_hash, {&query_input, &query_constant}, "query_hash");
+    const auto & index_hash = index_dag.addFunction(city_hash, {&index_input, &index_constant}, "index_hash");
+
+    /// Force the index output name to the query expression name so negative controls exercise typed constant
+    /// comparison rather than succeeding or failing because the expression names differ.
+    const auto output_name = RPNBuilderTreeNode(&query_hash, context).getColumnName();
+    const auto & index_output = index_dag.addAlias(index_hash, output_name);
+    index_dag.getOutputs().push_back(&index_output);
+
+    auto set_value = ColumnUInt64::create();
+    set_value->insertValue(0);
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), uint64_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node
+        = query_dag.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate = query_dag.addFunction(FunctionFactory::instance().get("in", context), {&query_hash, &set_node}, "predicate");
+
+    Block header(ColumnsWithTypeAndName{{uint64_type->createColumn(), uint64_type, output_name}});
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return {
+        .can_prune = !condition.alwaysUnknownOrTrue(),
+        .query_is_native_tuple_constant = isNativeTupleConstant(query_constant),
+        .index_is_native_tuple_constant = isNativeTupleConstant(index_constant),
+        .query_is_native_array_nothing = isNativeEmptyArrayNothingConstant(query_constant),
+        .index_is_native_array_nothing = isNativeEmptyArrayNothingConstant(index_constant),
+    };
 }
 
 bool canPruneLambdaInWithFunctionCount(size_t function_count)
@@ -568,8 +757,7 @@ TestNullableNothingInResult canPruneNullableNothingIn(
     const auto query_name = RPNBuilderTreeNode(query_expression, context).getColumnName();
     const auto index_name = RPNBuilderTreeNode(index_expression, context).getColumnName();
     /// Make direct-IN reach the structural comparison even when the natural names differ.
-    const String output_name = query_name;
-    const auto & index_output = index_dag.addAlias(*index_expression, output_name);
+    const auto & index_output = index_dag.addAlias(*index_expression, query_name);
     index_dag.getOutputs().push_back(&index_output);
 
     auto set_value = array_type->createColumn();
@@ -1175,4 +1363,109 @@ TEST(MergeTreeIndexBloomFilter, DeclinesNestedNativeLambdaInBodyAndCaptureExpres
     EXPECT_TRUE(nested_capture.query_inner_is_function_capture);
     EXPECT_TRUE(nested_capture.index_inner_is_function_capture);
     EXPECT_FALSE(nested_capture.can_prune);
+}
+
+TEST(MergeTreeIndexBloomFilter, MatchesOnlyExactOneLevelTupleConstantsInDirectIN)
+{
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint64_type, string_type});
+    const Field tuple_value = Tuple{Field(UInt64(17)), Field(String("last"))};
+
+    const auto equal = canPruneCityHash64WithConstantArgument(tuple_type, tuple_value, tuple_type, tuple_value);
+    EXPECT_TRUE(equal.query_is_native_tuple_constant);
+    EXPECT_TRUE(equal.index_is_native_tuple_constant);
+    EXPECT_TRUE(equal.can_prune);
+
+    const Field changed_last_value = Tuple{Field(UInt64(17)), Field(String("changed"))};
+    EXPECT_FALSE(canPruneCityHash64WithConstantArgument(tuple_type, tuple_value, tuple_type, changed_last_value).can_prune);
+
+    const auto uint8_type = std::make_shared<DataTypeUInt8>();
+    const auto int8_type = std::make_shared<DataTypeInt8>();
+    const auto uint8_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint8_type, string_type});
+    const auto int8_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int8_type, string_type});
+    const Field uint8_tuple_value = Tuple{Field(UInt64(17)), Field(String("last"))};
+    const Field int8_tuple_value = Tuple{Field(Int64(17)), Field(String("last"))};
+    EXPECT_FALSE(canPruneCityHash64WithConstantArgument(uint8_tuple_type, uint8_tuple_value, int8_tuple_type, int8_tuple_value).can_prune);
+
+    const auto nested_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeTuple>(DataTypes{uint64_type})});
+    const Field nested_tuple_value = Tuple{Field(Tuple{Field(UInt64(17))})};
+    EXPECT_FALSE(
+        canPruneCityHash64WithConstantArgument(nested_tuple_type, nested_tuple_value, nested_tuple_type, nested_tuple_value).can_prune);
+
+    const auto array_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeArray>(uint64_type)});
+    const Field array_tuple_value = Tuple{Field(Array{Field(UInt64(17))})};
+    EXPECT_FALSE(
+        canPruneCityHash64WithConstantArgument(array_tuple_type, array_tuple_value, array_tuple_type, array_tuple_value).can_prune);
+
+    const auto nullable_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeNullable>(uint64_type)});
+    const Field nullable_tuple_value = Tuple{Field(Null())};
+    EXPECT_FALSE(
+        canPruneCityHash64WithConstantArgument(nullable_tuple_type, nullable_tuple_value, nullable_tuple_type, nullable_tuple_value)
+            .can_prune);
+
+    auto custom_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint64_type, string_type});
+    custom_tuple_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("CustomTuple")));
+    EXPECT_FALSE(canPruneCityHash64WithConstantArgument(custom_tuple_type, tuple_value, custom_tuple_type, tuple_value).can_prune);
+}
+
+TEST(MergeTreeIndexBloomFilter, SharesExpressionMatchBudgetAcrossTupleConstantLeaves)
+{
+    const auto string_type = std::make_shared<DataTypeString>();
+    const String leaf_value(700, 'x');
+
+    const auto two_leaf_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type});
+    const Field two_leaf_tuple_value = Tuple{Field(leaf_value), Field(leaf_value)};
+    const auto below_budget
+        = canPruneCityHash64WithConstantArgument(two_leaf_tuple_type, two_leaf_tuple_value, two_leaf_tuple_type, two_leaf_tuple_value);
+    EXPECT_TRUE(below_budget.query_is_native_tuple_constant);
+    EXPECT_TRUE(below_budget.index_is_native_tuple_constant);
+    EXPECT_TRUE(below_budget.can_prune);
+
+    const auto three_leaf_tuple_type = std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type, string_type});
+    const Field three_leaf_tuple_value = Tuple{Field(leaf_value), Field(leaf_value), Field(leaf_value)};
+    const auto above_budget = canPruneCityHash64WithConstantArgument(
+        three_leaf_tuple_type, three_leaf_tuple_value, three_leaf_tuple_type, three_leaf_tuple_value);
+    EXPECT_TRUE(above_budget.query_is_native_tuple_constant);
+    EXPECT_TRUE(above_budget.index_is_native_tuple_constant);
+    EXPECT_FALSE(above_budget.can_prune);
+}
+
+TEST(MergeTreeIndexBloomFilter, MatchesOnlyNativeEmptyArrayNothingConstants)
+{
+    const auto nothing_type = std::make_shared<DataTypeNothing>();
+    const auto array_nothing_type = std::make_shared<DataTypeArray>(nothing_type);
+    const Field empty_array = Array{};
+
+    const auto native_equal = canPruneCityHash64WithConstantArgument(array_nothing_type, empty_array, array_nothing_type, empty_array);
+    EXPECT_TRUE(native_equal.query_is_native_array_nothing);
+    EXPECT_TRUE(native_equal.index_is_native_array_nothing);
+    EXPECT_TRUE(native_equal.can_prune);
+
+    const auto array_uint8_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+    const auto different_element_type
+        = canPruneCityHash64WithConstantArgument(array_nothing_type, empty_array, array_uint8_type, empty_array);
+    EXPECT_TRUE(different_element_type.query_is_native_array_nothing);
+    EXPECT_FALSE(different_element_type.index_is_native_array_nothing);
+    EXPECT_FALSE(different_element_type.can_prune);
+
+    auto custom_array_nothing_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
+    custom_array_nothing_type->setCustomization(
+        std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("CustomEmptyArray")));
+    const auto custom_representation
+        = canPruneCityHash64WithConstantArgument(array_nothing_type, empty_array, custom_array_nothing_type, empty_array);
+    EXPECT_TRUE(custom_representation.query_is_native_array_nothing);
+    EXPECT_FALSE(custom_representation.index_is_native_array_nothing);
+    EXPECT_FALSE(custom_representation.can_prune);
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesUnreviewedFormatDateTimeAndRetainsLowerPruning)
+{
+    const auto format_date_time = canPruneFormatDateTimeIn();
+    EXPECT_TRUE(format_date_time.query_is_direct_format_date_time);
+    EXPECT_TRUE(format_date_time.index_is_direct_format_date_time);
+    EXPECT_TRUE(format_date_time.output_name_matches);
+    EXPECT_FALSE(format_date_time.can_prune);
+
+    EXPECT_TRUE(canPruneLowerStringIn());
 }

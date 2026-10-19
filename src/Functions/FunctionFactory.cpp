@@ -129,6 +129,25 @@ bool FunctionFactory::has(const std::string & name) const
     return case_insensitive_functions.contains(canonical_name);
 }
 
+const FunctionCreator * FunctionFactory::tryGetCanonicalCreator(const std::string & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    auto it = functions.find(canonical_name);
+    if (it != functions.end())
+        return &it->second.first;
+
+    canonical_name = Poco::toLower(canonical_name);
+    if (!case_insensitive_functions.contains(canonical_name))
+        return nullptr;
+
+    const auto canonical_name_it = case_insensitive_name_mapping.find(canonical_name);
+    if (canonical_name_it == case_insensitive_name_mapping.end())
+        return nullptr;
+
+    it = functions.find(canonical_name_it->second);
+    return it == functions.end() ? nullptr : &it->second.first;
+}
+
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const

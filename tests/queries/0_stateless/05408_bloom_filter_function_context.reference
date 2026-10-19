@@ -1,0 +1,7 @@
+formatter query setting is 0	1
+formatter mismatch declines pruning after reattach	1
+formatter indexed results preserve rows	1
+formatter fullscan preserves rows	1
+arrayDistinct Dynamic arrayJoin retains 1 of 16 granules	1
+arrayDistinct indexed result is nonempty target row	1
+arrayDistinct fullscan agrees	1
