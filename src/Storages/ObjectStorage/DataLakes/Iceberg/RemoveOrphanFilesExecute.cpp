@@ -331,7 +331,7 @@ Pipe executeRemoveOrphanFiles(
         persistent_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    auto latest_metadata = getMetadataJSONObject(
+    auto latest_metadata = getMetadataObjectParsed(
         latest_metadata_path,
         object_storage,
         persistent_components.metadata_cache,

@@ -92,7 +92,16 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+MetadataObject::Ptr getMetadataObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid);
+
+Poco::JSON::Object::Ptr getMetadataObjectParsed(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,

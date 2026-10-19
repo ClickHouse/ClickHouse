@@ -146,7 +146,7 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    auto metadata = getMetadataJSONObject(
+    auto metadata = getMetadataObjectParsed(
         metadata_path,
         object_storage,
         persistent_table_components.metadata_cache,
