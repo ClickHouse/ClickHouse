@@ -207,6 +207,9 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate this setting asks for is
+    /// a full index analysis of the read, repeated on every build of this plan.
+    ctx->setSetting("parallel_replicas_min_number_of_rows_per_replica", Field{0});
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -250,6 +253,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
+        std::string_view{"parallel_replicas_min_number_of_rows_per_replica"},
     };
     removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
 
