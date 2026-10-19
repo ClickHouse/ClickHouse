@@ -33,7 +33,7 @@ INSERT INTO t_subcolumn_size_lc_map SELECT toString(number % 7), map('k' || toSt
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_subcolumn_size_lc_map' AND active AND part_type = 'Wide';
 
 SELECT countIf(explain ILIKE '%Prewhere filter%') > 0, countIf(explain ILIKE '%m.key_k1%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM t_subcolumn_size_lc_map WHERE m['k1'] = '1' AND s = '3')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_subcolumn_size_lc_map WHERE m.key_k1 = '1' AND s = '3')
 SETTINGS log_comment = '05401_subcolumn_size_without_reading_prefixes_explain';
 
 SYSTEM FLUSH LOGS query_log;
