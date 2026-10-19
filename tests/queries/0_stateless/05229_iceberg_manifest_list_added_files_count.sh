@@ -54,7 +54,7 @@ for version in 1 2; do
     client="${CLICKHOUSE_CLIENT} --send_logs_level=fatal"
 
     ${client} --query "
-        CREATE TABLE ${table} (n UInt64) ENGINE = IcebergLocal('${table_path}')
+        CREATE TABLE ${table} (n Int64) ENGINE = IcebergLocal('${table_path}')
         SETTINGS iceberg_format_version = ${version}"
 
     ${client} --allow_insert_into_iceberg=1 --query "
@@ -69,7 +69,7 @@ done
 
 # One manifest per partition key, each with its own number of data files.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE_PARTITIONED} (n UInt64, p UInt64)
+    CREATE TABLE ${TABLE_PARTITIONED} (n Int64, p Int64)
     ENGINE = IcebergLocal('${PATH_PARTITIONED}') PARTITION BY (p)"
 
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "

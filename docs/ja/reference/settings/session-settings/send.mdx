@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ ProfileEvents を必要としないクライアントのネットワークトラ
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ ProfileEvents を必要としないクライアントのネットワークトラ
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ ProfileEvents を必要としないクライアントのネットワークトラ
 
 無効にすると、INSERT クエリにインラインデータが含まれている場合、サーバーはネイティブプロトコル経由でテーブル構造とカラムのデフォルト値をクライアントに返送しません。代わりに、サーバー自身がインラインデータを解析します。これにより、ネイティブプロトコル経由で多数の小さな insert を行う際のパフォーマンスが向上する場合があります。
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="300" />
 
