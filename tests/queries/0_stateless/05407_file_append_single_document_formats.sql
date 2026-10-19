@@ -53,3 +53,45 @@ INSERT INTO t_json_each_row_array VALUES (1, 'a');
 INSERT INTO t_json_each_row_array VALUES (11, 'b'); -- { serverError CANNOT_APPEND_TO_FILE }
 SELECT 'JSONEachRow array_of_rows', * FROM t_json_each_row_array ORDER BY id;
 DROP TABLE t_json_each_row_array;
+
+DROP TABLE IF EXISTS t_template;
+CREATE TABLE t_template (id UInt64, s String) ENGINE = File(Template)
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}', format_template_rows_between_delimiter = '\n';
+INSERT INTO t_template VALUES (1, 'a');
+INSERT INTO t_template VALUES (11, 'b'); -- { serverError CANNOT_APPEND_TO_FILE }
+DROP TABLE t_template;
+
+DROP TABLE IF EXISTS t_template_resultset;
+CREATE TABLE t_template_resultset (id UInt64, s String) ENGINE = File(Template)
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}\n', format_template_rows_between_delimiter = '', format_template_resultset_format = '[${data}]';
+INSERT INTO t_template_resultset VALUES (1, 'a');
+INSERT INTO t_template_resultset VALUES (11, 'b'); -- { serverError CANNOT_APPEND_TO_FILE }
+DROP TABLE t_template_resultset;
+
+DROP TABLE IF EXISTS t_template_rows;
+CREATE TABLE t_template_rows (id UInt64, s String) ENGINE = File(Template)
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}\n', format_template_rows_between_delimiter = '', format_template_resultset_format = '${data}${rows:CSV}';
+INSERT INTO t_template_rows VALUES (1, 'a');
+INSERT INTO t_template_rows VALUES (11, 'b'); -- { serverError CANNOT_APPEND_TO_FILE }
+DROP TABLE t_template_rows;
+
+DROP TABLE IF EXISTS t_template_appendable;
+CREATE TABLE t_template_appendable (id UInt64, s String) ENGINE = File(Template)
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}\n', format_template_rows_between_delimiter = '';
+INSERT INTO t_template_appendable VALUES (1, 'a');
+INSERT INTO t_template_appendable VALUES (11, 'b');
+DROP TABLE t_template_appendable;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05407_template.csv', Template, 'id UInt64, s String') SELECT 1, 'a'
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}\n', format_template_rows_between_delimiter = '', format_template_resultset_format = '${data}', engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05407_template.csv', Template, 'id UInt64, s String') SELECT 11, 'b'
+SETTINGS format_template_row_format = '${id:CSV},${s:CSV}\n', format_template_rows_between_delimiter = '', format_template_resultset_format = '${data}';
+SELECT 'Template resultset', * FROM file(currentDatabase() || '_05407_template.csv', CSV, 'id UInt64, s String') ORDER BY id;
+
+DROP TABLE IF EXISTS t_custom_separated;
+CREATE TABLE t_custom_separated (id UInt64, s String) ENGINE = File(CustomSeparated)
+SETTINGS format_custom_row_between_delimiter = ';';
+INSERT INTO t_custom_separated VALUES (1, 'a'), (2, 'a');
+INSERT INTO t_custom_separated VALUES (11, 'b'); -- { serverError CANNOT_APPEND_TO_FILE }
+SELECT 'CustomSeparated', * FROM t_custom_separated ORDER BY id;
+DROP TABLE t_custom_separated;

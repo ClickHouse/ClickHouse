@@ -279,19 +279,35 @@ void registerOutputFormatTemplate(FormatFactory & factory)
 
     factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
     {
-        if (settings.template_settings.resultset_format.empty())
+        if (!settings.template_settings.row_between_delimiter.empty())
+            return false;
+        auto idx_resultset_by_name = [](const String & partName)
+        {
+            return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
+        };
+        ParsedTemplateFormatString resultset_format;
+        if (!settings.template_settings.resultset_format.empty())
+        {
+            resultset_format = ParsedTemplateFormatString(
+                FormatSchemaInfo(
+                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                    /*format_schema=*/settings.template_settings.resultset_format,
+                    /*format_schema_message_name=*/"",
+                    /*format=*/"Template",
+                    /*require_message=*/false,
+                    /*is_server=*/settings.schema.is_server,
+                    /*format_schema_path=*/settings.schema.format_schema_path),
+                idx_resultset_by_name);
+        }
+        else if (!settings.template_settings.resultset_format_template.empty())
+        {
+            resultset_format.parse(settings.template_settings.resultset_format_template, idx_resultset_by_name);
+        }
+        else
+        {
             return true;
-        auto resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(
-                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
-                /*format_schema=*/settings.template_settings.resultset_format,
-                /*format_schema_message_name=*/"",
-                /*format=*/"Template",
-                /*require_message=*/false,
-                /*is_server=*/settings.schema.is_server,
-                /*format_schema_path=*/settings.schema.format_schema_path),
-            [&](const String & partName) { return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName)); });
-        return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
+        }
+        return resultset_format.columnsCount() == 1 && resultset_format.delimiters.back().empty();
     });
 }
 }
