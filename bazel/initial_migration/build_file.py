@@ -17,6 +17,13 @@ from initial_migration.simplify_globs import simplify_globs
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
 
+# These are textual includes with extensions that rules_cc does not classify
+# as ordinary headers. str_vec.h and mongoc-counters-private.h include them.
+OWNED_TEXTUAL_HEADERS = {
+    '_libbson': ('contrib/mongo-c-driver/src/common/src/mlib/vec.th',),
+    '_libmongoc': ('contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-counters.defs',),
+}
+
 # These libraries already export their complete public C/C++ headers. Private
 # sources and generated configuration files must still be declared separately.
 PUBLIC_HEADERS = {
@@ -415,13 +422,13 @@ class BuildFile:
             parts.append(labels)
         return parts[0] if len(parts) == 1 else Concat(parts)
 
-    def dependency_header_directories(self, arch, dependencies):
-        """Source header directories already exported by existing cc deps."""
+    def dependency_headers(self, arch, dependencies):
+        """Header directories and explicit headers exported by existing cc deps."""
         key = (arch, tuple(dependencies))
         if key in self.public_directories:
             return self.public_directories[key]
         targets = self.targets.get(arch, {})
-        directories, seen = set(), set()
+        directories, headers, seen = set(), set(), set()
         pending = list(dependencies)
         while pending:
             # Configured native target names are unique across repositories.
@@ -442,9 +449,14 @@ class BuildFile:
                 continue
             pending.extend(target.get('deps', []))
             for dep_group in target.get('groups', []):
-                pending.extend(dep_group.get('deps', []))
                 if dep_group.get('cmake_runtime') or dep_group.get('language') == 'ASM_NASM':
                     continue
+                pending.extend(dep_group.get('deps', []))
+                headers.update(source_label(path) for path in OWNED_TEXTUAL_HEADERS.get(target_name, ()))
+                headers.update(
+                    item for field in ('hdrs', 'textual_hdrs') for item in dep_group.get(field, [])
+                    if isinstance(item, str) and item.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs'))
+                )
                 for item in dep_group.get('hdrs', []):
                     if (isinstance(item, HeaderDirectory)
                             and repository(item.directory) == self.owners.get(target_name)
@@ -453,7 +465,7 @@ class BuildFile:
                             and not (item.directory == 'contrib/boost' and target_name.startswith('_boost_'))
                             and not self.header_consumers.get(item.directory, set()) <= {target_name}):
                         directories.add(item.directory.rstrip('/') + '/')
-        result = tuple(sorted(directories))
+        result = tuple(sorted(directories)), frozenset(headers)
         self.public_directories[key] = result
         return result
 
@@ -472,7 +484,7 @@ class BuildFile:
                 if not any(directory.startswith(parent + '/') for parent in directories if parent != directory)
             ]
         custom = group.get('cmake_runtime') or group.get('language') == 'ASM_NASM'
-        supplied = () if custom else self.dependency_header_directories(
+        supplied, supplied_labels = ((), ()) if custom else self.dependency_headers(
             arch, tuple(group.get('deps', ())) + tuple(library_deps))
         for old_field, directories in original.items():
             for directory in directories:
@@ -533,6 +545,25 @@ class BuildFile:
                         fields[target_field].append(source_label(path))
         if not custom and self.external_headers is not None:
             self.external_headers.use(fields, self.owner)
+        if not custom and not binary:
+            if self.owner == 'contrib/mongo-c-driver':
+                fields['textual_hdrs'].extend(
+                    source_label(path) for path in OWNED_TEXTUAL_HEADERS.get(name, ())
+                )
+            for field in ('hdrs', 'textual_hdrs'):
+                fields[field] = [
+                    item for item in fields[field]
+                    if not isinstance(item, str) or item not in supplied_labels
+                ]
+            if self.owner == 'contrib/mongo-cxx-driver' and name in {'_bsoncxx', '_mongocxx'}:
+                # The pinned Mongo C++ sources include none of Mongo C's .c
+                # sources or build data. The two nonstandard textual headers
+                # used by Mongo C headers are published by the C libraries.
+                fields['additional_compiler_inputs'] = [
+                    item for item in fields['additional_compiler_inputs']
+                    if not isinstance(item, str)
+                    or not item.startswith('@clickhouse_mongo_c_driver//:')
+                ]
         if not custom and self.owner != 'contrib/abseil-cpp':
             prefix = '@' + REPOSITORIES['contrib/abseil-cpp']['name'] + '//:'
             for field in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'):

@@ -10,53 +10,6 @@ exports_files([
     "build/mkversion",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/lber_types.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_config.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_features.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/portable.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/bn_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/dso_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/internal/param_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1t.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/bio.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cmp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cms.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/comp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/core_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crmf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ct.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/err.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ess.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/fipskey.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/lhash.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ocsp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs12.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs7.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/srp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ssl.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ui.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_acert.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_vfy.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509v3.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_digests.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ec.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ecx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ml_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_rsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_slh_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_sm2.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_wrap.h",
-]
-
 _GENERATED_HEADER_INPUTS_2 = [
     "@clickhouse_openssl//:include/crypto/bn_conf.h.in",
     "@clickhouse_openssl//:include/crypto/dso_conf.h.in",
@@ -92,53 +45,6 @@ _GENERATED_HEADER_INPUTS_2 = [
     "@clickhouse_openssl//:include/openssl/x509v3.h.in",
 ]
 
-_GENERATED_HEADER_INPUTS_3 = [
-    "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/lber_types.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_config.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_features.h",
-    "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/portable.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/bn_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/dso_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/internal/param_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1t.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/bio.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cmp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cms.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/comp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/core_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crmf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ct.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/err.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ess.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/fipskey.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/lhash.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ocsp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs12.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs7.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/srp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ssl.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ui.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_acert.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_vfy.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509v3.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_digests.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ec.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ecx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ml_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_rsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_slh_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_sm2.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_wrap.h",
-]
-
 ch_cc_library(
     name = "_lber",
     srcs = ([
@@ -161,16 +67,26 @@ ch_cc_library(
         ],
     })),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + [
+            "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/lber_types.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_config.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_features.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/portable.h",
+        ]) + glob([
             "include/**/*.h",
             "libraries/liblber/**/*.h",
             "libraries/liblunicode/ucdata/**/*.h",
         ])),
-        "@platforms//cpu:aarch64": ([
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_3 + glob([
+        ] + [
+            "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/lber_types.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_config.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_features.h",
+            "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/portable.h",
+        ]) + glob([
             "include/**/*.h",
             "libraries/liblber/**/*.h",
             "libraries/liblunicode/ucdata/**/*.h",
@@ -428,14 +344,14 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + glob([
             "include/**/*.h",
             "libraries/liblber/**/*.h",
             "libraries/liblunicode/ucdata/**/*.h",
         ])),
         "@platforms//cpu:aarch64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_3 + glob([
+        ] + glob([
             "include/**/*.h",
             "libraries/liblber/**/*.h",
             "libraries/liblunicode/ucdata/**/*.h",

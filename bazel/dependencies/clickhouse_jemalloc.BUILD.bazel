@@ -11,17 +11,6 @@ exports_files([
     "COPYING",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_defs.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_macros.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos_jet.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_rename.h",
-    "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_typedefs.h",
-]
-
 expand_template(
     name = "configure_x86_64_721047e1cd363645",
     out = "config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h",
@@ -114,14 +103,32 @@ ch_cc_library(
         ":src/witness.c",
     ] + glob(["include/**/*.h"]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
             ":config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0,
-        "@platforms//cpu:aarch64": [
+        ] + [
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_defs.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_macros.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos_jet.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_rename.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_typedefs.h",
+        ]),
+        "@platforms//cpu:aarch64": ([
             ":config/aarch64/contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0,
+        ] + [
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_defs.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_macros.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_protos_jet.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_rename.h",
+            "@clickhouse//:contrib/jemalloc-cmake/include/jemalloc/jemalloc_typedefs.h",
+        ]),
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",

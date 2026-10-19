@@ -11,12 +11,6 @@ exports_files([
     "COPYING",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/postgres-cmake/pg_config.h",
-    "@clickhouse//:contrib/postgres-cmake/pg_config_os.h",
-    "@clickhouse//:contrib/postgres-cmake/pg_config_paths.h",
-]
-
 expand_template(
     name = "configure_x86_64_6fedff1c3446af59",
     out = "config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
@@ -81,12 +75,12 @@ ch_cc_library(
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["include/**/*.hxx"])),
+        ] + glob(["include/**/*.hxx"])),
         "@platforms//cpu:aarch64": ([
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["include/**/*.hxx"])),
+        ] + glob(["include/**/*.hxx"])),
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",

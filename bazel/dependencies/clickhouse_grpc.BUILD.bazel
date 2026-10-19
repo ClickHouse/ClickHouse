@@ -5075,22 +5075,16 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": ([
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_2 + glob([
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ])),
         "@platforms//cpu:aarch64": ([
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_2 + glob([
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
@@ -5420,22 +5414,16 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": ([
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_13 + glob([
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ])),
         "@platforms//cpu:aarch64": ([
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_13 + glob([
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
@@ -6380,9 +6368,6 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": ([
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
             "**/*.h",
@@ -6391,9 +6376,6 @@ ch_cc_library(
         ])),
         "@platforms//cpu:aarch64": ([
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
             "**/*.h",

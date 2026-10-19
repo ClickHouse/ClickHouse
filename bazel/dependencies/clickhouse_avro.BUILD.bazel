@@ -40,16 +40,12 @@ ch_cc_library(
         ":lang/c++/impl/Validator.cc",
     ] + glob(["lang/c++/impl/**/*.hh"]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["lang/c++/api/**/*.hh"])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
+        ] + _GENERATED_HEADER_INPUTS_0) + glob(["lang/c++/api/**/*.hh"])),
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["lang/c++/api/**/*.hh"])),
+        ] + _GENERATED_HEADER_INPUTS_0) + glob(["lang/c++/api/**/*.hh"])),
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",

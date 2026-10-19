@@ -10,11 +10,6 @@ exports_files([
     "test/html-tokenizer/NOTICE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/config.h",
-    "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/libxml/xmlversion.h",
-]
-
 ch_cc_library(
     name = "_libxml2",
     srcs = [
@@ -55,23 +50,23 @@ ch_cc_library(
         ":debugXML.c",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + [
+            "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/config.h",
+            "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/libxml/xmlversion.h",
+        ]) + glob([
             "**/*.h",
             "**/*.inc",
         ])),
-        "@platforms//cpu:aarch64": ([
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + [
+            "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/config.h",
+            "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/libxml/xmlversion.h",
+        ]) + glob([
             "**/*.h",
             "**/*.inc",
         ])),

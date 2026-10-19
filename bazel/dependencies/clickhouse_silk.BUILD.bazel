@@ -52,19 +52,15 @@ ch_cc_library(
         ":src/fibers/sequencer.cpp",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
-            "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + _GENERATED_HEADER_INPUTS_0) + glob([
             "include/**/*.h",
             "src/**/*.h",
         ])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
-            "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob([
+        ] + _GENERATED_HEADER_INPUTS_0) + glob([
             "include/**/*.h",
             "src/**/*.h",
         ])),

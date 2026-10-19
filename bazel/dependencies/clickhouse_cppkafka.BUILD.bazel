@@ -9,11 +9,6 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/librdkafka-cmake/include/chrdkafka_conf_sensitive.h",
-    "@clickhouse//:contrib/librdkafka-cmake/include/librdkafka/rdkafka.h",
-]
-
 _GENERATED_HEADER_INPUTS_1 = []
 
 ch_cc_library(
@@ -40,56 +35,12 @@ ch_cc_library(
         ":src/topic.cpp",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/asn1_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/errmap.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/error_map.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/k5e1_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/kdb5_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/krb524_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/krb5_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/kv5m_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/prof_err.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
-            "@clickhouse_librdkafka//:config/x86_64/contrib/librdkafka-cmake/config.h",
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + glob(["include/**/*.h"])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include/krb5/krb5.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/asn1_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/errmap.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/error_map.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/k5e1_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/kdb5_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/krb524_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/krb5_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/kv5m_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/prof_err.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
-            "@clickhouse_librdkafka//:config/aarch64/contrib/librdkafka-cmake/config.h",
+        ] + _GENERATED_HEADER_INPUTS_1) + glob(["include/**/*.h"])),
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + glob(["include/**/*.h"])),
+        ] + _GENERATED_HEADER_INPUTS_1) + glob(["include/**/*.h"])),
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",

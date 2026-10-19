@@ -20,14 +20,6 @@ exports_files([
     "format/Tensor.fbs",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
-]
-
 _GENERATED_HEADER_INPUTS_1 = []
 
 _GENERATED_HEADER_INPUTS_2 = [
@@ -726,56 +718,6 @@ _GENERATED_HEADER_INPUTS_17 = [
     "@clickhouse_zstd//:lib/module.modulemap",
 ]
 
-_GENERATED_HEADER_INPUTS_18 = [
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
-    "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-    "@clickhouse//:contrib/c-ares-cmake/linux/ares_config.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/bn_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/dso_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/internal/param_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1t.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/bio.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cmp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cms.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/comp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/core_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crmf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ct.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/err.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ess.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/fipskey.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/lhash.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ocsp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs12.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs7.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/srp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ssl.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ui.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_acert.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_vfy.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509v3.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_digests.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ec.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ecx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ml_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_rsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_slh_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_sm2.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_wrap.h",
-]
-
 _GENERATED_HEADER_INPUTS_27 = [
     "@clickhouse_google_protobuf//:src/README.md",
     "@clickhouse_google_protobuf//:src/file_lists.cmake",
@@ -1345,54 +1287,6 @@ _GENERATED_HEADER_INPUTS_29 = [
     "@clickhouse_openssl//:include/openssl/x509_acert.h.in",
     "@clickhouse_openssl//:include/openssl/x509_vfy.h.in",
     "@clickhouse_openssl//:include/openssl/x509v3.h.in",
-]
-
-_GENERATED_HEADER_INPUTS_34 = [
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
-    "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/bn_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/dso_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/internal/param_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1t.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/bio.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cmp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cms.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/comp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/core_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crmf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ct.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/err.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ess.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/fipskey.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/lhash.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ocsp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs12.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs7.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/srp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ssl.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ui.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_acert.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_vfy.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509v3.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_digests.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ec.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ecx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ml_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_rsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_slh_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_sm2.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_wrap.h",
 ]
 
 _GENERATED_HEADER_INPUTS_37 = [
@@ -2387,7 +2281,7 @@ ch_cc_library(
         "@clickhouse_libhdfs3//:include/hdfs/hdfs.h",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ((((((((([
+        "@platforms//cpu:x86_64": (((((((((([
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
             "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
             "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
@@ -2404,15 +2298,21 @@ ch_cc_library(
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
+        ] + [
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
+        ]) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
             "@clickhouse_bzip2//:bzlib.h",
             "@clickhouse_bzip2//:bzlib_private.h",
-        ]) + _GENERATED_HEADER_INPUTS_4 + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
+        ]) + _GENERATED_HEADER_INPUTS_4) + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
         ])),
-        "@platforms//cpu:aarch64": ((((((((([
+        "@platforms//cpu:aarch64": (((((((((([
             "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
             "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
             "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
@@ -2429,10 +2329,16 @@ ch_cc_library(
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
+        ] + [
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
+        ]) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
             "@clickhouse_bzip2//:bzlib.h",
             "@clickhouse_bzip2//:bzlib_private.h",
-        ]) + _GENERATED_HEADER_INPUTS_4 + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
+        ]) + _GENERATED_HEADER_INPUTS_4) + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
@@ -3279,7 +3185,7 @@ ch_cc_library(
         "@clickhouse_libhdfs3//:include/hdfs/hdfs.h",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ((((((((([
+        "@platforms//cpu:x86_64": (((((((((([
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
             "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
             "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
@@ -3296,15 +3202,21 @@ ch_cc_library(
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
+        ] + [
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
+        ]) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
             "@clickhouse_bzip2//:bzlib.h",
             "@clickhouse_bzip2//:bzlib_private.h",
-        ]) + _GENERATED_HEADER_INPUTS_4 + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
+        ]) + _GENERATED_HEADER_INPUTS_4) + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
         ])),
-        "@platforms//cpu:aarch64": ((((((((([
+        "@platforms//cpu:aarch64": (((((((((([
             "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
             "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
             "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
@@ -3321,10 +3233,16 @@ ch_cc_library(
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
+        ] + [
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/parquet/parquet_version.h",
+            "@clickhouse//:contrib/arrow-cmake/cpp/src/thrift/stdcxx.h",
+        ]) + _GENERATED_HEADER_INPUTS_1) + _GENERATED_HEADER_INPUTS_2) + [
             "@clickhouse_bzip2//:bzlib.h",
             "@clickhouse_bzip2//:bzlib_private.h",
-        ]) + _GENERATED_HEADER_INPUTS_4 + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
+        ]) + _GENERATED_HEADER_INPUTS_4) + _GENERATED_HEADER_INPUTS_6) + _GENERATED_HEADER_INPUTS_7) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
@@ -3653,22 +3571,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/feather_generated.h",
-            ":config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-            ":config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-            "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_18 + glob([
+        ] + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
@@ -3678,22 +3583,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
             "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/feather_generated.h",
-            ":config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-            ":config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-            "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_18 + glob([
+        ] + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
@@ -4334,33 +4226,15 @@ ch_cc_library(
     })),
     hdrs = select({
         "@platforms//cpu:x86_64": (([
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_thrift//:config/x86_64/contrib/thrift-cmake/thrift/config.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_34) + _GENERATED_HEADER_INPUTS_1 + glob([
+        ] + _GENERATED_HEADER_INPUTS_1) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",
         ])),
         "@platforms//cpu:aarch64": (([
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_thrift//:config/aarch64/contrib/thrift-cmake/thrift/config.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_34) + _GENERATED_HEADER_INPUTS_1 + glob([
+        ] + _GENERATED_HEADER_INPUTS_1) + glob([
             "cpp/src/**/*.h",
             "cpp/src/**/*.hpp",
             "cpp/src/**/*.tcc",

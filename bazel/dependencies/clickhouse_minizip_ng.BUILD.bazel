@@ -9,50 +9,6 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:contrib/minizip-ng-cmake/mz_config.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/bn_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/crypto/dso_conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/internal/param_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/asn1t.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/bio.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cmp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/cms.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/comp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/conf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/configuration.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/core_names.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crmf.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/crypto.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ct.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/err.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ess.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/fipskey.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/lhash.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ocsp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/opensslv.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs12.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/pkcs7.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/safestack.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/srp.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ssl.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/ui.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_acert.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509_vfy.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/openssl/x509v3.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_digests.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ec.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ecx.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_ml_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_rsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_slh_dsa.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_sm2.h",
-    "@clickhouse//:contrib/openssl-cmake/common/include/prov/der_wrap.h",
-]
-
 ch_cc_library(
     name = "_minizip",
     srcs = [
@@ -78,22 +34,18 @@ ch_cc_library(
         ":compat/ioapi.c",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_bzip2//:config/x86_64/contrib/bzip2/bz_version.h",
+        "@platforms//cpu:x86_64": (([
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["**/*.h"])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_bzip2//:config/aarch64/contrib/bzip2/bz_version.h",
+        ] + [
+            "@clickhouse//:contrib/minizip-ng-cmake/mz_config.h",
+        ]) + glob(["**/*.h"])),
+        "@platforms//cpu:aarch64": (([
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0 + glob(["**/*.h"])),
+        ] + [
+            "@clickhouse//:contrib/minizip-ng-cmake/mz_config.h",
+        ]) + glob(["**/*.h"])),
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
