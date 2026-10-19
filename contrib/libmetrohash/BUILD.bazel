@@ -61,31 +61,6 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hh",
-        "**/*.hpp",
-        "**/*.hxx",
-        "**/*.h++",
-        "**/*.tlh",
-        "**/*.tli",
-        "**/*.H",
-        "**/*.tcc",
-    ]),
-    textual_hdrs = glob([
-        "**/*.inc",
-        "**/*.inl",
-        "**/*.ipp",
-        "**/*.tpp",
-        "**/*.icc",
-        "**/*.def",
-        "**/*.defs",
-        "**/*.th",
-        "**/*.td",
-        "**/*.tbl",
-        "**/*.tbi",
-        "**/*.ixx",
-        "**/*.cuh",
-        "**/*.msh",
-    ]),
+    hdrs = glob(["**/*.h"]),
+    textual_hdrs = [],
 )
