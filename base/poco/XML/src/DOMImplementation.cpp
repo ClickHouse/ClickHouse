@@ -24,13 +24,13 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString DOMImplementation::FEATURE_XML            = toXMLString("xml");
-const XMLString DOMImplementation::FEATURE_CORE           = toXMLString("core");
-const XMLString DOMImplementation::FEATURE_EVENTS         = toXMLString("events");
-const XMLString DOMImplementation::FEATURE_MUTATIONEVENTS = toXMLString("mutationevents");
-const XMLString DOMImplementation::FEATURE_TRAVERSAL      = toXMLString("traversal");
-const XMLString DOMImplementation::VERSION_1_0            = toXMLString("1.0");
-const XMLString DOMImplementation::VERSION_2_0            = toXMLString("2.0");
+[[clang::no_destroy]] const XMLString DOMImplementation::FEATURE_XML            = toXMLString("xml");
+[[clang::no_destroy]] const XMLString DOMImplementation::FEATURE_CORE           = toXMLString("core");
+[[clang::no_destroy]] const XMLString DOMImplementation::FEATURE_EVENTS         = toXMLString("events");
+[[clang::no_destroy]] const XMLString DOMImplementation::FEATURE_MUTATIONEVENTS = toXMLString("mutationevents");
+[[clang::no_destroy]] const XMLString DOMImplementation::FEATURE_TRAVERSAL      = toXMLString("traversal");
+[[clang::no_destroy]] const XMLString DOMImplementation::VERSION_1_0            = toXMLString("1.0");
+[[clang::no_destroy]] const XMLString DOMImplementation::VERSION_2_0            = toXMLString("2.0");
 
 
 DOMImplementation::DOMImplementation()

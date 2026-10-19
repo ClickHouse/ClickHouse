@@ -29,10 +29,10 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-static const Field UNKNOWN_FIELD(3u);
+[[clang::no_destroy]] static const Field UNKNOWN_FIELD(3u);
 
 /// 0b10 -- can be false only
-static const Field FALSE_FIELD(2u);
+[[clang::no_destroy]] static const Field FALSE_FIELD(2u);
 
 /// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".

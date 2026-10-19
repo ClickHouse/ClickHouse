@@ -25,7 +25,7 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 
     /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.
-    while (current_cgroup != default_cgroups_mount.parent_path())
+    while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
     {
         std::ifstream setting_file(current_cgroup / "memory.max");
         if (setting_file.is_open())

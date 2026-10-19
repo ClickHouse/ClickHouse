@@ -36,10 +36,10 @@ namespace
 {
 
 /// Written once by `initialize` before `initialized` is published; read-only afterwards.
-std::vector<unsigned> arena_indices;
+[[clang::no_destroy]] std::vector<unsigned> arena_indices;
 /// Maps an absolute CPU id (from `getCurrentCPU`) to a slot in `arena_indices`. Sized to the
 /// highest allowed CPU id. Built so every created arena is reachable regardless of the mask.
-std::vector<UInt32> slot_by_cpu;
+[[clang::no_destroy]] std::vector<UInt32> slot_by_cpu;
 /// Number of arenas `initialize` tried to create (configured count capped at the allowed CPUs);
 /// `arena_indices.size()` may be smaller if `arenas.create` failed.
 size_t intended_arena_count = 0;

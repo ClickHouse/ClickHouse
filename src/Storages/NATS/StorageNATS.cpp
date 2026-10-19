@@ -1495,7 +1495,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            .secret_settings = NATS::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },

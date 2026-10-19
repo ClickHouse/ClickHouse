@@ -1632,7 +1632,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .secret_settings = RabbitMQ::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },

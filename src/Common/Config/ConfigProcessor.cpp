@@ -102,7 +102,7 @@ static std::string escapeForXMLText(const std::string & s)
 }
 
 /// For cutting preprocessed path to this base
-static std::string main_config_path;
+[[clang::no_destroy]] static std::string main_config_path;
 
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
@@ -138,7 +138,7 @@ ConfigProcessor::ConfigProcessor(
     }
 }
 
-static std::unordered_map<std::string, std::string_view> embedded_configs;
+[[clang::no_destroy]] static std::unordered_map<std::string, std::string_view> embedded_configs;
 
 void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view content)
 {

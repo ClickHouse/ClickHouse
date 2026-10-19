@@ -1417,7 +1417,7 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
     return rng();
 }
 
-static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
     "processing_threads_num",
     /// Is not allowed to change on fly:
     /// "parallel_inserts",
@@ -1457,7 +1457,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "metadata_cache_size_elements",
 };
 
-static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -1492,7 +1492,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "metadata_cache_size_elements",
 };
 
-static const std::unordered_set<std::string_view> changeable_settings_exclusive_mode{
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> changeable_settings_exclusive_mode{
     "processing_threads_num",
     /// Is not allowed to change on fly:
     /// "parallel_inserts",

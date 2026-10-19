@@ -38,7 +38,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
-const std::map<std::string, CloudJWTProvider::AuthEndpoints> CloudJWTProvider::managed_service_endpoints = {
+[[clang::no_destroy]] const std::map<std::string, CloudJWTProvider::AuthEndpoints> CloudJWTProvider::managed_service_endpoints = {
     {
         ".clickhouse-dev.com",
         {

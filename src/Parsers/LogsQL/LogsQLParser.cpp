@@ -158,7 +158,7 @@ std::optional<String> tryGetExactDecimalText(const String & text)
     return sign + result;
 }
 
-const std::vector<std::string_view> field_name_stop_tokens = {":"};
+[[clang::no_destroy]] const std::vector<std::string_view> field_name_stop_tokens = {":"};
 
 }
 

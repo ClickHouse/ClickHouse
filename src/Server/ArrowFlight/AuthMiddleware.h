@@ -21,7 +21,7 @@ namespace DB
 {
 
 inline const std::string AUTHORIZATION_HEADER = "authorization";
-inline const std::string AUTHORIZATION_MIDDLEWARE_NAME = "authorization_middleware";
+[[clang::no_destroy]] inline const std::string AUTHORIZATION_MIDDLEWARE_NAME = "authorization_middleware";
 
 class AuthMiddleware : public arrow::flight::ServerMiddleware
 {

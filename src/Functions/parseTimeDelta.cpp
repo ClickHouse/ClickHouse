@@ -19,57 +19,61 @@ namespace ErrorCodes
 
 namespace
 {
-    const UnorderedMapWithMemoryTracking<std::string_view, Float64> time_unit_to_float =
+    /// Built on first use rather than by a static initializer.
+    const UnorderedMapWithMemoryTracking<std::string_view, Float64> & time_unit_to_float()
     {
-        {"years", 365 * 24 * 3600},
-        {"year", 365 * 24 * 3600},
-        {"yr", 365 * 24 * 3600},
-        {"y", 365 * 24 * 3600},
+        static const UnorderedMapWithMemoryTracking<std::string_view, Float64> map{
+            {"years", 365 * 24 * 3600},
+            {"year", 365 * 24 * 3600},
+            {"yr", 365 * 24 * 3600},
+            {"y", 365 * 24 * 3600},
 
-        {"months", 30.5 * 24 * 3600},
-        {"month", 30.5 * 24 * 3600},
-        {"mo", 30.5 * 24 * 3600},
+            {"months", 30.5 * 24 * 3600},
+            {"month", 30.5 * 24 * 3600},
+            {"mo", 30.5 * 24 * 3600},
 
-        {"weeks", 7 * 24 * 3600},
-        {"week", 7 * 24 * 3600},
-        {"w", 7 * 24 * 3600},
+            {"weeks", 7 * 24 * 3600},
+            {"week", 7 * 24 * 3600},
+            {"w", 7 * 24 * 3600},
 
-        {"days", 24 * 3600},
-        {"day", 24 * 3600},
-        {"d", 24 * 3600},
+            {"days", 24 * 3600},
+            {"day", 24 * 3600},
+            {"d", 24 * 3600},
 
-        {"hours", 3600},
-        {"hour", 3600},
-        {"hr", 3600},
-        {"h", 3600},
+            {"hours", 3600},
+            {"hour", 3600},
+            {"hr", 3600},
+            {"h", 3600},
 
-        {"minutes", 60},
-        {"minute", 60},
-        {"min", 60},
-        {"m", 60},
+            {"minutes", 60},
+            {"minute", 60},
+            {"min", 60},
+            {"m", 60},
 
-        {"seconds", 1},
-        {"second", 1},
-        {"sec", 1},
-        {"s", 1},
+            {"seconds", 1},
+            {"second", 1},
+            {"sec", 1},
+            {"s", 1},
 
-        {"milliseconds", 1e-3},
-        {"millisecond", 1e-3},
-        {"millisec", 1e-3},
-        {"ms", 1e-3},
+            {"milliseconds", 1e-3},
+            {"millisecond", 1e-3},
+            {"millisec", 1e-3},
+            {"ms", 1e-3},
 
-        {"microseconds", 1e-6},
-        {"microsecond", 1e-6},
-        {"microsec", 1e-6},
-        {"μs", 1e-6}, // U+03BC = Greek letter mu
-        {"µs", 1e-6}, // U+00B5 = micro symbol
-        {"us", 1e-6},
+            {"microseconds", 1e-6},
+            {"microsecond", 1e-6},
+            {"microsec", 1e-6},
+            {"μs", 1e-6}, // U+03BC = Greek letter mu
+            {"µs", 1e-6}, // U+00B5 = micro symbol
+            {"us", 1e-6},
 
-        {"nanoseconds", 1e-9},
-        {"nanosecond", 1e-9},
-        {"nanosec", 1e-9},
-        {"ns", 1e-9},
-    };
+            {"nanoseconds", 1e-9},
+            {"nanosecond", 1e-9},
+            {"nanosec", 1e-9},
+            {"ns", 1e-9},
+        };
+        return map;
+    }
 
     /** Prints amount of seconds in form of:
      * "1 year 2 months 4 weeks 12 days 3 hours 1 minute 33 seconds".
@@ -229,8 +233,8 @@ namespace
 
                     /// get unit number
                     std::string_view unit = str.substr(token_front, token_tail - token_front);
-                    auto iter = time_unit_to_float.find(unit);
-                    if (iter == time_unit_to_float.end()) /// not find unit
+                    auto iter = time_unit_to_float().find(unit);
+                    if (iter == time_unit_to_float().end()) /// not find unit
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, can't parse the unit: \"{}\".", getName(), unit);

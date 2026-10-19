@@ -38,7 +38,7 @@ namespace
 
 using namespace LogsQLUtils;
 
-const std::unordered_set<String> stats_func_names = {
+[[clang::no_destroy]] const std::unordered_set<String> stats_func_names = {
     "any", "avg", "count", "count_empty", "count_uniq", "count_uniq_hash", "field_max", "field_min",
     "histogram", "json_values", "max", "median", "min", "quantile", "rate", "rate_sum",
     "row_any", "row_max", "row_min", "stddev", "sum", "sum_len", "uniq_values", "values"};
@@ -46,14 +46,14 @@ const std::unordered_set<String> stats_func_names = {
 /// Pipes which exist in LogsQL but are not translated: they either introspect the internal
 /// storage of VictoriaLogs or require the dynamic set of fields, which does not exist
 /// for a ClickHouse table with a fixed schema.
-const std::unordered_set<String> unsupported_pipes = {
+[[clang::no_destroy]] const std::unordered_set<String> unsupported_pipes = {
     "block_stats", "blocks_count", "collapse_nums",
     "facets", "field_names",
     "query_stats", "set_stream_fields",
     "stream_context", "top_stats",
     "unpack_syslog"};
 
-const std::vector<std::string_view> field_name_stop_tokens = {":"};
+[[clang::no_destroy]] const std::vector<std::string_view> field_name_stop_tokens = {":"};
 
 ASTPtr makeUInt64Literal(UInt64 value)
 {

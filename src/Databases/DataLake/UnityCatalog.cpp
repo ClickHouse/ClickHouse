@@ -40,7 +40,7 @@ namespace DataLake
 static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
-static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
 /// A Unity table is readable only if it is a DeltaLake table. `securable_kind`,

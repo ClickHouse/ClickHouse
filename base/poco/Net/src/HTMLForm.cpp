@@ -40,7 +40,7 @@ namespace Poco {
 namespace Net {
 
 
-const std::string HTMLForm::ENCODING_URL           = "application/x-www-form-urlencoded";
+[[clang::no_destroy]] const std::string HTMLForm::ENCODING_URL           = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART     = "multipart/form-data";
 const int         HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 

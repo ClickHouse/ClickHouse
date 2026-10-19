@@ -11,7 +11,7 @@ class LoggerWrapper : public nuraft::logger
 {
 private:
 
-    static inline const std::unordered_map<LogsLevel, Poco::Message::Priority> LEVELS =
+    [[clang::no_destroy]] static inline const std::unordered_map<LogsLevel, Poco::Message::Priority> LEVELS =
     {
         {LogsLevel::test, Poco::Message::Priority::PRIO_TEST},
         {LogsLevel::trace, Poco::Message::Priority::PRIO_TRACE},

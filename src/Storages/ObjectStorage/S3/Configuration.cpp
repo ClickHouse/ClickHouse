@@ -82,12 +82,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const std::unordered_set<std::string_view> required_configuration_keys =
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys =
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys =
 {
     "format",
     "compression",

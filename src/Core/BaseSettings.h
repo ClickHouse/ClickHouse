@@ -1561,10 +1561,15 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         /** Whether this traits allows custom settings */ \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        /** Map of aliases to actual setting names */ \
-        static inline const AliasMap aliases_to_settings \
-            = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-                   LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
+        /** Map of aliases to actual setting names. Built on first use rather than by a static initializer */ \
+        /** in every translation unit that defines a settings traits. */ \
+        static const AliasMap & aliasesToSettings() \
+        { \
+            static const AliasMap aliases_to_settings \
+                = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+                       LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
+            return aliases_to_settings; \
+        } \
         \
         /** Reverse map: setting name -> list of aliases */ \
         using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
@@ -1573,7 +1578,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
                 UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
-                for (const auto & [alias, destination] : aliases_to_settings) \
+                for (const auto & [alias, destination] : aliasesToSettings()) \
                     map[destination].push_back(alias); \
                 return map; \
             }(); \
@@ -1583,7 +1588,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         /** Resolve alias to actual setting name */ \
         static std::string_view resolveName(std::string_view name) \
         { \
-            if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
+            if (auto it = aliasesToSettings().find(name); it != aliasesToSettings().end()) \
                 return it->second; \
             return name; \
         }

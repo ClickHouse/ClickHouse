@@ -75,16 +75,16 @@ namespace
 {
 
 /// The only indexing method currently supported by USearch
-const std::set<String> methods = {"hnsw"};
+[[clang::no_destroy]] const std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
-const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
+[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
     {"cosineDistance", unum::usearch::metric_kind_t::cos_k},
     {"dotProduct", unum::usearch::metric_kind_t::ip_k}};
 
 /// Maps from user-facing name to internal name
-const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
+[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
     {"f64", unum::usearch::scalar_kind_t::f64_k},
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},

@@ -24,7 +24,7 @@ namespace Poco {
 namespace Net {
 
 
-const std::string KeyFileHandler::CFG_PRIV_KEY_FILE("privateKeyPassphraseHandler.options.password");
+[[clang::no_destroy]] const std::string KeyFileHandler::CFG_PRIV_KEY_FILE("privateKeyPassphraseHandler.options.password");
 
 
 KeyFileHandler::KeyFileHandler(bool server):PrivateKeyPassphraseHandler(server)

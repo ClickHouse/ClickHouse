@@ -372,7 +372,7 @@ void registerStorageKafka(StorageFactory & factory)
         SecretArgumentsSpec{
             /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
             /// secret and makes the collection name optional, so a named argument can be the first one.
-            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .secret_settings = Kafka::settingsToHide(),
             .settings_as_arguments = true,
         },
         StorageFactory::StorageFeatures{

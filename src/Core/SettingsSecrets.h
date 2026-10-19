@@ -4,9 +4,11 @@
 #include <Common/HiddenSecret.h>
 #include <Common/maskURIPassword.h>
 
+#include <array>
 #include <functional>
 #include <optional>
-#include <unordered_map>
+#include <string_view>
+#include <utility>
 
 namespace DB
 {
@@ -50,18 +52,23 @@ inline bool maskURLCredentials(String & value)
 ///
 /// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this
 /// for table engine settings.
-static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
-{
+///
+/// A `constexpr` array rather than a map: this header is included widely, and a map here would be
+/// constructed by a static initializer in every translation unit that includes it.
+constexpr std::array<std::pair<std::string_view, bool (*)(String &)>, 3> SETTINGS_TO_HIDE
+{{
     {"format_avro_schema_registry_url", maskURLCredentials},
     {"url_base", maskURLCredentials},
     {"s3_base", maskURLCredentials},
-};
+}};
 
 /// Returns whether anything was masked.
 inline bool maskSettingValue(const String & setting_name, String & value)
 {
-    auto it = SETTINGS_TO_HIDE.find(setting_name);
-    return it != SETTINGS_TO_HIDE.end() && it->second(value);
+    for (const auto & [name, mask] : SETTINGS_TO_HIDE)
+        if (name == setting_name)
+            return mask(value);
+    return false;
 }
 
 /// Same as above, for a sink that also has the raw `Field`. A setting value can be an AST rather

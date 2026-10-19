@@ -8,7 +8,8 @@
 #if defined(OS_LINUX)
 /// I think it is possible to mount the cgroups hierarchy somewhere else (e.g. when in containers).
 /// /sys/fs/cgroup was still symlinked to the actual mount in the cases that I have seen.
-static inline const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
+/// A string rather than a `std::filesystem::path`, so that including this header costs no static initializer.
+constexpr std::string_view default_cgroups_mount = "/sys/fs/cgroup";
 #endif
 
 /// Is cgroups v2 enabled on the system?

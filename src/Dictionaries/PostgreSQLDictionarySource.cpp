@@ -41,7 +41,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
+[[clang::no_destroy]] static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority",
     "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};

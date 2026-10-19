@@ -220,10 +220,10 @@ private:
 
 std::optional<std::string> getCgroupsV1Path()
 {
-    auto path = default_cgroups_mount / "memory/memory.stat";
+    auto path = std::filesystem::path(default_cgroups_mount) / "memory/memory.stat";
     if (!fs::exists(path))
         return {};
-    return {default_cgroups_mount / "memory"};
+    return {std::filesystem::path(default_cgroups_mount) / "memory"};
 }
 
 }
@@ -405,7 +405,7 @@ MemoryWorker::MemoryWorker(
                 /// against an ancestor's `memory.max` would ignore other children of
                 /// that ancestor and let us exceed its budget.
                 fs::path current = fs::path(cgroup_path);
-                while (current != default_cgroups_mount.parent_path())
+                while (current != std::filesystem::path(default_cgroups_mount).parent_path())
                 {
                     fs::path max_path = current / "memory.max";
                     fs::path current_path = current / "memory.current";

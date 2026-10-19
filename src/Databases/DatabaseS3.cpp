@@ -36,7 +36,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
     "access_key_id",
     "secret_access_key",

@@ -47,12 +47,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const std::unordered_set<std::string_view> required_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> required_configuration_keys = {
     "blob_path",
     "container",
 };
 
-const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "structure",

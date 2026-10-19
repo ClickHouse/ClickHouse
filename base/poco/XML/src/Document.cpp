@@ -35,7 +35,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString Document::NODE_NAME = toXMLString("#document");
+[[clang::no_destroy]] const XMLString Document::NODE_NAME = toXMLString("#document");
 
 
 Document::Document(NamePool* pNamePool): 

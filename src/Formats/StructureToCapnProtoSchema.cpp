@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_map<TypeIndex, String> capn_proto_simple_type_names =
+[[clang::no_destroy]] const std::unordered_map<TypeIndex, String> capn_proto_simple_type_names =
 {
     {TypeIndex::Int8, "Int8"},
     {TypeIndex::UInt8, "UInt8"},

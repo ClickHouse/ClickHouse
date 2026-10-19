@@ -385,7 +385,7 @@ namespace
 
             configuration.host = named_collection->getAny<String>({"host", "hostname"});
             configuration.port = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("port", 6379));
-            configuration.password = named_collection->getOrDefault<String>("password", DEFAULT_REDIS_PASSWORD);
+            configuration.password = named_collection->getOrDefault<String>("password", "");
             configuration.db_index = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("db_index", DEFAULT_REDIS_DB_INDEX));
             configuration.pool_size = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("pool_size", DEFAULT_REDIS_POOL_SIZE));
         }
@@ -406,7 +406,7 @@ namespace
             if (engine_args.size() > 2)
                 configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
             else
-                configuration.password = DEFAULT_REDIS_PASSWORD;
+                configuration.password.clear();
             if (engine_args.size() > 3)
                 configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[3], "pool_size"));
             else

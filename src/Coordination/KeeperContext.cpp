@@ -89,10 +89,10 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     for (const auto feature_flag : enabled_by_default_feature_flags)
         feature_flags.enableFeatureFlag(feature_flag);
 
-    system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+    system_nodes_with_data[String(keeper_api_feature_flags_path)] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
-    system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+    system_nodes_with_data[String(keeper_api_version_path)] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
@@ -102,7 +102,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     const auto keeper_az = PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
     if (!keeper_az.empty())
     {
-        system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
+        system_nodes_with_data[String(keeper_availability_zone_path)] = keeper_az;
         LOG_INFO(getLogger("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
     }
 
@@ -593,9 +593,9 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
         if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
             feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
         else
-            system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
+            system_nodes_with_data[String(keeper_api_version_path)] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
 
-        system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+        system_nodes_with_data[String(keeper_api_feature_flags_path)] = feature_flags.getFeatureFlags();
 
     }
 

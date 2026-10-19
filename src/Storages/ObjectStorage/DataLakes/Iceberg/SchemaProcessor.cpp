@@ -442,7 +442,7 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 namespace Iceberg
 {
 
-std::string IcebergSchemaProcessor::default_link{};
+[[clang::no_destroy]] std::string IcebergSchemaProcessor::default_link{};
 
 void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 {
