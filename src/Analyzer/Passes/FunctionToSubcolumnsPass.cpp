@@ -963,6 +963,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Object, "arrayElement"},
 };
 
 /// Transformers that should mark their identifier for filter-only optimization
@@ -998,6 +999,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
+    {TypeIndex::Object, "arrayElement"},
 };
 
 /// The constant path element `tupleElement` (a `String` only) or `arrayElement` (also a `Nullable` or `LowCardinality` one)
@@ -1691,6 +1693,8 @@ private:
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
             ++optimized_identifiers_count[qualified_name];
+            if (transformers_safe_with_indexes.contains({column.type->getTypeId(), function_node.getFunctionName()}))
+                ++optimized_identifiers_index_safe_count[qualified_name];
 
             /// Mark intermediate nodes to prevent double-counting.
             for (auto * func : intermediates)
