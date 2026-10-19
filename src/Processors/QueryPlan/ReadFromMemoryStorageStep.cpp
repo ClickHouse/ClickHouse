@@ -341,7 +341,7 @@ public:
     String getName() const override { return "Memory"; }
 
 protected:
-    Chunk generate() override
+    std::optional<Chunk> tryGenerate() override
     {
         if (initializer_func)
         {
@@ -366,46 +366,46 @@ protected:
             initializer_func = {};
         }
 
-        while (true)
+        /// `ISource::prepare` checks for cancellation only after it pushes a chunk with rows, so after an empty
+        /// chunk the source checks it here, e.g. when the executor cancels it at a read limit in `break` mode.
+        if (isCancelled())
+            return {};
+
+        size_t current_index = getAndIncrementExecutionIndex();
+
+        if (!data || current_index >= data->size())
+            return {};
+
+        const Block & src = (*data)[current_index];
+
+        if (filter)
         {
-            size_t current_index = getAndIncrementExecutionIndex();
+            if (auto chunk = generateFiltered(src, current_index))
+                return chunk;
 
-            if (!data || current_index >= data->size())
-                return {};
-
-            const Block & src = (*data)[current_index];
-
-            if (filter)
-            {
-                if (auto chunk = generateFiltered(src, current_index))
-                    return std::move(*chunk);
-
-                /// Every row of this block was filtered out; move on to the next block
-                /// without reading the rest of its columns. `generateFiltered` has already
-                /// reported the block's scanned rows as read.
-                if (isCancelled())
-                    return {};
-                continue;
-            }
-
-            Columns columns;
-            columns.reserve(physical_columns.size() + virtual_columns.size());
-            fillPhysicalColumns(src, columns);
-
-            UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
-            if (!columns.empty())
-                fillVirtualColumns(columns, num_rows);
-
-            if (block_start_rows)
-            {
-                num_rows = src.rows();
-                auto global_row_index = ColumnUInt64::create(num_rows);
-                std::iota(global_row_index->getData().begin(), global_row_index->getData().end(), (*block_start_rows)[current_index]);
-                columns.push_back(std::move(global_row_index));
-            }
-
-            return Chunk(std::move(columns), num_rows);
+            /// Every row of this block was filtered out, so the rest of its columns are not read.
+            /// `generateFiltered` has already reported the block's scanned rows as read. An empty
+            /// chunk returns control to the executor, which checks the read limits before the next block.
+            return Chunk();
         }
+
+        Columns columns;
+        columns.reserve(physical_columns.size() + virtual_columns.size());
+        fillPhysicalColumns(src, columns);
+
+        UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
+        if (!columns.empty())
+            fillVirtualColumns(columns, num_rows);
+
+        if (block_start_rows)
+        {
+            num_rows = src.rows();
+            auto global_row_index = ColumnUInt64::create(num_rows);
+            std::iota(global_row_index->getData().begin(), global_row_index->getData().end(), (*block_start_rows)[current_index]);
+            columns.push_back(std::move(global_row_index));
+        }
+
+        return Chunk(std::move(columns), num_rows);
     }
 
 private:
