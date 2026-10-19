@@ -17,7 +17,7 @@ SETTINGS force_optimize_projection = 1, optimize_functions_to_subcolumns = 0;
 -- Keep the old nullable states while the reading schema already has the new non-nullable column.
 SYSTEM STOP MERGES projection_null_check_drop_readd;
 ALTER TABLE projection_null_check_drop_readd DROP COLUMN x, ADD COLUMN x UInt8
-SETTINGS mutations_sync = 0;
+SETTINGS alter_sync = 0;
 SELECT count() FROM system.mutations
 WHERE database = currentDatabase() AND table = 'projection_null_check_drop_readd' AND NOT is_done;
 SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop_readd
@@ -38,7 +38,7 @@ CREATE TABLE projection_null_check_drop_readd
 ENGINE = MergeTree ORDER BY id;
 INSERT INTO projection_null_check_drop_readd VALUES (1, NULL), (2, 1);
 ALTER TABLE projection_null_check_drop_readd DROP COLUMN x, ADD COLUMN x UInt8
-SETTINGS mutations_sync = 2;
+SETTINGS alter_sync = 2;
 SELECT name, count() FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 'projection_null_check_drop_readd' AND active
 GROUP BY name ORDER BY name;
@@ -70,7 +70,7 @@ CREATE TABLE projection_null_check_drop_readd
 ENGINE = MergeTree ORDER BY id;
 INSERT INTO projection_null_check_drop_readd VALUES (1, 1), (2, 2);
 ALTER TABLE projection_null_check_drop_readd DROP COLUMN x, ADD COLUMN x Nullable(UInt8)
-SETTINGS mutations_sync = 2;
+SETTINGS alter_sync = 2;
 SELECT count() FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 'projection_null_check_drop_readd' AND active;
 SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop_readd
