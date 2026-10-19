@@ -383,6 +383,12 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
+    if not upgrade_check and random.choice((False, True)):
+        # `clickhouse-test` applies this to SQL tests and to the HTTP requests
+        # it uses for harness operations, so each stress worker exercises one
+        # coherent plain or TLS client transport.
+        options.append("--secure")
+
     if i > 0:
         options.append("--order=random")
 
