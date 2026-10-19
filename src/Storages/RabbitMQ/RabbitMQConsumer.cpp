@@ -43,6 +43,16 @@ void RabbitMQConsumer::stop()
 {
     stopped = true;
     cv.notify_one();
+    notifyReceivedSpace();
+}
+
+void RabbitMQConsumer::notifyReceivedSpace()
+{
+    /// Lock and unlock before notifying, so that a callback that has just seen a full queue under the mutex is already waiting.
+    {
+        std::lock_guard lock(channel_mutex);
+    }
+    received_space_cv.notify_all();
 }
 
 void RabbitMQConsumer::wakeUp()
@@ -80,20 +90,37 @@ void RabbitMQConsumer::closeConnections()
     });
 }
 
-void RabbitMQConsumer::subscribe()
+void RabbitMQConsumer::subscribe(UInt64 generation)
 {
     for (const auto & queue_name : queues)
     {
         consumer_channel->consume(queue_name)
-        .onSuccess([&](const std::string & /* consumer_tag */)
+        .onSuccess([this, generation, &queue_name](const std::string & /* consumer_tag */)
         {
+            std::lock_guard lock(channel_mutex);
+            if (!isCurrentChannel(generation))
+                return;
             LOG_TRACE(
                 log, "Consumer on channel {} ({}/{}) is subscribed to queue {}",
                 channel_id, subscriptions_num, queues.size(), queue_name);
         })
-        .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
+        .onReceived([this, generation](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
             /// Empty messages are queued too: they hold a prefetch slot until acked.
+            /// The generation is checked and the delivery is pushed under `channel_mutex`, so `updateChannel` cannot
+            /// replace the channel and clear the queue in between. The mutex is released while waiting for space:
+            /// the queue is drained only by the streaming thread, which may be about to call `updateChannel`.
+            std::unique_lock lock(channel_mutex);
+            received_space_cv.wait(lock, [&]
+            {
+                return !isCurrentChannel(generation) || stopped || received.size() < received.maxFill();
+            });
+
+            /// A late delivery of a replaced channel can no longer be acked, the broker redelivers it.
+            /// The same holds for a delivery to a stopped consumer: it is not going to be read.
+            if (stopped || !isCurrentChannel(generation) || received.size() >= received.maxFill())
+                return;
+
             MessageData result{
                 .message = std::string(message.body(), message.body() + message.bodySize()),
                 .message_id = message.hasMessageID() ? message.messageID() : "",
@@ -102,13 +129,19 @@ void RabbitMQConsumer::subscribe()
                 .delivery_tag = delivery_tag,
                 .channel_id = channel_id};
 
-            if (!received.push(std::move(result)))
+            /// Only this callback pushes and it holds the mutex, so there is space.
+            if (!received.tryPush(std::move(result)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
 
+            lock.unlock();
             cv.notify_one();
         })
-        .onError([&](const char * message)
+        .onError([this, generation](const char * message)
         {
+            std::lock_guard lock(channel_mutex);
+            if (!isCurrentChannel(generation))
+                return;
+
             /* End up here either if channel ends up in an error state (then there will be resubscription)
              * or consume call error, which arises from queue settings mismatch or queue level error,
              * which should not happen as no one else is supposed to touch them
@@ -235,17 +268,31 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue
 
 void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 {
-    state = State::INITIALIZING;
-    last_commited_delivery_tag = 0;
-    last_rejected_delivery_tag = 0;
-    current = {};
-    /// The broker requeues what the old channel delivered and nobody acked: without this every reconnect would add a
-    /// window to the queue.
-    received.clear();
+    UInt64 generation = 0;
+    {
+        /// A callback of the old channel either completes before this or sees the new generation and does nothing,
+        /// also if it is still running in the background loop, which is not waited for.
+        std::lock_guard lock(channel_mutex);
+        state = State::INITIALIZING;
+        last_commited_delivery_tag = 0;
+        last_rejected_delivery_tag = 0;
+        current = {};
+        /// Abandon the callbacks of the old channel first, so that a late delivery cannot refill the queue after it is cleared.
+        generation = ++channel_generation;
+        /// Deliveries of the old channel can no longer be acked and the broker redelivers them.
+        /// Keeping them would insert duplicates and mix delivery tags of two channels in one commit.
+        received.clear();
+    }
+    /// Wake a callback of the old channel that waits for space in the queue.
+    received_space_cv.notify_all();
 
     consumer_channel = connection.createChannel();
-    consumer_channel->onReady([&]()
+    consumer_channel->onReady([this, generation]()
     {
+        std::lock_guard lock(channel_mutex);
+        if (!isCurrentChannel(generation))
+            return;
+
         try
         {
             /// 1. channel_id_base - indicates current consumer buffer.
@@ -258,7 +305,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
             subscriptions_num = 0;
             consumer_channel->setQos(prefetch_count);
-            subscribe();
+            subscribe(generation);
 
             state = State::OK;
         }
@@ -269,8 +316,12 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
         }
     });
 
-    consumer_channel->onError([&](const char * message)
+    consumer_channel->onError([this, generation](const char * message)
     {
+        std::lock_guard lock(channel_mutex);
+        if (!isCurrentChannel(generation))
+            return;
+
         LOG_ERROR(
             log, "Channel {} received an error: {} (usable: {}, connected: {})",
             channel_id, message, consumer_channel->usable(), consumer_channel->connected());
@@ -305,6 +356,8 @@ ReadBufferPtr RabbitMQConsumer::consume()
 {
     if (stopped || !received.tryPop(current))
         return nullptr;
+
+    notifyReceivedSpace();
 
     return std::make_shared<ReadBufferFromMemory>(current.message);
 }
