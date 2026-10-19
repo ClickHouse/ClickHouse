@@ -14,6 +14,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 
 namespace DB
 {
@@ -151,6 +152,7 @@ TTLTransform::TTLTransform(
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
+    , storage_settings(storage_.getSettings())
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
@@ -338,6 +340,8 @@ void TTLTransform::executeAlgorithms(Block & block)
 
     for (; next_stage < recompute_stages.size(); ++next_stage)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
+
+    MergeTreeDataWriter::sortMapKeyColumnsKeys(block, *storage_settings);
 }
 
 void TTLTransform::consume(Chunk chunk)

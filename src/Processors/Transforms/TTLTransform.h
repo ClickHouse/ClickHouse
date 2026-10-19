@@ -54,6 +54,9 @@ private:
     const MergeTreeData::MutableDataPartPtr & data_part;
 
     NamesAndTypesList expired_columns;
+    /// TTL can replace values with expression results (column defaults, `GROUP BY ... SET`), so the
+    /// keys of `with_key_columns` Maps are sorted again, as on insert, before indices are built.
+    MergeTreeSettingsPtr storage_settings;
 
     struct ExpiredColumnData
     {

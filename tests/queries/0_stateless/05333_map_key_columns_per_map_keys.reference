@@ -1,0 +1,20 @@
+1	({'a1':1},{'b1':2})	[({'c1':3},{'d1':4})]
+2	({},{'b2':5})	[]
+3	({'a2':6},{})	[({},{'d2':7}),({'c2':8},{})]
+1	0	[{'c1':3}]	[{'d1':4}]
+0	5	[]	[]
+0	0	[{},{'c2':8}]	[{'d2':7},{}]
+at	['at%2Ec.keys','at%2Ed.keys','at.size0','at%2Ec.values.c1','at%2Ec.exists.c1','at%2Ec.values.c2','at%2Ec.exists.c2','at%2Ed.values.d1','at%2Ed.exists.d1','at%2Ed.values.d2','at%2Ed.exists.d2']
+t	['t%2Ea.keys','t%2Eb.keys','t%2Ea.values.a1','t%2Ea.exists.a1','t%2Ea.values.a2','t%2Ea.exists.a2','t%2Eb.values.b1','t%2Eb.exists.b1','t%2Eb.values.b2','t%2Eb.exists.b2']
+1	({'a1':1},{'b1':2})
+2	({},{'b2':5})
+3	({'a2':6},{})
+t	['t%2Ea.keys','t%2Eb.keys','t%2Ea.values.a1','t%2Ea.exists.a1','t%2Ea.values.a2','t%2Ea.exists.a2','t%2Eb.values.b1','t%2Eb.exists.b1','t%2Eb.values.b2','t%2Eb.exists.b2']
+1	{'a':1}	{'a':1}	{"p":{"a":1}}	{'x':{'y':1}}
+2	3	x	{"p":{}}	{'z':{}}
+3	{'b':2}	{'b':2}	{"p":{"b":2}}	{}
+0	1	1
+0	0	0
+2	0	0
+mm	['mm.keys','mm.exists.x','mm.exists.z']
+v	[]

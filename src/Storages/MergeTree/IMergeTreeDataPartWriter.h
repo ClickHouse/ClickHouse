@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -22,6 +23,10 @@ struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
+
+/// The part-level key sets of the `with_key_columns` Maps, by column. A writer fixes
+/// the key sets of the missing columns from its first block.
+using PlannedMapKeyColumnsKeys = std::map<String, ISerialization::MapKeyColumnsKeys>;
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
@@ -130,6 +135,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys = {});
 
 }
