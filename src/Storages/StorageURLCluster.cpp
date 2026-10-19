@@ -1,5 +1,6 @@
 #include <Interpreters/Context_fwd.h>
 
+#include <Common/encodeSpacesInURI.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
@@ -54,7 +55,7 @@ StorageURLCluster::StorageURLCluster(
     , uri(uri_), format_name(format_)
 {
     auto headers = configuration_.headers;
-    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context->getRemoteHostFilter().checkURL(Poco::URI(encodeSpacesInURI(uri)));
     context->getHTTPHeaderFilter().checkHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
@@ -64,10 +65,10 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                uri, chooseCompressionMethod(Poco::URI(encodeSpacesInURI(uri)).getPath(), compression_method), headers, std::nullopt, context);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                format_, uri, chooseCompressionMethod(Poco::URI(encodeSpacesInURI(uri)).getPath(), compression_method), headers, std::nullopt, context);
 
         storage_metadata.setColumns(columns);
     }
@@ -75,7 +76,7 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
+                uri, chooseCompressionMethod(Poco::URI(encodeSpacesInURI(uri)).getPath(), compression_method), headers, std::nullopt, context).second;
 
         storage_metadata.setColumns(columns_);
     }
