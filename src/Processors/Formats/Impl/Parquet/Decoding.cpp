@@ -522,12 +522,26 @@ struct PlainBooleanDecoder : public PageDecoder
 struct PlainStringDecoder : public PageDecoder
 {
     std::shared_ptr<StringConverter> converter;
+    /// Value offsets for the converter, or the value end offsets of a batch in `decodeWithBulkScan` (trivial converter only).
     IColumn::Offsets offsets;
     /// See PageDecoderInfo::makeDecoder. Used only when the converter is trivial.
     const StringValueFilter * value_filter = nullptr;
+    /// See `decodeWithBulkScan`.
+    bool bulk_scan_enabled = false;
+    bool bulk_scan_probed = false;
+    std::vector<size_t> bulk_scan_matches;
 
     PlainStringDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const StringValueFilter * value_filter_)
-        : PageDecoder(data_), converter(std::move(converter_)), value_filter(value_filter_) {}
+        : PageDecoder(data_), converter(std::move(converter_)), value_filter(value_filter_)
+    {
+        /// The bulk scan searches the values together with their 4-byte length prefixes. The last prefix byte is zero below
+        /// 16 MiB, so an occurrence of a needle of at least 4 bytes without a zero byte cannot start in the prefix of such a value.
+        if (value_filter && value_filter->hasBulkScanCondition())
+        {
+            const String & needle = value_filter->getBulkScanNeedle();
+            bulk_scan_enabled = needle.size() >= 4 && needle.find('\0') == String::npos;
+        }
+    }
 
     void skip(size_t num_values) override
     {
@@ -539,6 +553,94 @@ struct PlainStringDecoder : public PageDecoder
             requireRemainingBytes(len);
             data += len;
         }
+    }
+
+    /// Decodes up to `num_values` values like `decode` without a row filter, checking the substring condition of `string_filter`
+    /// with one `findBulkScanMatches` per batch of values. Returns the number of decoded values: it stops early if the filter
+    /// disables itself or the scan stops paying off for this page.
+    size_t decodeWithBulkScan(size_t num_values, ColumnString & col_str, const StringValueFilter & string_filter)
+    {
+        const bool has_other_conditions = string_filter.hasOtherConditions();
+
+        size_t i = 0;
+        while (i < num_values && bulk_scan_enabled && string_filter.isEnabled())
+        {
+            /// The first batch of a page is small, to find out cheaply whether the scan pays off.
+            const size_t max_batch = bulk_scan_probed ? StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES : 128;
+            const size_t batch = std::min(num_values - i, max_batch);
+            offsets.resize(batch);
+            const char * batch_begin = data;
+            for (size_t k = 0; k < batch; ++k)
+            {
+                UInt32 x = 0;
+                memcpy(&x, data, 4); /// omitting range check because input is padded
+                size_t len = 4 + size_t(x);
+                requireRemainingBytes(len);
+                data += len;
+                offsets[k] = static_cast<UInt64>(data - batch_begin);
+            }
+
+            bulk_scan_matches.clear();
+            string_filter.findBulkScanMatches(batch_begin, 0, offsets.data(), 0, batch, bulk_scan_matches);
+
+            size_t values_replaced = 0;
+            size_t bytes_skipped = 0;
+            size_t values_checked_individually = 0;
+            size_t next_value = 0;
+            auto replace_values_until = [&](size_t end_value)
+            {
+                if (end_value == next_value)
+                    return;
+                const size_t count = end_value - next_value;
+                const UInt64 begin = next_value ? offsets[next_value - 1] : 0;
+                bytes_skipped += offsets[end_value - 1] - begin - 4 * count;
+                values_replaced += count;
+                col_str.insertManyDefaults(count);
+                next_value = end_value;
+            };
+
+            for (const size_t match : bulk_scan_matches)
+            {
+                replace_values_until(match);
+                const UInt64 value_begin = (match ? offsets[match - 1] : 0) + 4;
+                const size_t value_size = offsets[match] - value_begin;
+                const char * value = batch_begin + value_begin;
+                bool matches = true;
+                if (value_size >= (1u << 24))
+                {
+                    /// The occurrence may have started in the length prefix.
+                    matches = string_filter.match(value, value_size);
+                    ++values_checked_individually;
+                }
+                else if (has_other_conditions)
+                {
+                    matches = string_filter.matchOtherConditions(value, value_size);
+                    ++values_checked_individually;
+                }
+
+                if (matches)
+                {
+                    col_str.insertData(value, value_size);
+                }
+                else
+                {
+                    col_str.insertDefault();
+                    ++values_replaced;
+                    bytes_skipped += value_size;
+                }
+                next_value = match + 1;
+            }
+            replace_values_until(batch);
+
+            string_filter.updateStatsOfBulkScan(batch, values_replaced, bytes_skipped, values_checked_individually);
+
+            /// Every found value restarts the scan, so it does not pay off when many values contain the needle.
+            if (bulk_scan_matches.size() * 8 > batch)
+                bulk_scan_enabled = false;
+            bulk_scan_probed = true;
+            i += batch;
+        }
+        return i;
     }
 
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
@@ -559,7 +661,15 @@ struct PlainStringDecoder : public PageDecoder
             size_t values_replaced = 0;
             size_t bytes_skipped = 0;
 
-            for (size_t i = 0; i < num_values; ++i)
+            size_t i = 0;
+            if (active_value_filter && !filter && bulk_scan_enabled)
+            {
+                i = decodeWithBulkScan(num_values, col_str, *active_value_filter);
+                if (!active_value_filter->isEnabled())
+                    active_value_filter = nullptr;
+            }
+
+            for (; i < num_values; ++i)
             {
                 UInt32 x = 0;
                 memcpy(&x, data, 4); /// omitting range check because input is padded
