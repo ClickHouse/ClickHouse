@@ -161,7 +161,7 @@ ClickHouse Managed Postgres automatically backs up your data to protect against 
 - **Backup frequency**: Daily full backups + continuous WAL archiving (every 60 seconds or 16 MB, whichever comes first)
 - **Recovery granularity**: Point-in-time recovery to any moment within the retention window
 
-Backup storage equal to the provisioned disk capacity is included. Additional backup storage costs \$25.30 per TB-month. See [Managed Postgres pricing](/products/managed-postgres/pricing).
+Backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. See [Managed Postgres pricing](/products/managed-postgres/pricing).
 
 ### Backup security {#backup-security}
 

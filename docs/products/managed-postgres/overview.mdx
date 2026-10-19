@@ -88,7 +88,7 @@ Configure up to two standby replicas across different availability zones using q
 
 Every instance includes automatic backups that support forks and point-in-time recovery. Backups run on [WAL-G](https://github.com/wal-g/wal-g), a well-known open-source tool that handles full backups and continuous WAL archiving to object storage.
 
-Backup storage equal to the provisioned disk capacity is included. Additional backup storage costs \$25.30 per TB-month. See [Managed Postgres pricing](/products/managed-postgres/pricing).
+Backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. See [Managed Postgres pricing](/products/managed-postgres/pricing).
 
 ### Security and compliance {#security-compliance}
 
