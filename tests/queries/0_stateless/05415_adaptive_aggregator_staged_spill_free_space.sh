@@ -4,13 +4,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A table of the adaptive aggregator freezes at 1000 of the 100000 keys, so the records of the other keys are staged,
-# and over the external-aggregation threshold they spill to streams that grow with every spill. `count` does not grow,
-# so no table is written before the threads finish, and the staged records are the only data that goes to disk until
-# then. Every spill checks the space for its records together with `min_free_disk_space_for_temporary_data`, so an
-# unattainable minimum stops the query at its first spill, before any staged record is written. The same query
-# without the minimum shows that it spills staged records. The thresholds are pinned because the runner randomizes
-# them, and each run is a clickhouse-local process of its own, so the counters in `system.events` belong to it alone.
+# A table of the adaptive aggregator freezes within its first few thousand of the 100000 keys, so the records of the
+# other keys are staged, and over the external-aggregation threshold they spill to streams that grow with every spill.
+# `count` does not grow, so no table is written before the threads finish, and the staged records are the only data
+# that goes to disk until then. A spill creates its streams on a disk with room for the spill together with
+# `min_free_disk_space_for_temporary_data`, so an unattainable minimum stops the query at its first spill, before any
+# staged record is written. The same query without the minimum shows that it spills staged records. The thresholds are
+# pinned because the runner randomizes them, and each run is a clickhouse-local process of its own, so the counters in
+# `system.events` belong to it alone.
 settings="
     SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192;
     SET enable_adaptive_aggregator = 1, adaptive_aggregator_disable_thaw = 1, collect_hash_table_stats_during_aggregation = 0;

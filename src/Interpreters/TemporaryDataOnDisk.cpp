@@ -79,25 +79,6 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
-[[noreturn]] void throwNotEnoughSpaceOnTemporaryDisks(size_t bytes, const Disks & disks)
-{
-    Strings disks_info;
-    for (const auto & d : disks)
-    {
-        auto to_double = [](auto x) { return static_cast<double>(x); };
-        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
-            d->getName(),
-            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getKeepingFreeSpace())));
-    }
-
-    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-        bytes, fmt::join(disks_info, ", "));
-}
-
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -279,7 +260,24 @@ public:
         {
             auto reservation = volume->reserve(reserve_size);
             if (!reservation)
-                throwNotEnoughSpaceOnTemporaryDisks(reserve_size, volume->getDisks());
+            {
+                auto disks = volume->getDisks();
+                Strings disks_info;
+                for (const auto & d : disks)
+                {
+                    auto to_double = [](auto x) { return static_cast<double>(x); };
+                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+                        d->getName(),
+                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getKeepingFreeSpace())));
+                }
+
+                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+                    reserve_size, fmt::join(disks_info, ", "));
+            }
             disk = reservation->getDisk();
         }
         else
@@ -373,32 +371,6 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 
         return std::make_unique<TemporaryFileInDistributedCache>(settings);
     };
-}
-#endif
-
-TemporarySpaceCheck createTemporarySpaceCheck(VolumePtr volume)
-{
-    return [volume](size_t bytes)
-    {
-        /// The files go to any disk of the volume (see `IVolume::getDisk`), so every disk must have the space. The
-        /// check reserves the space only for its duration, as the creation of a file does.
-        for (const auto & disk : volume->getDisks())
-        {
-            if (!disk->reserve(bytes))
-                throwNotEnoughSpaceOnTemporaryDisks(bytes, volume->getDisks());
-        }
-    };
-}
-
-TemporarySpaceCheck createTemporarySpaceCheck(FileCache *)
-{
-    return [](size_t) {};
-}
-
-#if ENABLE_DISTRIBUTED_CACHE
-TemporarySpaceCheck createTemporarySpaceCheck(DistributedCacheTag)
-{
-    return [](size_t) {};
 }
 #endif
 

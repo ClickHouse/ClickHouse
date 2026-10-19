@@ -76,16 +76,6 @@ struct DistributedCacheTag
 TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag);
 #endif
 
-/// Checks that the temporary files on the resource can grow by the given number of bytes, and throws `NOT_ENOUGH_SPACE`
-/// otherwise. A cache makes room for every write itself, so its check passes.
-using TemporarySpaceCheck = std::function<void(size_t)>;
-TemporarySpaceCheck createTemporarySpaceCheck(VolumePtr volume);
-TemporarySpaceCheck createTemporarySpaceCheck(FileCache * file_cache);
-
-#if ENABLE_DISTRIBUTED_CACHE
-TemporarySpaceCheck createTemporarySpaceCheck(DistributedCacheTag);
-#endif
-
 /*
  * Used to account amount of temporary data written to disk.
  * If limit is set, throws exception if limit is exceeded.
@@ -107,8 +97,7 @@ public:
     /// Root scope
     template <typename... Args>
     explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskSettings settings_, Args &&... storage_args)
-        : file_provider(createTemporaryFileProvider(storage_args...))
-        , space_check(createTemporarySpaceCheck(std::forward<Args>(storage_args)...))
+        : file_provider(createTemporaryFileProvider(std::forward<Args>(storage_args)...))
         , settings(std::move(settings_))
     {}
 
@@ -116,17 +105,12 @@ public:
     TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, TemporaryDataOnDiskSettings settings_)
         : parent(std::move(parent_))
         , file_provider(parent->file_provider)
-        , space_check(parent->space_check)
         , settings(std::move(settings_))
     {}
 
     TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
-
-    /// Throws `NOT_ENOUGH_SPACE` unless the files of the scope can grow by `bytes`. The reserve size of a file is
-    /// checked only when the file is created, so a writer that appends to its files checks before each write.
-    void checkFreeSpace(size_t bytes) const { space_check(bytes); }
 
     /// Currently used amount of temporary data on disk in bytes (compressed) for this scope.
     size_t currentCompressedSize() const { return stat.compressed_size.load(std::memory_order_relaxed); }
@@ -141,7 +125,6 @@ protected:
     TemporaryDataOnDiskScopePtr parent = nullptr;
 
     TemporaryFileProvider file_provider;
-    TemporarySpaceCheck space_check;
 
     StatAtomic stat;
     std::atomic<size_t> spilled_bytes{0};

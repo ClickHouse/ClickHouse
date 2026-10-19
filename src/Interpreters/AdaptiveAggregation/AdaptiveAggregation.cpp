@@ -437,9 +437,11 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    /// The streams of the partitions grow with every spill, so every spill checks the space for its records plus the
-    /// minimum free space, which the ordinary aggregation checks when it creates a file.
-    shared.spill_scope->checkFreeSpace(partitions.allocatedChunkBytes() + params.min_free_disk_space);
+    /// A stream created by this spill goes to a disk of the temporary volume with room for the whole spill and the
+    /// minimum free space, as the file of an ordinary spill does. The final size of a stream is unknown, since every
+    /// later spill appends to it, so its later growth is not checked, as with the other temporary files that are
+    /// appended to.
+    const size_t new_stream_reserve_size = partitions.allocatedChunkBytes() + params.min_free_disk_space;
 
     partitions.finishAppending();
 
@@ -456,7 +458,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
         if (!records)
             continue;
 
-        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition);
+        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition, new_stream_reserve_size);
         partitions.releasePartition(partition);
         spilled_records += records;
     }
@@ -470,14 +472,14 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
 }
 
 UInt64 AdaptiveAggregationSession::SpilledPartition::append(
-    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition)
+    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition, size_t reserve_size)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
 
     std::lock_guard lock(mutex);
     if (!stream)
-        stream = std::make_unique<TemporaryDataBuffer>(scope);
+        stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
     writeBinaryLittleEndian(bytes, *stream);
     partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
     record_count += partitions.recordsOf(partition);
