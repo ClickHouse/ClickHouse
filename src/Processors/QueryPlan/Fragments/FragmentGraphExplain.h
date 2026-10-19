@@ -17,8 +17,8 @@ struct FragmentGraph;
 ///
 /// Otherwise every fragment is printed as a header line `Query fragment <id> (<stage name>) · tasks=<N>`,
 /// the `QueryPlan::explainPlan` output of its plan and an empty line, by descending id: the fragment that produces
-/// the result comes first and data flows upward as in a plan tree. The `Exchanges`,
-/// `Dependencies` and `Levels` sections follow the fragments; they refer to query fragment <id> as `F<id>`.
+/// the result comes first and data flows upward as in a plan tree. The `Exchanges` and `Levels` sections follow
+/// the fragments; they refer to query fragment <id> as `F<id>`.
 void explainFragmentGraph(
     const FragmentGraph & graph,
     WriteBuffer & buf,

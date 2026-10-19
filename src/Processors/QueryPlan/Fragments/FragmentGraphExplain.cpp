@@ -114,19 +114,6 @@ void explainFragmentGraph(
         }
     }
 
-    if (!graph.exchanges.empty())
-    {
-        buf << "Dependencies:\n";
-        for (const auto * fragment : print_order)
-        {
-            for (const auto & exchange : graph.exchanges)
-            {
-                if (exchange.to == fragment->id)
-                    buf << fmt::format("  F{} <- F{} ({})\n", fragment->id, exchange.from, exchange.name);
-            }
-        }
-    }
-
     const auto levels = computeLevels(graph);
     buf << "Levels: ";
     for (size_t i = 0; i < levels.size(); ++i)
