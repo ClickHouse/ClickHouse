@@ -122,7 +122,4 @@ void validateFragmentGraph(const FragmentGraph & graph);
 /// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
 std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
 
-/// Multi-line debug text of the model (for `LOG_TEST` and tests).
-String dumpFragmentGraph(const FragmentGraph & graph);
-
 }
