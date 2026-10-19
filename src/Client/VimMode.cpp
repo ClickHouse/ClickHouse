@@ -477,12 +477,13 @@ void ReplxxLineReader::bindDefaultKey(T && f, int mode)
 
 void ReplxxLineReader::recomputeCurswant(int pos, std::u32string & text)
 {
-    int prev_newline = pos;
+    /* The buffer can be empty and the cursor can be at its end: never index `text` past its last character. */
     int length = static_cast<int>(text.length());
-    for (;  prev_newline > 0; prev_newline--)
-        if (prev_newline <= length && text[prev_newline] == '\n')
-            break;
-    curswant = std::max(text[prev_newline] != '\n' || pos == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
+    auto is_newline = [&](int i) { return i < length && text[i] == '\n'; };
+    int prev_newline = std::min(pos, length);
+    while (prev_newline > 0 && !is_newline(prev_newline))
+        --prev_newline;
+    curswant = std::max(!is_newline(prev_newline) || pos == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
 }
 
 void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char motion)

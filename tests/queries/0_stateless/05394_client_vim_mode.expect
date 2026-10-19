@@ -220,5 +220,30 @@ submit
 expect "1601"
 expect ":) "
 
+# `x` on a one-character buffer leaves the buffer empty.
+send -- "X"
+escape
+send -- "x"
+send -- "iSELECT 1700+1"
+submit
+expect "1701"
+expect ":) "
+
+# `dd` on the last (and only) line leaves the buffer empty.
+send -- "SELECT garbage"
+escape
+send -- "dd"
+send -- "iSELECT 1800+2"
+submit
+expect "1802"
+expect ":) "
+
+# Enter on an empty buffer inserts a new line.
+send -- "\r"
+send -- "SELECT 1900+3"
+submit
+expect "1903"
+expect ":) "
+
 send -- "\4"
 expect eof
