@@ -37,7 +37,7 @@ public:
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
-        const ObjectStorageQueueTableMetadata & table_metadata_,
+        ObjectStorageQueueAction after_processing_,
         AfterProcessingSettings settings_,
         String keeper_identity_);
 
@@ -108,7 +108,7 @@ private:
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
-    const ObjectStorageQueueTableMetadata & table_metadata;
+    const ObjectStorageQueueAction after_processing;
     const AfterProcessingSettings settings;
     const String keeper_identity;
 

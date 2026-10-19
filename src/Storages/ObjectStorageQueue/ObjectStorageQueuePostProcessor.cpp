@@ -155,13 +155,13 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
-    const ObjectStorageQueueTableMetadata & table_metadata_,
+    ObjectStorageQueueAction after_processing_,
     AfterProcessingSettings settings_,
     String keeper_identity_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
-    , table_metadata(table_metadata_)
+    , after_processing(after_processing_)
     , settings(std::move(settings_))
     , keeper_identity(std::move(keeper_identity_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
@@ -212,7 +212,7 @@ void ObjectStorageQueuePostProcessor::process(
     /// Park between the read and the after-processing action. No-op unless explicitly enabled.
     FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_post_process);
 
-    const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
+    const ObjectStorageQueueAction after_processing_action = after_processing;
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
         LOG_TRACE(log, "Removing {} objects", objects.size());

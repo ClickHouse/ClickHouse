@@ -157,6 +157,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , hive_partition_columns_to_read_from_file_path(hive_partition_columns_to_read_from_file_path_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
+    , after_processing(metadata->getTableMetadata().after_processing.load())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
@@ -683,7 +684,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         /// `MOVE` and `DELETE` act on the ingested generation, so the read is pinned to the listed one before it is opened.
         /// A file without a listed generation is still returned and failed by the source.
-        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing))
+        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing))
             useIngestedGenerationOfTheListedObject(object_info->relative_path_with_metadata);
 
         return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
@@ -1338,7 +1339,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             /// Fail closed: if `after_processing` needs the ingested generation but the listing carried no `ETag`,
             /// fail the file like a failed read so it is never committed as processed.
-            const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
+            const auto after_processing = file_iterator->getAfterProcessing();
             if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
                 && processed_files.back().etag.empty())
             {
@@ -1981,7 +1982,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
+    const auto after_processing = file_iterator->getAfterProcessing();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
@@ -1997,7 +1998,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 getContext(),
                 configuration->getType(),
                 object_storage,
-                files_metadata->getTableMetadata(),
+                after_processing,
                 after_processing_settings,
                 files_metadata->getKeeperIdentity());
             try

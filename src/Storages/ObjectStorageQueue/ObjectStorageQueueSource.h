@@ -90,6 +90,9 @@ public:
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
+        /// `after_processing` as it was when the iterator was created, used for every file it hands out.
+        ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -101,6 +104,7 @@ public:
         const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
+        const ObjectStorageQueueAction after_processing;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
         const bool use_buckets_for_processing;
@@ -239,6 +243,8 @@ public:
 
     /// Exclusive mode only: releases the files of a batch whose post-processing found a changed generation.
     void releaseAfterChangedGeneration(const std::string & exception_message);
+
+    ObjectStorageQueueAction getAfterProcessing() const { return file_iterator->getAfterProcessing(); }
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

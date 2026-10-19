@@ -221,7 +221,8 @@ private:
     void postProcess(
         const StoredObjects & successful_objects,
         UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+        const ObjectStorageQueueMetadata & metadata,
+        ObjectStorageQueueAction after_processing) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,

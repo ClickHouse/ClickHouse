@@ -1182,6 +1182,45 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
     )
 
 
+def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluster):
+    """A batch keeps the `after_processing` action its files were read under, so an ALTER while
+    the batch is in flight cannot make it act on a generation it did not pin."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"hot_action_{token}"
+    files_path = f"{table_name}_data"
+    put_s3_file_content(started_cluster, f"{files_path}/part.csv", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="delete",
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        node.query(f"ALTER TABLE {table_name} MODIFY SETTING after_processing = 'keep'")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    # The file was read for `delete`, so its batch still deletes it.
+    wait_until(
+        lambda: count_minio_objects(
+            started_cluster, started_cluster.minio_bucket, files_path
+        )
+        == 0
+    )
+    assert (
+        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst")
+        == "1\t2\t3\n"
+    )
+
+
 @pytest.mark.parametrize(
     "destination_token",
     [None, "foreign-token"],

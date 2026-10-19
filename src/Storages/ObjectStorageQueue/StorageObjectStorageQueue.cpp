@@ -1211,7 +1211,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
     UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-    const ObjectStorageQueueMetadata & metadata) const
+    const ObjectStorageQueueMetadata & metadata,
+    ObjectStorageQueueAction after_processing) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
@@ -1219,7 +1220,7 @@ void StorageObjectStorageQueue::postProcess(
     {
         std::lock_guard lock(mutex);
         post_processor.emplace(
-            getContext(), type, object_storage, metadata.getTableMetadata(), after_processing_settings,
+            getContext(), type, object_storage, after_processing, after_processing_settings,
             metadata.getKeeperIdentity());
     }
 
@@ -1273,12 +1274,13 @@ void StorageObjectStorageQueue::commit(
     /// generation that was ingested throws out of here, so the batch is not committed as processed.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
-    if (!successful_objects.empty()
-        && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    /// The sources share one file iterator, whose `after_processing` decided how their files were read.
+    const auto after_processing = sources.empty() ? ObjectStorageQueueAction::KEEP : sources.front()->getAfterProcessing();
+    if (!successful_objects.empty() && after_processing != ObjectStorageQueueAction::KEEP)
     {
         try
         {
-            postProcess(successful_objects, post_processing_failed_paths, metadata);
+            postProcess(successful_objects, post_processing_failed_paths, metadata, after_processing);
         }
         catch (...)
         {
