@@ -23,6 +23,7 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+struct Settings;
 
 struct QueryResultDetails
 {
@@ -127,6 +128,9 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
 /// start of processing; also used for generated queries that bypass `executeQuery`, such as in the
 /// `eval` table function.
 void normalizeAnalyzerSettings(ASTPtr ast);
+
+/// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
+String formatQueryForLogging(const String & query, const Settings & settings);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

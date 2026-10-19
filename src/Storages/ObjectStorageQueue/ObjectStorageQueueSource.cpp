@@ -162,7 +162,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+        filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
     }
 
     if (use_buckets_for_processing)

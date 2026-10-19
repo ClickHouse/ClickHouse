@@ -12,6 +12,7 @@
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/TargetSpecific.h>
 
 namespace DB
@@ -805,9 +806,10 @@ void registerCodecT64(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64. Expected: 'bit', 'byte')");
             String name = literal->value.safeGet<String>();
 
-            if (name == "byte")
+            /// The variant is a keyword and is matched case-insensitively, like the codec name itself.
+            if (equalsCaseInsensitive(name, "byte"))
                 variant = Variant::Byte;
-            else if (name == "bit")
+            else if (equalsCaseInsensitive(name, "bit"))
                 variant = Variant::Bit;
             else
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64: {}", name);
