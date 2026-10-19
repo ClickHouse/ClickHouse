@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -461,10 +462,21 @@ void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) c
     checkNamespaceExists(namespace_name);
 }
 
-void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
+void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
 {
-    /// The storage deletes the data files after this call, so `delete_data` is unused here.
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, namespace_name, table_name);
+
+    /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
+    /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
+    const auto table_type = getTableType(full_table_name);
+    const bool data_will_be_deleted = table_type == "MANAGED";
+    if (data_will_be_deleted != delete_data)
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Table {}.{} has table_type {} in Unity catalog, so Databricks {} its data on drop. "
+            "Set `iceberg_delete_data_on_drop` to {} to drop it",
+            namespace_name, table_name, table_type, data_will_be_deleted ? "deletes" : "keeps", data_will_be_deleted ? 1 : 0);
+
     LOG_DEBUG(log, "Dropping table {} from Unity catalog", full_table_name);
 
     try
@@ -478,6 +490,16 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
             "Failed to drop table {}.{} from Unity catalog: {}",
             namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
+}
+
+String UnityV2Catalog::getTableType(const String & full_table_name) const
+{
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    if (!hasValueAndItsNotNone("table_type", object))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unity catalog did not report the table_type of table {}", full_table_name);
+    return object->get("table_type").extract<String>();
 }
 
 bool UnityV2Catalog::updateMetadata(
