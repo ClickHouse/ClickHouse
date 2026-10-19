@@ -1409,11 +1409,11 @@ const char * getAuditedDirectFunctionName(const FunctionCreator * handle)
 {
     /// This is deliberately a closed set. A registered function handle is not enough to
     /// certify an empty/default semantic hash: its implementation must be admitted here.
-    static constexpr std::array<const char *, 25> names{"lower",        "toYear",         "plus",          "modulo",       "length",
-                                                        "arrayReverse", "arraySort",      "tuple",         "cityHash64",   "arraySlice",
-                                                        "arrayResize",  "arrayIntersect", "mapKeys",       "if",           "isNull",
-                                                        "arraySum",     "arrayMap",       "arrayDistinct", "arrayConcat",  "CAST",
-                                                        "toString",     "toDecimal32",    "toDecimal64",   "toDecimal128", "toDecimal256"};
+    static constexpr std::array<const char *, 29> names{
+        "lower",        "toYear",        "plus",        "modulo",         "length",   "arrayReverse", "arraySort",   "tuple",
+        "cityHash64",   "arraySlice",    "arrayResize", "arrayIntersect", "mapKeys",  "if",           "isNull",      "arraySum",
+        "arrayMap",     "arrayDistinct", "arrayConcat", "CAST",           "toString", "toDecimal32",  "toDecimal64", "toDecimal128",
+        "toDecimal256", "abs",           "negate",      "sign",           "bitNot"};
 
     if (!handle)
         return nullptr;
@@ -1537,6 +1537,9 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     const auto same_argument_and_result
         = [&](size_t argument) { return argument < arguments.size() && sameType(arguments[argument], result, budget); };
 
+    /// This guard excludes negate's context-dispatched tupleNegate path and every non-integer overload.
+    if (name == "abs" || name == "negate" || name == "sign" || name == "bitNot")
+        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(result);
     if (name == "lower")
         return arguments.size() == 1 && isStringType(arguments[0]) && isStringType(result);
     if (name == "toYear")

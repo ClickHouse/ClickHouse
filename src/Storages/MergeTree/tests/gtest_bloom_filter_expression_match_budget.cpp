@@ -229,6 +229,39 @@ bool canPruneLowerStringIn()
     return !condition.alwaysUnknownOrTrue();
 }
 
+bool canPruneUnaryFunctionIn(const String & function_name, const DataTypePtr & argument_type)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto & query_input = query_dag.addInput("x", argument_type);
+    const auto & index_input = index_dag.addInput("x", argument_type);
+    const auto & query_function
+        = query_dag.addFunction(FunctionFactory::instance().get(function_name, context), {&query_input}, "query_function");
+    const auto & index_function
+        = index_dag.addFunction(FunctionFactory::instance().get(function_name, context), {&index_input}, "index_function");
+
+    const auto result_type = query_function.result_type;
+    const auto output_name = RPNBuilderTreeNode(&query_function, context).getColumnName();
+    const auto & index_output = index_dag.addAlias(index_function, output_name);
+    index_dag.getOutputs().push_back(&index_output);
+    Block header(ColumnsWithTypeAndName{{result_type->createColumn(), result_type, output_name}});
+
+    auto set_value = result_type->createColumn();
+    set_value->insertDefault();
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), result_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node
+        = query_dag.addColumn(ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("in", context), {&query_function, &set_node}, "predicate");
+
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
 struct TestConstantArgumentInResult
 {
     bool can_prune;
@@ -1468,4 +1501,27 @@ TEST(MergeTreeIndexBloomFilter, DeclinesUnreviewedFormatDateTimeAndRetainsLowerP
     EXPECT_FALSE(format_date_time.can_prune);
 
     EXPECT_TRUE(canPruneLowerStringIn());
+}
+
+TEST(MergeTreeIndexBloomFilter, MatchesAuditedPrimitiveIntegerUnaryDirectIN)
+{
+    const auto int64_type = std::make_shared<DataTypeInt64>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+
+    EXPECT_TRUE(canPruneUnaryFunctionIn("abs", int64_type));
+    EXPECT_TRUE(canPruneUnaryFunctionIn("negate", int64_type));
+    EXPECT_TRUE(canPruneUnaryFunctionIn("sign", int64_type));
+    EXPECT_TRUE(canPruneUnaryFunctionIn("bitNot", uint64_type));
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesNonIntegerUnaryArithmeticDirectIN)
+{
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint64_type});
+
+    EXPECT_FALSE(canPruneUnaryFunctionIn("abs", float64_type));
+    EXPECT_FALSE(canPruneUnaryFunctionIn("negate", tuple_type));
+    EXPECT_FALSE(canPruneUnaryFunctionIn("sign", float64_type));
+    EXPECT_FALSE(canPruneUnaryFunctionIn("bitNot", std::make_shared<DataTypeString>()));
 }
