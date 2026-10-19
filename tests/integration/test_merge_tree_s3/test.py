@@ -1128,11 +1128,33 @@ def test_partition_cancellation_is_isolated(s3_cancellation, broken_s3):
         "ENGINE=MergeTree PARTITION BY partition ORDER BY key "
         "SETTINGS storage_policy='broken_s3_long_retries', "
         "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
-        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+        "min_rows_for_wide_part=8192, min_bytes_for_wide_part='10M'"
     )
     node.query(
         f"INSERT INTO {table} SELECT number % 2, number, number, toString(number) FROM numbers(1000)"
     )
+    assert node.query(
+        f"SELECT partition_id, part_type, part_storage_type FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active ORDER BY partition_id"
+    ).strip() == "0\tCompact\tFull\n1\tCompact\tFull"
+    table_uuid = node.query(
+        f"SELECT toString(uuid) FROM system.tables "
+        f"WHERE database=currentDatabase() AND name='{table}'"
+    ).strip()
+    copy_sources = []
+    for partition in (0, 1):
+        remote_paths = (
+            node.query(
+                "SELECT remote_path FROM system.remote_data_paths "
+                "WHERE disk_name='broken_s3_long_retries' "
+                f"AND local_path LIKE '%{table_uuid}%' "
+                f"AND local_path LIKE '%/{partition}_%/data.bin'"
+            )
+            .strip()
+            .splitlines()
+        )
+        assert len(remote_paths) == 1, remote_paths
+        copy_sources.append(f"root/{remote_paths[0].lstrip('/')}")
     node.query(f"SYSTEM STOP MERGES {table}")
     # Clone untouched parts so both partitions perform independent S3 copies.
     node.query(f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 1000 SETTINGS mutations_sync=0")
@@ -1140,10 +1162,16 @@ def test_partition_cancellation_is_isolated(s3_cancellation, broken_s3):
     node.query(f"CREATE TABLE {source} AS {table}")
     try:
         broken_s3.reset()
-        # Fail mutation copies only: replacing the partition must still write its metadata.
-        broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+        # Pool admission is not cancellable. Keep only one copy per partition in retry to avoid exhausting the shared pools.
+        broken_s3.setup_at_object_copy(
+            action="internal_error", count=10000, copy_sources=copy_sources
+        )
         node.query(f"SYSTEM START MERGES {table}")
-        wait_for_s3_request(broken_s3, "object_copy", count=2)
+        wait_condition(
+            broken_s3.get_copy_sources,
+            lambda observed: set(copy_sources).issubset(observed),
+            max_attempts=100,
+        )
         merges = (
             "SELECT arrayStringConcat(arraySort(groupArray(partition_id)), ',') "
             f"FROM system.merges WHERE database=currentDatabase() AND table='{table}'"
