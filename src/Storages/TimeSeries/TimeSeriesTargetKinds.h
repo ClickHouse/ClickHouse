@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTViewTargets.h>
 
+#include <algorithm>
 #include <array>
 
 
@@ -15,6 +16,7 @@ constexpr const auto & getTimeSeriesTargetKinds()
         ViewTarget::Samples,
         ViewTarget::RecentSamples,
         ViewTarget::Tags,
+        ViewTarget::TimeRanges,
         ViewTarget::MetricFamilies,
         ViewTarget::Histograms};
 
@@ -27,7 +29,12 @@ constexpr const auto & getTimeSeriesTargetKinds()
 ///   normalization enforces) and absent only in tables of the earlier versions.
 constexpr bool isOptionalTimeSeriesTarget(ViewTarget::Kind target_kind)
 {
-    return (target_kind == ViewTarget::RecentSamples) || (target_kind == ViewTarget::Histograms);
+    static constexpr auto optional_targets = std::array{
+        ViewTarget::RecentSamples,
+        ViewTarget::TimeRanges,
+        ViewTarget::Histograms};
+
+    return std::ranges::find(optional_targets, target_kind) != optional_targets.end();
 }
 
 }

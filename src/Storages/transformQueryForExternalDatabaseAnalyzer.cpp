@@ -37,6 +37,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool external_storage_push_down_limit;
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -169,7 +170,9 @@ bool holdsEnumConstant(const QueryTreeNodePtr & node)
 }
 
 /// A constant that still holds an `Enum` value would reach the external database as its number; a conjunct with one is applied locally only.
-void removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
+/// Returns whether anything was removed: the external database then returns rows that the local filter drops,
+/// so the `LIMIT` must not be pushed down.
+bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
 {
     auto throw_if_strict = [&]
     {
@@ -184,13 +187,14 @@ void removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
         {
             throw_if_strict();
             filter = {};
+            return true;
         }
-        return;
+        return false;
     }
 
     auto & conjuncts = function->getArguments().getNodes();
     if (std::erase_if(conjuncts, holdsEnumConstant) == 0)
-        return;
+        return false;
     throw_if_strict();
 
     if (conjuncts.empty())
@@ -207,6 +211,7 @@ void removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
         const auto function_impl = FunctionFactory::instance().get("and", context);
         function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
     }
+    return true;
 }
 
 class PrepareForExternalDatabaseVisitor : public InDepthQueryTreeVisitor<PrepareForExternalDatabaseVisitor>
@@ -348,8 +353,10 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
 
     const auto & join_tree = query_node->getJoinTreeNode();
     bool allow_where = true;
+    bool allow_limit = context->getSettingsRef()[Setting::external_storage_push_down_limit];
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
+        allow_limit = false;
         if (join_node->getKind() == JoinKind::Left)
             allow_where = join_node->getLeftTableExpressionNode()->isEqual(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
@@ -363,13 +370,21 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (allow_where)
     {
         if (query_node->hasPrewhere())
+        {
+            if (allow_limit && hasUnknownColumn(query_node->getPrewhere(), replacement_table_expression))
+                allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
-        if (query_node->hasPrewhere())
-            removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context);
+        }
+        if (query_node->hasPrewhere() && removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context))
+            allow_limit = false;
         if (query_node->hasWhere())
+        {
+            if (allow_limit && hasUnknownColumn(query_node->getWhere(), replacement_table_expression))
+                allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
-        if (query_node->hasWhere())
-            removeConjunctsHoldingEnumConstants(query_node->getWhere(), context);
+        }
+        if (query_node->hasWhere() && removeConjunctsHoldingEnumConstants(query_node->getWhere(), context))
+            allow_limit = false;
     }
 
     /// The external database parses this text itself, so a date-time constant must stay in its text form.
@@ -401,6 +416,11 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
         /// would otherwise reject it).
         select_query_typed->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
         select_query_typed->setExpression(ASTSelectQuery::Expression::PREWHERE, nullptr);
+    }
+    if (!allow_limit)
+    {
+        select_query_typed->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, nullptr);
+        select_query_typed->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, nullptr);
     }
     return select_query;
 }

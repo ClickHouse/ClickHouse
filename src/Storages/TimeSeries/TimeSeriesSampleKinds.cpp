@@ -1,8 +1,8 @@
 #include <Storages/TimeSeries/TimeSeriesSampleKinds.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 
 namespace DB

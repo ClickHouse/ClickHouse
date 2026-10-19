@@ -29,10 +29,7 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(element_type));
-    }
+    String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

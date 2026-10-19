@@ -12,9 +12,10 @@ namespace DB
 {
 
 /// The names of the table functions returning the target tables of a TimeSeries table, by the kind of the target.
-constexpr std::array<std::pair<ViewTarget::Kind, const char *>, 4> time_series_target_table_function_names{{
+constexpr std::array<std::pair<ViewTarget::Kind, const char *>, 5> time_series_target_table_function_names{{
     {ViewTarget::Samples, "timeSeriesSamples"},
     {ViewTarget::Tags, "timeSeriesTags"},
+    {ViewTarget::TimeRanges, "timeSeriesTimeRanges"},
     {ViewTarget::MetricFamilies, "timeSeriesMetricFamilies"},
     {ViewTarget::Histograms, "timeSeriesHistograms"},
 }};
@@ -30,9 +31,11 @@ constexpr const char * tryGetTimeSeriesTargetTableFunctionName(ViewTarget::Kind 
     return nullptr;
 }
 
-/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetricFamilies('mydb', 'my_ts_table'),
-/// timeSeriesHistograms('mydb', 'my_ts_table') return the "samples" table, the "tags" table, the "metric families" table,
-/// and the "histograms" table respectively associated with any TimeSeries table mydb.my_ts_table
+/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'),
+/// timeSeriesTimeRanges('mydb', 'my_ts_table'), timeSeriesMetricFamilies('mydb', 'my_ts_table'),
+/// timeSeriesHistograms('mydb', 'my_ts_table')
+/// return the "samples" table, the "tags" table, the "time ranges" table, the "metric families", and the "histograms" table respectively
+/// associated with any TimeSeries table mydb.my_ts_table
 template <ViewTarget::Kind target_kind>
 class TableFunctionTimeSeriesTarget : public ITableFunction
 {

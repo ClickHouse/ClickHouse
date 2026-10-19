@@ -20,9 +20,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRIC FAMILIES [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 TIME RANGES [db].table3 METRIC FAMILIES [db].table4
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree TIME RANGES ENGINE = AggregatingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}

@@ -10,12 +10,12 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <array>
 #include <limits>

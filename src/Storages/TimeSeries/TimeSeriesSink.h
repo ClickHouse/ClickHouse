@@ -26,7 +26,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, histograms.*, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, Histograms, MetricFamilies).
+/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, Histograms, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -114,7 +114,7 @@ private:
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
-    /// The pipelines below are created on the first block with samples of the corresponding kind, see consumeTagsAndSamples().
+    std::unique_ptr<TargetPipeline> time_ranges_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> histograms_pipeline;

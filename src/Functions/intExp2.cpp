@@ -17,6 +17,10 @@ struct IntExp2Impl
 {
     using ResultType = UInt64;
     static constexpr bool allow_string_or_fixed_string = false;
+    /// Documentation-only: the legacy `getReturnTypeImpl(DataTypes)` stays authoritative so that
+    /// wide-integer / non-native arguments reach execution and throw `NOT_IMPLEMENTED` as before,
+    /// instead of being rejected at analysis time.
+    static constexpr auto signature_documentation = "(NativeNumber) -> UInt64";
 
     static ResultType apply([[maybe_unused]] A a)
     {

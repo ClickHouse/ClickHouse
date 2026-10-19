@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BACKUP and RESTORE of a TimeSeries table of the current version: the definition and the data
-# of all the inner tables (samples, recent samples, tags, metric families, histograms) must survive the round trip.
+# of all the inner tables (samples, recent samples, tags, time ranges, metric families, histograms) must survive the round trip.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,6 +32,7 @@ function count_inner_tables()
     count_tables_like '.inner\_id.samples.%'
     count_tables_like '.inner\_id.recentsamples.%'
     count_tables_like '.inner\_id.tags.%'
+    count_tables_like '.inner\_id.timeranges.%'
     count_tables_like '.inner\_id.metricfamilies.%'
     count_tables_like '.inner\_id.histograms.%'
 }

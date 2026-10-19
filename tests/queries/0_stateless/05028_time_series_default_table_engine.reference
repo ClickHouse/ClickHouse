@@ -3,10 +3,12 @@ histograms	MergeTree
 metricfamilies	ReplacingMergeTree
 recentsamples	MergeTree
 samples	MergeTree
-tags	AggregatingMergeTree
+tags	ReplacingMergeTree
+timeranges	AggregatingMergeTree
 -- default_table_engine = ReplicatedMergeTree generates replicated inner engines
 histograms	ReplicatedMergeTree
 metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedMergeTree
 samples	ReplicatedMergeTree
-tags	ReplicatedAggregatingMergeTree
+tags	ReplicatedReplacingMergeTree
+timeranges	ReplicatedAggregatingMergeTree

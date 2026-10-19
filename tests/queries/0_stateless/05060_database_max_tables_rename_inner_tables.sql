@@ -30,8 +30,8 @@ ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 3;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.mv TO {CLICKHOUSE_DATABASE_1:Identifier}.mv;
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
 
--- A `TimeSeries` table has five inner tables by default - samples, recent samples, tags, metric
--- families and histograms - so it needs six slots.
+-- A `TimeSeries` table has six inner tables by default - samples, recent samples, tags, time ranges,
+-- metric families and histograms - so it needs seven slots.
 SET allow_experimental_time_series_table = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 2;

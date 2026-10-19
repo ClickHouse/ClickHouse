@@ -20,10 +20,10 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/addPrometheusHistogramsToTimeSeries.h>
 #include <optional>
 
