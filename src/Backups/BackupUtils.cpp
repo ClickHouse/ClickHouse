@@ -64,7 +64,10 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
+    const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
+
     AccessRightsElements required_access;
+    bool exports_named_collections = false;
     for (const auto & element : elements)
     {
         switch (element.type)
@@ -72,6 +75,8 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             case ASTBackupQuery::TABLE:
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
+                exports_named_collections |= (element.database_name == system_named_collections.first)
+                    && (element.table_name == system_named_collections.second);
                 break;
             }
 
@@ -85,6 +90,8 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
+                exports_named_collections |= (element.database_name == system_named_collections.first)
+                    && !element.except_tables.contains(system_named_collections);
                 break;
             }
 
@@ -92,10 +99,23 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
+                exports_named_collections |= !element.except_databases.contains(system_named_collections.first)
+                    && !element.except_tables.contains(system_named_collections);
                 break;
             }
         }
     }
+
+    /// Exporting `system.named_collections` writes the values of all SQL-created named collections into
+    /// the backup, so it requires the same rights as reading the values (see `backupNamedCollections`,
+    /// which re-checks them on every host collecting the entries). The initiating host of a
+    /// `BACKUP ON CLUSTER` query never runs the collector, and with the default
+    /// `distributed_ddl_use_initial_user_and_roles = false` the other hosts execute the query with full
+    /// access, so this list is the only check made against the initiating user before the query is
+    /// sent to them.
+    if (exports_named_collections)
+        required_access.emplace_back(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
+
     return required_access;
 }
 

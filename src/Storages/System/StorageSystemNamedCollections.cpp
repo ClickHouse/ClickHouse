@@ -87,9 +87,9 @@ void StorageSystemNamedCollections::backupData(
 void StorageSystemNamedCollections::restoreDataFromBackup(
     RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    /// Normally RESTORE does not come here: the named collections are restored before any table is
-    /// created (see RestorerFromBackup::restoreNamedCollections), because table engines resolve
-    /// them inside CREATE.
+    /// Normally RESTORE does not come here: the named collections are restored before any database
+    /// or table is created (see RestorerFromBackup::restoreNamedCollections), because database and
+    /// table engines resolve them inside CREATE.
     restoreNamedCollections(restorer, data_path_in_backup);
 }
 

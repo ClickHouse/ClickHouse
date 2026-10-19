@@ -59,7 +59,10 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     /// encrypted storage they are copied as ciphertext, but any server holding the same key
     /// restores them into collections whose values can then be read, so exporting them is
     /// still equivalent to reading the values and requires `SHOW_NAMED_COLLECTIONS_SECRETS`,
-    /// the same right `system.named_collections` requires to show the values.
+    /// the same right `system.named_collections` requires to show the values. The same rights
+    /// are also required of the initiating user of a `BACKUP ON CLUSTER` query before it is
+    /// dispatched (see `BackupUtils::getRequiredAccessToBackup`), because the hosts running
+    /// this check may execute the query with full access.
     context->checkAccess(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
 
     auto raw_entries = factory.getRawEntriesForBackup();
@@ -156,7 +159,8 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     /// Read, decrypt and parse every entry before creating anything, so that a problem - in
     /// particular a key mismatch, which `decryptStoredEntry` detects by the key fingerprint of the
     /// entry's header - fails the restore before it has touched anything. Because the collections
-    /// are restored before any table is created, nothing has been restored at all at this point.
+    /// are restored before any database or table is created, nothing has been restored at all at
+    /// this point.
     std::vector<ASTPtr> create_queries;
     create_queries.reserve(filenames.size());
     for (const auto & filename : filenames)

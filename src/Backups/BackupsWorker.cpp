@@ -740,7 +740,13 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+        /// The elements are sent to the other hosts unresolved (each host fills empty database names in
+        /// from its own default database, see `DDLTask::setClusterInfo`), so resolve a copy against
+        /// this host's current database for the access check, the same way the no-cluster branch below
+        /// resolves the query itself.
+        auto elements = backup_query->elements;
+        ASTBackupQuery::setCurrentDatabase(elements, context->getCurrentDatabase());
+        auto required_access = BackupUtils::getRequiredAccessToBackup(elements);
 
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);

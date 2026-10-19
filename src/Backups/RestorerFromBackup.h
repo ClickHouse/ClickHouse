@@ -90,8 +90,8 @@ private:
     void checkAccessForObjectsFoundInBackup() const;
 
     /// Restores named collections from the backup (if the backup has the "system.named_collections"
-    /// table) before any table is created, because table engines resolve named collections inside
-    /// CREATE. Runs inside the CREATING_DATABASES stage.
+    /// table) before any database or table is created, because database and table engines resolve
+    /// named collections inside CREATE. Runs at the end of the CHECKING_ACCESS_RIGHTS stage.
     void restoreNamedCollections();
 
     void createAndCheckDatabases();

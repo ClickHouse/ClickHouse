@@ -184,27 +184,29 @@ void RestorerFromBackup::run(Mode mode_)
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
 
-    /// Create databases using the create queries read from the backup.
-    setStage(Stage::CREATING_DATABASES);
-    createAndCheckDatabases();
-
-    /// Restore named collections before any table is created: table engines resolve named
-    /// collections inside CREATE. This runs inside the existing CREATING_DATABASES stage rather
-    /// than in a stage of its own, because stage names are synchronised across hosts through the
-    /// coordination, and a new stage would require every host to be on a version that knows it.
+    /// Restore named collections before any database or table is created: database engines (e.g.
+    /// `Remote(collection)`, or `Replicated` with the `collection_name` setting) and table engines
+    /// resolve named collections inside CREATE. This runs at the end of the CHECKING_ACCESS_RIGHTS
+    /// stage rather than in a stage of its own, because stage names are synchronised across hosts
+    /// through the coordination, and a new stage would require every host to be on a version that
+    /// knows it.
     restoreNamedCollections();
 
-    /// Create tables using the create queries read from the backup.
-    setStage(Stage::CREATING_TABLES);
+    /// Create databases using the create queries read from the backup.
+    setStage(Stage::CREATING_DATABASES);
 
     /// With a replicated named-collections storage only one host has written the restored
     /// collections (see restoreNamedCollections above); the other hosts observe the write through
     /// an asynchronous Keeper watch. The stage barrier above guarantees the writer has finished,
-    /// so make the collections visible on this host synchronously before a table CREATE resolves
-    /// one of them.
+    /// so make the collections visible on this host synchronously before a database or table
+    /// CREATE resolves one of them.
     if (named_collections_restored)
         reloadNamedCollectionsAfterRestore();
 
+    createAndCheckDatabases();
+
+    /// Create tables using the create queries read from the backup.
+    setStage(Stage::CREATING_TABLES);
     removeUnresolvedDependencies();
     createAndCheckTables();
 
@@ -1093,8 +1095,8 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     }
     else if (isSystemNamedCollectionsTableName(table_name))
     {
-        /// Named collections were already restored before the tables were created, during the
-        /// CREATING_DATABASES stage (see restoreNamedCollections), don't restore them twice.
+        /// Named collections were already restored before the databases and tables were created
+        /// (see restoreNamedCollections), don't restore them twice.
         return;
     }
     else if (!restore_settings.shouldRestoreTableData())

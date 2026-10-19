@@ -1,0 +1,6 @@
+backup a database whose engine references a named collection, together with the collections
+1
+restore after dropping both: the collection must be restored before the database is created
+1
+1
+Remote

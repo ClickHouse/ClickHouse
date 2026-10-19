@@ -1135,6 +1135,35 @@ def test_system_named_collections():
     node1.query("DROP NAMED COLLECTION backup_nc")
 
 
+def test_system_named_collections_required_privileges():
+    node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON system.named_collections TO u1")
+
+    # Exporting the collections reveals their values, so the initiator must hold the same rights
+    # that reading the values requires. The initiator is the only place to check them: with the
+    # default `distributed_ddl_use_initial_user_and_roles = false` the other hosts execute the
+    # dispatched query with full access.
+    backup_name = new_backup_name()
+    expected_error = "necessary to have the grant SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON *"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    node1.query("GRANT SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON * TO u1")
+    node1.query(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
 def test_system_named_collections_key_mismatch():
     node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
 
