@@ -629,7 +629,9 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
                     return {{}, begin};
                 }
 
-                const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+                /// `num_rows` is `UInt64` while the loop bound is `size_t`: on platforms where the two
+                /// are not the same type the deduction of `std::min` would fail, so convert explicitly.
+                const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, static_cast<size_t>(num_rows));
                 for (size_t i = begin; i < end; ++i)
                     keep[i] = !(*keys.null_map)[i];
             }
