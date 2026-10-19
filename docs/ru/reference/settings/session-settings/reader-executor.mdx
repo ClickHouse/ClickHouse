@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## reader_executor_block_size
+## reader_executor_block_size {#reader_executor_block_size}
 
 <ExperimentalBadge />
 
@@ -22,9 +22,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1048576"},{"label": "Новая экспериментальная настройка ReaderExecutor: размер фрагмента буфера при чтении из источника."}]}]} />
 
-Размер фрагмента буфера для экспериментального `ReaderExecutor`: при чтении из источника заполняются узлы размером не более этого значения. Значение должно быть не менее 128 КиБ.
+Размер фрагмента буфера для экспериментального `ReaderExecutor`: при чтении из источника заполняются узлы размером не более этого значения. Значение должно находиться в диапазоне от 128 КиБ до 40 МиБ: этот диапазон общий для всех параметров размера `ReaderExecutor`.
 
-## reader_executor_max_tail_for_drain
+## reader_executor_max_tail_for_drain {#reader_executor_max_tail_for_drain}
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Граница дочитывания для экспериментального `ReaderExecutor`: если долгоживущее соединение с источником было сброшено в пределах этого количества байтов от своей правой границы, оно сначала дочитывается до границы, чтобы корректно завершиться и вернуться в пул соединений для повторного использования, а не учитываться как незавершённое соединение.
 
-## reader_executor_min_bytes_for_seek
+## reader_executor_min_bytes_for_seek {#reader_executor_min_bytes_for_seek}
 
 <ExperimentalBadge />
 
@@ -44,7 +44,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Порог прямого пропуска разрыва для экспериментального `ReaderExecutor`: разрыв до этого значения пропускается через открытое соединение с источником (сквозным чтением) вместо выполнения отдельного чтения из источника или повторного открытия соединения. Установите значение близким к точке баланса между затратами на пропускную способность и стоимостью запроса, чтобы сквозное чтение оставалось выгодным.
 
-## reader_executor_use_long_connections
+## reader_executor_plan_look_ahead {#reader_executor_plan_look_ahead}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="16777216" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "16777216"},{"label": "Новая экспериментальная настройка ReaderExecutor: на какую глубину вперёд сведения о наличии данных в кэше разрешаются в удерживаемый план чтения."}]}]} />
+
+Определяет, на какую глубину вперёд экспериментальный `ReaderExecutor` разрешает сведения о наличии данных в кэше в удерживаемый им план чтения (это дешёвая проверка, а не чтение), чтобы одного разрешения хватало на множество окон. План закрепляет каждую разрешённую ячейку кэша, пока курсор её не пройдёт, поэтому от этого диапазона зависит, сколько памяти и сколько невытесняемого кэша удерживает каждый параллельно работающий считыватель. Ограничение не является точным: закрепление распространяется на целый сегмент или блок кэша, поэтому ячейка, выходящая за любую из границ диапазона, удерживается целиком — это добавляет не более одного такого элемента на каждый уровень кэша с каждой стороны. Значение должно находиться в пределах от 128 КиБ до 40 МиБ (общий диапазон для всех размеров `ReaderExecutor`) и быть не меньше `reader_executor_block_size`.
+
+## reader_executor_use_long_connections {#reader_executor_use_long_connections}
 
 <ExperimentalBadge />
 
@@ -54,7 +64,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Повторно использует в экспериментальном `ReaderExecutor` долгоживущее соединение с источником с ограниченным временем жизни между окнами. Долгоживущее соединение — это соединение, диапазон которого выходит за пределы текущего окна чтения; если настройка отключена, исполнитель не расходует бюджет пула соединений, и для каждого окна открывается краткоживущее одноразовое соединение (путь без сохранения состояния).
 
-## reader_executor_window_size
+## reader_executor_window_size {#reader_executor_window_size}
 
 <ExperimentalBadge />
 
@@ -62,6 +72,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8388608"},{"label": "Базовое окно чтения экспериментального `ReaderExecutor` увеличено с 4 МиБ до 8 МиБ. При нехватке памяти окно уменьшается относительно этого базового значения, но не ниже 128 КиБ."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Новая экспериментальная настройка ReaderExecutor: количество байтов, возвращаемых за одно окно чтения."}]}]} />
 
-Количество байтов, возвращаемых экспериментальным `ReaderExecutor` за одно окно чтения (единица данных, возвращаемая операцией чтения). Должно быть не менее 128 КиБ.
+Количество байтов, возвращаемых экспериментальным `ReaderExecutor` за одно окно чтения (единица данных, возвращаемая операцией чтения). Значение должно находиться в диапазоне от 128 КиБ до 40 МиБ — общем для всех параметров размера `ReaderExecutor`.
 
 {/*AUTOGENERATED_END*/}
