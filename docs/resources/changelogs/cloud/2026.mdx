@@ -14,13 +14,13 @@ In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibil
 
 <Update label="Oct 19, 2026">
 
-This week's updates make executable user-defined functions generally available across ClickHouse Cloud, add stronger correctness controls for Kafka ClickPipes, and expand ClickHouse Agents and Langfuse capabilities. You can now run a native UDF runtime with network access and manage UDFs through the Cloud API and Terraform; Kafka ClickPipes can use exactly-once delivery and handle tombstone messages; and ClickHouse Agents add scheduled chats, programmatic tool calling, in-run Skills, and Claude Sonnet 5.5.
+This week's updates make executable user-defined functions generally available across ClickHouse Cloud, add stronger correctness controls for Kafka ClickPipes, and expand ClickHouse Agents and Langfuse capabilities. You can now use a native UDF runtime, give Python UDFs outbound network access, and manage UDFs through the Cloud API and Terraform; Kafka ClickPipes can use exactly-once delivery and handle tombstone messages; and ClickHouse Agents add scheduled chats, programmatic tool calling, in-run Skills, and Claude Sonnet 5.5.
 
 ## New features {#2026-10-19-new-features}
 
 ### Executable UDFs are generally available {#executable-udfs-generally-available}
 
-Executable user-defined functions (UDFs) are now generally available on ClickHouse Cloud across AWS, GCP, and Azure, and are enabled for every organization. Since the public beta, UDFs have gained a native runtime for uploading precompiled, statically linked Rust, Go, C++, or Bun binaries; network access for all organizations; a per-process memory limit; and a `deterministic` flag that lets the query cache serve queries that call a UDF. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud), the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions), and the [LLM token UDF example](https://github.com/ClickHouse/llm-token-udf).
+Executable user-defined functions (UDFs) are now generally available on ClickHouse Cloud across AWS, GCP, and Azure, and are enabled for every organization. Since the public beta, UDFs have gained a native runtime for uploading precompiled, statically linked Rust, Go, C++, or Bun binaries; outbound network access for Python UDFs; a per-process memory limit; and a `deterministic` flag that lets the query cache serve queries that call a UDF. Native UDFs cannot be network-enabled. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud), the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions), and the [LLM token UDF example](https://github.com/ClickHouse/llm-token-udf).
 
 ## API {#2026-10-19-api}
 
@@ -32,17 +32,17 @@ You can now manage the full lifecycle of executable UDFs through 12 new Cloud AP
 
 ### UDF performance metrics in `system.query_log` {#udf-performance-metrics-in-system-query-log}
 
-Starting in version 26.6, eight new `ProfileEvents` and two asynchronous metrics expose per-query UDF behaviour in `system.query_log`. You can see wall time, pool wait, CPU, memory, and bytes sent through the pipe, which makes it easier to profile and compare UDF implementations. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud).
+Starting in version 26.6, eight new `ProfileEvents` expose per-query UDF behaviour in `system.query_log`, including wall time, pool wait, CPU, memory, and bytes sent through the pipe. Two server-wide metrics in `system.asynchronous_metrics` report the number of live UDF processes and their total resident memory, including idle pool workers; the memory value is an upper bound because shared pages are counted once per process. See the [UDF monitoring documentation](/products/cloud/features/sql-console-features/user-defined-functions#monitoring).
 
 ## ClickPipes {#2026-10-19-clickpipes}
 
 ### Exactly-once delivery for Kafka ClickPipes {#exactly-once-delivery-for-kafka-clickpipes}
 
-You can now choose **exactly-once** delivery when creating a Kafka ClickPipe instead of the default at-least-once mode. This prevents duplicates in the target table during failures or rebalances, so you no longer need `ReplacingMergeTree` and `FINAL` for deduplication, at the cost of roughly 4–5% lower throughput. To switch an existing at-least-once pipe, contact support. See [delivery semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics).
+You can now choose **exactly-once** delivery when creating a Kafka ClickPipe instead of the default at-least-once mode. Recovery deduplicates replayed insert ranges while their deterministic tokens remain in the target table's deduplication window. Configure [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) to cover the worst-case replay delay before relying on this instead of downstream deduplication such as `ReplacingMergeTree` and `FINAL`. See [delivery semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics).
 
 ### Tombstone handling for Kafka ClickPipes {#tombstone-handling-for-kafka-clickpipes}
 
-Kafka ClickPipes can now handle tombstone messages: records with a key and a `NULL` payload. Set tombstone handling to `skip` (the default), `soft_delete`, or `delete` to ingest compacted topics and support upsert and CDC use cases such as Debezium. This setting is chosen when you create a pipe, so existing pipes, and possibly their target tables, must be recreated to use it. See [tombstone handling](/integrations/clickpipes/kafka/best-practices#tombstone-handling).
+Kafka ClickPipes can now handle tombstone messages: records with a key and a `NULL` payload. You can delete matching destination rows with lightweight deletes when exactly-once semantics is enabled, or mark tombstones as deleted rows. For large workloads, marking rows as deleted is recommended; use a `ReplacingMergeTree` destination table and query its `_is_deleted` virtual column. See [tombstone handling](/integrations/clickpipes/kafka/best-practices#tombstone-handling).
 
 ## Console / UI {#2026-10-19-console-ui}
 
