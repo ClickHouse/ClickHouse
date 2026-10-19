@@ -166,7 +166,9 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
     const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
     bool is_s3express_bucket)
 {
-    DB::RemoteHostFilter remote_host_filter;
+    /// The client keeps a reference to the filter, so it must outlive the returned client.
+    /// `const` makes sure no test reconfigures the shared instance.
+    static const DB::RemoteHostFilter remote_host_filter{};
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
