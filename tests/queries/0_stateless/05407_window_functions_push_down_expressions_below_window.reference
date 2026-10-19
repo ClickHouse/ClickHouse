@@ -47,6 +47,8 @@ LIMIT
 1	100
 LIMIT BY with a constant key
 1	10000
+overflow mode break
+ok
 arrayJoin below the window functions
 1	1
 a table that keeps its columns in memory

@@ -117,6 +117,15 @@ SELECT 'LIMIT BY with a constant key';
 SELECT toUInt64(s), count() OVER () FROM (SELECT if(number < 1000, '1', 'x') AS s FROM numbers(10000))
 LIMIT 1 BY 'group' SETTINGS max_block_size = 10, max_threads = 1;
 
+SELECT 'overflow mode break';
+SELECT v, any(n) FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
+GROUP BY v FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10, max_rows_to_group_by = 1, group_by_overflow_mode = 'break';
+SELECT DISTINCT v, n FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10, max_rows_in_distinct = 1, distinct_overflow_mode = 'break';
+SELECT 'ok';
+
 SELECT 'arrayJoin below the window functions';
 SELECT toUInt64(s), count() OVER ()
 FROM (SELECT if(number = 0, 'x', '1') AS s, arrayJoin(if(number = 0, [], [1])) AS a FROM numbers(2))

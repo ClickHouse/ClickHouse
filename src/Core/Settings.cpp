@@ -7907,7 +7907,8 @@ column and have a small fixed-size result, for example `toUInt64OrZero(splitBySt
 The window functions buffer their input, so they buffer the result instead of the column.
 
 The rewrite is applied only if nothing else reads the column after the window functions, and not if a `LIMIT`
-above the window functions may need the expressions only for some rows.
+above the window functions or an `overflow_mode = 'break'` setting (for example `group_by_overflow_mode`) may
+need the expressions only for some rows.
 
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
