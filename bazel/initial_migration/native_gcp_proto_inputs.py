@@ -21,7 +21,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from initial_migration.codegen import GOOGLEAPIS_ARCHIVE, GOOGLEAPIS_OUTPUT
+from initial_migration.codegen import GCP_OUTPUT, GOOGLEAPIS_ARCHIVE, GOOGLEAPIS_OUTPUT
 from initial_migration.native_cc_inputs import Sources, TUS
 from initial_migration.prune_inherited_headers import ARCHES, CC_COMPILERS, CC_PROVIDERS
 from initial_migration.repository_inputs import ROOT
@@ -31,7 +31,7 @@ PROTOBUF = '@clickhouse_google_protobuf//:_libprotobuf'
 GRPC = '@clickhouse_grpc//:grpc++'
 PROTOC = '@clickhouse_google_protobuf//:protoc'
 GRPC_PLUGIN = '@clickhouse_grpc//:grpc_cpp_plugin'
-GENERATED = 'contrib/google-cloud-cpp-cmake/'
+GENERATED = GCP_OUTPUT
 PROTO_IMPORT = re.compile(r'^\s*import\s+(?:public\s+|weak\s+)?["\']([^"\']+)["\']\s*;',
                           re.MULTILINE)
 
@@ -96,17 +96,25 @@ class GoogleProtos:
         }
         shared = dictionary(constants.get('_SHARED_CODEGEN'))
         for name, rule in dictionary(constants.get('CODEGEN_RULES')).items():
-            if not (isinstance(rule, ast.Call)
-                    and getattr(rule.func, 'id', '') == 'codegen_for_arch'
-                    and len(rule.args) == 2 and isinstance(rule.args[0], ast.Subscript)):
+            if isinstance(rule, ast.Dict):
+                # New Google APIs rules own all four outputs, for either CPU.
+                cpu = None
+                attrs = dictionary(rule)
+                outs = strings(attrs.get('outs'), '')
+                prefix = 'gen/' + GENERATED
+            elif (isinstance(rule, ast.Call)
+                  and getattr(rule.func, 'id', '') == 'codegen_for_arch'
+                  and len(rule.args) == 2 and isinstance(rule.args[0], ast.Subscript)):
+                template = string(rule.args[0].slice)
+                cpu = string(rule.args[1])
+                if cpu not in ARCHES or template not in shared:
+                    continue
+                attrs = dictionary(shared[template])
+                outs = strings(attrs.get('outs'), cpu)
+                prefix = 'gen/' + cpu + '/' + GENERATED
+            else:
                 continue
-            template = string(rule.args[0].slice)
-            cpu = string(rule.args[1])
-            if cpu not in ARCHES or template not in shared:
-                continue
-            attrs = dictionary(shared[template])
-            outs = strings(attrs.get('outs'), cpu)
-            if not any(value.startswith('gen/' + cpu + '/' + GENERATED) for value in outs):
+            if not any(value.startswith(prefix) for value in outs):
                 continue
             record = self.generator(name, cpu, attrs, outs)
             if record is None:
@@ -124,20 +132,21 @@ class GoogleProtos:
 
     def generator(self, name, cpu, attrs, outs):
         """Require exact compiler, plugin, inputs, outputs, and pinned schema."""
-        tools = set(strings(attrs.get('tools'), cpu))
+        tools = set(strings(attrs.get('tools'), cpu or ''))
         cmd = string(attrs.get('cmd'))
         if cmd is None or tools not in ({PROTOC}, {PROTOC, GRPC_PLUGIN}):
             self.skipped['unknown_generator'] += 1
             return None
-        cmd = cmd.replace('gen/{arch}/', 'gen/' + cpu + '/')
-        prefix = 'gen/' + cpu + '/' + GENERATED
+        root = 'gen/' + (cpu + '/' if cpu else '')
+        cmd = cmd.replace('gen/{arch}/', root)
+        prefix = root + GENERATED
         names = [path.removeprefix(prefix) for path in outs]
         if any(path == name for path, name in zip(outs, names, strict=True)):
             self.skipped['foreign_output'] += 1
             return None
         first = names[0]
-        grpc = first.endswith('.grpc.pb.cc')
-        suffix = '.grpc.pb.cc' if grpc else '.pb.cc'
+        grpc = first.endswith('.grpc.pb.cc') or cpu is None
+        suffix = '.grpc.pb.cc' if first.endswith('.grpc.pb.cc') else '.pb.cc'
         if not first.endswith(suffix):
             self.skipped['not_proto_cc'] += 1
             return None
@@ -145,8 +154,10 @@ class GoogleProtos:
         stem = schema.removesuffix('.proto')
         expected = {stem + ('.grpc.pb.cc' if grpc else '.pb.cc'),
                     stem + ('.grpc.pb.h' if grpc else '.pb.h')}
-        srcs = strings(attrs.get('srcs'), cpu)
-        source = '//bazel:gen/' + cpu + '/' + GOOGLEAPIS_OUTPUT + schema
+        if cpu is None:
+            expected.update((stem + '.pb.cc', stem + '.pb.h'))
+        srcs = strings(attrs.get('srcs'), cpu or '')
+        source = '//bazel:' + root + GOOGLEAPIS_OUTPUT + schema
         if (set(names) != expected or schema not in self.schemas or source not in srcs
                 or '$(execpath ' + PROTOC + ')' not in cmd
                 or '--cpp_out' not in cmd or GOOGLEAPIS_OUTPUT + schema not in cmd

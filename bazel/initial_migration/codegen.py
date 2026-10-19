@@ -21,6 +21,94 @@ TOOLS = {'protoc', 'grpc_cpp_plugin', 'flatc', 'llvm-tblgen', 'llvm-min-tblgen'}
 GOOGLEAPIS_REVISION = 'e60db19f11f94175ac682c5898cce0f77cc508ea'
 GOOGLEAPIS_ARCHIVE = 'contrib/google-cloud-cpp-cmake/googleapis/' + GOOGLEAPIS_REVISION + '.tar.gz'
 GOOGLEAPIS_OUTPUT = 'external/googleapis/src/googleapis_download/'
+GCP_OUTPUT = 'contrib/google-cloud-cpp-cmake/'
+_GOOGLEAPIS_DIRECTORY = re.compile(
+    r'gen/(?:' + '|'.join(ARCHES) + r')/('
+    + re.escape(GCP_OUTPUT.rstrip('/')) + '|' + re.escape(GOOGLEAPIS_OUTPUT.rstrip('/'))
+    + r')(?=/|$|[\s"\'])')
+
+
+def googleapis_path(value):
+    """Bazel configures generated Google APIs files under its target output root."""
+    if isinstance(value, str):
+        return _GOOGLEAPIS_DIRECTORY.sub(r'gen/\1', value)
+    return value
+
+
+def common_googleapis_rules(rules):
+    """Use one protoc invocation for each identical recorded Google API schema."""
+    remaining, recorded = {}, {}
+    for name, attrs in rules.items():
+        outs = [googleapis_path(path) for path in attrs['outs']]
+        if outs == attrs['outs']:
+            remaining[name] = attrs
+            continue
+        if any(old == new for old, new in zip(attrs['outs'], outs, strict=True)):
+            raise ValueError('Google APIs generator also produced unrelated files: ' + name)
+        arch = attrs['outs'][0].split('/', 2)[1]
+        if arch not in ARCHES:
+            raise ValueError('Unknown Google APIs generator architecture: ' + name)
+        normalized = {
+            key: [googleapis_path(item) for item in value] if isinstance(value, list)
+            else googleapis_path(value)
+            for key, value in attrs.items()
+        }
+        variants = recorded.setdefault(outs[0], {})
+        if arch in variants:
+            raise ValueError('Duplicate Google APIs output for ' + arch + ': ' + outs[0])
+        variants[arch] = normalized
+
+    shared = {}
+    for output, variants in recorded.items():
+        if set(variants) != set(ARCHES) or variants[ARCHES[0]] != variants[ARCHES[1]]:
+            raise ValueError('Google APIs generators differ across target platforms: ' + output)
+        shared[output] = variants[ARCHES[0]]
+
+    for output, attrs in shared.items():
+        if output.startswith('gen/' + GOOGLEAPIS_OUTPUT):
+            name = 'extract_googleapis'
+        elif output.endswith('.grpc.pb.cc'):
+            continue
+        elif output.startswith('gen/' + GCP_OUTPUT) and output.endswith('.pb.cc'):
+            stem = output.removesuffix('.pb.cc')
+            grpc = shared.get(stem + '.grpc.pb.cc')
+            if (grpc is None or attrs['outs'] != [stem + '.pb.cc', stem + '.pb.h']
+                    or grpc['outs'] != [stem + '.grpc.pb.cc', stem + '.grpc.pb.h']
+                    or attrs['srcs'] != grpc['srcs']
+                    or set(attrs['tools']) != {'@clickhouse_google_protobuf//:protoc'}
+                    or set(grpc['tools']) != {
+                        '@clickhouse_google_protobuf//:protoc',
+                        '@clickhouse_grpc//:grpc_cpp_plugin',
+                    }
+                    or '--cpp_out' not in attrs['cmd']
+                    or '--cpp_out' not in grpc['cmd'] or '--grpc_out' not in grpc['cmd']):
+                raise ValueError('Google APIs protobuf and gRPC generators disagree: ' + output)
+            # The recorded gRPC command already produces the C++ outputs.
+            attrs = dict(grpc, outs=attrs['outs'] + grpc['outs'])
+            name = 'generate_googleapis_' + stem.removeprefix('gen/' + GCP_OUTPUT).replace('/', '_')
+        else:
+            raise ValueError('Unsupported Google APIs generator output: ' + output)
+        if name in remaining:
+            raise ValueError('Duplicate Google APIs target: ' + name)
+        remaining[name] = attrs
+    return remaining
+
+
+def googleapis_source_map(sources):
+    """Map both CMake proto names to the same any2bazel source identity."""
+    result = {}
+    for source, identity in sources.items():
+        if identity.endswith('.pb.cc'):
+            for arch in ARCHES:
+                prefix = '@build/' + arch + '/' + GCP_OUTPUT
+                if identity.startswith(prefix):
+                    identity = '@build/' + GCP_OUTPUT + identity.removeprefix(prefix)
+                    source = googleapis_path(source)
+                    break
+        if source in result and result[source] != identity:
+            raise ValueError('Conflicting any2bazel source identities for: ' + source)
+        result[source] = identity
+    return result
 
 
 def render_license(attrs, license_inputs):

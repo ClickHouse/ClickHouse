@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from initial_migration.codegen import Codegen, render_rules
+from initial_migration.codegen import Codegen, common_googleapis_rules, googleapis_path, googleapis_source_map, render_rules
 from initial_migration.cmake_metadata import read_metadata, write_metadata
 from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from initial_migration.reference_readers import read_file_api
@@ -722,7 +722,16 @@ def main():
         build_options[arch] = graph.build_options
         cmake_metadata[arch]['build_options'] = build_options[arch].pop('cmake_substitutions')
         parity_sources.update(graph.parity_sources)
-    codegen_rules = relocate_tools(codegen_rules, owners)
+    codegen_rules = common_googleapis_rules(relocate_tools(codegen_rules, owners))
+    # Keep CMake node names until Graph.generate() finishes indexing generators.
+    # Only the Google APIs input/compile directories are configuration-neutral.
+    for graph in graphs.values():
+        for target in graph.generated_targets.values():
+            for group in target['groups']:
+                for field in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'copts'):
+                    if field in group:
+                        group[field] = [googleapis_path(value) for value in group[field]]
+    parity_sources = googleapis_source_map(parity_sources)
     # Count CMake target names across both platforms, not generated compile
     # group names. A directory consumed only by one target is private.
     native_lz4 = {arch: graph.target('_lz4', graph.targets['_lz4'], native=True)

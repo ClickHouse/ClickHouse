@@ -244,7 +244,11 @@ native_stripped_hash(
 [
     filegroup(
         name = "generated_" + arch,
-        srcs = [":build_options_" + arch] + [":" + name for name in CODEGEN_RULES if name.startswith("generate_" + arch + "_") or name == "extract_googleapis_" + arch],
+        srcs = [":build_options_" + arch] + [
+            ":" + name
+            for name in CODEGEN_RULES
+            if name.startswith("generate_" + arch + "_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
+        ],
     )
     for arch in [
         "x86_64",

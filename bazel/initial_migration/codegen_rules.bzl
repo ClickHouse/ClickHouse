@@ -1073,2017 +1073,6 @@ _SHARED_CODEGEN = {
     ],
     "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/prometheus-protobufs-cmake/gogoproto\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/prometheus-protobufs-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/prometheus-protobufs-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/prometheus-protobufs-cmake\" -I \"$$execroot/contrib/prometheus-protobufs-cmake\" -I \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" -I \"$$execroot/contrib/prometheus-protobufs\" -I \"$$execroot/contrib/prometheus-protobufs-gogo\" \"$$execroot/contrib/prometheus-protobufs-gogo/gogoproto/gogo.proto\"",
   },
-  "contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/backend.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/config_change.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/config_change.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/config_change.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/config_change.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/consumer.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/consumer.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/consumer.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/consumer.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/context.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/context.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/error_reason.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/error_reason.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/error_reason.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/error_reason.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_info.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_info.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_info.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_info.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/http.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/http.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/httpbody.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/httpbody.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/httpbody.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/httpbody.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/label.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/label.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/policy.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/resource.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/routing.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/visibility.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/visibility.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/visibility.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/visibility.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/code.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/code.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/code.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/code.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/context\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/error_details.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/error_details.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/error_details.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/error_details.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/calendar_period.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/calendar_period.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/calendar_period.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/calendar_period.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/color.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/color.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/color.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/color.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/color.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/color.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/date.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/datetime.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/datetime.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/datetime.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/datetime.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/dayofweek.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/dayofweek.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/dayofweek.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/dayofweek.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/decimal.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/decimal.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/decimal.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/decimal.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/expr.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/fraction.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/fraction.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/fraction.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/fraction.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/interval.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/interval.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/interval.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/interval.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/interval.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/latlng.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/latlng.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/latlng.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/latlng.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/localized_text.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/localized_text.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/localized_text.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/localized_text.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/money.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/money.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/money.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/money.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/money.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/money.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/month.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/month.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/month.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/month.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/month.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/month.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/phone_number.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/phone_number.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/phone_number.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/phone_number.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/postal_address.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/postal_address.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/postal_address.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/postal_address.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/quaternion.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/quaternion.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/quaternion.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/quaternion.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/timeofday.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/type/timeofday.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/auth.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/client.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/client.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/control.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/control.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/metric.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/billing.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/distribution.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/distribution.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/distribution.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/distribution.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/log.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/log.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/logging.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/quota.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/usage.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/service.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/service.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/api.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/source_context.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/type.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/service.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/service.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/service.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/api.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/source_context.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/type.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/api/service.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/location\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/longrunning/operations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/longrunning/operations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/longrunning/operations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/longrunning\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/longrunning/operations.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/cloud/common\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto\"",
-  },
-  "contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc": {
-    "srcs": [
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto",
-      "//bazel:gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
-      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
-    ],
-    "outs": [
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-      "gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.h",
-    ],
-    "tools": [
-      "@clickhouse_grpc//:grpc_cpp_plugin",
-      "@clickhouse_google_protobuf//:protoc",
-    ],
-    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake/google/storage/v2\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/{arch}/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto\"",
-  },
   "src/Server/grpc_protos/clickhouse_grpc.pb.h": {
     "srcs": [
       "//:src/Server/grpc_protos/clickhouse_grpc.proto",
@@ -3099,82 +1088,6 @@ _SHARED_CODEGEN = {
       "@clickhouse_google_protobuf//:protoc",
     ],
     "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\" && cd \"$$execroot/$(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\" --grpc_out \"$$execroot/$(BINDIR)/bazel/gen/{arch}/src/Server/grpc_protos\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" -I \"$$execroot/src/Server/grpc_protos\" \"$$execroot/src/Server/grpc_protos/clickhouse_grpc.proto\"",
-  },
-  "external/googleapis/src/googleapis_download/google/api/annotations.proto": {
-    "srcs": [
-      "//:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz",
-    ],
-    "outs": [
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/annotations.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/auth.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/backend.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/billing.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/client.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/config_change.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/consumer.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/context.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/control.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/distribution.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/documentation.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/error_reason.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/field_info.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/http.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/httpbody.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/label.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/log.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/logging.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/metric.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/policy.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/quota.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/resource.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/routing.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/service.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/source_info.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/usage.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/api/visibility.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/longrunning/operations.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/code.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/error_details.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/rpc/status.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/calendar_period.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/color.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/date.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/datetime.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/dayofweek.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/decimal.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/expr.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/fraction.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/interval.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/latlng.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/localized_text.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/money.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/month.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/phone_number.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/postal_address.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/quaternion.proto",
-      "gen/{arch}/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
-    ],
-    "tools": [
-      "//bazel:extract_archive",
-    ],
-    "cmd": "$(execpath //bazel:extract_archive) --archive=$(execpath //:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz) --root=$(BINDIR)/bazel/gen/{arch}/external/googleapis/src/googleapis_download/ --strip-prefix=googleapis-e60db19f11f94175ac682c5898cce0f77cc508ea google/api/annotations.proto google/api/auth.proto google/api/backend.proto google/api/billing.proto google/api/client.proto google/api/config_change.proto google/api/consumer.proto google/api/context.proto google/api/control.proto google/api/distribution.proto google/api/documentation.proto google/api/endpoint.proto google/api/error_reason.proto google/api/field_behavior.proto google/api/field_info.proto google/api/http.proto google/api/httpbody.proto google/api/label.proto google/api/launch_stage.proto google/api/log.proto google/api/logging.proto google/api/metric.proto google/api/monitored_resource.proto google/api/monitoring.proto google/api/policy.proto google/api/quota.proto google/api/resource.proto google/api/routing.proto google/api/service.proto google/api/source_info.proto google/api/system_parameter.proto google/api/usage.proto google/api/visibility.proto google/cloud/common/operation_metadata.proto google/cloud/extended_operations.proto google/cloud/location/locations.proto google/cloud/orgpolicy/v1/orgpolicy.proto google/iam/credentials/v1/common.proto google/iam/credentials/v1/iamcredentials.proto google/iam/v1/iam_policy.proto google/iam/v1/options.proto google/iam/v1/policy.proto google/longrunning/operations.proto google/rpc/code.proto google/rpc/context/attribute_context.proto google/rpc/error_details.proto google/rpc/status.proto google/storage/v2/storage.proto google/type/calendar_period.proto google/type/color.proto google/type/date.proto google/type/datetime.proto google/type/dayofweek.proto google/type/decimal.proto google/type/expr.proto google/type/fraction.proto google/type/interval.proto google/type/latlng.proto google/type/localized_text.proto google/type/money.proto google/type/month.proto google/type/phone_number.proto google/type/postal_address.proto google/type/quaternion.proto google/type/timeofday.proto",
   },
   "embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp": {
     "kind": "embedded_sources",
@@ -5953,136 +3866,6 @@ CODEGEN_RULES = {
   "generate_x86_64_960b2581e3b7c175": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/prompb/remote.pb.h"], "x86_64"),
   "generate_x86_64_4d29469d806d2cee": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/prompb/types.pb.h"], "x86_64"),
   "generate_x86_64_43a01980996fcb20": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h"], "x86_64"),
-  "generate_x86_64_79f0df6d7b514a41": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"], "x86_64"),
-  "generate_x86_64_c8942f600ffe573e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_ed6bb3a089835b81": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"], "x86_64"),
-  "generate_x86_64_02e71dd75a6739a7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_857204d505c6ef3d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"], "x86_64"),
-  "generate_x86_64_d2ac531f5e29aede": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_b07d54d3707d0fc5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"], "x86_64"),
-  "generate_x86_64_4995b38e0fef629c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_e4a88df32d27e740": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"], "x86_64"),
-  "generate_x86_64_af7fe8391ef12ec6": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_ca681891d1cca661": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"], "x86_64"),
-  "generate_x86_64_a1c97ccc32192d19": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_811ded6529aa110c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"], "x86_64"),
-  "generate_x86_64_7ca641016397a795": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_d05f947c7bde9ee8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"], "x86_64"),
-  "generate_x86_64_9a7a1343415310f4": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_0803b25ca0960fff": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"], "x86_64"),
-  "generate_x86_64_d145fddc1a297741": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_daec7c009c1b696b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"], "x86_64"),
-  "generate_x86_64_474bcc8cc4873b5b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_28f62f249b78e980": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"], "x86_64"),
-  "generate_x86_64_8e35214cb2cd5add": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_489da02175f05d91": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"], "x86_64"),
-  "generate_x86_64_3968d7819c22e8b5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_18bc79e40ec3dd3a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"], "x86_64"),
-  "generate_x86_64_70252344c3c8cf3d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_a3e9b79fe8b82fcf": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"], "x86_64"),
-  "generate_x86_64_66060f5271895386": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_318f1a8f58df8adf": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"], "x86_64"),
-  "generate_x86_64_495a29e50811952f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_a79cf04695fef82d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"], "x86_64"),
-  "generate_x86_64_d536c0fc185c34bb": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_cd3d6eb6fff5b708": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"], "x86_64"),
-  "generate_x86_64_99ddd904145933f4": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_9d0dc4b1d253e0fc": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"], "x86_64"),
-  "generate_x86_64_8c0a15109a324914": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_b60d545fcd29585f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"], "x86_64"),
-  "generate_x86_64_8d7fc608c9a040ee": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_d28349e27e2a6c08": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"], "x86_64"),
-  "generate_x86_64_ea3d379acc1c4ad3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_d92239f1584cb9a3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"], "x86_64"),
-  "generate_x86_64_18911ca71fb4188d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_509698373112880a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"], "x86_64"),
-  "generate_x86_64_fdc40650d82e5b72": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_7c517d9200d41404": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"], "x86_64"),
-  "generate_x86_64_f529d3a3135634d5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_c263f7564a8e6ea1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"], "x86_64"),
-  "generate_x86_64_d4428c8455ec7ae8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_f34a0035d813dac1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"], "x86_64"),
-  "generate_x86_64_1cfe8924aa0d3c3e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_83d4b15c6d02c033": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"], "x86_64"),
-  "generate_x86_64_be84a445adda01c8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_66e8770a72b38d0e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"], "x86_64"),
-  "generate_x86_64_431ac7efa59d9db0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_c994f2a67a619370": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"], "x86_64"),
-  "generate_x86_64_55c3c9708b15e4fe": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_80cbab002c45ba6b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"], "x86_64"),
-  "generate_x86_64_0671729901466c42": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_d800d4907035888d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"], "x86_64"),
-  "generate_x86_64_00964e1d219578be": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_5e2f41ce7b8577f7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"], "x86_64"),
-  "generate_x86_64_ca5b6e271e29217d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_1e36c877847c0c94": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"], "x86_64"),
-  "generate_x86_64_898fa0e832466dba": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_2170894ba1792fad": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"], "x86_64"),
-  "generate_x86_64_20bee8239669bb93": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_11689b582083d0ef": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"], "x86_64"),
-  "generate_x86_64_e17f47bc55bb9618": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_d1190617826c8bd0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"], "x86_64"),
-  "generate_x86_64_da63ae24fe73ce23": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_35863ea87498d979": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"], "x86_64"),
-  "generate_x86_64_e13db5ec6be451aa": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_74d27c9c80f5c1ff": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"], "x86_64"),
-  "generate_x86_64_2855c6a19104e1a6": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_3a20ba1d83e9ca3a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"], "x86_64"),
-  "generate_x86_64_9880195273293264": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_ccd8db973f591e6c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"], "x86_64"),
-  "generate_x86_64_a2856fba5579aacc": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_4361b21b1c2a1a1f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"], "x86_64"),
-  "generate_x86_64_f8173756d2fc46fb": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_b75afc71914ffe49": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"], "x86_64"),
-  "generate_x86_64_24a1569a2941f535": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_4526ee2611b8c201": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"], "x86_64"),
-  "generate_x86_64_2e21b435eba661e7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_818a5a9b2bded734": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"], "x86_64"),
-  "generate_x86_64_a5ec2a41991a7011": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_26e70e3135a79359": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"], "x86_64"),
-  "generate_x86_64_abde53672be120de": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_e3ec891a929e637a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"], "x86_64"),
-  "generate_x86_64_794a152b3091bee2": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_0eb186445cf06a3f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"], "x86_64"),
-  "generate_x86_64_3a582fdca1e5d8d8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_c9659a3fec0379b5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"], "x86_64"),
-  "generate_x86_64_1104e9f77a981d49": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_1a0dd8b6344b8f7a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"], "x86_64"),
-  "generate_x86_64_203832e9738d652a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_2325c48af43d7aae": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"], "x86_64"),
-  "generate_x86_64_13fc2c201af6353c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_a6ce8fc10427a6b1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"], "x86_64"),
-  "generate_x86_64_f243ec1fee38b942": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_2e1a39df69c893ba": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"], "x86_64"),
-  "generate_x86_64_b104c78570670ef1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_cf4eb689dc209a71": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"], "x86_64"),
-  "generate_x86_64_0427d3b0f1fc9373": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_f0c782f38e50c361": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"], "x86_64"),
-  "generate_x86_64_e8df464f610241e5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_c763330edb754add": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"], "x86_64"),
-  "generate_x86_64_9028e362b219a576": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_f69d8bec81e3a166": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"], "x86_64"),
-  "generate_x86_64_1e78422bd5914542": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_8b8bcd0673cd6e2e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"], "x86_64"),
-  "generate_x86_64_272d4a470fe8cfe3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_fa587b7ab1756624": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"], "x86_64"),
-  "generate_x86_64_0bf4f671c5f49ff0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_622b25e5f77f835a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"], "x86_64"),
-  "generate_x86_64_cefb1d655b3cedf3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_06533d2b6e88b474": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"], "x86_64"),
-  "generate_x86_64_a187d711d3adabb0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_065828cc06be1f8f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"], "x86_64"),
-  "generate_x86_64_13cbc33727edd878": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_a79b350b1ea21555": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"], "x86_64"),
-  "generate_x86_64_5ef46e6266684fc1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_31510edeef1c0e3b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"], "x86_64"),
-  "generate_x86_64_74c49f50d2731e46": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_ca19001680ec4e29": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"], "x86_64"),
-  "generate_x86_64_1a8877a2dbac589b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_3e38da5acfda1f36": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"], "x86_64"),
-  "generate_x86_64_8787d2b1fa505482": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"], "x86_64"),
-  "generate_x86_64_7e63a0cf86fa6378": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"], "x86_64"),
-  "generate_x86_64_186445af208923dd": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"], "x86_64"),
   "generate_x86_64_SQLConsole": {
     "srcs": [
       "@clickhouse_sql_console//:dist-standalone/assets/ClickHouse-Loading-Cp50uPrc.webp",
@@ -6478,7 +4261,6 @@ CODEGEN_RULES = {
     "cmake_cmd": " --cmake-gzip-mtime=1792282266",
   },
   "generate_x86_64_a11a7a9f459c326c": codegen_for_arch(_SHARED_CODEGEN["src/Server/grpc_protos/clickhouse_grpc.pb.h"], "x86_64"),
-  "extract_googleapis_x86_64": codegen_for_arch(_SHARED_CODEGEN["external/googleapis/src/googleapis_download/google/api/annotations.proto"], "x86_64"),
   "generate_x86_64_licenses": {
     "kind": "licenses",
     "outs": [
@@ -6528,136 +4310,6 @@ CODEGEN_RULES = {
   "generate_aarch64_960b2581e3b7c175": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/prompb/remote.pb.h"], "aarch64"),
   "generate_aarch64_4d29469d806d2cee": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/prompb/types.pb.h"], "aarch64"),
   "generate_aarch64_43a01980996fcb20": codegen_for_arch(_SHARED_CODEGEN["contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h"], "aarch64"),
-  "generate_aarch64_79f0df6d7b514a41": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"], "aarch64"),
-  "generate_aarch64_c8942f600ffe573e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_ed6bb3a089835b81": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"], "aarch64"),
-  "generate_aarch64_02e71dd75a6739a7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_857204d505c6ef3d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"], "aarch64"),
-  "generate_aarch64_d2ac531f5e29aede": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_b07d54d3707d0fc5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"], "aarch64"),
-  "generate_aarch64_4995b38e0fef629c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_e4a88df32d27e740": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"], "aarch64"),
-  "generate_aarch64_af7fe8391ef12ec6": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_ca681891d1cca661": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"], "aarch64"),
-  "generate_aarch64_a1c97ccc32192d19": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_811ded6529aa110c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"], "aarch64"),
-  "generate_aarch64_7ca641016397a795": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_d05f947c7bde9ee8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"], "aarch64"),
-  "generate_aarch64_9a7a1343415310f4": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_0803b25ca0960fff": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"], "aarch64"),
-  "generate_aarch64_d145fddc1a297741": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_daec7c009c1b696b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"], "aarch64"),
-  "generate_aarch64_474bcc8cc4873b5b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_28f62f249b78e980": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"], "aarch64"),
-  "generate_aarch64_8e35214cb2cd5add": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_489da02175f05d91": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"], "aarch64"),
-  "generate_aarch64_3968d7819c22e8b5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_18bc79e40ec3dd3a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"], "aarch64"),
-  "generate_aarch64_70252344c3c8cf3d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_a3e9b79fe8b82fcf": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"], "aarch64"),
-  "generate_aarch64_66060f5271895386": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_318f1a8f58df8adf": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"], "aarch64"),
-  "generate_aarch64_495a29e50811952f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_a79cf04695fef82d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"], "aarch64"),
-  "generate_aarch64_d536c0fc185c34bb": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_cd3d6eb6fff5b708": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"], "aarch64"),
-  "generate_aarch64_99ddd904145933f4": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_9d0dc4b1d253e0fc": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"], "aarch64"),
-  "generate_aarch64_8c0a15109a324914": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_b60d545fcd29585f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"], "aarch64"),
-  "generate_aarch64_8d7fc608c9a040ee": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_d28349e27e2a6c08": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"], "aarch64"),
-  "generate_aarch64_ea3d379acc1c4ad3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_d92239f1584cb9a3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"], "aarch64"),
-  "generate_aarch64_18911ca71fb4188d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_509698373112880a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"], "aarch64"),
-  "generate_aarch64_fdc40650d82e5b72": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_7c517d9200d41404": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"], "aarch64"),
-  "generate_aarch64_f529d3a3135634d5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_c263f7564a8e6ea1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"], "aarch64"),
-  "generate_aarch64_d4428c8455ec7ae8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_f34a0035d813dac1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"], "aarch64"),
-  "generate_aarch64_1cfe8924aa0d3c3e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_83d4b15c6d02c033": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"], "aarch64"),
-  "generate_aarch64_be84a445adda01c8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_66e8770a72b38d0e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"], "aarch64"),
-  "generate_aarch64_431ac7efa59d9db0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_c994f2a67a619370": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"], "aarch64"),
-  "generate_aarch64_55c3c9708b15e4fe": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_80cbab002c45ba6b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"], "aarch64"),
-  "generate_aarch64_0671729901466c42": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_d800d4907035888d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"], "aarch64"),
-  "generate_aarch64_00964e1d219578be": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_5e2f41ce7b8577f7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"], "aarch64"),
-  "generate_aarch64_ca5b6e271e29217d": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_1e36c877847c0c94": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"], "aarch64"),
-  "generate_aarch64_898fa0e832466dba": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_2170894ba1792fad": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"], "aarch64"),
-  "generate_aarch64_20bee8239669bb93": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_11689b582083d0ef": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"], "aarch64"),
-  "generate_aarch64_e17f47bc55bb9618": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_d1190617826c8bd0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"], "aarch64"),
-  "generate_aarch64_da63ae24fe73ce23": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_35863ea87498d979": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"], "aarch64"),
-  "generate_aarch64_e13db5ec6be451aa": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_74d27c9c80f5c1ff": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"], "aarch64"),
-  "generate_aarch64_2855c6a19104e1a6": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_3a20ba1d83e9ca3a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"], "aarch64"),
-  "generate_aarch64_9880195273293264": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_ccd8db973f591e6c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"], "aarch64"),
-  "generate_aarch64_a2856fba5579aacc": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_4361b21b1c2a1a1f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"], "aarch64"),
-  "generate_aarch64_f8173756d2fc46fb": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_b75afc71914ffe49": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"], "aarch64"),
-  "generate_aarch64_24a1569a2941f535": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_4526ee2611b8c201": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"], "aarch64"),
-  "generate_aarch64_2e21b435eba661e7": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_818a5a9b2bded734": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"], "aarch64"),
-  "generate_aarch64_a5ec2a41991a7011": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_26e70e3135a79359": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"], "aarch64"),
-  "generate_aarch64_abde53672be120de": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_e3ec891a929e637a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"], "aarch64"),
-  "generate_aarch64_794a152b3091bee2": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_0eb186445cf06a3f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"], "aarch64"),
-  "generate_aarch64_3a582fdca1e5d8d8": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_c9659a3fec0379b5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"], "aarch64"),
-  "generate_aarch64_1104e9f77a981d49": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_1a0dd8b6344b8f7a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"], "aarch64"),
-  "generate_aarch64_203832e9738d652a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_2325c48af43d7aae": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"], "aarch64"),
-  "generate_aarch64_13fc2c201af6353c": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_a6ce8fc10427a6b1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"], "aarch64"),
-  "generate_aarch64_f243ec1fee38b942": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_2e1a39df69c893ba": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"], "aarch64"),
-  "generate_aarch64_b104c78570670ef1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_cf4eb689dc209a71": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"], "aarch64"),
-  "generate_aarch64_0427d3b0f1fc9373": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_f0c782f38e50c361": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"], "aarch64"),
-  "generate_aarch64_e8df464f610241e5": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_c763330edb754add": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"], "aarch64"),
-  "generate_aarch64_9028e362b219a576": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_f69d8bec81e3a166": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"], "aarch64"),
-  "generate_aarch64_1e78422bd5914542": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_8b8bcd0673cd6e2e": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"], "aarch64"),
-  "generate_aarch64_272d4a470fe8cfe3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_fa587b7ab1756624": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"], "aarch64"),
-  "generate_aarch64_0bf4f671c5f49ff0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_622b25e5f77f835a": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"], "aarch64"),
-  "generate_aarch64_cefb1d655b3cedf3": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_06533d2b6e88b474": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"], "aarch64"),
-  "generate_aarch64_a187d711d3adabb0": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_065828cc06be1f8f": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"], "aarch64"),
-  "generate_aarch64_13cbc33727edd878": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_a79b350b1ea21555": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"], "aarch64"),
-  "generate_aarch64_5ef46e6266684fc1": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_31510edeef1c0e3b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"], "aarch64"),
-  "generate_aarch64_74c49f50d2731e46": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_ca19001680ec4e29": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"], "aarch64"),
-  "generate_aarch64_1a8877a2dbac589b": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_3e38da5acfda1f36": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"], "aarch64"),
-  "generate_aarch64_8787d2b1fa505482": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"], "aarch64"),
-  "generate_aarch64_7e63a0cf86fa6378": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"], "aarch64"),
-  "generate_aarch64_186445af208923dd": codegen_for_arch(_SHARED_CODEGEN["contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"], "aarch64"),
   "generate_aarch64_SQLConsole": {
     "srcs": [
       "@clickhouse_sql_console//:dist-standalone/assets/ClickHouse-Loading-Cp50uPrc.webp",
@@ -7053,7 +4705,6 @@ CODEGEN_RULES = {
     "cmake_cmd": " --cmake-gzip-mtime=1780518042",
   },
   "generate_aarch64_a11a7a9f459c326c": codegen_for_arch(_SHARED_CODEGEN["src/Server/grpc_protos/clickhouse_grpc.pb.h"], "aarch64"),
-  "extract_googleapis_aarch64": codegen_for_arch(_SHARED_CODEGEN["external/googleapis/src/googleapis_download/google/api/annotations.proto"], "aarch64"),
   "generate_aarch64_licenses": {
     "kind": "licenses",
     "outs": [
@@ -7065,4 +4716,1248 @@ CODEGEN_RULES = {
     "srcs": list(_LICENSE_INPUTS.values()),
   },
   "generate_aarch64_embedded_sources": codegen_for_arch(_SHARED_CODEGEN["embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"], "aarch64"),
+  "generate_googleapis_google_api_backend": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/backend.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/backend.proto\"",
+  },
+  "generate_googleapis_google_api_config_change": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/config_change.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/config_change.proto\"",
+  },
+  "generate_googleapis_google_api_consumer": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/consumer.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/consumer.proto\"",
+  },
+  "generate_googleapis_google_api_context": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/context.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/context.proto\"",
+  },
+  "generate_googleapis_google_api_documentation": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/documentation.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/documentation.proto\"",
+  },
+  "generate_googleapis_google_api_error_reason": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/error_reason.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/error_reason.proto\"",
+  },
+  "generate_googleapis_google_api_field_behavior": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto\"",
+  },
+  "generate_googleapis_google_api_field_info": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_info.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/field_info.proto\"",
+  },
+  "generate_googleapis_google_api_http": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/http.proto\"",
+  },
+  "generate_googleapis_google_api_httpbody": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/httpbody.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/httpbody.proto\"",
+  },
+  "generate_googleapis_google_api_label": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/label.proto\"",
+  },
+  "generate_googleapis_google_api_launch_stage": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto\"",
+  },
+  "generate_googleapis_google_api_policy": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/policy.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/policy.proto\"",
+  },
+  "generate_googleapis_google_api_resource": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/resource.proto\"",
+  },
+  "generate_googleapis_google_api_routing": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/routing.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/routing.proto\"",
+  },
+  "generate_googleapis_google_api_source_info": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/source_info.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/source_info.proto\"",
+  },
+  "generate_googleapis_google_api_system_parameter": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/system_parameter.proto\"",
+  },
+  "generate_googleapis_google_api_visibility": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/visibility.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/visibility.proto\"",
+  },
+  "generate_googleapis_google_cloud_extended_operations": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto\"",
+  },
+  "generate_googleapis_google_cloud_orgpolicy_v1_orgpolicy": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto\"",
+  },
+  "generate_googleapis_google_rpc_code": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/rpc/code.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/rpc/code.proto\"",
+  },
+  "generate_googleapis_google_rpc_context_attribute_context": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/context\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto\"",
+  },
+  "generate_googleapis_google_rpc_error_details": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/rpc/error_details.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/rpc/error_details.proto\"",
+  },
+  "generate_googleapis_google_type_calendar_period": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/calendar_period.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/calendar_period.proto\"",
+  },
+  "generate_googleapis_google_type_color": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/color.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/color.proto\"",
+  },
+  "generate_googleapis_google_type_date": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/date.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/date.proto\"",
+  },
+  "generate_googleapis_google_type_datetime": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/datetime.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/datetime.proto\"",
+  },
+  "generate_googleapis_google_type_dayofweek": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/dayofweek.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/dayofweek.proto\"",
+  },
+  "generate_googleapis_google_type_decimal": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/decimal.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/decimal.proto\"",
+  },
+  "generate_googleapis_google_type_expr": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/expr.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/expr.proto\"",
+  },
+  "generate_googleapis_google_type_fraction": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/fraction.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/fraction.proto\"",
+  },
+  "generate_googleapis_google_type_interval": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/interval.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/interval.proto\"",
+  },
+  "generate_googleapis_google_type_latlng": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/latlng.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/latlng.proto\"",
+  },
+  "generate_googleapis_google_type_localized_text": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/localized_text.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/localized_text.proto\"",
+  },
+  "generate_googleapis_google_type_money": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/money.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/money.proto\"",
+  },
+  "generate_googleapis_google_type_month": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/month.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/month.proto\"",
+  },
+  "generate_googleapis_google_type_phone_number": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/phone_number.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/phone_number.proto\"",
+  },
+  "generate_googleapis_google_type_postal_address": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/postal_address.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/postal_address.proto\"",
+  },
+  "generate_googleapis_google_type_quaternion": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/quaternion.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/quaternion.proto\"",
+  },
+  "generate_googleapis_google_type_timeofday": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/timeofday.proto\"",
+  },
+  "generate_googleapis_google_api_annotations": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/annotations.proto\"",
+  },
+  "generate_googleapis_google_api_auth": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/auth.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/auth.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/auth.proto\"",
+  },
+  "generate_googleapis_google_api_client": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/client.proto\"",
+  },
+  "generate_googleapis_google_api_control": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/control.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/policy.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/control.proto\"",
+  },
+  "generate_googleapis_google_api_metric": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/metric.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/metric.proto\"",
+  },
+  "generate_googleapis_google_api_billing": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/billing.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/billing.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/billing.proto\"",
+  },
+  "generate_googleapis_google_api_distribution": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/distribution.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/distribution.proto\"",
+  },
+  "generate_googleapis_google_api_endpoint": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/endpoint.proto\"",
+  },
+  "generate_googleapis_google_api_log": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/log.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/log.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/log.proto\"",
+  },
+  "generate_googleapis_google_api_logging": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/logging.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/logging.proto\"",
+  },
+  "generate_googleapis_google_api_monitored_resource": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto\"",
+  },
+  "generate_googleapis_google_api_monitoring": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/monitoring.proto\"",
+  },
+  "generate_googleapis_google_api_quota": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/quota.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/quota.proto\"",
+  },
+  "generate_googleapis_google_api_usage": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/usage.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/usage.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/usage.proto\"",
+  },
+  "generate_googleapis_google_api_service": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/auth.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/backend.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/billing.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/context.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/control.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/documentation.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/log.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/logging.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/metric.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/quota.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/service.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/source_info.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/usage.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/api.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/source_context.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/struct.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/type.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/service.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/api\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/api/service.proto\"",
+  },
+  "generate_googleapis_google_cloud_location_locations": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/location\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto\"",
+  },
+  "generate_googleapis_google_iam_v1_options": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto\"",
+  },
+  "generate_googleapis_google_iam_v1_policy": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/expr.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto\"",
+  },
+  "generate_googleapis_google_rpc_status": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/rpc/status.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/rpc/status.proto\"",
+  },
+  "generate_googleapis_google_longrunning_operations": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/longrunning/operations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/rpc/status.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/any.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/longrunning\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/longrunning/operations.proto\"",
+  },
+  "generate_googleapis_google_iam_v1_iam_policy": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/expr.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto\"",
+  },
+  "generate_googleapis_google_iam_credentials_v1_common": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto\"",
+  },
+  "generate_googleapis_google_iam_credentials_v1_iamcredentials": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto\"",
+  },
+  "generate_googleapis_google_cloud_common_operation_metadata": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/common\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto\"",
+  },
+  "generate_googleapis_google_storage_v2_storage": {
+    "srcs": [
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/api/routing.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/date.proto",
+      "//bazel:gen/external/googleapis/src/googleapis_download/google/type/expr.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/descriptor.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/duration.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/empty.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/field_mask.proto",
+      "@clickhouse_google_protobuf//:src/google/protobuf/timestamp.proto",
+    ],
+    "outs": [
+      "gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.h",
+      "gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
+      "gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.h",
+    ],
+    "tools": [
+      "@clickhouse_grpc//:grpc_cpp_plugin",
+      "@clickhouse_google_protobuf//:protoc",
+    ],
+    "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/storage/v2\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto\"",
+  },
+  "extract_googleapis": {
+    "srcs": [
+      "//:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz",
+    ],
+    "outs": [
+      "gen/external/googleapis/src/googleapis_download/google/api/annotations.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/auth.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/backend.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/billing.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/client.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/config_change.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/consumer.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/context.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/control.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/distribution.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/documentation.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/endpoint.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/error_reason.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/field_info.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/http.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/httpbody.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/label.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/log.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/logging.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/metric.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/monitoring.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/policy.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/quota.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/resource.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/routing.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/service.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/source_info.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/system_parameter.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/usage.proto",
+      "gen/external/googleapis/src/googleapis_download/google/api/visibility.proto",
+      "gen/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto",
+      "gen/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto",
+      "gen/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto",
+      "gen/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto",
+      "gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto",
+      "gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto",
+      "gen/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto",
+      "gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto",
+      "gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto",
+      "gen/external/googleapis/src/googleapis_download/google/longrunning/operations.proto",
+      "gen/external/googleapis/src/googleapis_download/google/rpc/code.proto",
+      "gen/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto",
+      "gen/external/googleapis/src/googleapis_download/google/rpc/error_details.proto",
+      "gen/external/googleapis/src/googleapis_download/google/rpc/status.proto",
+      "gen/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/calendar_period.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/color.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/date.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/datetime.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/dayofweek.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/decimal.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/expr.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/fraction.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/interval.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/latlng.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/localized_text.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/money.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/month.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/phone_number.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/postal_address.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/quaternion.proto",
+      "gen/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
+    ],
+    "tools": [
+      "//bazel:extract_archive",
+    ],
+    "cmd": "$(execpath //bazel:extract_archive) --archive=$(execpath //:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz) --root=$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/ --strip-prefix=googleapis-e60db19f11f94175ac682c5898cce0f77cc508ea google/api/annotations.proto google/api/auth.proto google/api/backend.proto google/api/billing.proto google/api/client.proto google/api/config_change.proto google/api/consumer.proto google/api/context.proto google/api/control.proto google/api/distribution.proto google/api/documentation.proto google/api/endpoint.proto google/api/error_reason.proto google/api/field_behavior.proto google/api/field_info.proto google/api/http.proto google/api/httpbody.proto google/api/label.proto google/api/launch_stage.proto google/api/log.proto google/api/logging.proto google/api/metric.proto google/api/monitored_resource.proto google/api/monitoring.proto google/api/policy.proto google/api/quota.proto google/api/resource.proto google/api/routing.proto google/api/service.proto google/api/source_info.proto google/api/system_parameter.proto google/api/usage.proto google/api/visibility.proto google/cloud/common/operation_metadata.proto google/cloud/extended_operations.proto google/cloud/location/locations.proto google/cloud/orgpolicy/v1/orgpolicy.proto google/iam/credentials/v1/common.proto google/iam/credentials/v1/iamcredentials.proto google/iam/v1/iam_policy.proto google/iam/v1/options.proto google/iam/v1/policy.proto google/longrunning/operations.proto google/rpc/code.proto google/rpc/context/attribute_context.proto google/rpc/error_details.proto google/rpc/status.proto google/storage/v2/storage.proto google/type/calendar_period.proto google/type/color.proto google/type/date.proto google/type/datetime.proto google/type/dayofweek.proto google/type/decimal.proto google/type/expr.proto google/type/fraction.proto google/type/interval.proto google/type/latlng.proto google/type/localized_text.proto google/type/money.proto google/type/month.proto google/type/phone_number.proto google/type/postal_address.proto google/type/quaternion.proto google/type/timeofday.proto",
+  },
 }

@@ -18,7 +18,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_silk_fibers",
-    srcs = glob(["src/fibers/*.cpp"]),
+    srcs = (glob(["src/fibers/*.cpp"])) + glob(["src/**/*.h"]),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_native_headers",
@@ -66,13 +66,8 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_silk_util",
-    srcs = glob(["src/util/*.cpp"]),
-    hdrs = ([
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "include/**/*.h",
-        "src/**/*.h",
-    ])),
+    srcs = (glob(["src/util/*.cpp"])) + glob(["src/**/*.h"]),
+    hdrs = (["@clickhouse_sysroot//:linux_native_headers"] + glob(["include/**/*.h"])),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "src/util/error.cpp",

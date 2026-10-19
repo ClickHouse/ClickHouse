@@ -52,7 +52,7 @@ expand_template(
 
 ch_cc_library(
     name = "_cassandra",
-    srcs = [
+    srcs = ([
         "src/abstract_data.cpp",
         "src/address.cpp",
         "src/address_factory.cpp",
@@ -181,7 +181,7 @@ ch_cc_library(
             "src/third_party/hdr_histogram/hdr_histogram.hpp",
             "src/third_party/http-parser/http_parser.h",
         ],
-    ),
+    )) + glob(["src/third_party/curl/**/*.hpp", "src/third_party/hdr_histogram/**/*.hpp", "src/third_party/http-parser/**/*.h"]),
     hdrs = select({
         "@platforms//cpu:x86_64": ([
             ":config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
@@ -338,12 +338,10 @@ _GENERATED_DEPS_1 = [
 
 ch_cc_library(
     name = "_curl_hostcheck",
-    srcs = [
+    srcs = ([
         "src/third_party/curl/hostcheck.cpp",
-    ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["src/third_party/curl/**/*.hpp"]),
+    ]) + glob(["src/third_party/curl/**/*.hpp"]),
+    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -361,12 +359,10 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_hdr_histogram",
-    srcs = [
+    srcs = ([
         "src/third_party/hdr_histogram/hdr_histogram.cpp",
-    ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
+    ]) + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
+    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -384,12 +380,10 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_http-parser",
-    srcs = [
+    srcs = ([
         "src/third_party/http-parser/http_parser.c",
-    ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["src/third_party/http-parser/**/*.h"]),
+    ]) + glob(["src/third_party/http-parser/**/*.h"]),
+    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",

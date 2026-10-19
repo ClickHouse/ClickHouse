@@ -97,10 +97,6 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
     "crypto/ec/curve448/arch_32",
     "crypto/ec/curve448/arch_64",
     ".",
-    repository_local_include(
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "contrib/openssl",
-    ),
 ]
 
 ch_cc_library(
@@ -1334,6 +1330,7 @@ ch_cc_library(
         "-std=gnu11",
         "-Wno-unused-command-line-argument",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,

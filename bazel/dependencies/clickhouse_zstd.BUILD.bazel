@@ -1,5 +1,5 @@
 load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
+load("@clickhouse//bazel:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -85,9 +85,7 @@ ch_cc_library(
     ] + glob(["lib/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [],
+    ],
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
@@ -101,12 +99,6 @@ ch_cc_library(
     ],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/zstd",
-        ),
-    ],
     deps = _GENERATED_DEPS_0,
     alwayslink = False,
 )

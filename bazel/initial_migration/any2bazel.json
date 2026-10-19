@@ -1019,524 +1019,524 @@
         "to": "@build/aarch64/contrib/arrow-cmake/orc_proto.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
@@ -1697,526 +1697,6 @@
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
         "to": "@build/x86_64/contrib/arrow-cmake/orc_proto.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
@@ -2440,523 +1920,523 @@
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
@@ -3100,523 +2580,523 @@
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/auth.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/billing.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/log.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/service.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/usage.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",

@@ -1,7 +1,7 @@
 """Resolve external repository names and CMake source filenames."""
 
-load("//bazel/initial_migration:repository_labels.bzl", _REPOSITORIES = "REPOSITORIES")
 load("//bazel/initial_migration:cmake_metadata.bzl", _CMAKE_METADATA = "CMAKE_METADATA")
+load("//bazel/initial_migration:repository_labels.bzl", _REPOSITORIES = "REPOSITORIES")
 
 _LLVM_TOOLCHAIN_PATH = Label("@llvm-project//:BUILD.bazel").workspace_root
 
@@ -75,6 +75,8 @@ def _generated_prefix_maps(arch):
     return [
         "-ffile-prefix-map=bazel/config/" + arch + "/=" + build,
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/" + arch + "/=" + build,
+        "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/=" +
+        build + "contrib/google-cloud-cpp-cmake/",
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/" + arch + "/=" + build
         for label in _REPOSITORIES.values()
@@ -104,6 +106,7 @@ def cmake_prefix_maps(arches):
         source_settings[cpu] = _SOURCE_PREFIX_MAPS
         setting = str(Label("@clickhouse//bazel:use_cmake_metadata_" + arch))
         generated_settings[setting] = _GENERATED_PREFIX_MAPS[arch]
+
         # #embed copies retain source-tree names even inside bazel/gen. Keep
         # this more specific map after the general generated-directory map.
         embedded_settings[cpu] = _EMBEDDED_PREFIX_MAPS[arch]
