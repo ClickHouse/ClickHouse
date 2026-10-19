@@ -290,8 +290,19 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     /// NULL markers, and a backing table without the marker fails closed by making the condition false.
     /// The marker is checked here and is not part of the exposed table schema.
     const auto & client_info = outer_context->getClientInfo();
+    /// clickhouse-local queries can lack an authenticated session, so both ClientInfo user names are empty.
+    /// Permit that identity only in the LOCAL application and on its LOCAL interface. A SECONDARY_QUERY can
+    /// carry a supplied interface, but an authenticated session still has a non-empty current_user; the interserver
+    /// handler stamps TCP_INTERSERVER. Empty server identities and forwarded or otherwise inconsistent identities
+    /// remain fail-closed.
+    const bool has_local_empty_user_identity =
+        outer_context->getApplicationType() == Context::ApplicationType::LOCAL
+        && client_info.interface == ClientInfo::Interface::LOCAL
+        && client_info.current_user.empty()
+        && client_info.initial_user.empty();
     const bool has_consistent_user_identity =
-        !client_info.current_user.empty() && client_info.current_user == client_info.initial_user;
+        has_local_empty_user_identity
+        || (!client_info.current_user.empty() && client_info.current_user == client_info.initial_user);
 
     String select_query = fmt::format(
         "SELECT {} FROM {} WHERE {} AND (if(initial_user != '', initial_user, user) = {}) AND is_initial_query = 1 AND {}",
