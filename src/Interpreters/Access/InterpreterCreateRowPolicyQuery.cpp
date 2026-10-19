@@ -2,15 +2,34 @@
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <Access/RowPolicy.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Planner/Utils.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageProxy.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -20,10 +39,152 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace
 {
+    /// Tables and dictionaries named in a filter are resolved against the reader's current database.
+    bool readsOtherObjects(const IAST & ast, const ColumnsDescription & columns)
+    {
+        if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>())
+            return true;
+
+        if (const auto * function = ast.as<ASTFunction>())
+        {
+            const auto & name = function->name;
+            if (functionIsDictGet(name) || functionIsJoinGet(name) || name == "predictXGBoost" || name == "assignCentroid"
+                || name == "hasColumnInTable")
+                return true;
+
+            if (functionIsInOrGlobalInOperator(name) && function->arguments && function->arguments->children.size() == 2)
+            {
+                const auto & rhs = function->arguments->children[1];
+                if (const auto * rhs_function = rhs->as<ASTFunction>();
+                    rhs_function && TableFunctionFactory::instance().isTableFunctionName(rhs_function->name))
+                    return true;
+                if (const auto * rhs_identifier = rhs->as<ASTIdentifier>(); rhs_identifier && !columns.has(rhs_identifier->name()))
+                    return true;
+            }
+        }
+
+        for (const auto & child : ast.children)
+            if (child && readsOtherObjects(*child, columns))
+                return true;
+        return false;
+    }
+
+    /// Nothing is disclosed about a table whose columns the user cannot see.
+    bool canSeeColumnsByName(const AccessRights & rights, const String & database, const String & table)
+    {
+        return rights.isGranted(AccessType::SHOW_COLUMNS, database, table) || rights.isGranted(AccessType::SELECT, database, table);
+    }
+
+    bool canSeeAliasTarget(const StoragePtr & storage, const ContextPtr & context)
+    {
+        auto alias = castStorage<StorageAlias>(storage, DeferredTable::Skip);
+        return !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, "")
+            || alias->isTargetTableGranted(context, AccessType::SELECT, "");
+    }
+
+    /// A filter over stored columns only is checked without creating a deferred storage.
+    bool referencesOnlyDeclaredColumns(const IAST & ast, const ColumnsDescription & columns)
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+            return columns.hasPhysical(identifier->name());
+
+        for (const auto & child : ast.children)
+            if (child && !referencesOnlyDeclaredColumns(*child, columns))
+                return false;
+        return true;
+    }
+
+    void checkFilterResolves(
+        const ASTPtr & filter, const ASTPtr & expanded, const StoragePtr & storage, const String & policy_name, const ContextPtr & context)
+    {
+        const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        const auto & columns = metadata->getColumns();
+        if (columns.empty() || readsOtherObjects(*expanded, columns))
+            return;
+
+        TableNodePtr table_node;
+        const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+        if (proxy && !proxy->tryGetNested() && referencesOnlyDeclaredColumns(*expanded, columns))
+            table_node = std::make_shared<TableNode>(std::make_shared<StorageDummy>(storage->getStorageID(), columns), context);
+        else
+            table_node = std::make_shared<TableNode>(storage, context);
+
+        try
+        {
+            auto filter_query_tree = buildFilterQueryTree(filter->clone(), table_node, context);
+            assertNoAggregateFunctionNodes(filter_query_tree, "in row policy filter");
+            assertNoWindowFunctionNodes(filter_query_tree, "in row policy filter");
+            assertNoGroupingFunctionNodes(filter_query_tree, "in row policy filter");
+
+            const auto result_type = filter_query_tree->getResultType();
+            if (!result_type->canBeUsedInBooleanContext())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter of row policy {}: {}", policy_name, result_type->getName());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while checking the filter of row policy {} against table {}", policy_name, storage->getStorageID().getFullTableName());
+            throw;
+        }
+    }
+
+    void checkFiltersResolveForExistingTables(
+        const ASTCreateRowPolicyQuery & query, const std::vector<RowPolicyName> & names, const ContextPtr & context)
+    {
+        if (!context->getUserID())
+            return;
+
+        std::vector<std::pair<ASTPtr, ASTPtr>> filters;
+        for (const auto & [filter_type, filter] : query.filters)
+        {
+            if (!filter)
+                continue;
+            ASTPtr expanded = filter->clone();
+            UserDefinedSQLFunctionVisitor::visit(expanded, context);
+            filters.emplace_back(filter, std::move(expanded));
+        }
+        if (filters.empty())
+            return;
+
+        const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+        auto check_table = [&](const RowPolicyName & name, const StoragePtr & storage)
+        {
+            if (!canSeeAliasTarget(storage, context))
+                return;
+            for (const auto & [filter, expanded] : filters)
+                checkFilterResolves(filter, expanded, storage, name.toString(), context);
+        };
+
+        for (const auto & name : names)
+        {
+            auto database = DatabaseCatalog::instance().tryGetDatabase(name.database);
+            if (!database || database->isExternal())
+                continue;
+
+            if (name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            {
+                auto can_see_by_name = [&](const String & table_name)
+                { return canSeeColumnsByName(*access_rights, name.database, table_name); };
+                for (auto iterator = database->getTablesIterator(context, can_see_by_name, /*skip_not_loaded=*/ false); iterator->isValid();
+                     iterator->next())
+                {
+                    if (const auto & storage = iterator->table())
+                        check_table(name, storage);
+                }
+            }
+            else if (canSeeColumnsByName(*access_rights, name.database, name.table_name))
+            {
+                if (auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(name.database, name.table_name), context))
+                    check_table(name, storage);
+            }
+        }
+    }
+
     void updateRowPolicyFromQueryImpl(
         RowPolicy & policy,
         const ASTCreateRowPolicyQuery & query,
@@ -93,6 +254,16 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         storage_ptr = access_control.getStorageByName(query.storage_name);
         storage = storage_ptr.get();
     }
+
+    std::vector<RowPolicyName> installed_names;
+    for (const auto & full_name : query.names->full_names)
+    {
+        const bool exists = storage->find<RowPolicy>(full_name.toString()).has_value();
+        if ((query.alter && query.if_exists && !exists) || (!query.alter && query.if_not_exists && exists))
+            continue;
+        installed_names.push_back(full_name);
+    }
+    checkFiltersResolveForExistingTables(query, installed_names, getContext());
 
     Strings names = query.names->toStrings();
     if (query.alter)

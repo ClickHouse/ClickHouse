@@ -1,0 +1,11 @@
+stored	0
+kept	5
+still kept	5
+lookup policies	10
+against table default.t_x. (UNKNOWN_IDENTIFIER)
+l1	TableProxy
+l2	TableProxy
+l3	TableProxy
+udf	2
+arr	1
+left	0

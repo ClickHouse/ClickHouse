@@ -422,6 +422,8 @@ TO analyst_role;
 
 With this policy, `SELECT * FROM db.orders` returns the same rows as `SELECT * FROM db.orders WHERE region = 'EU'` would.
 
+When the policy is created or altered, the condition is analyzed against each existing table it is for (every existing table of the database for `ON db.*`), and the statement fails if it cannot be applied to one of them, for example because it uses a column the table does not have. A condition that reads another table or a dictionary (a subquery, a table on the right of `IN`, `dictGet`, `joinGet`) is not checked, nor are tables created later or whose columns the current user cannot see. With `ON CLUSTER`, a host checks its own tables only when it runs the statement as the initiator's user (`distributed_ddl_use_initial_user_and_roles` is enabled and `distributed_ddl_entry_format_version` is 8 or higher).
+
 ## TO Clause {#to-clause}
 
 In the `TO` section you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
