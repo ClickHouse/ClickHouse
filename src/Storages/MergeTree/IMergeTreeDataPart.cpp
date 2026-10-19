@@ -3815,7 +3815,12 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
 
-    auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
+    return hasSecondaryIndex(index_name, metadata->escape_index_filenames);
+}
+
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, bool escape_index_filenames) const
+{
+    auto file_name = getIndexFileName(index_name, escape_index_filenames);
     return getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }

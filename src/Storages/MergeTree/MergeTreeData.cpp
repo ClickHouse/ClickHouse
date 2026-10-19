@@ -1690,7 +1690,7 @@ void MergeTreeData::checkMetadataProperties(
 }
 
 void MergeTreeData::setProperties(
-    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & new_metadata_,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     ContextPtr local_context)
@@ -1700,6 +1700,53 @@ void MergeTreeData::setProperties(
     /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
     /// dedicated MergeTree arena. This state lives as long as the table object itself.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// An implicit index is identified only by its name, which is derived from the column name. Removing
+    /// it from the metadata does not remove its files from the existing parts: dropping an `ALIAS` column
+    /// schedules no mutation at all. So when a later `ALTER` adds a column under the same name (for
+    /// example, `DROP COLUMN b` of `b ALIAS a + 1` followed by `ADD COLUMN b ALIAS a + 1000000`), the
+    /// re-created implicit index would read the files built for the previous definition and prune wrong.
+    /// Do not create the implicit index of a column that is new to the table while some active part still
+    /// has files under its name. A later metadata change that creates it again goes through the same check.
+    /// The files of an index that comes back for a column that stays as it is are valid (for example, after
+    /// `DROP INDEX` of an explicit `minmax` index that replaced it), so only new columns are checked.
+    std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
+    {
+        static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+        NameSet new_implicit_indices;
+        for (const auto & index : new_metadata_.secondary_indices)
+        {
+            if (!index.isImplicitlyCreated() || old_metadata.secondary_indices.has(index.name) || !index.name.starts_with(implicit_index_prefix))
+                continue;
+
+            const String column_name = index.name.substr(implicit_index_prefix.size());
+            if (new_metadata_.columns.has(column_name) && !old_metadata.columns.has(column_name))
+                new_implicit_indices.insert(index.name);
+        }
+
+        if (!new_implicit_indices.empty())
+        {
+            NameSet foreign_implicit_indices;
+            for (const auto & part : getDataPartsVectorForInternalUsage())
+            {
+                for (const auto & index_name : new_implicit_indices)
+                {
+                    if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, old_metadata.escape_index_filenames))
+                        foreign_implicit_indices.insert(index_name);
+                }
+            }
+
+            if (!foreign_implicit_indices.empty())
+            {
+                LOG_INFO(log, "Not creating implicit indices {} because existing parts have files of previous indices with the same names",
+                    fmt::join(foreign_implicit_indices, ", "));
+                metadata_without_foreign_implicit_indices.emplace(new_metadata_);
+                std::erase_if(metadata_without_foreign_implicit_indices->secondary_indices,
+                    [&](const IndexDescription & index) { return foreign_implicit_indices.contains(index.name); });
+            }
+        }
+    }
+    const StorageInMemoryMetadata & new_metadata = metadata_without_foreign_implicit_indices ? *metadata_without_foreign_implicit_indices : new_metadata_;
 
     checkProperties(
         new_metadata,
