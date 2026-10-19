@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <Common/StringUtils.h>
 
 #if USE_SSL
 #    include <Common/OpenSSLHelpers.h>
@@ -115,6 +116,13 @@ namespace
         /// client proof: their password hash is empty, and using it as an HMAC key would throw,
         /// aborting the whole authentication instead of letting the next method of the user be tried.
         if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+            return false;
+
+        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
+        /// a one-time password. Accepting it would let the client skip the second factor.
+        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
+        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
+        if (authentication_method.getOneTimePassword())
             return false;
 
         const auto & client_proof = scram_sha256_credentials->getClientProof();
@@ -221,7 +229,7 @@ namespace
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 const auto & password_plaintext = authentication_method.getPasswordHashBinary();
-                return Util::stringToDigest(password) == password_plaintext ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return constantTimeEquals(Util::stringToDigest(password), password_plaintext) ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
