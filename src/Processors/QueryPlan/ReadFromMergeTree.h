@@ -215,6 +215,8 @@ public:
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
+        /// A parallel replicas follower kept every part and left choosing ranges to the coordinator.
+        bool index_analysis_on_coordinator = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -237,6 +239,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_on_coordinator(other.index_analysis_on_coordinator)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -258,6 +261,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_on_coordinator(other.index_analysis_on_coordinator)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
