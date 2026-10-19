@@ -17,7 +17,7 @@ ch_cc_library(
         "GraphiteWriter.cpp",
         "CrashWriter.cpp",
     ],
-    hdrs = (select({
+    hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "//bazel:config/x86_64/includes/configs/config_version.cpp",
@@ -26,8 +26,7 @@ ch_cc_library(
             "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "//bazel:config/aarch64/includes/configs/config_version.cpp",
         ],
-    }) + [
-    ]),
+    }),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/contrib/clickstack-cmake/clickstack_compressed/404.html.gz",
@@ -756,11 +755,9 @@ ch_cc_library(
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

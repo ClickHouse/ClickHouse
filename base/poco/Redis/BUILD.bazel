@@ -34,8 +34,7 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
         "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }) + [
-    ],
+    }),
     additional_compiler_inputs = [
         "src/Array.cpp",
         "src/AsyncReader.cpp",
@@ -203,7 +202,6 @@ ch_cc_library(
         "//base/poco/Foundation:headers",
         "//base/poco/Net:headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(
@@ -231,5 +229,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

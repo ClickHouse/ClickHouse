@@ -737,5 +737,4 @@ ch_cc_library(
             "//src/TableFunctions:headers",
         ],
     }),
-    alwayslink = False,
 )

@@ -415,5 +415,4 @@ ch_cc_library(
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
     ],
-    alwayslink = False,
 )

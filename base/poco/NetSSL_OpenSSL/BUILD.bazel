@@ -379,7 +379,6 @@ ch_cc_library(
     ],
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -504,7 +503,6 @@ ch_cc_library(
     ],
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 cc_library(
@@ -559,5 +557,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

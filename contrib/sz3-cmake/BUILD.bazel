@@ -7,5 +7,4 @@ exports_files(["SZ3/version.hpp"])
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.hpp"]),
-    textual_hdrs = [],
 )

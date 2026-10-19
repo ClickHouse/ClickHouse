@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.compact_build import Source, compact
+from initial_migration.normalize_cpp_builds import normalize, prove
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT
 from initial_migration.simplify_globs import GlobFiles, simplify_globs
 
@@ -612,8 +613,13 @@ class Migration:
                 )))
             self.loads[package]['headers'] = expr_stmt('load("@rules_cc//cc:cc_library.bzl", "cc_library")')
         data = self.rewrite_consumers()
-        data.update(self.render_builds())
+        builds = self.render_builds()
+        data.update(builds)
         self.verify(data)
+        for path, content in builds.items():
+            normalized = normalize(content)
+            prove(content, normalized, path)
+            data[path] = normalized
         return data
 
     def normalize_source(self, value, package):

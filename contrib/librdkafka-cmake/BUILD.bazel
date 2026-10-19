@@ -25,5 +25,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

@@ -22,8 +22,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "//bazel:gen/aarch64/embedded/programs/keeper/Keeper.cpp",
         ],
-    }) + [
-    ]),
+    })),
     hdrs = (select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -1633,11 +1632,9 @@ ch_cc_library(
             "//src/TableFunctions:headers",
         ],
     }),
-    alwayslink = False,
 )
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

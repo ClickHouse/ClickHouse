@@ -53,11 +53,9 @@ ch_cc_library(
         "//base/glibc-compatibility:glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
     ],
-    alwayslink = False,
 )
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

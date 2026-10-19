@@ -8581,7 +8581,7 @@ ch_cc_library(
         "@clickhouse_simdutf//:_simdutf",
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zmij//:_zmij",
-    ] + ["@clickhouse_wasmtime//:wasmtime_headers"] + [
+        "@clickhouse_wasmtime//:wasmtime_headers",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_libarchive//:_libarchive",
@@ -8593,7 +8593,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -8700,7 +8699,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -8807,7 +8805,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -8914,11 +8911,11 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_libssh//:_ssh",
         "@clickhouse_silk//:_silk_fibers",
-    ] + ["@clickhouse_wasmtime//:wasmtime_headers"],
+        "@clickhouse_wasmtime//:wasmtime_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 cc_library(
@@ -18199,7 +18196,6 @@ ch_cc_library(
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "@clickhouse_wordnet_blast//:_wnb",
         "@clickhouse_xxhash//:xxHash",
-    ] + [
         "@clickhouse_libhdfs3//:_hdfs3",
         "@clickhouse_wasmtime//:wasmtime_headers",
     ] + select({
@@ -18219,7 +18215,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_1,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -18750,7 +18745,7 @@ ch_cc_library(
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_thrift//:_thrift",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-    ] + ["@clickhouse_wasmtime//:wasmtime_headers"] + [
+        "@clickhouse_wasmtime//:wasmtime_headers",
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_nats_io//:_nats_io",
@@ -18759,7 +18754,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_1,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -19297,7 +19291,7 @@ ch_cc_library(
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_thrift//:_thrift",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-    ] + ["@clickhouse_wasmtime//:wasmtime_headers"] + [
+        "@clickhouse_wasmtime//:wasmtime_headers",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_nats_io//:_nats_io",
@@ -19306,7 +19300,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_1,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -19812,7 +19805,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_1,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -23343,7 +23335,6 @@ ch_cc_library(
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(

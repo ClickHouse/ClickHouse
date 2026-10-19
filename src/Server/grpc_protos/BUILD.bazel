@@ -225,5 +225,4 @@ ch_cc_library(
         "//contrib/c-ares-cmake:headers",
         "//contrib/openssl-cmake:headers",
     ],
-    alwayslink = False,
 )

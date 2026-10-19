@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "harmful",
     srcs = ["harmful.c"],
-    hdrs = [],
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
         "//base/poco/Foundation:src/Environment_UNIX.cpp",
@@ -57,5 +56,4 @@ ch_cc_library(
         "//base/readpassphrase:headers",
         "//base/widechar_width:headers",
     ],
-    alwayslink = False,
 )

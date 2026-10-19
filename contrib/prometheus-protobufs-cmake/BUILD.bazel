@@ -153,5 +153,4 @@ ch_cc_library(
         "@clickhouse_llvm_project//:unwind",
         "@clickhouse_google_protobuf//:utf8_validity",
     ],
-    alwayslink = False,
 )

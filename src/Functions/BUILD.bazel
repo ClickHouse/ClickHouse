@@ -4081,10 +4081,8 @@ ch_cc_library(
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "@clickhouse_xz//:_liblzma",
         "@clickhouse_zmij//:_zmij",
-    ] + [
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + [
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_croaring//:_roaring__compile_0",
         "@clickhouse_double_conversion//:_double-conversion",
@@ -6199,5 +6197,4 @@ cc_library(
         "**/*.h",
         "**/*.hpp",
     ]),
-    textual_hdrs = [],
 )

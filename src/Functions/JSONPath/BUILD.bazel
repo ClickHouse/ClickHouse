@@ -1565,11 +1565,9 @@ ch_cc_library(
             "//src/TableFunctions:headers",
         ],
     }),
-    alwayslink = False,
 )
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

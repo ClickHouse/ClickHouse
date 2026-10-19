@@ -1416,12 +1416,10 @@ ch_cc_library(
         "@clickhouse_mongo_c_driver//:_libbson",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-    ] + [
         "@clickhouse_amqp_cpp//:_amqp-cpp",
         "@clickhouse_s2geometry//:_s2",
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + [
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_stringzilla//:_stringzilla",
@@ -3322,5 +3320,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

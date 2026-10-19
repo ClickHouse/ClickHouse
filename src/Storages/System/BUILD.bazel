@@ -1535,7 +1535,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -2481,10 +2480,8 @@ ch_cc_library(
         "@clickhouse_s2geometry//:_s2",
         "@clickhouse_xz//:_liblzma",
         "@clickhouse_zmij//:_zmij",
-    ] + [
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + [
         "@clickhouse_aws//:aws_headers",
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_cppkafka//:_cppkafka",
@@ -2495,7 +2492,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 cc_library(
@@ -2930,5 +2926,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

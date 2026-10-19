@@ -1170,10 +1170,8 @@ ch_cc_library(
         "@clickhouse_rocksdb//:_rocksdb",
         "@clickhouse_s2geometry//:_s2",
         "@clickhouse_xz//:_liblzma",
-    ] + [
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + [
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_croaring//:_roaring__compile_0",
         "@clickhouse_double_conversion//:_double-conversion",
@@ -1693,7 +1691,6 @@ ch_cc_library(
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -2596,7 +2593,6 @@ ch_cc_library(
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(
@@ -3031,5 +3027,4 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

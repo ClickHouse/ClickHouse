@@ -7,5 +7,4 @@ exports_files(["absl_log_undef.h"])
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )

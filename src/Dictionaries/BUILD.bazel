@@ -1373,7 +1373,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -1974,10 +1973,8 @@ ch_cc_library(
         "@clickhouse_xz//:_liblzma",
         "@clickhouse_yaml_cpp//:_yaml_cpp",
         "@clickhouse_zmij//:_zmij",
-    ] + [
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + [
         "@clickhouse_cassandra//:_cassandra",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
@@ -1986,7 +1983,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -2484,7 +2480,6 @@ ch_cc_library(
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 cc_library(

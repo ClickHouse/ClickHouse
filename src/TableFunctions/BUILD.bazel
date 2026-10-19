@@ -1661,11 +1661,9 @@ ch_cc_library(
             "//src/Storages/System:headers",
         ],
     }),
-    alwayslink = False,
 )
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
 )
