@@ -48,13 +48,7 @@ public:
         size_t num_streams
     ) override;
 
-    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
-
-    const ElasticsearchSettings & getSettings() const { return *storage_settings.get(); }
-
-    void setSettings(std::unique_ptr<ElasticsearchSettings> && settings_) { storage_settings.set(std::move(settings_)); }
+    const ElasticsearchSettings & getSettings() const { return *storage_settings; }
 
     static ColumnsDescription getDefaultColumns();
 
@@ -62,7 +56,7 @@ public:
 private:
 
     VirtualColumnsDescription createVirtuals();
-    MultiVersion<ElasticsearchSettings> storage_settings;
+    std::unique_ptr<ElasticsearchSettings> storage_settings;
     ElasticsearchConfiguration config;
 };
 

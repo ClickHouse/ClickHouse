@@ -446,12 +446,11 @@ def test_settings():
     assert "keep_alive = 30" in create_statement
     assert node.query("SELECT count() FROM es_settings") == "5\n"
 
-    node.query("ALTER TABLE es_settings MODIFY SETTING page_size = 4")
-    assert "page_size = 4" in node.query("SHOW CREATE TABLE es_settings")
-    assert node.query("SELECT count() FROM es_settings") == "5\n"
-
-    error = node.query_and_get_error("ALTER TABLE es_settings MODIFY SETTING page_size = 0")
-    assert "must be positive" in error
+    error = node.query_and_get_error("ALTER TABLE es_settings MODIFY SETTING page_size = 4")
+    assert "not supported" in error
+    error = node.query_and_get_error("ALTER TABLE es_settings RESET SETTING page_size")
+    assert "not supported" in error
+    assert "page_size = 2" in node.query("SHOW CREATE TABLE es_settings")
     error = node.query_and_get_error("ALTER TABLE es_settings ADD COLUMN extra Int32")
     assert "not supported" in error
 
@@ -678,7 +677,7 @@ def test_pit_closed_after_read():
 
     assert (
         node.query(
-            f"SELECT count() FROM {elasticsearch_table_function('pit', extra_arguments='SETTINGS page_size = 3')}"
+            f"SELECT uniqExact(_id) FROM {elasticsearch_table_function('pit', extra_arguments='SETTINGS page_size = 3')}"
         )
         == "10\n"
     )

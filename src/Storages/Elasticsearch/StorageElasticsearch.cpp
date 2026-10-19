@@ -19,8 +19,6 @@
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/Elasticsearch/StorageElasticsearch.h>
 #include <Storages/Elasticsearch/ElasticsearchClient.h>
-#include <Storages/AlterCommands.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Core/Block.h>
@@ -47,7 +45,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -108,6 +105,7 @@ StorageElasticsearch::StorageElasticsearch(
     const String & comment_,
     std::unique_ptr<ElasticsearchSettings> settings_)
     : IStorage(table_id_)
+    , storage_settings(std::move(settings_))
     , config(configuration_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -121,9 +119,8 @@ StorageElasticsearch::StorageElasticsearch(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
     storage_metadata.setVirtuals(createVirtuals());
-    storage_metadata.setSettingsChanges(settings_->getSettingsChangesQuery());
+    storage_metadata.setSettingsChanges(storage_settings->getSettingsChangesQuery());
     setInMemoryMetadata(storage_metadata);
-    setSettings(std::move(settings_));
 }
 
 Pipe StorageElasticsearch::read(
@@ -141,7 +138,7 @@ Pipe StorageElasticsearch::read(
 
     String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
 
-    auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings.get());
+    auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings);
     return Pipe(std::make_shared<ElasticsearchSource>(
         std::move(client),
         std::make_shared<Block>(std::move(sample_block)), json_column_name));
@@ -149,7 +146,7 @@ Pipe StorageElasticsearch::read(
 
 std::optional<UInt64> StorageElasticsearch::totalRows(ContextPtr query_context) const
 {
-    ElasticsearchClient client(config, query_context, *storage_settings.get());
+    ElasticsearchClient client(config, query_context, *storage_settings);
     return client.countDocuments();
 }
 
@@ -161,35 +158,6 @@ VirtualColumnsDescription StorageElasticsearch::createVirtuals()
     virtual_columns.addEphemeral("_index", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     return virtual_columns;
-}
-
-void StorageElasticsearch::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard)
-{
-    IStorage::alter(params, query_context, holder, ddl_guard);
-    auto new_metadata = getInMemoryMetadataPtr(query_context, false);
-    if (new_metadata->settings_changes)
-    {
-        const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
-        auto new_settings = std::make_unique<ElasticsearchSettings>();
-        new_settings->applyChanges(settings_changes.changes);
-        setSettings(std::move(new_settings));
-    }
-}
-
-void StorageElasticsearch::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
-{
-    for (const auto & command : commands)
-    {
-        if (!command.isCommentAlter() && !command.isSettingsAlter())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            ElasticsearchSettings new_settings = *storage_settings.get();
-            new_settings.applyChanges(command.settings_changes);
-            new_settings.sanityCheck();
-        }
-    }
 }
 
 ColumnsDescription StorageElasticsearch::getDefaultColumns()
@@ -292,7 +260,7 @@ The parameters can also be passed as a [named collection](/concepts/features/con
 | `keep_alive` | `60`    | How long, in seconds, Elasticsearch keeps the point in time open between two consecutive page requests. |
 | `page_size`  | `10000` | The number of documents requested from Elasticsearch per request. Each page becomes one block, so this setting also sets the block size of the read; [`max_block_size`](/reference/settings/session-settings/max#max_block_size) has no effect. Values above the `index.max_result_window` index setting of Elasticsearch (`10000` by default) are rejected by Elasticsearch. |
 
-The settings can be changed with `ALTER TABLE ... MODIFY SETTING`.
+The settings cannot be changed with `ALTER TABLE ... MODIFY SETTING`. To change them, recreate the table.
 
 ## Virtual columns {#virtual-columns}
 
