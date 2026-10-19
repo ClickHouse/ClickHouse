@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
@@ -63,6 +64,15 @@ DataTypePtr wrapNothingInNullable(const DataTypePtr & type)
         if (tuple->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
         return std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        /// `Variant` alternatives cannot be `Nullable` themselves, so restore nullability only inside them.
+        DataTypes alternatives;
+        alternatives.reserve(variant->getVariants().size());
+        for (const auto & alternative : variant->getVariants())
+            alternatives.push_back(removeNullable(wrapNothingInNullable(alternative)));
+        return std::make_shared<DataTypeVariant>(alternatives);
     }
     return type;
 }

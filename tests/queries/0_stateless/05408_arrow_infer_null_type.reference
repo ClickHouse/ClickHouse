@@ -21,5 +21,9 @@ n	Nullable(Int32)
 l	Array(Nullable(Nothing))					
 \N	1	[NULL,NULL]
 \N	2	[]
+--- inside a union with schema_inference_make_columns_nullable = 0
+u	Variant(Array(Nullable(Nothing)), Int32)					
+[NULL]	Array(Nullable(Nothing))
+2	Int32
 --- every column skipped
 skipped all of them
