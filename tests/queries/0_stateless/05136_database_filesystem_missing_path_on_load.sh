@@ -70,12 +70,17 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store2" \
 # creating anything that a concurrent test globbing user_files could trip over.
 LONG_NAME=$(printf '%*s' 300 '' | tr ' ' a)
 DB_LONG="${CLICKHOUSE_DATABASE}_long"
-echo "--- server: a path inside user_files that stat refuses is rejected as such ---"
+echo "--- server: a path inside user_files that stat refuses is rejected as such (1 = BAD_ARGUMENTS) ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('${LONG_NAME}')" 2>&1 \
-    | grep -o -m1 -E 'Cannot access path|Path must be inside user-files path|STD_EXCEPTION'
-echo "--- server: the same path outside user_files is still refused by the containment check ---"
+    | grep -m1 -c -E "Code: 36\..*Cannot access path.*BAD_ARGUMENTS"
+echo "--- server: the same path outside user_files is still refused by the containment check (1 = BAD_ARGUMENTS) ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('/${LONG_NAME}')" 2>&1 \
-    | grep -o -m1 -E 'Cannot access path|Path must be inside user-files path|STD_EXCEPTION'
+    | grep -m1 -c -E "Code: 36\..*Path must be inside user-files path.*BAD_ARGUMENTS"
+# `/proc/self/root` is a symlink to `/`, so this spells user_files through a symlink, as a server whose data
+# directory is a symlink does.
+echo "--- server: the same path spelled through a symlink to user_files is still inside it (1 = BAD_ARGUMENTS) ---"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('/proc/self/root${CLICKHOUSE_USER_FILES}/${LONG_NAME}')" 2>&1 \
+    | grep -m1 -c -E "Code: 36\..*Cannot access path.*BAD_ARGUMENTS"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB_LONG}"
 
 rm -rf "${WORKING_FOLDER}"

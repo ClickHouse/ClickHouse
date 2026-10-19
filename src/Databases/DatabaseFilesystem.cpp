@@ -65,6 +65,25 @@ String getPathToArchive(const String & table_path, const ContextPtr & context)
     return splitToArchiveParts(table_path, context).first;
 }
 
+/// `fs::weakly_canonical`, except that a component stat fails on is kept as written, the way a missing one is,
+/// instead of failing the whole path.
+fs::path canonicalizeResolvablePrefix(const fs::path & path)
+{
+    fs::path prefix = path;
+    fs::path rest;
+    while (true)
+    {
+        std::error_code ec;
+        fs::path resolved = fs::canonical(prefix, ec);
+        if (!ec)
+            return rest.empty() ? resolved : resolved / rest;
+        if (!prefix.has_relative_path())
+            return path;
+        rest = rest.empty() ? prefix.filename() : prefix.filename() / rest;
+        prefix = prefix.parent_path();
+    }
+}
+
 }
 
 DatabaseFilesystem::DatabaseFilesystem(
@@ -81,13 +100,14 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
-    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop. Such a path
-    /// cannot be canonicalized, so its containment is checked on its spelling.
+    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop. Containment is
+    /// then checked on the part of the path that resolves, as for a missing path.
     std::error_code ec;
     const bool path_exists = fs::exists(path, ec);
 
     if (!is_local
-        && !(ec ? fileOrSymlinkPathStartsWith(path, user_files_path.string()) : pathStartsWith(fs::path(path), user_files_path)))
+        && !(ec ? fileOrSymlinkPathStartsWith(canonicalizeResolvablePrefix(path).string(), user_files_path.string())
+                : pathStartsWith(fs::path(path), user_files_path)))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
