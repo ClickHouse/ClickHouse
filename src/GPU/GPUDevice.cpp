@@ -2,8 +2,6 @@
 
 #if USE_GPU
 
-#include <GPU/CudfMemory.cuh>
-
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 

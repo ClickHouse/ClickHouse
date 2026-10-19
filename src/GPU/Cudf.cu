@@ -1,5 +1,4 @@
 #include <GPU/Cudf.cuh>
-#include <GPU/CudfMemory.cuh>
 
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>

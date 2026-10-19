@@ -26,4 +26,9 @@ struct GPUResources
     __host__ static const GPUResources & get();
 };
 
+/// Make cuDF and thrust allocate from `pool`, and back from it.
+__host__ void setCudfMemoryPool(cudaMemPool_t pool);
+
+__host__ void resetCudfMemoryPool();
+
 }
