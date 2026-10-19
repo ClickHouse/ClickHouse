@@ -18,9 +18,12 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_silk_fibers",
-    srcs = (glob(["src/fibers/*.cpp"])) + glob(["src/**/*.h"]),
+    srcs = glob(["src/fibers/*.cpp"]) + glob(["src/**/*.h"]),
     additional_compiler_inputs = ["src/util/error.cpp"],
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "include",
@@ -31,21 +34,31 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     })),
-    deps = ["@clickhouse_boost//:_boost_context", "@clickhouse_liburing//:_liburing", ":_silk_util"],
+    deps = [
+        "@clickhouse_boost//:_boost_context",
+        "@clickhouse_liburing//:_liburing",
+        ":_silk_util",
+    ],
     alwayslink = False,
 )
 
 ch_cc_library(
     name = "_silk_util",
-    srcs = (glob(["src/util/*.cpp"])) + glob(["src/**/*.h"]),
-    hdrs = (glob(["include/**/*.h"])),
+    srcs = glob(["src/util/*.cpp"]) + glob(["src/**/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
     additional_compiler_inputs = ["src/util/error.cpp"],
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
         "src",
     ],
-    deps = ["@clickhouse_boost//:boost_headers", "@clickhouse_librseq//:_librseq"],
+    deps = [
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_librseq//:_librseq",
+    ],
     alwayslink = False,
 )

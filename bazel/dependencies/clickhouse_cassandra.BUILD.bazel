@@ -181,13 +181,24 @@ ch_cc_library(
             "src/third_party/hdr_histogram/hdr_histogram.hpp",
             "src/third_party/http-parser/http_parser.h",
         ],
-    )) + glob(["src/third_party/curl/**/*.hpp", "src/third_party/hdr_histogram/**/*.hpp", "src/third_party/http-parser/**/*.h"]),
+    )) + glob([
+        "src/third_party/curl/**/*.hpp",
+        "src/third_party/hdr_histogram/**/*.hpp",
+        "src/third_party/http-parser/**/*.h",
+    ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"]),
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
+        ] + glob(["include/**/*.h"]),
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/cassandra-cmake/driver_config.hpp",
+        ] + glob(["include/**/*.h"]),
     }),
-    additional_compiler_inputs = ["@clickhouse//:contrib/minizip-ng-cmake/CMakeLists.txt"],
-    copts = ((["-w", "-std=c++17", "-I"] + select({
+    copts = (([
+        "-w",
+        "-std=c++17",
+        "-I",
+    ] + select({
         "@platforms//cpu:x86_64": [
             "$(GENDIR)/" + repository_path("contrib/cassandra") + "/config/x86_64/contrib/cassandra-cmake",
         ],
@@ -277,7 +288,14 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     })),
-    deps = ["@clickhouse_libuv//:_uv", ":_curl_hostcheck", ":_hdr_histogram", ":_http-parser", "@clickhouse_minizip_ng//:_minizip", "@clickhouse_sparsehash_c11//:sparsehash_c11"],
+    deps = [
+        "@clickhouse_libuv//:_uv",
+        ":_curl_hostcheck",
+        ":_hdr_histogram",
+        ":_http-parser",
+        "@clickhouse_minizip_ng//:_minizip",
+        "@clickhouse_sparsehash_c11//:sparsehash_c11",
+    ],
     alwayslink = False,
 )
 
@@ -301,36 +319,45 @@ _GENERATED_DEPS_1 = [
 
 ch_cc_library(
     name = "_curl_hostcheck",
-    srcs = ([
+    srcs = [
         "src/third_party/curl/hostcheck.cpp",
-    ]) + glob(["src/third_party/curl/**/*.hpp"]),
+    ] + glob(["src/third_party/curl/**/*.hpp"]),
     copts = (
-        ["-w", "-std=c++17"]
+        [
+            "-w",
+            "-std=c++17",
+        ]
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = True,
 )
 
 ch_cc_library(
     name = "_hdr_histogram",
-    srcs = ([
+    srcs = [
         "src/third_party/hdr_histogram/hdr_histogram.cpp",
-    ]) + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
+    ] + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
     copts = (
-        ["-w", "-std=c++17"]
+        [
+            "-w",
+            "-std=c++17",
+        ]
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = True,
 )
 
 ch_cc_library(
     name = "_http-parser",
-    srcs = ([
+    srcs = [
         "src/third_party/http-parser/http_parser.c",
-    ]) + glob(["src/third_party/http-parser/**/*.h"]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    ] + glob(["src/third_party/http-parser/**/*.h"]),
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -338,6 +365,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = True,
 )

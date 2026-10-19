@@ -142,10 +142,14 @@ ch_cc_library(
         "@clickhouse//:contrib/libarchive-cmake/illumos/config.h",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob(["libarchive/**/*.h"]),
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob(["libarchive/**/*.h"]),
+        "@platforms//cpu:x86_64": [] + glob(["libarchive/**/*.h"]),
+        "@platforms//cpu:aarch64": [] + glob(["libarchive/**/*.h"]),
     }),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "@clickhouse//:contrib/libarchive-cmake/CMakeLists.txt", "libarchive/xxhash.c"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+        "libarchive/xxhash.c",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -243,6 +247,11 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     }),
-    deps = ["@clickhouse_bzip2//:_bzip2", "@clickhouse_xz//:_liblzma", "@clickhouse_zlib_ng//:_zlib", "@clickhouse_zstd//:_zstd"],
+    deps = [
+        "@clickhouse_bzip2//:_bzip2",
+        "@clickhouse_xz//:_liblzma",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd",
+    ],
     alwayslink = False,
 )

@@ -9,7 +9,10 @@ ch_cc_library(
     name = "_wnb",
     srcs = glob(["wnb/core/*.cc"]),
     hdrs = glob(["**/*.hh"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

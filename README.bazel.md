@@ -215,6 +215,7 @@ tool on an ARM64 executor against the recorded native CMake result.
 | Remove unused NuRaft source inputs, inherit liburing generated headers, and remove unused BUILD imports | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/7538721e-11ac-4734-9be5-1958be61135e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/f7b1b89a-4500-4659-bc34-dc7e697db713) |
 | Inherit duplicate public header globs; make Benchmark internal headers private; remove unused ICU data libc++abi inputs (`6a23198d6`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/80a15c31-222d-4c9e-a33a-d10599ad481b) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/37fd4325-f7a0-4a08-8491-2981f0a23ec9) |
 | Generate Google Cloud protos in configured Bazel output directories; remove unused Boost/Zstd/OpenSSL includes and make AI SDK, Cassandra, and Silk internal headers private (`5d25fa1bc`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/fa2ee870-e09c-4142-a37e-558a153ad250) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/43c5316a-714a-42c6-a427-df3fb5dc5963) |
+| Inherit transitive native dependencies; supply pinned sysroot inputs in `ch_cc_library`; order LLVM math before glibc compatibility in tool links (`8d05c3865`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/d719df32-51c2-427d-a882-57f75f3ed8c0) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/ec0d8a08-6749-4e83-b4c9-9c4ae1cfb53e) |
 
 Both x86-64 comparisons passed `cmp` and `PARITY_STATUS=0`; both ARM64
 comparisons reported `ARM_STRIPPED_STATUS=0`. Both batches also reproduced
@@ -226,6 +227,17 @@ The Google Cloud batch also built
 `@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage_protos` and
 `@clickhouse_google_benchmark//:google_benchmark_main` on both CPUs,
 and reproduced both original Bazel ELF hashes.
+The native dependencies batch built both of those targets and
+`@clickhouse_thrift//:_thrift` on both CPUs. Both original Bazel ELF
+and selected Clang hashes were unchanged.
+
+`@clickhouse_sysroot` provides the target glibc headers, Linux headers,
+startup objects, and link libraries that CMake used. The x86 reference uses
+glibc 2.27; the LLVM module starts at 2.28 and supplies different startup
+objects on both CPUs. Those differences survive stripping. LLVM's pinned
+libc++ headers still come from the toolchain; `-nostdinc++` in
+`ch_cc_library` prevents Clang from also searching GCC's implicit C++
+directories when it selects the ClickHouse C sysroot.
 
 `@chdig_crates//:perfetto_protos-0.51.1` also compiled using the registered
 `@protobuf//:protoc` on both

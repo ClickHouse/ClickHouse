@@ -34,8 +34,13 @@ ch_cc_library(
         "@clickhouse//:contrib/MeCab-cmake/config.h",
     ],
     hdrs = glob(["mecab/src/**/*.h"]),
-    additional_compiler_inputs = ["@clickhouse//:contrib/MeCab-cmake/CMakeLists.txt"],
-    copts = ["-w", "-std=c++23", "-Wno-register", "-I", "contrib/MeCab-cmake"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-Wno-register",
+        "-I",
+        "contrib/MeCab-cmake",
+    ],
     local_defines = [
         "HAVE_CONFIG_H",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

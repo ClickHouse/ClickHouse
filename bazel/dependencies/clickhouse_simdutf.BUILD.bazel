@@ -12,19 +12,27 @@ ch_cc_library(
         "src/simdutf.cpp",
     ] + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = (glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/simdutf.cpp",
-        ],
-    ) + [
+    additional_compiler_inputs = ((glob([
+        "src/arm64/*.cpp",
+        "src/haswell/*.cpp",
+        "src/icelake/*.cpp",
+        "src/lasx/*.cpp",
+        "src/lsx/*.cpp",
+        "src/ppc64/*.cpp",
+        "src/rvv/*.cpp",
+        "src/westmere/**/*.cpp",
+    ]) + [
+        "src/encoding_types.cpp",
+        "src/error.cpp",
+        "src/fallback/implementation.cpp",
+        "src/implementation.cpp",
+        "src/simdutf_c.cpp",
+    ]) + [
     ]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         "include",
     ],

@@ -137,8 +137,11 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/utils/memory/AWSMemory.cpp",
         "src/aws-cpp-sdk-core/source/utils/memory/stl/SimpleStringStream.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp"] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + ["@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"]),
-    additional_compiler_inputs = ["@clickhouse//:contrib/aws-cmake/AwsFeatureTests.cmake", "@clickhouse//:contrib/aws-cmake/AwsGetVersion.cmake", "@clickhouse//:contrib/aws-cmake/AwsSIMD.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadAffinity.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake", "@clickhouse//:contrib/aws-cmake/CMakeLists.txt", "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"],
-    copts = ["-w", "-std=c++23", "-g1"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -197,7 +200,12 @@ cc_library(
 
 cc_library(
     name = "_aws",
-    deps = [":_aws__compile_0", ":_aws__compile_1", ":_aws__compile_2", ":_aws__compile_3"],
+    deps = [
+        ":_aws__compile_0",
+        ":_aws__compile_1",
+        ":_aws__compile_2",
+        ":_aws__compile_3",
+    ],
 )
 
 cc_library(
@@ -212,7 +220,10 @@ cc_library(
         "generated/src/aws-cpp-sdk-s3/include",
         "generated/src/aws-cpp-sdk-glue/include",
     ],
-    deps = ["@clickhouse_aws_c_event_stream//:aws_c_event_stream_headers", "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers"],
+    deps = [
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream_headers",
+        "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers",
+    ],
 )
 
 cc_library(

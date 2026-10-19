@@ -477,7 +477,7 @@ class NativeTextual(Rewrite):
         candidate = label(value, self.doc.repo)
         repo, sep, filename = candidate.partition('//:')
         sources = self.graph.sources
-        if (not sep or repo in SPECIAL_REPOS or repo == self.doc.repo or repo == '@clickhouse'
+        if (not sep or repo in SPECIAL_REPOS or repo == self.doc.repo
                 or repo not in sources.scanned or candidate not in sources.inventory
                 or candidate in self.graph.rules or filename.endswith(CC_HEADER_SUFFIXES)):
             return False

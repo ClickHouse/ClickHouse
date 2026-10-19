@@ -35,7 +35,10 @@ ch_cc_library(
         "lang/c++/impl/Validator.cc",
     ] + glob(["lang/c++/impl/**/*.hh"]),
     hdrs = glob(["lang/c++/api/**/*.hh"]),
-    copts = ["-w", "-std=c++17"],
+    copts = [
+        "-w",
+        "-std=c++17",
+    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -49,6 +52,9 @@ ch_cc_library(
     local_includes = [
         "lang/c++/api",
     ],
-    deps = ["@clickhouse_boost//:_boost_iostreams", "@clickhouse_snappy//:_snappy"],
+    deps = [
+        "@clickhouse_boost//:_boost_iostreams",
+        "@clickhouse_snappy//:_snappy",
+    ],
     alwayslink = False,
 )

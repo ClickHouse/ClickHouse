@@ -13,7 +13,10 @@ ch_cc_library(
         "src/os.cc",
     ],
     hdrs = glob(["include/**/*.h"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         "include",
     ],

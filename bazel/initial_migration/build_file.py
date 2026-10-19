@@ -625,8 +625,11 @@ class BuildFile:
                             continue
                     kept.append(item)
                 fields[field] = kept
-        if not custom and not {'-include', '-imacros', '-include-pch', '-include-pth', '-ivfsoverlay'}.intersection(
-            group.get('copts', ())
+        if not custom and not any(
+            isinstance(flag, str) and flag.startswith(
+                ('-include', '-imacros', '-ivfsoverlay')
+            )
+            for flag in group.get('copts', ())
         ):
             # An input might be included by a header from another repository.
             # Scan all repositories providing this compile group's headers.
@@ -638,7 +641,14 @@ class BuildFile:
                 )
             related.difference_update({'contrib/sysroot', llvm_targets.PREFIX})
             def source_data(path, owner):
-                relative = path.removeprefix(owner + '/')
+                relative = path.removeprefix(owner + '/') if owner else path
+                # These root directories are scanned by
+                # repository_inputs.textual_source_names(None).
+                if owner is None and not (
+                    relative.startswith(('src/', 'base/', 'programs/'))
+                    or re.match(r'contrib/[^/]+-cmake/', relative)
+                ):
+                    return False
                 return (
                     not relative.startswith(('config/', 'gen/', 'bazel/'))
                     and '/gen/' not in relative
@@ -648,10 +658,10 @@ class BuildFile:
                 )
             candidates = {
                 item for item in fields['additional_compiler_inputs']
-                if isinstance(item, str) and repository(source_path(item)) not in {None, 'contrib/sysroot', llvm_targets.PREFIX}
+                if isinstance(item, str) and repository(source_path(item)) not in {'contrib/sysroot', llvm_targets.PREFIX}
                 and source_data(source_path(item), repository(source_path(item)))
             }
-            globs = self.owner not in {None, 'contrib/sysroot', llvm_targets.PREFIX} and any(
+            globs = self.owner not in {'contrib/sysroot', llvm_targets.PREFIX} and any(
                 isinstance(item, Glob) for item in fields['additional_compiler_inputs']
             )
             if candidates or globs:
@@ -668,14 +678,15 @@ class BuildFile:
                         data = [
                             path for path in original_files
                             if Path(path).name in included
-                            or not source_data(self.owner + '/' + path, self.owner)
+                            or not source_data(self.owner + '/' + path if self.owner else path, self.owner)
                         ]
                         # Keep large globs rather than listing hundreds of
                         # files or adding another list of exclusions.
                         if len(data) != len(original_files) and (
                             len(data) <= 32 or len(data) <= 256 and len(data) * 3 < len(original_files)
                         ):
-                            kept.extend(source_label(self.owner + '/' + path) for path in data)
+                            kept.extend(source_label(self.owner + '/' + path if self.owner else path)
+                                        for path in data)
                         else:
                             kept.append(item)
                     else:

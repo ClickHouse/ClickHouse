@@ -13,7 +13,10 @@ ch_cc_library(
     name = "_double-conversion",
     srcs = glob(["double-conversion/*.cc"]),
     hdrs = glob(["**/*.h"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         ".",
     ],

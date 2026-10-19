@@ -73,7 +73,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+        "@platforms//cpu:x86_64": [
+            "@clickhouse_llvm_project//:runtime_source_inputs",
+            "@clickhouse_llvm_project//:runtime_generated_headers",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -551,5 +554,9 @@ cc_library(
 cc_library(
     name = "_isal",
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = ["@clickhouse//:clang_rt_builtins", ":_isal__compile_0", ":_isal__compile_1"],
+    deps = [
+        "@clickhouse//:clang_rt_builtins",
+        ":_isal__compile_0",
+        ":_isal__compile_1",
+    ],
 )

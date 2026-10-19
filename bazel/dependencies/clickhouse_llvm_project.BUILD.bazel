@@ -1522,7 +1522,13 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
     "@clickhouse_sysroot//:linux_compile_files",
 ]
 
-_GENERATED_COPTS_0 = ["-w", "-std=c++17", "-I", repository_path("contrib/llvm-project") + "/llvm/include", "-I"] + select({
+_GENERATED_COPTS_0 = [
+    "-w",
+    "-std=c++17",
+    "-I",
+    repository_path("contrib/llvm-project") + "/llvm/include",
+    "-I",
+] + select({
     "@platforms//cpu:x86_64": [
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/llvm/include",
         "-I",
@@ -1578,7 +1584,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -1715,7 +1721,11 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMObject", ":LLVMProfileData", ":LLVMFrontendHLSL"],
+    deps = [
+        ":LLVMObject",
+        ":LLVMProfileData",
+        ":LLVMFrontendHLSL",
+    ],
     alwayslink = False,
 )
 
@@ -1744,7 +1754,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -1783,7 +1793,11 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMMCParser", ":LLVMDebugInfoCodeView", ":LLVMCodeGen"],
+    deps = [
+        ":LLVMMCParser",
+        ":LLVMDebugInfoCodeView",
+        ":LLVMCodeGen",
+    ],
     alwayslink = False,
 )
 
@@ -1822,7 +1836,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMSupport"]),
+    deps = [":LLVMSupport"],
     alwayslink = False,
 )
 
@@ -1839,7 +1853,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -1855,7 +1869,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -1868,7 +1882,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMSupport"]),
+    deps = [":LLVMSupport"],
     alwayslink = False,
 )
 
@@ -1881,7 +1895,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -1913,7 +1927,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMObject"]),
+    deps = [":LLVMObject"],
     alwayslink = False,
 )
 
@@ -2160,7 +2174,14 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMBitReader", ":LLVMBitWriter", ":LLVMTarget", ":LLVMScalarOpts", ":LLVMCodeGenTypes", ":LLVMCGData"],
+    deps = [
+        ":LLVMBitReader",
+        ":LLVMBitWriter",
+        ":LLVMTarget",
+        ":LLVMScalarOpts",
+        ":LLVMCodeGenTypes",
+        ":LLVMCGData",
+    ],
     alwayslink = False,
 )
 
@@ -2173,7 +2194,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMSupport"]),
+    deps = [":LLVMSupport"],
     alwayslink = False,
 )
 
@@ -2265,7 +2286,11 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMBinaryFormat", ":LLVMTargetParser", ":LLVMRemarks"],
+    deps = [
+        ":LLVMBinaryFormat",
+        ":LLVMTargetParser",
+        ":LLVMRemarks",
+    ],
     alwayslink = False,
 )
 
@@ -2340,7 +2365,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMSupport"]),
+    deps = [":LLVMSupport"],
     alwayslink = False,
 )
 
@@ -2381,7 +2406,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMObject"]),
+    deps = [":LLVMObject"],
     alwayslink = False,
 )
 
@@ -2399,7 +2424,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":llvm_headers", ":clang_rt_builtins"],
+    deps = [
+        ":llvm_headers",
+        ":clang_rt_builtins",
+    ],
     alwayslink = False,
 )
 
@@ -2416,7 +2444,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTarget", ":LLVMRuntimeDyld"],
+    deps = [
+        ":LLVMTarget",
+        ":LLVMRuntimeDyld",
+    ],
     alwayslink = False,
 )
 
@@ -2453,7 +2484,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMAnalysis"]),
+    deps = [":LLVMAnalysis"],
     alwayslink = False,
 )
 
@@ -2464,7 +2495,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -2475,7 +2506,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -2486,7 +2517,11 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTransformUtils", ":LLVMFrontendAtomic", ":LLVMFrontendOffloading"],
+    deps = [
+        ":LLVMTransformUtils",
+        ":LLVMFrontendAtomic",
+        ":LLVMFrontendOffloading",
+    ],
     alwayslink = False,
 )
 
@@ -2560,7 +2595,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCodeGen"]),
+    deps = [":LLVMCodeGen"],
     alwayslink = False,
 )
 
@@ -2573,7 +2608,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -2586,7 +2621,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMAnalysis"]),
+    deps = [":LLVMAnalysis"],
     alwayslink = False,
 )
 
@@ -2599,7 +2634,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMBitReader", ":LLVMAsmParser"],
+    deps = [
+        ":LLVMBitReader",
+        ":LLVMAsmParser",
+    ],
     alwayslink = False,
 )
 
@@ -2610,7 +2648,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -2650,7 +2688,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -2664,7 +2702,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -2761,7 +2799,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMBinaryFormat", ":LLVMTargetParser"]),
+    deps = [
+        ":LLVMBinaryFormat",
+        ":LLVMTargetParser",
+    ],
     alwayslink = False,
 )
 
@@ -2788,7 +2829,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMMC"]),
+    deps = [":LLVMMC"],
     alwayslink = False,
 )
 
@@ -2813,7 +2854,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMMC"]),
+    deps = [":LLVMMC"],
     alwayslink = False,
 )
 
@@ -2824,7 +2865,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -2872,7 +2913,11 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore", ":LLVMMC", ":LLVMTextAPI"],
+    deps = [
+        ":LLVMCore",
+        ":LLVMMC",
+        ":LLVMTextAPI",
+    ],
     alwayslink = False,
 )
 
@@ -2913,7 +2958,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMDebugInfoCodeView", ":LLVMObject"],
+    deps = [
+        ":LLVMDebugInfoCodeView",
+        ":LLVMObject",
+    ],
     alwayslink = False,
 )
 
@@ -2931,7 +2979,12 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTarget", ":LLVMVectorize", ":LLVMipo", ":LLVMInstrumentation"],
+    deps = [
+        ":LLVMTarget",
+        ":LLVMVectorize",
+        ":LLVMipo",
+        ":LLVMInstrumentation",
+    ],
     alwayslink = False,
 )
 
@@ -2964,7 +3017,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -2995,7 +3048,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMObject"]),
+    deps = [":LLVMObject"],
     alwayslink = False,
 )
 
@@ -3006,7 +3059,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCore"]),
+    deps = [":LLVMCore"],
     alwayslink = False,
 )
 
@@ -3099,7 +3152,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -3137,7 +3190,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMCodeGen"]),
+    deps = [":LLVMCodeGen"],
     alwayslink = False,
 )
 
@@ -3328,7 +3381,10 @@ ch_cc_library(
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
         "llvm/lib/Support/BLAKE3/blake3_neon.c",
     ]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = ([
         "-w",
         "-std=gnu11",
@@ -3508,7 +3564,13 @@ ch_cc_library(
 
 cc_library(
     name = "LLVMSupport",
-    deps = [":LLVMDemangle", ":LLVMSupport__compile_0", ":LLVMSupport__compile_1", ":LLVMSupport__compile_2", ":LLVMSupport__compile_3"],
+    deps = [
+        ":LLVMDemangle",
+        ":LLVMSupport__compile_0",
+        ":LLVMSupport__compile_1",
+        ":LLVMSupport__compile_2",
+        ":LLVMSupport__compile_3",
+    ],
 )
 
 ch_cc_library(
@@ -3524,7 +3586,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMAnalysis"]),
+    deps = [":LLVMAnalysis"],
     alwayslink = False,
 )
 
@@ -3551,7 +3613,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMSupport"]),
+    deps = [":LLVMSupport"],
     alwayslink = False,
 )
 
@@ -3578,7 +3640,10 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMBinaryFormat", ":LLVMTargetParser"]),
+    deps = [
+        ":LLVMBinaryFormat",
+        ":LLVMTargetParser",
+    ],
     alwayslink = False,
 )
 
@@ -3684,7 +3749,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMAnalysis"]),
+    deps = [":LLVMAnalysis"],
     alwayslink = False,
 )
 
@@ -3723,7 +3788,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMTransformUtils"]),
+    deps = [":LLVMTransformUtils"],
     alwayslink = False,
 )
 
@@ -3742,7 +3807,20 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_2 = select({
 })
 
 _GENERATED_COPTS_1 = select({
-    "@platforms//cpu:x86_64": ["-w", "-std=c++17", "-I", repository_path("contrib/llvm-project") + "/llvm/include", "-I", "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/llvm/include", "-I", repository_path("contrib/llvm-project") + "/third-party/siphash/include", "-I", "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/llvm/lib/Target/X86", "-I", repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86"],
+    "@platforms//cpu:x86_64": [
+        "-w",
+        "-std=c++17",
+        "-I",
+        repository_path("contrib/llvm-project") + "/llvm/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/llvm/include",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/llvm/lib/Target/X86",
+        "-I",
+        repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
+    ],
     "@platforms//cpu:aarch64": [],
 })
 
@@ -3822,10 +3900,15 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMGlobalISel", ":LLVMSelectionDAG", ":LLVMAsmPrinter", ":LLVMX86Desc"])),
+    }) + [
+        ":LLVMGlobalISel",
+        ":LLVMSelectionDAG",
+        ":LLVMAsmPrinter",
+        ":LLVMX86Desc",
+    ]),
     alwayslink = False,
 )
 
@@ -3860,10 +3943,13 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMMCDisassembler", ":LLVMX86Info"])),
+    }) + [
+        ":LLVMMCDisassembler",
+        ":LLVMX86Info",
+    ]),
     alwayslink = False,
 )
 
@@ -3883,10 +3969,10 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMMC"])),
+    }) + [":LLVMMC"]),
     alwayslink = False,
 )
 
@@ -3897,7 +3983,7 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":LLVMObject"]),
+    deps = [":LLVMObject"],
     alwayslink = False,
 )
 
@@ -3954,7 +4040,12 @@ ch_cc_library(
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMScalarOpts", ":LLVMInstCombine", ":LLVMCGData", ":LLVMFrontendOpenMP"],
+    deps = [
+        ":LLVMScalarOpts",
+        ":LLVMInstCombine",
+        ":LLVMCGData",
+        ":LLVMFrontendOpenMP",
+    ],
     alwayslink = False,
 )
 
@@ -11057,7 +11148,10 @@ cc_library(
 
 cc_library(
     name = "cxx",
-    deps = [":cxxabi", ":cxx__compile_0"],
+    deps = [
+        ":cxxabi",
+        ":cxx__compile_0",
+    ],
 )
 
 cmake_runtime_objects(
@@ -11668,7 +11762,20 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_3 = select({
 
 _GENERATED_COPTS_3 = select({
     "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": ["-w", "-std=c++17", "-I", repository_path("contrib/llvm-project") + "/llvm/include", "-I", "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/aarch64/llvm/include", "-I", repository_path("contrib/llvm-project") + "/third-party/siphash/include", "-I", "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/aarch64/llvm/lib/Target/AArch64", "-I", repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64"],
+    "@platforms//cpu:aarch64": [
+        "-w",
+        "-std=c++17",
+        "-I",
+        repository_path("contrib/llvm-project") + "/llvm/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/aarch64/llvm/include",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/aarch64/llvm/lib/Target/AArch64",
+        "-I",
+        repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
+    ],
 })
 
 ch_cc_library(
@@ -11739,10 +11846,15 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMGlobalISel", ":LLVMSelectionDAG", ":LLVMAsmPrinter", ":LLVMAArch64Desc"])),
+    }) + [
+        ":LLVMGlobalISel",
+        ":LLVMSelectionDAG",
+        ":LLVMAsmPrinter",
+        ":LLVMAArch64Desc",
+    ]),
     alwayslink = False,
 )
 
@@ -11774,10 +11886,13 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMMCDisassembler", ":LLVMAArch64Info"])),
+    }) + [
+        ":LLVMMCDisassembler",
+        ":LLVMAArch64Info",
+    ]),
     alwayslink = False,
 )
 
@@ -11797,10 +11912,10 @@ ch_cc_library(
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":LLVMMC"])),
+    }) + [":LLVMMC"]),
     alwayslink = False,
 )
 

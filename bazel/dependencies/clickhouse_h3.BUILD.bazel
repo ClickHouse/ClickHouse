@@ -55,7 +55,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [":config/x86_64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]),
         "@platforms//cpu:aarch64": [":config/aarch64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]),
     }),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

@@ -15,7 +15,11 @@ ch_cc_library(
         "lib/xxhash.c",
     ],
     hdrs = glob(["lib/*.h"]),
-    additional_compiler_inputs = ["lib/lz4.c", "@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "lib/lz4.c",
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

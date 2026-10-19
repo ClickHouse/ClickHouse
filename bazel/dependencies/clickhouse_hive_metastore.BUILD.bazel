@@ -27,7 +27,10 @@ ch_cc_library(
             "hive_metastore_types.cpp",
         ],
     ),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

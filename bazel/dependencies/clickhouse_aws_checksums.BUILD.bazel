@@ -13,7 +13,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["source/intel/asm/crc32c_sse42_asm.c"],
         "@platforms//cpu:aarch64": ["source/arm/crc64_arm.c"],
     }) + ["source/external/xxhash.h"]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -55,7 +58,10 @@ ch_cc_library(
     }),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+        "@platforms//cpu:aarch64": [
+            "@clickhouse_llvm_project//:runtime_source_inputs",
+            "@clickhouse_llvm_project//:runtime_generated_headers",
+        ],
     }),
     arches = [
         "aarch64",

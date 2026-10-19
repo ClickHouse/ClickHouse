@@ -19,7 +19,10 @@ ch_cc_library(
         "source/hmac.c",
         "source/rsa.c",
     ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + ["source/darwin/common_cryptor_spi.h"]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

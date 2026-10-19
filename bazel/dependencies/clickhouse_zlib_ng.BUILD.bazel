@@ -147,10 +147,21 @@ ch_cc_library(
         "gzwrite.c",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/zlib-ng-cmake/gzread.c", ":config/x86_64/contrib/zlib-ng-cmake/zconf.h", ":config/x86_64/contrib/zlib-ng-cmake/zlib.h", ":config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/zlib-ng-cmake/gzread.c", ":config/aarch64/contrib/zlib-ng-cmake/zconf.h", ":config/aarch64/contrib/zlib-ng-cmake/zlib.h", ":config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + glob(["**/*.h"]),
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            ":config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            ":config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + glob(["**/*.h"]),
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            ":config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            ":config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + glob(["**/*.h"]),
     }),
-    additional_compiler_inputs = (["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"] + select({
+    additional_compiler_inputs = ([
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ] + select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],

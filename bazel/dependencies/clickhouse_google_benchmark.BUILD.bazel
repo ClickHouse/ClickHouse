@@ -37,7 +37,10 @@ ch_cc_library(
         "src/timers.cc",
     ] + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         "include",
     ],
@@ -51,7 +54,10 @@ ch_cc_library(
     srcs = [
         "src/benchmark_main.cc",
     ],
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":google_benchmark"],
     alwayslink = False,

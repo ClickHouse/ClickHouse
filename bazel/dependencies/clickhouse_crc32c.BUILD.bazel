@@ -25,7 +25,11 @@ ch_cc_library(
     }),
     hdrs = glob(["include/**/*.h"]),
     copts = (
-        ((["-w", "-std=c++23", "-I"] + select({
+        (([
+            "-w",
+            "-std=c++23",
+            "-I",
+        ] + select({
             "@platforms//cpu:x86_64": [
                 "contrib/crc32c-cmake/x86_64/sse42",
             ],

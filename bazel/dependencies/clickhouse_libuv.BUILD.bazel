@@ -34,7 +34,10 @@ ch_cc_library(
         "src/unix/random-sysctl-linux.c",
     ]) + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

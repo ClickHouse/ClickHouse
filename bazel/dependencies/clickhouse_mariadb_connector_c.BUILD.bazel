@@ -465,16 +465,28 @@ ch_cc_library(
         ),
     }),
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/mariadb-connector-c-cmake/include-private/config.h", ":config/x86_64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h", ":config/x86_64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/mariadb-connector-c-cmake/include-private/config.h",
+            ":config/x86_64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",
+            ":config/x86_64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h",
+        ] + glob([
             "include/**/*.h",
             "libmariadb/**/*.h",
         ]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/mariadb-connector-c-cmake/include-private/config.h", ":config/aarch64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h", ":config/aarch64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/mariadb-connector-c-cmake/include-private/config.h",
+            ":config/aarch64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",
+            ":config/aarch64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h",
+        ] + glob([
             "include/**/*.h",
             "libmariadb/**/*.h",
         ]),
     }),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "plugins/pvio/pvio_plugin.def"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+        "plugins/pvio/pvio_plugin.def",
+    ],
     copts = ([
         "-w",
         "-std=gnu11",
@@ -564,6 +576,9 @@ ch_cc_library(
             "libmariadb",
         ],
     }),
-    deps = ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_openssl//:ssl"],
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_openssl//:ssl",
+    ],
     alwayslink = False,
 )

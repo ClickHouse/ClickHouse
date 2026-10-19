@@ -58,12 +58,18 @@ ch_cc_library(
         "src/lib/inet_net_pton.c",
         "src/lib/inet_ntop.c",
     ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"])),
-    hdrs = (["@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_config.h"] + glob([
+    hdrs = ([
+        "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+        "@clickhouse//:contrib/c-ares-cmake/linux/ares_config.h",
+    ] + glob([
         "include/**/*.h",
         "src/lib/**/*.h",
         "src/lib/**/*.inc",
     ])),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

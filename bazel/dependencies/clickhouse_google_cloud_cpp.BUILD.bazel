@@ -77,7 +77,12 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = ["-w", "-std=c++23", "-I", repository_path("contrib/re2")]
+_GENERATED_COPTS_0 = [
+    "-w",
+    "-std=c++23",
+    "-I",
+    repository_path("contrib/re2"),
+]
 
 _GENERATED_LOCAL_INCLUDES_0 = select({
     "@platforms//cpu:x86_64": [
@@ -107,12 +112,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -245,12 +246,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/auth.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -264,7 +261,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -383,12 +380,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -398,7 +391,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -413,12 +406,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/billing.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -438,7 +427,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_metric_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_metric_protos",
+    ],
     alwayslink = False,
 )
 
@@ -453,12 +445,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -485,12 +473,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -500,7 +484,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -515,12 +499,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -530,7 +510,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -545,12 +525,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -560,7 +536,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -575,12 +551,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -607,12 +579,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -626,7 +594,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -641,12 +609,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -656,7 +620,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -671,12 +635,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -690,7 +650,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -705,12 +665,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -720,7 +676,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -735,12 +691,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -750,7 +702,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -765,12 +717,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -780,7 +728,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -795,12 +743,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -810,7 +754,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -825,12 +769,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -840,7 +780,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -855,12 +795,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -870,7 +806,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -885,12 +821,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -900,7 +832,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -915,12 +847,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/log.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -947,12 +875,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -968,7 +892,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_label_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_label_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1089,12 +1016,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1108,7 +1031,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_label_protos", ":google_cloud_cpp_api_launch_stage_protos"]),
+    deps = [
+        ":google_cloud_cpp_api_label_protos",
+        ":google_cloud_cpp_api_launch_stage_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1123,12 +1049,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1142,7 +1064,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_label_protos", ":google_cloud_cpp_api_launch_stage_protos"]),
+    deps = [
+        ":google_cloud_cpp_api_label_protos",
+        ":google_cloud_cpp_api_launch_stage_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1157,12 +1082,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1176,7 +1097,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -1191,12 +1112,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1206,7 +1123,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1221,12 +1138,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1240,7 +1153,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -1255,12 +1168,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1270,7 +1179,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1285,12 +1194,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1300,7 +1205,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1315,12 +1220,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/service.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1378,7 +1279,25 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_auth_protos", ":google_cloud_cpp_api_backend_protos", ":google_cloud_cpp_api_billing_protos", ":google_cloud_cpp_api_client_protos", ":google_cloud_cpp_api_context_protos", ":google_cloud_cpp_api_control_protos", ":google_cloud_cpp_api_documentation_protos", ":google_cloud_cpp_api_endpoint_protos", ":google_cloud_cpp_api_log_protos", ":google_cloud_cpp_api_logging_protos", ":google_cloud_cpp_api_monitored_resource_protos", ":google_cloud_cpp_api_monitoring_protos", ":google_cloud_cpp_api_quota_protos", ":google_cloud_cpp_api_resource_protos", ":google_cloud_cpp_api_source_info_protos", ":google_cloud_cpp_api_system_parameter_protos", ":google_cloud_cpp_api_usage_protos"],
+    deps = [
+        ":google_cloud_cpp_api_auth_protos",
+        ":google_cloud_cpp_api_backend_protos",
+        ":google_cloud_cpp_api_billing_protos",
+        ":google_cloud_cpp_api_client_protos",
+        ":google_cloud_cpp_api_context_protos",
+        ":google_cloud_cpp_api_control_protos",
+        ":google_cloud_cpp_api_documentation_protos",
+        ":google_cloud_cpp_api_endpoint_protos",
+        ":google_cloud_cpp_api_log_protos",
+        ":google_cloud_cpp_api_logging_protos",
+        ":google_cloud_cpp_api_monitored_resource_protos",
+        ":google_cloud_cpp_api_monitoring_protos",
+        ":google_cloud_cpp_api_quota_protos",
+        ":google_cloud_cpp_api_resource_protos",
+        ":google_cloud_cpp_api_source_info_protos",
+        ":google_cloud_cpp_api_system_parameter_protos",
+        ":google_cloud_cpp_api_usage_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1393,12 +1312,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1408,7 +1323,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1423,12 +1338,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1438,7 +1349,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1453,12 +1364,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/usage.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1474,7 +1381,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_visibility_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_visibility_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1489,12 +1399,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1504,7 +1410,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1519,12 +1425,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1551,12 +1453,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1566,7 +1464,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1581,12 +1479,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1604,7 +1498,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_client_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_client_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1619,12 +1516,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1634,7 +1527,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -1645,7 +1538,15 @@ _GENERATED_LOCAL_DEFINES_1 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_1 = ["-w", "-std=c++23", "-g1", "-I", repository_path("contrib/google-cloud-cpp"), "-I", repository_path("contrib/re2")]
+_GENERATED_COPTS_1 = [
+    "-w",
+    "-std=c++23",
+    "-g1",
+    "-I",
+    repository_path("contrib/google-cloud-cpp"),
+    "-I",
+    repository_path("contrib/re2"),
+]
 
 ch_cc_library(
     name = "google_cloud_cpp_common",
@@ -1709,26 +1610,159 @@ ch_cc_library(
         "google/cloud/version.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp", "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp", "@clickhouse_arrow//:config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config.h", "@clickhouse_arrow//:config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h", "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/common/config.h", "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/core/SDKConfig.h", "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/crt/Config.h", "@clickhouse_bzip2//:config/x86_64/contrib/bzip2/bz_version.h", "@clickhouse_cassandra//:config/x86_64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp", "@clickhouse_cyrus_sasl//:config/x86_64/contrib/cyrus-sasl-cmake/prop.h", "@clickhouse_cyrus_sasl//:config/x86_64/contrib/cyrus-sasl-cmake/sasl/sasl.h", ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc", "@clickhouse_h3//:config/x86_64/contrib/h3/src/h3lib/include/h3api.h", "@clickhouse_jemalloc//:config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/com_err.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapiP_generic.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_alloc.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/autoconf.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/osconf.h", "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/profile.h", "@clickhouse_libhdfs3//:config/x86_64/contrib/libhdfs3-cmake/platform.h", "@clickhouse_libpqxx//:config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h", "@clickhouse_libpqxx//:config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h", "@clickhouse_librdkafka//:config/x86_64/contrib/librdkafka-cmake/config.h", "@clickhouse_libssh//:config/x86_64/contrib/libssh/include/libssh/libssh_version.h", "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h", "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h", "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-private/config.h", "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h", "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h", "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h", "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp", "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh", "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h", "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h", "@clickhouse_thrift//:config/x86_64/contrib/thrift-cmake/thrift/config.h", "@clickhouse_wasmtime//:config/x86_64/contrib/wasmtime/include/wasmtime/conf.h", "@clickhouse_xgboost//:config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + glob([
+        "@platforms//cpu:x86_64": [
+            "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
+            "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
+            "@clickhouse_arrow//:config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse_arrow//:config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/common/config.h",
+            "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+            "@clickhouse_aws//:config/x86_64/contrib/aws-cmake/include/aws/crt/Config.h",
+            "@clickhouse_bzip2//:config/x86_64/contrib/bzip2/bz_version.h",
+            "@clickhouse_cassandra//:config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
+            "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
+            "@clickhouse_cyrus_sasl//:config/x86_64/contrib/cyrus-sasl-cmake/prop.h",
+            "@clickhouse_cyrus_sasl//:config/x86_64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+            "@clickhouse_h3//:config/x86_64/contrib/h3/src/h3lib/include/h3api.h",
+            "@clickhouse_jemalloc//:config/x86_64/contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/com_err.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapiP_generic.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_alloc.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/autoconf.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/osconf.h",
+            "@clickhouse_krb5//:config/x86_64/contrib/krb5-cmake/include_private/profile.h",
+            "@clickhouse_libhdfs3//:config/x86_64/contrib/libhdfs3-cmake/platform.h",
+            "@clickhouse_libpqxx//:config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+            "@clickhouse_libpqxx//:config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+            "@clickhouse_librdkafka//:config/x86_64/contrib/librdkafka-cmake/config.h",
+            "@clickhouse_libssh//:config/x86_64/contrib/libssh/include/libssh/libssh_version.h",
+            "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
+            "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
+            "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-private/config.h",
+            "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",
+            "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h",
+            "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
+            "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+            "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh",
+            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
+            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
+            "@clickhouse_thrift//:config/x86_64/contrib/thrift-cmake/thrift/config.h",
+            "@clickhouse_wasmtime//:config/x86_64/contrib/wasmtime/include/wasmtime/conf.h",
+            "@clickhouse_xgboost//:config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + glob([
             "**/*.h",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": ["@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp", "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp", "@clickhouse_arrow//:config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config.h", "@clickhouse_arrow//:config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h", "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/common/config.h", "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/core/SDKConfig.h", "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/crt/Config.h", "@clickhouse_bzip2//:config/aarch64/contrib/bzip2/bz_version.h", "@clickhouse_cassandra//:config/aarch64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp", "@clickhouse_cyrus_sasl//:config/aarch64/contrib/cyrus-sasl-cmake/prop.h", "@clickhouse_cyrus_sasl//:config/aarch64/contrib/cyrus-sasl-cmake/sasl/sasl.h", ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc", "@clickhouse_h3//:config/aarch64/contrib/h3/src/h3lib/include/h3api.h", "@clickhouse_jemalloc//:config/aarch64/contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/com_err.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapiP_generic.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_alloc.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/autoconf.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/osconf.h", "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/profile.h", "@clickhouse_libhdfs3//:config/aarch64/contrib/libhdfs3-cmake/platform.h", "@clickhouse_libpqxx//:config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h", "@clickhouse_libpqxx//:config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h", "@clickhouse_librdkafka//:config/aarch64/contrib/librdkafka-cmake/config.h", "@clickhouse_libssh//:config/aarch64/contrib/libssh/include/libssh/libssh_version.h", "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h", "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h", "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-private/config.h", "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h", "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h", "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h", "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp", "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp", "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh", "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h", "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h", "@clickhouse_thrift//:config/aarch64/contrib/thrift-cmake/thrift/config.h", "@clickhouse_wasmtime//:config/aarch64/contrib/wasmtime/include/wasmtime/conf.h", "@clickhouse_xgboost//:config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + glob([
+        "@platforms//cpu:aarch64": [
+            "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
+            "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
+            "@clickhouse_arrow//:config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+            "@clickhouse_arrow//:config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+            "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/common/config.h",
+            "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+            "@clickhouse_aws//:config/aarch64/contrib/aws-cmake/include/aws/crt/Config.h",
+            "@clickhouse_bzip2//:config/aarch64/contrib/bzip2/bz_version.h",
+            "@clickhouse_cassandra//:config/aarch64/contrib/cassandra-cmake/driver_config.hpp",
+            "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
+            "@clickhouse_cyrus_sasl//:config/aarch64/contrib/cyrus-sasl-cmake/prop.h",
+            "@clickhouse_cyrus_sasl//:config/aarch64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+            "@clickhouse_h3//:config/aarch64/contrib/h3/src/h3lib/include/h3api.h",
+            "@clickhouse_jemalloc//:config/aarch64/contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/com_err.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapiP_generic.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_alloc.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_ext.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_generic.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include/gssapi/gssapi_krb5.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/autoconf.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/osconf.h",
+            "@clickhouse_krb5//:config/aarch64/contrib/krb5-cmake/include_private/profile.h",
+            "@clickhouse_libhdfs3//:config/aarch64/contrib/libhdfs3-cmake/platform.h",
+            "@clickhouse_libpqxx//:config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+            "@clickhouse_libpqxx//:config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+            "@clickhouse_librdkafka//:config/aarch64/contrib/librdkafka-cmake/config.h",
+            "@clickhouse_libssh//:config/aarch64/contrib/libssh/include/libssh/libssh_version.h",
+            "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
+            "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
+            "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-private/config.h",
+            "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",
+            "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h",
+            "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/common/src/common-config.h",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
+            "@clickhouse_mongo_c_driver//:config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+            "@clickhouse_mongo_cxx_driver//:config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+            "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh",
+            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
+            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
+            "@clickhouse_thrift//:config/aarch64/contrib/thrift-cmake/thrift/config.h",
+            "@clickhouse_wasmtime//:config/aarch64/contrib/wasmtime/include/wasmtime/conf.h",
+            "@clickhouse_xgboost//:config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + glob([
             "**/*.h",
             "**/*.inc",
         ]),
     }),
-    additional_compiler_inputs = (select({
+    additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
         ],
         "@platforms//cpu:aarch64": [
             ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
         ],
-    })),
+    }),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = ["@clickhouse_re2//:_re2", "@clickhouse_openssl//:crypto"],
+    deps = [
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_openssl//:crypto",
+    ],
     alwayslink = False,
 )
 
@@ -1788,20 +1822,23 @@ ch_cc_library(
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     }),
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/google-cloud-cpp"), "-I", repository_path("contrib/re2")],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/google-cloud-cpp"),
+        "-I",
+        repository_path("contrib/re2"),
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = (select({
         "@platforms//cpu:x86_64": [
@@ -1845,7 +1882,12 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
     ],
-    deps = [":google_cloud_cpp_common", ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos", ":google_cloud_cpp_iam_v1_iam_policy_protos", ":google_cloud_cpp_longrunning_operations_protos"],
+    deps = [
+        ":google_cloud_cpp_common",
+        ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
+        ":google_cloud_cpp_iam_v1_iam_policy_protos",
+        ":google_cloud_cpp_longrunning_operations_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1860,12 +1902,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1879,7 +1917,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_field_behavior_protos", ":google_cloud_cpp_api_resource_protos"],
+    deps = [
+        ":google_cloud_cpp_api_field_behavior_protos",
+        ":google_cloud_cpp_api_resource_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1894,12 +1935,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1923,7 +1960,11 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_client_protos", ":google_cloud_cpp_iam_credentials_v1_common_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_client_protos",
+        ":google_cloud_cpp_iam_credentials_v1_common_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1938,12 +1979,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -1971,7 +2008,13 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_client_protos", ":google_cloud_cpp_api_field_behavior_protos", ":google_cloud_cpp_api_resource_protos", ":google_cloud_cpp_iam_v1_options_protos", ":google_cloud_cpp_iam_v1_policy_protos"],
+    deps = [
+        ":google_cloud_cpp_api_client_protos",
+        ":google_cloud_cpp_api_field_behavior_protos",
+        ":google_cloud_cpp_api_resource_protos",
+        ":google_cloud_cpp_iam_v1_options_protos",
+        ":google_cloud_cpp_iam_v1_policy_protos",
+    ],
     alwayslink = False,
 )
 
@@ -1986,12 +2029,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2005,7 +2044,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
     ],
-    deps = ([":google_cloud_cpp_api_annotations_protos"]),
+    deps = [":google_cloud_cpp_api_annotations_protos"],
     alwayslink = False,
 )
 
@@ -2020,12 +2059,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2041,7 +2076,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_type_expr_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_type_expr_protos",
+    ],
     alwayslink = False,
 )
 
@@ -2056,12 +2094,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2083,7 +2117,11 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_annotations_protos", ":google_cloud_cpp_api_client_protos", ":google_cloud_cpp_rpc_status_protos"],
+    deps = [
+        ":google_cloud_cpp_api_annotations_protos",
+        ":google_cloud_cpp_api_client_protos",
+        ":google_cloud_cpp_rpc_status_protos",
+    ],
     alwayslink = False,
 )
 
@@ -2137,20 +2175,15 @@ ch_cc_library(
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     }),
-    additional_compiler_inputs = ["@clickhouse//:contrib/google-cloud-cpp-cmake/CMakeLists.txt", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/CompileProtos.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/GoogleApis.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/GoogleCloudCppLibrary.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/GoogleapisConfig.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/google_cloud_cpp_common.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/google_cloud_cpp_grpc_utils.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/google_cloud_cpp_rest_internal.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/cmake/google_cloud_cpp_storage.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz", "@clickhouse//:contrib/google-cloud-cpp-cmake/storage/google_cloud_cpp_storage.cmake", "@clickhouse//:contrib/google-cloud-cpp-cmake/poco_rest_client.cc"],
     copts = _GENERATED_COPTS_1,
     local_defines = [
         "POCO_ENABLE_CPP11",
@@ -2160,12 +2193,15 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = (((select({
+    deps = ((select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + (["@clickhouse//:common", ":google_cloud_cpp_common"])) + ([
+    }) + [
+        "@clickhouse//:common",
+        ":google_cloud_cpp_common",
+    ]) + [
         "@clickhouse_nlohmann_json//:nlohmann_json",
-    ])),
+    ]),
     alwayslink = False,
 )
 
@@ -2180,12 +2216,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2195,7 +2227,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2210,12 +2242,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2225,7 +2253,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2240,12 +2268,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2255,7 +2279,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2270,12 +2294,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2400,25 +2420,31 @@ ch_cc_library(
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     }),
-    copts = ["-w", "-std=c++23", "-g1", "-I", repository_path("contrib/google-cloud-cpp"), "-I", repository_path("contrib/re2"), "-I", repository_path("contrib/crc32c") + "/include"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+        "-I",
+        repository_path("contrib/google-cloud-cpp"),
+        "-I",
+        repository_path("contrib/re2"),
+        "-I",
+        repository_path("contrib/crc32c") + "/include",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = ((select({
+    deps = (select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
-    })) + ([":google_cloud_cpp_rest_internal"])),
+    }) + [":google_cloud_cpp_rest_internal"]),
     alwayslink = False,
 )
 
@@ -2433,15 +2459,17 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
-    copts = ["-w", "-std=c++23", "-g1", "-I", repository_path("contrib/re2")],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+        "-I",
+        repository_path("contrib/re2"),
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = [
@@ -2472,7 +2500,11 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
     ],
-    deps = [":google_cloud_cpp_api_routing_protos", ":google_cloud_cpp_iam_v1_iam_policy_protos", ":google_cloud_cpp_type_date_protos"],
+    deps = [
+        ":google_cloud_cpp_api_routing_protos",
+        ":google_cloud_cpp_iam_v1_iam_policy_protos",
+        ":google_cloud_cpp_type_date_protos",
+    ],
     alwayslink = False,
 )
 
@@ -2487,12 +2519,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2502,7 +2530,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2517,12 +2545,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2532,7 +2556,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2547,12 +2571,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2562,7 +2582,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2577,12 +2597,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2592,7 +2608,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2607,12 +2623,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2622,7 +2634,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2637,12 +2649,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2652,7 +2660,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2667,12 +2675,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2682,7 +2686,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2697,12 +2701,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2712,7 +2712,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2727,12 +2727,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2742,7 +2738,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2757,12 +2753,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2772,7 +2764,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2787,12 +2779,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2802,7 +2790,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2817,12 +2805,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2832,7 +2816,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2847,12 +2831,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2862,7 +2842,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2877,12 +2857,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2892,7 +2868,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2907,12 +2883,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2922,7 +2894,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2937,12 +2909,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2952,7 +2920,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )
 
@@ -2967,12 +2935,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.h",
     ] + select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
     })),
     copts = _GENERATED_COPTS_0,
@@ -2982,6 +2946,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",
     ],
-    deps = (["@clickhouse_grpc//:grpc++"]),
+    deps = ["@clickhouse_grpc//:grpc++"],
     alwayslink = False,
 )

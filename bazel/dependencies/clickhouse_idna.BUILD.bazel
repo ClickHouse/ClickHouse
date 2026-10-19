@@ -13,9 +13,26 @@ ch_cc_library(
         "src/idna.cpp",
     ],
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = ["src/id_tables.cpp", "src/identifier.cpp", "src/mapping.cpp", "src/mapping_tables.cpp", "src/normalization.cpp", "src/normalization_tables.cpp", "src/punycode.cpp", "src/to_ascii.cpp", "src/to_unicode.cpp", "src/unicode_transcoding.cpp", "src/validity.cpp"],
+    additional_compiler_inputs = [
+        "src/id_tables.cpp",
+        "src/identifier.cpp",
+        "src/mapping.cpp",
+        "src/mapping_tables.cpp",
+        "src/normalization.cpp",
+        "src/normalization_tables.cpp",
+        "src/punycode.cpp",
+        "src/to_ascii.cpp",
+        "src/to_unicode.cpp",
+        "src/unicode_transcoding.cpp",
+        "src/validity.cpp",
+    ],
     copts = (
-        ["-w", "-std=c++23", "-I", repository_path("contrib/idna") + "/include"]
+        [
+            "-w",
+            "-std=c++23",
+            "-I",
+            repository_path("contrib/idna") + "/include",
+        ]
     ),
     features = [],
     local_defines = [

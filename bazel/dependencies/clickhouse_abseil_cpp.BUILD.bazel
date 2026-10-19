@@ -13,7 +13,10 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = ["-w", "-std=c++17"]
+_GENERATED_COPTS_0 = [
+    "-w",
+    "-std=c++17",
+]
 
 _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
     "@clickhouse_sysroot//:linux_compile_files",
@@ -41,7 +44,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_raw_logging_internal", ":absl_spinlock_wait"],
+    deps = [
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
+    ],
     alwayslink = False,
 )
 
@@ -70,7 +76,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -84,7 +90,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -113,7 +119,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -169,7 +175,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_cordz_info"]),
+    deps = [":absl_cordz_info"],
     alwayslink = False,
 )
 
@@ -188,7 +194,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_crc_cord_state", ":absl_debugging_internal"],
+    deps = [
+        ":absl_crc_cord_state",
+        ":absl_debugging_internal",
+    ],
     alwayslink = False,
 )
 
@@ -202,7 +211,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_exponential_biased", ":absl_raw_logging_internal"],
+    deps = [
+        ":absl_exponential_biased",
+        ":absl_raw_logging_internal",
+    ],
     alwayslink = False,
 )
 
@@ -247,7 +259,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_synchronization"]),
+    deps = [":absl_synchronization"],
     alwayslink = False,
 )
 
@@ -261,7 +273,11 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_cord_internal", ":absl_cordz_functions", ":absl_cordz_handle"],
+    deps = [
+        ":absl_cord_internal",
+        ":absl_cordz_functions",
+        ":absl_cordz_handle",
+    ],
     alwayslink = False,
 )
 
@@ -275,7 +291,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_cordz_info"]),
+    deps = [":absl_cordz_info"],
     alwayslink = False,
 )
 
@@ -292,7 +308,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_crc_internal", ":absl_str_format_internal"],
+    deps = [
+        ":absl_crc_internal",
+        ":absl_str_format_internal",
+    ],
     alwayslink = False,
 )
 
@@ -352,7 +371,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_raw_logging_internal"]),
+    deps = [":absl_raw_logging_internal"],
     alwayslink = False,
 )
 
@@ -367,7 +386,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -381,7 +400,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_log_internal_conditions", ":absl_log_internal_message"],
+    deps = [
+        ":absl_log_internal_conditions",
+        ":absl_log_internal_message",
+    ],
     alwayslink = False,
 )
 
@@ -395,7 +417,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_stacktrace", ":absl_symbolize"],
+    deps = [
+        ":absl_stacktrace",
+        ":absl_symbolize",
+    ],
     alwayslink = False,
 )
 
@@ -413,7 +438,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -441,7 +466,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_flags_commandlineflag_internal", ":absl_strings"],
+    deps = [
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
+    ],
     alwayslink = False,
 )
 
@@ -459,7 +487,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -487,7 +515,11 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_flags_commandlineflag", ":absl_flags_config", ":absl_flags_marshalling"],
+    deps = [
+        ":absl_flags_commandlineflag",
+        ":absl_flags_config",
+        ":absl_flags_marshalling",
+    ],
     alwayslink = False,
 )
 
@@ -522,7 +554,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_str_format_internal"]),
+    deps = [":absl_str_format_internal"],
     alwayslink = False,
 )
 
@@ -564,7 +596,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_synchronization"]),
+    deps = [":absl_synchronization"],
     alwayslink = False,
 )
 
@@ -578,7 +610,12 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_cord", ":absl_flags_config", ":absl_flags_private_handle_accessor", ":absl_raw_hash_set"],
+    deps = [
+        ":absl_cord",
+        ":absl_flags_config",
+        ":absl_flags_private_handle_accessor",
+        ":absl_raw_hash_set",
+    ],
     alwayslink = False,
 )
 
@@ -606,7 +643,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_flags_internal", ":absl_flags_reflection"],
+    deps = [
+        ":absl_flags_internal",
+        ":absl_flags_reflection",
+    ],
     alwayslink = False,
 )
 
@@ -638,7 +678,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -652,7 +692,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_city", ":absl_strings"],
+    deps = [
+        ":absl_city",
+        ":absl_strings",
+    ],
     alwayslink = False,
 )
 
@@ -667,7 +710,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_exponential_biased", ":absl_synchronization"],
+    deps = [
+        ":absl_exponential_biased",
+        ":absl_synchronization",
+    ],
     alwayslink = False,
 )
 
@@ -685,7 +731,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -722,7 +768,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_time"]),
+    deps = [":absl_time"],
     alwayslink = False,
 )
 
@@ -740,7 +786,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -754,7 +800,11 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_flags_internal", ":absl_flags_reflection", ":absl_log_globals"],
+    deps = [
+        ":absl_flags_internal",
+        ":absl_flags_reflection",
+        ":absl_log_globals",
+    ],
     alwayslink = False,
 )
 
@@ -768,7 +818,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_hash", ":absl_vlog_config_internal"],
+    deps = [
+        ":absl_hash",
+        ":absl_vlog_config_internal",
+    ],
     alwayslink = False,
 )
 
@@ -782,7 +835,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_log_globals", ":absl_log_internal_globals"],
+    deps = [
+        ":absl_log_globals",
+        ":absl_log_internal_globals",
+    ],
     alwayslink = False,
 )
 
@@ -810,7 +866,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -844,7 +900,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_strings"]),
+    deps = [":absl_strings"],
     alwayslink = False,
 )
 
@@ -858,7 +914,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_log_internal_globals", ":absl_str_format_internal"],
+    deps = [
+        ":absl_log_internal_globals",
+        ":absl_str_format_internal",
+    ],
     alwayslink = False,
 )
 
@@ -872,7 +931,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_time"]),
+    deps = [":absl_time"],
     alwayslink = False,
 )
 
@@ -886,7 +945,11 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_log_globals", ":absl_log_internal_globals", ":absl_log_sink"],
+    deps = [
+        ":absl_log_globals",
+        ":absl_log_internal_globals",
+        ":absl_log_sink",
+    ],
     alwayslink = False,
 )
 
@@ -900,7 +963,15 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_examine_stack", ":absl_leak_check", ":absl_log_internal_format", ":absl_log_internal_log_sink_set", ":absl_log_internal_nullguard", ":absl_log_internal_structured_proto", ":absl_strerror"],
+    deps = [
+        ":absl_examine_stack",
+        ":absl_leak_check",
+        ":absl_log_internal_format",
+        ":absl_log_internal_log_sink_set",
+        ":absl_log_internal_nullguard",
+        ":absl_log_internal_structured_proto",
+        ":absl_strerror",
+    ],
     alwayslink = False,
 )
 
@@ -918,7 +989,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -932,7 +1003,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_strings"]),
+    deps = [":absl_strings"],
     alwayslink = False,
 )
 
@@ -964,7 +1035,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -978,7 +1049,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_time"]),
+    deps = [":absl_time"],
     alwayslink = False,
 )
 
@@ -992,7 +1063,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -1021,7 +1092,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_strings"]),
+    deps = [":absl_strings"],
     alwayslink = False,
 )
 
@@ -1036,7 +1107,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_str_format_internal"]),
+    deps = [":absl_str_format_internal"],
     alwayslink = False,
 )
 
@@ -1050,7 +1121,12 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_random_internal_randen", ":absl_random_internal_seed_material", ":absl_random_seed_gen_exception", ":absl_synchronization"],
+    deps = [
+        ":absl_random_internal_randen",
+        ":absl_random_internal_seed_material",
+        ":absl_random_seed_gen_exception",
+        ":absl_synchronization",
+    ],
     alwayslink = False,
 )
 
@@ -1068,7 +1144,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1082,7 +1158,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_random_internal_randen_hwaes", ":absl_random_internal_randen_slow"],
+    deps = [
+        ":absl_random_internal_randen_hwaes",
+        ":absl_random_internal_randen_slow",
+    ],
     alwayslink = False,
 )
 
@@ -1122,7 +1201,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_random_internal_platform"]),
+    deps = [":absl_random_internal_platform"],
     alwayslink = False,
 )
 
@@ -1136,7 +1215,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_random_internal_platform"]),
+    deps = [":absl_random_internal_platform"],
     alwayslink = False,
 )
 
@@ -1150,7 +1229,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_strings"]),
+    deps = [":absl_strings"],
     alwayslink = False,
 )
 
@@ -1168,7 +1247,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1182,7 +1261,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_random_internal_seed_material", ":absl_random_seed_gen_exception"],
+    deps = [
+        ":absl_random_internal_seed_material",
+        ":absl_random_seed_gen_exception",
+    ],
     alwayslink = False,
 )
 
@@ -1196,7 +1278,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_hash", ":absl_hashtablez_sampler"],
+    deps = [
+        ":absl_hash",
+        ":absl_hashtablez_sampler",
+    ],
     alwayslink = False,
 )
 
@@ -1224,7 +1309,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_raw_logging_internal"]),
+    deps = [":absl_raw_logging_internal"],
     alwayslink = False,
 )
 
@@ -1242,7 +1327,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1251,13 +1336,22 @@ ch_cc_library(
     srcs = [
         "absl/debugging/stacktrace.cc",
     ],
-    additional_compiler_inputs = ["absl/container/internal/raw_hash_set.cc", "absl/hash/internal/city.cc", "absl/hash/internal/hash.cc", "absl/time/format.cc", "absl/time/internal/cctz/testdata/version"],
+    additional_compiler_inputs = [
+        "absl/container/internal/raw_hash_set.cc",
+        "absl/hash/internal/city.cc",
+        "absl/hash/internal/hash.cc",
+        "absl/time/format.cc",
+        "absl/time/internal/cctz/testdata/version",
+    ],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = [":absl_debugging_internal", ":absl_malloc_internal"],
+    deps = [
+        ":absl_debugging_internal",
+        ":absl_malloc_internal",
+    ],
     alwayslink = False,
 )
 
@@ -1273,7 +1367,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_cord", ":absl_strerror"],
+    deps = [
+        ":absl_cord",
+        ":absl_strerror",
+    ],
     alwayslink = False,
 )
 
@@ -1306,7 +1403,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_strings"]),
+    deps = [":absl_strings"],
     alwayslink = False,
 )
 
@@ -1324,7 +1421,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1351,7 +1448,12 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_hardening", ":absl_int128", ":absl_strings_internal", ":absl_throw_delegate"],
+    deps = [
+        ":absl_hardening",
+        ":absl_int128",
+        ":absl_strings_internal",
+        ":absl_throw_delegate",
+    ],
     alwayslink = False,
 )
 
@@ -1367,7 +1469,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_base"]),
+    deps = [":absl_base"],
     alwayslink = False,
 )
 
@@ -1381,7 +1483,12 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_debugging_internal", ":absl_demangle_internal", ":absl_malloc_internal", ":absl_strings"],
+    deps = [
+        ":absl_debugging_internal",
+        ":absl_demangle_internal",
+        ":absl_malloc_internal",
+        ":absl_strings",
+    ],
     alwayslink = False,
 )
 
@@ -1406,7 +1513,12 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_graphcycles_internal", ":absl_kernel_timeout_internal", ":absl_stacktrace", ":absl_symbolize"],
+    deps = [
+        ":absl_graphcycles_internal",
+        ":absl_kernel_timeout_internal",
+        ":absl_stacktrace",
+        ":absl_symbolize",
+    ],
     alwayslink = False,
 )
 
@@ -1420,7 +1532,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":absl_raw_logging_internal"]),
+    deps = [":absl_raw_logging_internal"],
     alwayslink = False,
 )
 
@@ -1438,7 +1550,11 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_civil_time", ":absl_strings", ":absl_time_zone"],
+    deps = [
+        ":absl_civil_time",
+        ":absl_strings",
+        ":absl_time_zone",
+    ],
     alwayslink = False,
 )
 
@@ -1464,7 +1580,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1478,7 +1594,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":absl_log_internal_fnmatch", ":absl_synchronization"],
+    deps = [
+        ":absl_log_internal_fnmatch",
+        ":absl_synchronization",
+    ],
     alwayslink = False,
 )
 

@@ -101,10 +101,19 @@ ch_cc_library(
         "snappy.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/snappy-cmake/config.h", ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/snappy-cmake/config.h", ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]),
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/snappy-cmake/config.h",
+            ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
+        ] + glob(["**/*.h"]),
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/snappy-cmake/config.h",
+            ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
+        ] + glob(["**/*.h"]),
     }),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         ".",
     ] + select({

@@ -15,7 +15,10 @@ ch_cc_library(
     name = "_icui18n",
     srcs = glob(["icu4c/source/i18n/*.cpp"]),
     hdrs = glob(["icu4c/source/i18n/**/*.h"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -40,7 +43,10 @@ ch_cc_library(
     name = "_icuuc",
     srcs = glob(["icu4c/source/common/*.cpp"]),
     hdrs = glob(["icu4c/source/common/**/*.h"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

@@ -356,16 +356,35 @@ ch_cc_library(
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp"] + glob([
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+        ] + glob([
             "src/bsoncxx/include/**/*.hpp",
             "src/bsoncxx/lib/**/*.hh",
         ]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp"] + glob([
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+        ] + glob([
             "src/bsoncxx/include/**/*.hpp",
             "src/bsoncxx/lib/**/*.hh",
         ]),
     }),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "src/bsoncxx/include",
@@ -523,16 +542,37 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp", ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp"] + glob([
+        "@platforms//cpu:x86_64": [
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+            ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+        ] + glob([
             "src/mongocxx/include/**/*.hpp",
             "src/mongocxx/lib/**/*.hh",
         ]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp", ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp"] + glob([
+        "@platforms//cpu:aarch64": [
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+            ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+        ] + glob([
             "src/mongocxx/include/**/*.hpp",
             "src/mongocxx/lib/**/*.hh",
         ]),
     }),
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/zstd") + "/lib"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/zstd") + "/lib",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "src/mongocxx/include",
@@ -569,6 +609,9 @@ ch_cc_library(
             ),
         ],
     })),
-    deps = [":_bsoncxx", "@clickhouse_mongo_c_driver//:_libmongoc"],
+    deps = [
+        ":_bsoncxx",
+        "@clickhouse_mongo_c_driver//:_libmongoc",
+    ],
     alwayslink = False,
 )

@@ -85,16 +85,38 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
-_GENERATED_COPTS_1 = ["-w", "-std=c++17", "-I", repository_path("contrib/grpc") + "/include", "-I", repository_path("contrib/grpc"), "-I", repository_path("contrib/grpc") + "/third_party/address_sorting/include", "-I", repository_path("contrib/grpc") + "/src/core/ext/upb-gen", "-I", repository_path("contrib/grpc") + "/src/core/ext/upbdefs-gen", "-I", repository_path("contrib/grpc") + "/third_party/upb", "-I", repository_path("contrib/grpc") + "/third_party/utf8_range", "-I", repository_path("contrib/grpc") + "/third_party/xxhash"]
+_GENERATED_COPTS_1 = [
+    "-w",
+    "-std=c++17",
+    "-I",
+    repository_path("contrib/grpc") + "/include",
+    "-I",
+    repository_path("contrib/grpc"),
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/address_sorting/include",
+    "-I",
+    repository_path("contrib/grpc") + "/src/core/ext/upb-gen",
+    "-I",
+    repository_path("contrib/grpc") + "/src/core/ext/upbdefs-gen",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/upb",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/utf8_range",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/xxhash",
+]
 
 ch_cc_library(
     name = "gpr",
@@ -139,14 +161,21 @@ ch_cc_library(
         "src/core/util/windows/time.cc",
         "src/core/util/windows/tmpfile.cc",
     ],
-    hdrs = (glob([
+    hdrs = glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
-    ])),
+    ]),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_abseil_cpp//:absl_flags_internal", "@clickhouse_abseil_cpp//:absl_flags_reflection", "@clickhouse_abseil_cpp//:absl_random_distributions", "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool", "@clickhouse_abseil_cpp//:absl_random_seed_sequences", "@clickhouse_abseil_cpp//:absl_status"],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+        "@clickhouse_abseil_cpp//:absl_flags_reflection",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool",
+        "@clickhouse_abseil_cpp//:absl_random_seed_sequences",
+        "@clickhouse_abseil_cpp//:absl_status",
+    ],
     alwayslink = False,
 )
 
@@ -199,7 +228,28 @@ _GENERATED_LOCAL_DEFINES_1 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_2 = ["-w", "-std=c++17", "-I", repository_path("contrib/grpc") + "/include", "-I", repository_path("contrib/grpc"), "-I", repository_path("contrib/grpc") + "/third_party/address_sorting/include", "-I", repository_path("contrib/grpc") + "/src/core/ext/upb-gen", "-I", repository_path("contrib/grpc") + "/src/core/ext/upbdefs-gen", "-I", repository_path("contrib/grpc") + "/third_party/upb", "-I", repository_path("contrib/grpc") + "/third_party/utf8_range", "-I", repository_path("contrib/grpc") + "/third_party/xxhash", "-I", repository_path("contrib/re2")]
+_GENERATED_COPTS_2 = [
+    "-w",
+    "-std=c++17",
+    "-I",
+    repository_path("contrib/grpc") + "/include",
+    "-I",
+    repository_path("contrib/grpc"),
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/address_sorting/include",
+    "-I",
+    repository_path("contrib/grpc") + "/src/core/ext/upb-gen",
+    "-I",
+    repository_path("contrib/grpc") + "/src/core/ext/upbdefs-gen",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/upb",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/utf8_range",
+    "-I",
+    repository_path("contrib/grpc") + "/third_party/xxhash",
+    "-I",
+    repository_path("contrib/re2"),
+]
 
 _GENERATED_LOCAL_INCLUDES_2 = select({
     "@platforms//cpu:x86_64": [
@@ -623,12 +673,20 @@ ch_cc_library(
         "src/core/xds/grpc/xds_transport_grpc.cc",
     ] + glob(["src/core/xds/xds_client/*.cc"])),
     hdrs = select({
-        "@platforms//cpu:x86_64": (["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "@platforms//cpu:x86_64": ([
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + _GENERATED_HEADER_INPUTS_2) + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": (["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "@platforms//cpu:aarch64": ([
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + _GENERATED_HEADER_INPUTS_2) + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
@@ -637,11 +695,11 @@ ch_cc_library(
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
-    deps = (["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + ([
+    deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_re2//:_re2",
-    ]),
+    ],
     alwayslink = False,
 )
 
@@ -818,19 +876,30 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"])),
     hdrs = select({
-        "@platforms//cpu:x86_64": (["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "@platforms//cpu:x86_64": ([
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + _GENERATED_HEADER_INPUTS_2) + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": (["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h"] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "@platforms//cpu:aarch64": ([
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        ] + _GENERATED_HEADER_INPUTS_2) + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
     }),
-    additional_compiler_inputs = ((["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"] + [
-    ])),
+    additional_compiler_inputs = ([
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ] + [
+    ]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -857,11 +926,11 @@ ch_cc_library(
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
-    deps = (["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + ([
+    deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_re2//:_re2",
-    ]),
+    ],
     alwayslink = False,
 )
 
@@ -870,7 +939,16 @@ cc_library(
     includes = [
         "include",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_abseil_cpp//:absl_statusor", ":address_sorting", ":gpr", ":upb_json_lib", ":upb_textformat_lib", ":grpc__compile_0", ":grpc__compile_1"],
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        ":address_sorting",
+        ":gpr",
+        ":upb_json_lib",
+        ":upb_textformat_lib",
+        ":grpc__compile_0",
+        ":grpc__compile_1",
+    ],
 )
 
 _GENERATED_LOCAL_INCLUDES_3 = [
@@ -932,13 +1010,16 @@ ch_cc_library(
         "src/cpp/util/time_cc.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"],
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"],
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }),
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
-    deps = ["@clickhouse_google_protobuf//:_libprotobuf", ":grpc"],
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        ":grpc",
+    ],
     alwayslink = False,
 )
 
@@ -987,13 +1068,16 @@ ch_cc_library(
         "src/cpp/util/time_cc.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"],
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"],
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
-    deps = ["@clickhouse_google_protobuf//:_libprotobuf", ":grpc_unsecure"],
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        ":grpc_unsecure",
+    ],
     alwayslink = False,
 )
 
@@ -1273,12 +1357,12 @@ ch_cc_library(
         "src/compiler/ruby_generator.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:x86_64": [] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:aarch64": [] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
@@ -1625,12 +1709,22 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h"] + glob([
+        "@platforms//cpu:x86_64": [
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h"] + glob([
+        "@platforms//cpu:aarch64": [
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
@@ -1639,9 +1733,9 @@ ch_cc_library(
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
-    deps = (["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + ([
+    deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
-    ]),
+    ],
     alwayslink = False,
 )
 
@@ -1665,32 +1759,53 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/google/protobuf/timestamp.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"])),
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h"] + glob([
+        "@platforms//cpu:x86_64": [
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h", "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h"] + glob([
+        "@platforms//cpu:aarch64": [
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
+            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+        ] + glob([
             "**/*.h",
             "**/*.hpp",
             "**/*.inc",
         ]),
     }),
-    additional_compiler_inputs = (["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"]),
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
-    deps = (["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + ([
+    deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
-    ]),
+    ],
     alwayslink = False,
 )
 
 cc_library(
     name = "grpc_unsecure",
-    deps = ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_abseil_cpp//:absl_statusor", ":address_sorting", ":gpr", ":upb", ":grpc_unsecure__compile_0", ":grpc_unsecure__compile_1"],
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        ":address_sorting",
+        ":gpr",
+        ":upb",
+        ":grpc_unsecure__compile_0",
+        ":grpc_unsecure__compile_1",
+    ],
 )
 
 ch_cc_library(
@@ -1711,7 +1826,10 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
     ]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1744,12 +1862,18 @@ ch_cc_library(
         "third_party/upb/upb/json/decode.c",
         "third_party/upb/upb/json/encode.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":upb", ":upb_reflection_lib"]),
+    deps = [
+        ":upb",
+        ":upb_reflection_lib",
+    ],
     alwayslink = False,
 )
 
@@ -1777,12 +1901,15 @@ ch_cc_library(
         "third_party/upb/upb/message/map_sorter.c",
         "third_party/upb/upb/message/message.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":upb_mini_table_lib"]),
+    deps = [":upb_mini_table_lib"],
     alwayslink = False,
 )
 
@@ -1798,12 +1925,15 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":upb_mini_table_lib"]),
+    deps = [":upb_mini_table_lib"],
     alwayslink = False,
 )
 
@@ -1821,12 +1951,15 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )
 
@@ -1853,12 +1986,18 @@ ch_cc_library(
         "third_party/upb/upb/reflection/oneof_def.c",
         "third_party/upb/upb/reflection/service_def.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":upb_mini_descriptor_lib", ":upb_wire_lib"],
+    deps = [
+        ":upb_mini_descriptor_lib",
+        ":upb_wire_lib",
+    ],
     alwayslink = False,
 )
 
@@ -1868,12 +2007,18 @@ ch_cc_library(
         "third_party/upb/upb/text/encode.c",
         "third_party/upb/upb/text/internal/encode.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":upb", ":upb_reflection_lib"]),
+    deps = [
+        ":upb",
+        ":upb_reflection_lib",
+    ],
     alwayslink = False,
 )
 
@@ -1887,12 +2032,18 @@ ch_cc_library(
         "third_party/upb/upb/wire/internal/decoder.c",
         "third_party/upb/upb/wire/reader.c",
     ],
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":upb_message_lib", ":utf8_range_lib"],
+    deps = [
+        ":upb_message_lib",
+        ":utf8_range_lib",
+    ],
     alwayslink = False,
 )
 
@@ -1909,11 +2060,14 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = (["@clickhouse//:clang_rt_builtins"]),
+    deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

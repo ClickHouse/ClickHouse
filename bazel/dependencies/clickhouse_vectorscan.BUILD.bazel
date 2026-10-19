@@ -674,7 +674,15 @@ ch_cc_library(
         "src/**/*.h",
         "src/**/*.hpp",
     ])),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "src/compiler/error.cpp", "src/util/supervector/arch/arm/impl.cpp", "src/util/supervector/arch/ppc64el/impl.cpp", "src/util/supervector/arch/x86/impl.cpp", "src/rose/match.c"],
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+        "src/compiler/error.cpp",
+        "src/util/supervector/arch/arm/impl.cpp",
+        "src/util/supervector/arch/ppc64el/impl.cpp",
+        "src/util/supervector/arch/x86/impl.cpp",
+        "src/rose/match.c",
+    ],
     copts = ([
         "-w",
         "-std=gnu11",
@@ -1837,7 +1845,12 @@ ch_cc_library(
             "src/util/supervector/arch/arm/impl.cpp",
         ],
     })),
-    copts = (["-w", "-std=c++17", "-g1", "-I"] + select({
+    copts = ([
+        "-w",
+        "-std=c++17",
+        "-g1",
+        "-I",
+    ] + select({
         "@platforms//cpu:x86_64": [
             "contrib/vectorscan-cmake/amd64",
         ],
@@ -1871,17 +1884,24 @@ ch_cc_library(
         "src/**/*.h",
         "src/**/*.hpp",
     ])),
-    additional_compiler_inputs = (["src/compiler/error.cpp", "src/rose/match.c", "src/util/supervector/arch/arm/impl.cpp", "src/util/supervector/arch/ppc64el/impl.cpp", "src/util/supervector/arch/x86/impl.cpp"] + select({
+    additional_compiler_inputs = ([
+        "src/compiler/error.cpp",
+        "src/rose/match.c",
+        "src/util/supervector/arch/arm/impl.cpp",
+        "src/util/supervector/arch/ppc64el/impl.cpp",
+        "src/util/supervector/arch/x86/impl.cpp",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse//:contrib/vectorscan-cmake/rageled_files/amd64/Parser.cpp",
-            "@clickhouse//:contrib/vectorscan-cmake/rageled_files/amd64/control_verbs.cpp",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse//:contrib/vectorscan-cmake/rageled_files/aarch64/Parser.cpp",
-            "@clickhouse//:contrib/vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp",
         ],
     })),
-    copts = (["-w", "-std=c++17", "-g1", "-funsigned-char"] + select({
+    copts = ([
+        "-w",
+        "-std=c++17",
+        "-g1",
+        "-funsigned-char",
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-I",
             "contrib/vectorscan-cmake/amd64",
@@ -1902,5 +1922,10 @@ ch_cc_library(
 
 cc_library(
     name = "_vectorscan",
-    deps = ["@clickhouse//:clang_rt_builtins", ":_vectorscan__compile_0", ":_vectorscan__compile_1", ":_vectorscan__compile_2"],
+    deps = [
+        "@clickhouse//:clang_rt_builtins",
+        ":_vectorscan__compile_0",
+        ":_vectorscan__compile_1",
+        ":_vectorscan__compile_2",
+    ],
 )

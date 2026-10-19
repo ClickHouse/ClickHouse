@@ -13,7 +13,11 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = ["-w", "-std=c++17", "-fno-char8_t"]
+_GENERATED_COPTS_0 = [
+    "-w",
+    "-std=c++17",
+    "-fno-char8_t",
+]
 
 ch_cc_library(
     name = "_capnp",

@@ -26,7 +26,10 @@ ch_cc_library(
         "**/*.h",
         "**/*.hpp",
     ]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -64,7 +67,11 @@ ch_cc_library(
     ],
     copts = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": ["-w", "-std=c++23", "-march=armv8-a+sve"],
+        "@platforms//cpu:aarch64": [
+            "-w",
+            "-std=c++23",
+            "-march=armv8-a+sve",
+        ],
     }),
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -94,5 +101,9 @@ ch_cc_library(
 
 cc_library(
     name = "_fastops",
-    deps = ["@clickhouse//:clang_rt_builtins", ":_fastops__compile_0", ":_fastops__compile_1"],
+    deps = [
+        "@clickhouse//:clang_rt_builtins",
+        ":_fastops__compile_0",
+        ":_fastops__compile_1",
+    ],
 )

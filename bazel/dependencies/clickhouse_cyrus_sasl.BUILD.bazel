@@ -51,7 +51,7 @@ ch_cc_library(
         "lib/checkpw.c",
         "@clickhouse//:contrib/cyrus-sasl-cmake/config.h",
     ] + glob(["**/*.h"]),
-    hdrs = (select({
+    hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/cyrus-sasl-cmake/prop.h",
             ":config/x86_64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
@@ -60,8 +60,11 @@ ch_cc_library(
             ":config/aarch64/contrib/cyrus-sasl-cmake/prop.h",
             ":config/aarch64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
         ],
-    })),
-    additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "@clickhouse//:contrib/cyrus-sasl-cmake/CMakeLists.txt"],
+    }),
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
     copts = (([
         "-w",
         "-std=gnu11",

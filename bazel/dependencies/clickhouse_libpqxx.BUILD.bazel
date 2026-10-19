@@ -48,7 +48,7 @@ expand_template(
 ch_cc_library(
     name = "_libpqxx",
     srcs = glob(["src/*.cxx"]) + glob(["src/**/*.hxx"]),
-    hdrs = (select({
+    hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
@@ -57,9 +57,11 @@ ch_cc_library(
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
             ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
         ],
-    })),
-    additional_compiler_inputs = ["@clickhouse//:contrib/postgres-cmake/CMakeLists.txt"],
-    copts = ["-w", "-std=c++23"],
+    }),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -76,6 +78,9 @@ ch_cc_library(
             "config/aarch64/contrib/libpqxx-cmake",
         ],
     })),
-    deps = [":libpqxx_headers", "@clickhouse_postgres//:_libpq"],
+    deps = [
+        ":libpqxx_headers",
+        "@clickhouse_postgres//:_libpq",
+    ],
     alwayslink = False,
 )

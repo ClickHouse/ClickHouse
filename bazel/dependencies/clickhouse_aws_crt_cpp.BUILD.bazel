@@ -20,8 +20,11 @@ ch_cc_library(
         "source/endpoints/BddEngine.cpp",
         "source/endpoints/RuleEngine.cpp",
     ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"])),
-    additional_compiler_inputs = ["@clickhouse//:contrib/aws-cmake/AwsFeatureTests.cmake", "@clickhouse//:contrib/aws-cmake/AwsGetVersion.cmake", "@clickhouse//:contrib/aws-cmake/AwsSIMD.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadAffinity.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake", "@clickhouse//:contrib/aws-cmake/CMakeLists.txt", "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"],
-    copts = ["-w", "-std=c++23", "-g1"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
     implementation_deps = [
         "@clickhouse_aws_c_event_stream//:aws_c_event_stream_headers",
         "@clickhouse_aws_c_s3//:aws_c_s3_headers",
@@ -52,5 +55,9 @@ cc_library(
     name = "aws_crt_cpp_headers",
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
-    deps = ["@clickhouse_aws_c_auth//:aws_c_auth_headers", "@clickhouse_aws_c_cal//:aws_c_cal_headers", "@clickhouse_aws_c_mqtt//:aws_c_mqtt"],
+    deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth_headers",
+        "@clickhouse_aws_c_cal//:aws_c_cal_headers",
+        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+    ],
 )

@@ -21,7 +21,12 @@ _GENERATED_DEPS_0 = [
     "@llvm-project//libunwind:headers",
 ]
 
-_GENERATED_COPTS_0 = ["-w", "-std=c++23", "-I", repository_path("contrib/boost")]
+_GENERATED_COPTS_0 = [
+    "-w",
+    "-std=c++23",
+    "-I",
+    repository_path("contrib/boost"),
+]
 
 ch_cc_library(
     name = "_boost_context__compile_0",
@@ -31,7 +36,13 @@ ch_cc_library(
         "libs/context/src/posix/stack_traits.cpp",
     ],
     hdrs = glob(["libs/context/**/*.hpp"]),
-    additional_compiler_inputs = ["libs/context/src/asm/jump_i386_sysv_elf_gas.S", "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S", "libs/context/src/asm/make_i386_sysv_elf_gas.S", "libs/context/src/asm/make_x86_64_sysv_elf_gas.S", "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S"],
+    additional_compiler_inputs = [
+        "libs/context/src/asm/jump_i386_sysv_elf_gas.S",
+        "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
+        "libs/context/src/asm/make_i386_sysv_elf_gas.S",
+        "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
+        "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
+    ],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -90,7 +101,11 @@ ch_cc_library(
 
 cc_library(
     name = "_boost_context",
-    deps = ["@clickhouse//:clang_rt_builtins", ":_boost_context__compile_0", ":_boost_context__compile_1"],
+    deps = [
+        "@clickhouse//:clang_rt_builtins",
+        ":_boost_context__compile_0",
+        ":_boost_context__compile_1",
+    ],
 )
 
 ch_cc_library(
@@ -128,7 +143,10 @@ ch_cc_library(
     name = "_boost_filesystem",
     srcs = glob(["libs/filesystem/src/*.cpp"]),
     hdrs = glob(["libs/filesystem/**/*.hpp"]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -139,7 +157,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ([":boost_headers", "@clickhouse//:clang_rt_builtins"]),
+    deps = [
+        ":boost_headers",
+        "@clickhouse//:clang_rt_builtins",
+    ],
     alwayslink = False,
 )
 
@@ -171,19 +192,36 @@ ch_cc_library(
         "libs/iostreams/src/zstd.cpp",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:x86_64": [] + glob([
             "libs/iostreams/**/*.h",
             "libs/iostreams/**/*.hpp",
             "libs/iostreams/**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+        "@platforms//cpu:aarch64": [] + glob([
             "libs/iostreams/**/*.h",
             "libs/iostreams/**/*.hpp",
             "libs/iostreams/**/*.inc",
         ]),
     }),
-    additional_compiler_inputs = ["libs/iostreams/test/bzip2-1.0.8/libbz2.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc10/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc11/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc12/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc14/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc9/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/old/os2/zlib.def", "libs/iostreams/test/zlib-1.2.11/win32/zlib.def", "libs/iostreams/src/file_descriptor.cpp"],
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/boost"), "-I", repository_path("contrib/zstd") + "/lib"],
+    additional_compiler_inputs = [
+        "libs/iostreams/test/bzip2-1.0.8/libbz2.def",
+        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc10/zlibvc.def",
+        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc11/zlibvc.def",
+        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc12/zlibvc.def",
+        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc14/zlibvc.def",
+        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc9/zlibvc.def",
+        "libs/iostreams/test/zlib-1.2.11/old/os2/zlib.def",
+        "libs/iostreams/test/zlib-1.2.11/win32/zlib.def",
+        "libs/iostreams/src/file_descriptor.cpp",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/boost"),
+        "-I",
+        repository_path("contrib/zstd") + "/lib",
+    ],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "HAVE_ATTRIBUTE_ALIGNED",
@@ -236,7 +274,11 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     }),
-    deps = [":boost_headers", "@clickhouse_zlib_ng//:_zlib", "@clickhouse_zstd//:_zstd"],
+    deps = [
+        ":boost_headers",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd",
+    ],
     alwayslink = False,
 )
 
@@ -245,12 +287,18 @@ ch_cc_library(
     srcs = glob(["libs/program_options/src/*.cpp"]),
     hdrs = glob(["libs/program_options/**/*.hpp"]),
     additional_compiler_inputs = ["libs/program_options/src/config_file.cpp"],
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ([":boost_headers", "@clickhouse//:clang_rt_builtins"]),
+    deps = [
+        ":boost_headers",
+        "@clickhouse//:clang_rt_builtins",
+    ],
     alwayslink = False,
 )
 
@@ -261,12 +309,18 @@ ch_cc_library(
         "libs/regex/src/wide_posix_api.cpp",
     ],
     hdrs = glob(["libs/regex/**/*.hpp"]),
-    additional_compiler_inputs = ["libs/regex/src/posix_api.cpp", "libs/regex/src/wide_posix_api.cpp"],
+    additional_compiler_inputs = [
+        "libs/regex/src/posix_api.cpp",
+        "libs/regex/src/wide_posix_api.cpp",
+    ],
     copts = (
         _GENERATED_COPTS_0
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ([":boost_headers", "@clickhouse//:clang_rt_builtins"]),
+    deps = [
+        ":boost_headers",
+        "@clickhouse//:clang_rt_builtins",
+    ],
     alwayslink = False,
 )
 
@@ -280,15 +334,6 @@ cc_library(
     ]),
     features = ["external_include_paths"],
     includes = ["."],
-    textual_hdrs = glob(
-        ["boost/**"],
-        exclude = [
-            "boost/**/*.h",
-            "boost/**/*.hpp",
-            "boost/**/*.ipp",
-            "boost/**/*.inc",
-        ],
-    ),
 )
 
 cc_library(

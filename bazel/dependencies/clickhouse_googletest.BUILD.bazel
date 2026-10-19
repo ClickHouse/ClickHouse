@@ -49,8 +49,19 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["googlemock/include/**/*.h"]),
-    additional_compiler_inputs = ["googlemock/src/gmock-cardinalities.cc", "googlemock/src/gmock-internal-utils.cc", "googlemock/src/gmock-matchers.cc", "googlemock/src/gmock-spec-builders.cc", "googlemock/src/gmock.cc"],
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/googletest") + "/googlemock"],
+    additional_compiler_inputs = [
+        "googlemock/src/gmock-cardinalities.cc",
+        "googlemock/src/gmock-internal-utils.cc",
+        "googlemock/src/gmock-matchers.cc",
+        "googlemock/src/gmock-spec-builders.cc",
+        "googlemock/src/gmock.cc",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/googletest") + "/googlemock",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googlemock/include",
@@ -65,7 +76,10 @@ ch_cc_library(
     srcs = [
         "googlemock/src/gmock_main.cc",
     ],
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googlemock/include",
@@ -108,8 +122,23 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["googletest/include/**/*.h"]),
-    additional_compiler_inputs = ["googletest/src/gtest-assertion-result.cc", "googletest/src/gtest-death-test.cc", "googletest/src/gtest-filepath.cc", "googletest/src/gtest-matchers.cc", "googletest/src/gtest-port.cc", "googletest/src/gtest-printers.cc", "googletest/src/gtest-test-part.cc", "googletest/src/gtest-typed-test.cc", "googletest/src/gtest.cc"],
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/googletest") + "/googletest"],
+    additional_compiler_inputs = [
+        "googletest/src/gtest-assertion-result.cc",
+        "googletest/src/gtest-death-test.cc",
+        "googletest/src/gtest-filepath.cc",
+        "googletest/src/gtest-matchers.cc",
+        "googletest/src/gtest-port.cc",
+        "googletest/src/gtest-printers.cc",
+        "googletest/src/gtest-test-part.cc",
+        "googletest/src/gtest-typed-test.cc",
+        "googletest/src/gtest.cc",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/googletest") + "/googletest",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googletest/include",

@@ -86,7 +86,12 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["include/**/*.h"]),
-    copts = ["-w", "-std=c++23", "-I", repository_path("contrib/yaml-cpp") + "/include/yaml-cpp"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-I",
+        repository_path("contrib/yaml-cpp") + "/include/yaml-cpp",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",

@@ -33,7 +33,10 @@ ch_cc_library(
         "include/**/*.h",
         "src/**/*.h",
     ]),
-    copts = ["-w", "-std=c++23"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     includes = [
         "include",
     ],

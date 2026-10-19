@@ -788,7 +788,6 @@ def main():
     boost_patterns = ['boost/**/*' + suffix for suffix in CC_HEADER_SUFFIXES]
     builds['contrib/boost'].rule('cc_library', 'boost_headers', {
         'hdrs': Glob(boost_patterns),
-        'textual_hdrs': Glob(['boost/**'], ('**/BUILD', '**/BUILD.bazel', *boost_patterns)),
         'features': ['external_include_paths'],
     })
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(

@@ -3,7 +3,7 @@
 
 The default is a read-only preview. --write edits only external BUILD files.
 cc_library.srcs translation units are not assumed available to other compile
-actions. A glob is removed only as a whole, never replaced with a file list.
+actions. Shrink a glob only when every caller can discard the same files.
 """
 
 import argparse
@@ -22,13 +22,48 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.native_cc_dependencies import DependencyGraph
 from initial_migration.native_cc_inputs import FORCED, SPECIAL_REPOS, Sources, TUS
 from initial_migration.native_public_includes import directory, list_elements
-from initial_migration.native_textual_inputs import expanded
+from initial_migration.native_textual_inputs import expanded, string_values
 from initial_migration.prune_inherited_headers import ARCHES, CC_COMPILERS, Document, label
-from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, ROOT
+from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, ROOT
 from initial_migration.simplify_globs import _literal_strings
 
 LOCATION = re.compile(r"\$\((?:location|locations|execpath|execpaths|rootpath|rootpaths)\s+([^\s)]+)\)")
-REMOVABLE = {"delete_duplicate_already_compile_input", "delete_no_incoming_include"}
+REMOVABLE = {
+    "delete_duplicate_already_compile_input", "delete_no_incoming_include",
+    "delete_unreferenced_build_metadata",
+}
+
+
+def build_filename(ref):
+    """Recognize build instructions; C/C++ source templates remain inputs."""
+    name = ref.rsplit("//:", 1)[-1].rsplit("/", 1)[-1].lower()
+    if name.endswith(tuple((suffix + ".cmake").lower()
+                           for suffix in (*TEXTUAL_SOURCE_SUFFIXES, *TUS))):
+        return False
+    return (name in {"cmakelists.txt", "makefile", "build", "build.bazel",
+                     "workspace", "workspace.bazel", "module.bazel"}
+            or name.endswith((".bzl", ".cmake")))
+
+
+def glob_labels(doc, node, cpu, constants=()):
+    """Files named by a recognized glob in the active CPU's input expression."""
+    if isinstance(node, ast.Name) and node.id in doc.constants and node.id not in constants:
+        return glob_labels(doc, doc.constants[node.id], cpu, (*constants, node.id))
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return set().union(*(glob_labels(doc, item, cpu, constants) for item in node.elts))
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return glob_labels(doc, node.left, cpu, constants) | glob_labels(doc, node.right, cpu, constants)
+    if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "glob":
+        return doc.labels(node, cpu) if known_expression(doc, node, "srcs") else set()
+    if (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "select"
+            and len(node.args) == 1 and isinstance(node.args[0], ast.Dict)):
+        choices = node.args[0]
+        allowed = {"@platforms//cpu:" + arch for arch in ARCHES} | {"//conditions:default"}
+        if all(isinstance(key, ast.Constant) and key.value in allowed for key in choices.keys):
+            table = {key.value: val for key, val in zip(choices.keys, choices.values)}
+            return glob_labels(doc, table.get("@platforms//cpu:" + cpu,
+                                              table.get("//conditions:default")), cpu, constants)
+    return set()
 
 
 def known_expression(doc, node, field, constants=()):
@@ -76,6 +111,13 @@ class LocalAudit:
         self.computed = Counter()
         self.forced = Counter()
         self.generated = Counter()
+        # Check every scanned source repository, not just this library. That
+        # includes #embed and assembly .include/.incbin collected in v3.
+        self.literal_names = {
+            posixpath.basename(operand).lower()
+            for directives in sources.directives.values()
+            for _, _, syntax, operand in directives if syntax != "computed"
+        }
 
     @cache
     def forced_roots(self, target, cpu):
@@ -188,8 +230,19 @@ class LocalAudit:
             self.generated[target, cpu, filename] += 1
         for source, line, directive, operand in set(pub_computed + priv_computed):
             self.computed[source, line, directive, operand] += 1
+        local_globs = glob_labels(doc, attrs.get("additional_compiler_inputs"), cpu)
+        # Includes can be selected through -D macros, -include, response
+        # files, profile maps or linker/assembler options. Interpret complete
+        # option expressions so a split repository_path + filename is kept.
+        flags = [string_values(doc, attrs.get(field), cpu) for field in (
+            "copts", "conlyopts", "cxxopts", "linkopts", "defines", "local_defines",
+        )]
+        known_flags = all(isinstance(values, list) and
+                          all(isinstance(value, str) for value in values)
+                          for values in flags)
         decisions, evidence = {}, {}
         for ref in sorted(extras):
+            basename = posixpath.basename(ref.rsplit("//:", 1)[-1]).lower()
             if ref not in self.sources.inventory or ref in self.graph.rules:
                 reason = "unscanned_repo_or_generated_input"
             elif ref in forced:
@@ -209,6 +262,15 @@ class LocalAudit:
                 else:
                     reason = "private_textual_keep"
                 evidence[ref] = priv[ref]
+            elif (ref in local_globs and build_filename(ref) and known_flags
+                  and basename not in self.literal_names
+                  and not any(basename in value.lower() for values in flags for value in values)
+                  and not unresolved_forced):
+                # A checked-in CMake/Bazel/Make input which no scanned source
+                # names and no target flag references is not a compiler input.
+                # Leave ordinary data and all unknown source templates under
+                # the stricter generated/computed-include rules below.
+                reason = "delete_unreferenced_build_metadata"
             elif generated:
                 reason = "unknown_generated_tu"
             elif opaque:
@@ -253,6 +315,7 @@ class LocalRewrite:
         self.doc, self.audit = doc, audit
         self.source = doc.source
         self.allowed = {}
+        self.glob_removals = {}
         self.nodes = {}
         self.list_items = {}
         self.seen = set()
@@ -264,17 +327,83 @@ class LocalRewrite:
         eligible = bool(native_extra and arches and target is not None)
         if eligible:
             is_glob = isinstance(node, ast.Call)
-            if is_glob and not known_expression(self.doc, node, "srcs"):
+            if is_glob and (self.doc.globs is None or not known_expression(self.doc, node, "srcs")):
                 eligible = False
             else:
                 for cpu in arches:
                     refs = (self.doc.labels(node, cpu) if is_glob else
                             {label(node.value, self.doc.repo)})
                     decisions, _ = self.audit.target(target, cpu)
-                    if not refs or any(decisions.get(ref) not in REMOVABLE for ref in refs):
+                    removable = {ref for ref in refs if decisions.get(ref) in REMOVABLE}
+                    if not is_glob:
+                        # A second literal occurrence of an input must not
+                        # inherit a removal authorized only for a compile glob.
+                        removable = {ref for ref in removable
+                                     if decisions[ref] != "delete_unreferenced_build_metadata"}
+                    if is_glob:
+                        prior = self.glob_removals.get(id(node), refs)
+                        self.glob_removals[id(node)] = prior & removable
+                    if not refs or not removable:
                         eligible = False
                         break
         self.allowed[id(node)] = self.allowed.get(id(node), True) and eligible
+
+    def compact_glob(self, retained):
+        """Return a short exact expression for retained package files."""
+        globs = self.doc.globs
+        candidates = set()
+        for name in retained:
+            directory, leaf = posixpath.split(name)
+            suffix = posixpath.splitext(leaf)[1]
+            # Do not invent a broad extensionless pattern for names such as
+            # libc++ <version> or a library's extensionless public headers.
+            if not suffix:
+                continue
+            while directory:
+                candidates.add(directory + "/*" + suffix)
+                candidates.add(directory + "/**/*" + suffix)
+                directory = posixpath.dirname(directory)
+            candidates.add("*" + suffix)
+            candidates.add("**/*" + suffix)
+        matches = [(pattern, globs.matching(pattern)) for pattern in candidates]
+        matches = [(pattern, files) for pattern, files in matches
+                   if len(files) > 1 and files <= retained]
+        # Prefer the narrowest directory when two patterns name the same
+        # files, e.g. src/roaring/*.c before **/*.c.
+        matches.sort(key=lambda pair: (
+            -len(pair[1]), -pair[0].split("*", 1)[0].count("/"),
+            "**" in pair[0], len(pair[0]), pair[0],
+        ))
+        remaining, patterns = set(retained), []
+        for pattern, files in matches:
+            if len(files & remaining) > 1:
+                patterns.append(pattern)
+                remaining.difference_update(files)
+        # Preserve a large mixed glob if an exact representation would dump
+        # thousands of source labels into the BUILD file. Never add excludes.
+        if len(remaining) > 32 or len(patterns) > 32:
+            return None
+        parts = []
+        if patterns:
+            parts.append("glob(" + json.dumps(sorted(patterns)) + ")")
+        if remaining:
+            parts.append(json.dumps(sorted(remaining)))
+        return parts[0] if len(parts) == 1 else "(" + " + ".join(parts) + ")"
+
+    @staticmethod
+    def build_metadata(ref):
+        """Classify removed build files for the audit report, never for votes."""
+        name = ref.rsplit("//:", 1)[-1].rsplit("/", 1)[-1].lower()
+        if name in {"cmakelists.txt", "cmakecache.txt"} or name.endswith(".cmake"):
+            return "cmake"
+        if (name in {"build", "build.bazel", "workspace", "workspace.bazel", "module.bazel"}
+                or name.endswith((".bzl", ".bazel"))):
+            return "bazel"
+        if re.fullmatch(
+                r"(?:readme|authors|contributing|how[_-]to[_-]update|changes|changelog|todo)"
+                r"(?:\.(?:md|rst|txt))?", name):
+            return "readme"
+        return None
 
     def walk(self, node, target, arches, native_extra, constants=()):
         if node is None:
@@ -361,8 +490,34 @@ class LocalRewrite:
                 continue
             node = self.nodes[ident]
             if isinstance(node, ast.Call):
-                edits.append((*self.source.span(node), "[]"))
-                self.stats["whole_globs"] += 1
+                removable = self.glob_removals[ident]
+                if not removable:
+                    continue
+                original = self.doc.labels(node, ARCHES[0])
+                retained_refs = original - removable
+                if not retained_refs:
+                    replacement = "[]"
+                    self.stats["whole_globs"] += 1
+                else:
+                    prefix = self.doc.repo + "//:"
+                    retained = {ref.removeprefix(prefix) for ref in retained_refs}
+                    replacement = self.compact_glob(retained)
+                    if replacement is None:
+                        self.stats["partial_globs_too_large"] += 1
+                        continue
+                    self.stats["partial_globs"] += 1
+                parsed = ast.parse(replacement, mode="eval").body
+                for cpu in ARCHES:
+                    # Sources checks the inventory digest. Verify the exact
+                    # retained file set under that same repository inventory.
+                    if self.doc.labels(parsed, cpu) != self.doc.labels(node, cpu) - removable:
+                        raise ValueError(f"{self.doc.path}:{node.lineno}: glob changed retained {cpu} files")
+                edits.append((*self.source.span(node), replacement))
+                self.stats["glob_files_removed"] += len(removable)
+                for ref in removable:
+                    category = self.build_metadata(ref)
+                    if category:
+                        self.stats["glob_" + category + "_removed"] += 1
             else:
                 container, item = self.list_items[ident]
                 first, last = self.source.span(item)

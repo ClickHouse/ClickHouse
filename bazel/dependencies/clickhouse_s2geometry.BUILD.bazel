@@ -117,9 +117,11 @@ ch_cc_library(
         "src/s2/util/math/mathutil.cc",
         "src/s2/util/units/length-units.cc",
     ],
-    hdrs = (glob(["src/**/*.h"])),
-    additional_compiler_inputs = ["@clickhouse//:contrib/s2geometry-cmake/CMakeLists.txt"],
-    copts = ["-w", "-std=c++23"],
+    hdrs = glob(["src/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -129,6 +131,16 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
-    deps = ["@clickhouse_abseil_cpp//:absl_flags_internal", "@clickhouse_abseil_cpp//:absl_flags_reflection", "@clickhouse_abseil_cpp//:absl_log_internal_check_op", "@clickhouse_abseil_cpp//:absl_log_internal_conditions", "@clickhouse_abseil_cpp//:absl_random_distributions", "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool", "@clickhouse_abseil_cpp//:absl_random_seed_sequences", "@clickhouse_abseil_cpp//:absl_status", "@clickhouse_openssl//:ssl"],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+        "@clickhouse_abseil_cpp//:absl_flags_reflection",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_op",
+        "@clickhouse_abseil_cpp//:absl_log_internal_conditions",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool",
+        "@clickhouse_abseil_cpp//:absl_random_seed_sequences",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_openssl//:ssl",
+    ],
     alwayslink = False,
 )
