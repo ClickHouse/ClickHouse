@@ -46,10 +46,11 @@ for i in 1 100 200; do
 done
 
 # Direct reads consume the rows, so sum them: `pre.tsv` existed at creation, `new.tsv` comes through the watcher.
+# A read before the watcher delivers the event may log the expected "no files need to parse" warning, so it is not sent to the client.
 for i in 1 100 200; do
     total=0
     for _ in $(seq 1 600); do
-        count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM $(table_name "${i}") SETTINGS stream_like_engine_allow_direct_select = 1")
+        count=$($CLICKHOUSE_CLIENT --send_logs_level=error -q "SELECT count() FROM $(table_name "${i}") SETTINGS stream_like_engine_allow_direct_select = 1")
         total=$(( total + count ))
         [ "${total}" -ge 2 ] && break
         sleep 0.1
@@ -83,7 +84,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "shared" > "${WORK}/shared/new.tsv"
 total=0
 for _ in $(seq 1 600); do
-    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM $(table_name 1002) SETTINGS stream_like_engine_allow_direct_select = 1")
+    count=$($CLICKHOUSE_CLIENT --send_logs_level=error -q "SELECT count() FROM $(table_name 1002) SETTINGS stream_like_engine_allow_direct_select = 1")
     total=$(( total + count ))
     [ "${total}" -ge 1 ] && break
     sleep 0.1
