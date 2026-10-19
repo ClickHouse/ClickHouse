@@ -1331,9 +1331,12 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             return limits.local_limits.size_limits.overflow_mode == OverflowMode::THROW
                 && (limits.local_limits.size_limits.max_rows || limits.leaf_limits.max_rows);
         });
-    const size_t total_rows_approx = row_limit_checks_estimate && source_filter && source_filter->query_condition_cache
+    size_t total_rows_approx = row_limit_checks_estimate && source_filter && source_filter->query_condition_cache
         ? source_filter->countRowsToScan(*current_data)
         : snapshot_data.rows;
+    /// A trivial `LIMIT` stops the read early, so it caps the estimate, as in `ReadFromMergeTree`.
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows_approx)
+        total_rows_approx = query_info.trivial_limit;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
