@@ -5,3 +5,10 @@ override to another value
 1
 p
 p_same
+create: no override
+p
+create: override to the inherited value
+p
+create: override to another value
+1
+0

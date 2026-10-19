@@ -614,9 +614,17 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         /// What `WITH SETTINGS` changes from the settings this projection would otherwise have. These
         /// include the policies inherited from the table: an inherited value is not a change made by the
         /// projection, so it must not be checked against a `CONST` constraint as if it were.
-        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-        inherit_parent_policy(*default_settings, /*explicit_only=*/ false);
-        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+        ///
+        /// Without `parent_metadata` the inherited policy is unknown, so the check is left to the call that
+        /// has it. This is the preliminary pass of `InterpreterCreateQuery::setProperties`: only `MergeTree`
+        /// tables support projections, and their storage registration builds the projections again with
+        /// the table metadata and the context of the query, and runs this check then.
+        if (parent_metadata)
+        {
+            auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+            inherit_parent_policy(*default_settings, /*explicit_only=*/ false);
+            query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+        }
 
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
