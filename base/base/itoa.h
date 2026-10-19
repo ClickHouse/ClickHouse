@@ -207,6 +207,11 @@ ALWAYS_INLINE inline UInt8x16 shuffleBytes(UInt8x16 bytes, UInt8x16 order)
 /// and one 16-byte store writes them.
 ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
 {
+    /// Short values are common and usually come in runs, where this branch is predicted: the 8-bit table costs one
+    /// load and one store, much less than the vector code below.
+    if (value < 256)
+        return writeUInt8Text(value, p);
+
     UInt32 length = static_cast<UInt32>((value + uint32_tables.digit_count_increments[std::countl_zero(value)]) >> 32);
 
     using UInt64x2 = UInt64 __attribute__((vector_size(16)));
