@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "miniselect",
     hdrs = glob(["include/miniselect/**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

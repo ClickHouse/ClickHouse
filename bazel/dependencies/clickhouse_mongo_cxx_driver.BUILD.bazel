@@ -333,8 +333,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

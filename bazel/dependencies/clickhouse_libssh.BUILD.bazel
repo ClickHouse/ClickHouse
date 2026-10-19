@@ -189,6 +189,9 @@ ch_cc_library(
         ],
     })),
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "include",
+    ],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

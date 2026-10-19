@@ -153,7 +153,7 @@ ch_cc_library(
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
         ] + _GENERATED_HEADER_INPUTS_0) + glob(["include/**/*.hxx"]),
     }),
-    copts = (([
+    copts = ([
         "-w",
         "-std=c++23",
         "-I",
@@ -161,7 +161,7 @@ ch_cc_library(
         "-I",
         "base",
         "-I",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "bazel/config/x86_64/base",
         ],
@@ -170,24 +170,11 @@ ch_cc_library(
         ],
     }) + [
         "-I",
-        repository_path("contrib/cctz") + "/include",
-        "-I",
-        repository_path("contrib/re2"),
-        "-I",
         "base/pcg-random",
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
         "-I",
-        repository_path("contrib/libssh") + "/include",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-    ])) + [
-        "-I",
-        repository_path("contrib/miniselect") + "/include",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-        "-I",
-        repository_path("contrib/crc32c") + "/include",
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),

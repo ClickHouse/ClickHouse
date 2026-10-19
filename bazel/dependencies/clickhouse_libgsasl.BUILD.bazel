@@ -72,6 +72,9 @@ ch_cc_library(
         "contrib/libgsasl-cmake/linux_x86_64/include",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "src",
+    ],
     language = "C",
     local_defines = [
         "HAVE_CONFIG_H=1",

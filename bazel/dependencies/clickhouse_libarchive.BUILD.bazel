@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -124,8 +123,6 @@ ch_cc_library(
         "-Wno-reserved-macro-identifier",
         "-I",
         "contrib/libarchive-cmake",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

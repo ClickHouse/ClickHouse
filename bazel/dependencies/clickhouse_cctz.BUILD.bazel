@@ -1243,6 +1243,9 @@ ch_cc_library(
             "-std=c++23",
         ]
     ),
+    includes = [
+        "include",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",

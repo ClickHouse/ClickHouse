@@ -127,8 +127,6 @@ ch_cc_library(
         "-std=c++23",
         "-include",
         repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
     ],
     includes = [
         "c++/include",

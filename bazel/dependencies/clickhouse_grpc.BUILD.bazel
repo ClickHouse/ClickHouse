@@ -200,8 +200,6 @@ _GENERATED_LOCAL_DEFINES_1 = select({
 _GENERATED_COPTS_2 = [
     "-w",
     "-std=c++17",
-    "-I",
-    repository_path("contrib/re2"),
 ]
 
 _GRPC_LOCAL_INCLUDES = [
@@ -733,8 +731,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/re2"),
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

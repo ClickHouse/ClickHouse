@@ -73,6 +73,9 @@ ch_cc_library(
         "contrib/libxml2-cmake/linux_x86_64/include",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "include",
+    ],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [

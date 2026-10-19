@@ -72,6 +72,20 @@ PUBLIC_HEADERS.update({
     for owner, directories in SOURCE_HEADER_DIRECTORIES.items()
 })
 
+# Existing cc_library providers whose source includes have been checked for
+# header-name collisions in both configured native graphs. Libfiu's directory
+# cannot be published: Poco XML and libfiu both contain internal.h.
+NATIVE_PUBLIC_INCLUDES = {
+    ('contrib/zstd', '_zstd__compile_0'): 'lib',
+    ('contrib/re2', '_re2'): '.',
+    ('contrib/libgsasl', '_gsasl'): 'src',
+    ('contrib/libssh', '_ssh'): 'include',
+    ('contrib/cctz', '_cctz'): 'include',
+    ('contrib/crc32c', '_crc32c'): 'include',
+    ('contrib/libxml2', '_libxml2'): 'include',
+    ('contrib/miniselect', 'miniselect'): 'include',
+}
+
 def global_compile_options():
     """Read unconditional Bazel compiler options from the project's rc file."""
     options = {'copt': set(), 'conlyopt': set(), 'cxxopt': set()}
@@ -141,7 +155,7 @@ class LocalInclude:
     raw_llvm: bool = False
 
 
-def split_system_includes(flags, owner, native_library):
+def split_system_includes(flags, owner, native_library, public_includes=()):
     options, includes = [], []
     flags = iter(flags)
     for flag in flags:
@@ -158,6 +172,8 @@ def split_system_includes(flags, owner, native_library):
             # CppKafka's quoted queue.h must precede the other system headers.
             if original == 'contrib/cppkafka/include/cppkafka':
                 options.extend([flag, original])
+            elif original in public_includes:
+                continue
             elif repository(directory.removeprefix('$(GENDIR)/')) == owner:
                 includes.append(LocalInclude(directory, owner))
             else:
@@ -795,6 +811,8 @@ class BuildFile:
                 LocalInclude('contrib/openssl-cmake/common/include', self.owner),
                 'include',
             ]
+        if kind in {'cc_library', 'ch_cc_library'} and (self.owner, name) in NATIVE_PUBLIC_INCLUDES:
+            attrs['includes'] = attrs.get('includes', []) + [NATIVE_PUBLIC_INCLUDES[self.owner, name]]
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -954,7 +972,25 @@ class BuildFile:
                             last_w = max((i for i, flag in enumerate(value) if flag == '-w'), default=-1)
                             value = [flag for i, flag in enumerate(value) if flag != '-w' or i == last_w]
                         if arch in system_includes:
-                            value, includes = split_system_includes(value, self.owner, native_library)
+                            public_includes = set()
+                            if native_library and self.owner not in {
+                                None, llvm_targets.PREFIX, 'contrib/arrow', 'contrib/cppkafka',
+                            }:
+                                deps = compile_dependencies(inputs[arch]['deps'], variants[arch]['deps'])
+                                if collapse_single:
+                                    deps = deps + variants[arch]['deps']
+                                deps = deps + group.get('foreign_deps', [])
+                                _, _, _, reachable = self.dependency_headers(arch, tuple(deps))
+                                for (owner, provider), relative in NATIVE_PUBLIC_INCLUDES.items():
+                                    ref = '@' + REPOSITORIES[owner]['name'] + '//:' + provider
+                                    cmake_name = provider.split('__compile_', 1)[0]
+                                    # miniselect is emitted by HeaderLibraries,
+                                    # so it has no corresponding CMake target.
+                                    if owner != self.owner and (ref in deps or
+                                            self.owners.get(cmake_name) == owner and cmake_name in reachable):
+                                        public_includes.add((owner + '/' + relative).removesuffix('/.'))
+                            value, includes = split_system_includes(
+                                value, self.owner, native_library, public_includes)
                             system_includes[arch] = includes + system_includes[arch]
                         if native_library and language in GLOBAL_COMPILE_OPTIONS:
                             # These original CMake C groups have no -Werror.

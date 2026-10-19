@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -193,8 +193,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [

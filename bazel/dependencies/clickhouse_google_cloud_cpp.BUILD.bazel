@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -76,8 +76,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 _GOOGLE_CLOUD_CPP_COPTS = [
     "-w",
     "-std=c++23",
-    "-I",
-    repository_path("contrib/re2"),
 ]
 
 _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES = [
@@ -989,8 +987,6 @@ _GENERATED_COPTS_1 = [
     "-w",
     "-std=c++23",
     "-g1",
-    "-I",
-    repository_path("contrib/re2"),
 ]
 
 ch_cc_library(
@@ -1249,8 +1245,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        repository_path("contrib/re2"),
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1776,10 +1770,6 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-g1",
-        "-I",
-        repository_path("contrib/re2"),
-        "-I",
-        repository_path("contrib/crc32c") + "/include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -1802,8 +1792,6 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-g1",
-        "-I",
-        repository_path("contrib/re2"),
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
