@@ -121,17 +121,26 @@ rules. `initial_migration/cmake_metadata.bzl` and
 Arrow and both MongoDB drivers also read the recorded C++ compiler version
 from `initial_migration/cmake_metadata.bzl` when generating their headers.
 
-Root and dependency BUILD files remain in their ordinary packages for direct
-maintenance. BUILD-file generation from both CMake reference graphs
-overwrites generated BUILD files, so run it only for an intentional migration
-refresh.
+ClickHouse BUILD files reside with their sources under `src/`, `programs/`,
+`base/`, and `contrib/`. For example, Poco NetSSL belongs to
+`//base/poco/NetSSL_OpenSSL:_poco_net_ssl`; DBMS and common I/O span several
+source directories and belong to `//src:dbms` and
+`//src:clickhouse_common_io`. Third-party BUILD overlays remain in
+`bazel/dependencies/`. The root retains `//:clickhouse` so its output remains
+`bazel-bin/clickhouse`, and `//:unit_tests_dbms` remains a test entry point.
+BUILD files can be maintained directly. BUILD-file generation from both CMake
+reference graphs overwrites the BUILD files; run it only for an intentional
+migration refresh.
 
 `initial_migration/configure_reference.py` configures both complete CMake graphs and invokes
 EngFlow/any2bazel's CMake extractor. `initial_migration/generate_build.py` translates the File
 API graphs and declared Ninja generator commands into native Bazel targets.
-`initial_migration/build_file.py` emits the rules into the root `BUILD.bazel` and the dependency
-overlays. The root `contrib` filegroup keeps auxiliary dependency targets in
-the complete `//...` build, even when the server does not depend on them.
+`initial_migration/build_file.py` renders rules from both captured graphs.
+`initial_migration/first_party_packages.py` assigns the native rules to their
+source directories, updates labels across the main and external repositories,
+and checks source order on both architectures. `//contrib:contrib` keeps
+auxiliary dependency targets in the complete `//...` build, even when the
+server does not depend on them.
 `initial_migration/build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
 `--cxxopt` entries from `.bazelrc`. It omits those flags from generated
 native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.

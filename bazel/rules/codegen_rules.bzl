@@ -3472,7 +3472,7 @@ CODEGEN_RULES = {
       "//bazel/rules:prepare_hdfs_crc",
       "@nasm//:nasm",
     ],
-    "cmd": "$(execpath //bazel/rules:prepare_hdfs_crc) $(execpath @clickhouse_libhdfs3//:src/common/crc_iscsi_v_pcl.asm) $(location //:gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm) && $(execpath @nasm//:nasm) -f elf64 -g -F dwarf -D LINUX -o $(location //:gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o) $(location //:gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm)",
+    "cmd": "$(execpath //bazel/rules:prepare_hdfs_crc) $(execpath @clickhouse_libhdfs3//:src/common/crc_iscsi_v_pcl.asm) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm) && $(execpath @nasm//:nasm) -f elf64 -g -F dwarf -D LINUX -o $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm)",
   },
 "generate_contrib_prometheus_protobufs_cmake_prompb_remote_pb_h": {
     "srcs": [

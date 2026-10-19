@@ -769,7 +769,8 @@ class Migration:
                     value = self.mapped(value, None, '', cross_repo, source_file=False)
                 else:
                     value = LOCATION.sub(
-                        lambda m: (m[0] if cross_repo and not m[2].startswith('@clickhouse//') else
+                        lambda m: (m[0] if not MAIN_LABEL.fullmatch(m[2]) or
+                                   cross_repo and not m[2].startswith('@clickhouse//') else
                                    '$(' + m[1] + ' ' + self.mapped(m[2], None, '', cross_repo) + ')'),
                         value)
                 if value != node.value:

@@ -30,7 +30,7 @@ genrule(
         "skim_bridge.h",
         "skim_bridge.cc",
     ],
-    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location //:skim_bridge.h) -o $(location //:skim_bridge.cc)",
+    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location skim_bridge.h) -o $(location skim_bridge.cc)",
     tools = ["@clickhouse_crates//:cxxbridge_cli"],
 )
 
