@@ -17,6 +17,10 @@ build_info{version="1"} 1 0
 unknown
 [('k','a\nb')]
 h_bucket	h	[('le','1')]
+build_info	build	info
+c	c	counter
+g_gcount	g	gaugehistogram
+s	s	summary
 metric_name	String					
 metric_family	String					
 help	String					

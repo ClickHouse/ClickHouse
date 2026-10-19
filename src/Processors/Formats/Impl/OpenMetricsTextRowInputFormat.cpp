@@ -567,6 +567,19 @@ void OpenMetricsTextRowInputFormat::parseAll()
         const auto meta_it = family_meta.find(metric_family);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
+        /// For the types with a suffix rule, a sample must be the family name plus one of the type's
+        /// suffixes (the same table the writer enforces), so e.g. a bare `h` under `# TYPE h histogram`
+        /// is rejected. A suffixed sample only folds into its family when the suffix is allowed, so the
+        /// remaining case is a sample that carries the declared family name itself. The exception is a
+        /// bare `counter` sample, which Prometheus-style exposition writes without `_total`.
+        if (stem == metric_family && fm.type != "counter")
+        {
+            if (const auto * suffixes = OpenMetricsText::familySampleSuffixes(fm.type);
+                suffixes && std::find(suffixes->begin(), suffixes->end(), std::string_view{}) == suffixes->end())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "OpenMetrics {} sample '{}' must carry one of the suffixes of its family type", fm.type, stem);
+        }
+
         /// Histogram buckets must carry a valid `le` and bare summary samples a valid `quantile` (the same
         /// rule the writer enforces), otherwise the sample is indistinguishable from an unrelated series.
         if (metric_family.size() <= stem.size() && stem.starts_with(metric_family))

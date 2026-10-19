@@ -61,7 +61,7 @@ The writer enforces the [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/op
 - **Unit suffix rule.** When `unit` is set, `metric_family` must end with `_<unit>`.
 - **Exposition structure.** `# HELP`/`# TYPE`/`# UNIT` are emitted at most once per family; there are no blank lines between families; the stream ends with `# EOF`.
 
-The reader accepts Prometheus-style exposition: it normalizes `untyped` → `unknown` and does not require the counter `_total` or unit suffix contract on input.
+The reader applies the same sample-name suffix rule, so for example a bare `h` sample under `# TYPE h histogram` is rejected with `INCORRECT_DATA`. Otherwise it accepts Prometheus-style exposition: it normalizes `untyped` → `unknown`, accepts a `counter` sample without the `_total` suffix, and does not require the counter family name or unit suffix contract on input.
 
 ### Compared to `FORMAT Prometheus` {#compared-to-prometheus}
 

@@ -49,6 +49,18 @@ SELECT tags FROM format(OpenMetrics, concat('m{k="a\\nb"} 1', char(10), '# EOF',
 -- A histogram bucket without `le` is rejected; one with `le` folds into the family.
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT metric_name, metric_family, tags FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="1"} 1', char(10), '# EOF', char(10))) FORMAT TSV;
+-- A sample carrying only the family name is rejected for the types whose samples need a suffix.
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE g gaugehistogram', char(10), 'g 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE build info', char(10), 'build{version="1"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# HELP h text', char(10), '# TYPE h histogram', char(10), 'h{le="1"} 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+-- Bare summary quantiles, suffixed samples, and a Prometheus-style counter without `_total` are accepted.
+SELECT metric_name, metric_family, type FROM format(OpenMetrics, concat(
+    '# TYPE g gaugehistogram', char(10), 'g_gcount 1', char(10),
+    '# TYPE build info', char(10), 'build_info{version="1"} 1', char(10),
+    '# TYPE s summary', char(10), 's{quantile="0.5"} 1', char(10),
+    '# TYPE c counter', char(10), 'c 1', char(10),
+    '# EOF', char(10))) ORDER BY metric_name FORMAT TSV;
 
 -- ===== `samples` and `time_series` column names =====
 
