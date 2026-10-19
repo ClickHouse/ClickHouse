@@ -150,7 +150,10 @@ cc_library(
                     edits.append((*source.span(node), strings(kept)))
                     break
     text = source.rewrite(edits)
-    text = replace_attrs(text, {"headers": {"deps": strings(["//base:headers"])}})
+    text = replace_attrs(text, {"headers": {
+        "hdrs": 'glob(["**/*.h"])',
+        "deps": strings(["//base:headers"]),
+    }})
     root_build.write_text(text)
 
     # Only label spellings change. Do not rename file identities in CMake's

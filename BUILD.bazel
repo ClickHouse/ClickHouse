@@ -31,10 +31,7 @@ alias(
 
 cc_library(
     name = "headers",
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hpp",
-    ]),
+    hdrs = glob(["**/*.h"]),
     textual_hdrs = glob([
         "**/*.inc",
         "**/*.def",
