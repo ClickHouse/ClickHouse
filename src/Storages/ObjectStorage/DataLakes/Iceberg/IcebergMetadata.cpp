@@ -91,6 +91,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
@@ -105,6 +106,12 @@ extern const Event IcebergTrivialCountOptimizationApplied;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char iceberg_metadata_update_pause_before_publish[];
+    extern const char iceberg_metadata_update_pause_after_publish[];
+}
 
 namespace DataLakeStorageSetting
 {
@@ -252,13 +259,27 @@ void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
     explicit_metadata_file_path.set(std::make_unique<const String>(path));
     std::lock_guard lock(cached_latest_metadata_mutex);
     cached_latest_metadata.reset();
+    cached_latest_metadata_lookup_id = ++last_metadata_lookup_id;
 }
 
 void IcebergMetadata::update(const ContextPtr & context)
 {
+    UInt64 lookup_id;
+    {
+        std::lock_guard lock(cached_latest_metadata_mutex);
+        lookup_id = ++last_metadata_lookup_id;
+    }
     auto latest_metadata = fetchLatestMetadata(context, /* force_fetch_latest_metadata */ false);
-    std::lock_guard lock(cached_latest_metadata_mutex);
-    cached_latest_metadata = std::move(latest_metadata);
+    FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_before_publish);
+    {
+        std::lock_guard lock(cached_latest_metadata_mutex);
+        if (lookup_id > cached_latest_metadata_lookup_id)
+        {
+            cached_latest_metadata = std::move(latest_metadata);
+            cached_latest_metadata_lookup_id = lookup_id;
+        }
+    }
+    FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_after_publish);
 }
 
 Iceberg::MetadataFileWithInfo IcebergMetadata::fetchLatestMetadata(const ContextPtr & context, bool force_fetch_latest_metadata) const
