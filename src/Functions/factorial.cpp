@@ -18,6 +18,7 @@ struct FactorialImpl
     using ResultType = UInt64;
     static const constexpr bool allow_decimal = false;
     static const constexpr bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeInteger) -> UInt64";
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {

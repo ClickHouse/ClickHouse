@@ -12,6 +12,7 @@
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
 #include <IO/UncompressedCache.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
@@ -126,6 +127,7 @@ ColumnsCacheEntry::~ColumnsCacheEntry()
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
     String().swap(part_name);
     String().swap(column_name);
+    source.reset();
 
     /// A column the query read and the cache did not admit is the query's, released as such.
     if (!column || !owned_by_server.load(std::memory_order_relaxed))
@@ -135,6 +137,16 @@ ColumnsCacheEntry::~ColumnsCacheEntry()
         parkedColumns().park(std::move(column));
     else
         column.reset();
+}
+
+std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id)
+{
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id.uuid;
+    /// The database name of the storages created by table functions, see `ITableFunction::getDatabaseName`.
+    if (storage_id.database_name == "_table_function")
+        return UUIDHelpers::Nil;
+    return std::nullopt;
 }
 
 ColumnsCacheStripes::ColumnsCacheStripes(size_t avg_rows_per_mark)
@@ -807,7 +819,7 @@ std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
             /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
             /// by, so that the sum over `system.columns_cache` can be compared with
             /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
-            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
+            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.source, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
         }
     }
     return result;
