@@ -4,6 +4,7 @@
 #include <Interpreters/SetVariants.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -61,6 +62,7 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// `allow_spilling_` permits the scheduler to request the same release for preliminary deduplication.
     /// `is_pre_distinct_` selects the preliminary (per-stream) mode: there the transform may absorb
     /// new keys into a bloom filter instead of the hash set once the set has grown past
     /// `set_limit_for_enabling_bloom_filter_` (0 disables it). In the final mode the transform may
@@ -73,6 +75,7 @@ public:
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
         UInt64 max_bytes_before_pass_through_ = 0,
+        bool allow_spilling_ = false,
         bool is_pre_distinct_ = false,
         UInt64 set_limit_for_enabling_bloom_filter_ = 0,
         UInt64 bloom_filter_bytes_ = 0,
@@ -84,10 +87,16 @@ public:
 
     String getName() const override { return "DistinctTransform"; }
 
+    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, allow_spilling ? 1uz : 0uz}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+
 protected:
     void transform(Chunk & chunk) override;
 
 private:
+    SpillableAdapter<DistinctTransform> spillable{*this};
+    ISpillable * const spillable_ptr = &spillable;
     /// An absent filter means subsequent chunks pass through without deduplication.
     std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;
@@ -132,6 +141,7 @@ private:
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
+    const bool allow_spilling;
 
     template <typename Method>
     void buildSetFilter(

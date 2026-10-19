@@ -4,6 +4,7 @@
 #include <bit>
 #include <limits>
 #include <vector>
+#include <utility>
 
 #include <Columns/ColumnsCommon.h>
 #include <Common/BitHelpers.h>
@@ -77,6 +78,7 @@ DistinctTransform::DistinctTransform(
     bool allow_abandoning_,
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_,
+    bool allow_spilling_,
     bool is_pre_distinct_,
     UInt64 set_limit_for_enabling_bloom_filter_,
     UInt64 bloom_filter_bytes_,
@@ -92,6 +94,7 @@ DistinctTransform::DistinctTransform(
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
+    , allow_spilling(allow_spilling_)
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
@@ -639,6 +642,40 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
         releaseOwnSet();
         ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
     }
+}
+
+ProcessorMemoryStats DistinctTransform::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (!allow_spilling)
+        return res;
+
+    if (use_own_set)
+    {
+        if (!own_set_released)
+            res.spillable_memory_bytes = getOwnSetByteCount();
+    }
+    else if (distinct_set)
+    {
+        res.spillable_memory_bytes = distinct_set->getTotalByteCount();
+    }
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    return res;
+}
+
+size_t DistinctTransform::spill(size_t /*at_least_bytes*/)
+{
+    const size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    /// The downstream consumer still deduplicates exactly, including keys already emitted here.
+    if (use_own_set)
+        releaseOwnSet();
+    else
+        distinct_set.reset();
+    ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+    return bytes;
 }
 
 void DistinctTransform::transform(Chunk & chunk)

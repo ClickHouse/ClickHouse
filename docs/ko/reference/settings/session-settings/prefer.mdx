@@ -78,9 +78,11 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "외부 정렬 시 최대 블록 바이트를 우선 사용하여 병합 중 메모리 사용량을 줄입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "외부 정렬 시 최대 블록 바이트를 우선 사용하여 머지 중 메모리 사용량을 줄입니다."}]}]} />
 
-외부 정렬 시 최대 블록 바이트를 우선 사용하여 병합 중 메모리 사용량을 줄입니다.
+외부 `ORDER BY` 및 `DISTINCT`에서 사용하는 스필(spill) 파일의 권장 블록 크기(바이트 단위)입니다. 블록이 작을수록 스필 파일을 머지할 때 메모리 사용량이 줄어듭니다.
+
+블록 크기는 평균 행 크기를 기준으로 추정하므로, 행이 유난히 큰 블록은 이 목표값을 초과할 수 있습니다. 행 수 제한만으로 블록 크기를 정하려면 `0`으로 설정하십시오.
 
 ## prefer_global_in_and_join {#prefer_global_in_and_join}
 
