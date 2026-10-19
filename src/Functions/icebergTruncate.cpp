@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -136,7 +137,14 @@ public:
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
+    {
+        /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
+        if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
+            return {};
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

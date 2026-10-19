@@ -29,3 +29,18 @@ INSERT INTO t_wrap VALUES (9223372036854775900), (9223372036854776500);
 SELECT count() FROM t_wrap WHERE icebergTruncate(1000, x) >= 9223372036854776000;
 SELECT count() FROM t_wrap WHERE icebergTruncate(1000, x) < 0;
 DROP TABLE t_wrap;
+
+-- The lowest `Int64` values wrap around, as in the Iceberg reference implementation, so `x` filters must not be pushed through the key.
+SELECT icebergTruncate(1000, toInt64(-9223372036854775808)) AS g, toTypeName(g);
+
+DROP TABLE IF EXISTS t_int64_partitioned;
+CREATE TABLE t_int64_partitioned (x Int64) ENGINE = MergeTree PARTITION BY icebergTruncate(1000, x) ORDER BY x;
+INSERT INTO t_int64_partitioned VALUES (-9223372036854775808), (-9223372036854775000), (0);
+SELECT count() FROM t_int64_partitioned WHERE x < -9000000000000000000;
+DROP TABLE t_int64_partitioned;
+
+DROP TABLE IF EXISTS t_int64_sorted;
+CREATE TABLE t_int64_sorted (x Int64) ENGINE = MergeTree ORDER BY icebergTruncate(1000, x) SETTINGS index_granularity = 1;
+INSERT INTO t_int64_sorted VALUES (-9223372036854775808), (-9223372036854775000), (0);
+SELECT count() FROM t_int64_sorted WHERE x < -9000000000000000000;
+DROP TABLE t_int64_sorted;
