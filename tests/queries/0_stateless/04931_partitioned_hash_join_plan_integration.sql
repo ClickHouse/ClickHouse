@@ -7,6 +7,8 @@
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
+-- A randomized join order can leave this join without a runtime filter.
+SET query_plan_optimize_join_order_randomize = 0;
 -- The runner randomizes `max_bytes_before_external_join`; any non-zero spill budget would send the join
 -- to `hash` at plan time.
 SET max_bytes_before_external_join = 0;
