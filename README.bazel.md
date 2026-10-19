@@ -159,6 +159,55 @@ All 159 external BUILD files were audited: the remaining export-only
 repositories supply licenses, web resources or compressed language data;
 their configured consumers do not compile C/C++ sources from them.
 
+LLVM registration, Rust code generation, initial migration, Abseil, and
+Buildifier were verified again as separate batches. Each x86-64 run below
+executes `bazel/run_stripped_hash.sh`: it verifies the reference compiler and
+CMake executable, verifies both normalized hashes, and requires `cmp=0` and
+`PARITY_STATUS=0`. All x86-64 hashes in the table above are unchanged.
+
+The ARM64 runs use `--config=cmake_match_aarch64`. For LLVM and protoc,
+BuildBuddy's completed `ClickHouseNativeLink` action reports the original
+Bazel ELF SHA-256 and size. The other ARM64 runs download the entire Bazel ELF
+and require `sha256sum --check` to match the original Bazel ELF from the
+native CMake comparison under [Linux ARM64 (native)](#linux-arm64-native).
+Every original ARM64 Bazel ELF equals
+`2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744`
+(907,067,440 bytes). Equality of the entire original ELF preserves the
+native-CMake-verified normalized ARM64 hash
+`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`.
+These ARM64 checks verify the Bazel output against that recorded comparison;
+they do not depend on rerunning the unchanged CMake build for every Bazel edit.
+
+| Cleanup batch | x86-64 normalized CMake comparison | ARM64 original Bazel ELF check |
+| --- | --- | --- |
+| Register `@llvm//toolchain:all` | [c6c9cffe](https://app.buildbuddy.io/invocation/c6c9cffe-7891-4d3e-acb2-c2c705d0bc38) | [01d39e22 (link action)](https://app.buildbuddy.io/invocation/01d39e22-5cd1-4751-a2e1-add29680579e) |
+| Use `@protobuf//:protoc` in Perfetto | [ff56d81c](https://app.buildbuddy.io/invocation/ff56d81c-9a81-40a0-bced-87f8850fe831) | [6670b3d4 (link action)](https://app.buildbuddy.io/invocation/6670b3d4-febd-4c04-9edb-6aa312f62ba7) |
+| Share native code generation records and use one `rust_cbindgen` rule | [92803c27](https://app.buildbuddy.io/invocation/92803c27-60af-463e-b49b-bf4885365a2f) | [424772b8](https://app.buildbuddy.io/invocation/424772b8-366a-49d6-9f66-cd5278a13d4e) |
+| Move initial BUILD generation and recorded data into `bazel/initial_migration/` | [39c6a80a](https://app.buildbuddy.io/invocation/39c6a80a-e17d-45f4-a5b3-90b18c993bee) | [80d5f9c7](https://app.buildbuddy.io/invocation/80d5f9c7-824c-48d9-9536-db091a8b2467) |
+| Use Abseil's `cc_library` headers and remove unused exports | [839891fa](https://app.buildbuddy.io/invocation/839891fa-ded0-4d6d-927a-716eed347b26) | [0497b824](https://app.buildbuddy.io/invocation/0497b824-cabc-421a-bb6f-20ea0496ac69) |
+| Format all generated BUILD files with Buildifier while retaining compilation order | [5669c7cd](https://app.buildbuddy.io/invocation/5669c7cd-22a9-487c-814a-6239dc692edf) | [5a76e188](https://app.buildbuddy.io/invocation/5a76e188-d4ee-4fee-9906-c1fead7f51d5) |
+| Use native globs with actual header suffixes; remove empty patterns, unused exclusions and `allow_empty` in all dependencies | [91311f81](https://app.buildbuddy.io/invocation/91311f81-c3dd-4d70-b12e-8947c7abd5f3) | [c90cccaf](https://app.buildbuddy.io/invocation/c90cccaf-388f-4cde-a680-578688bc17fe) |
+| Remove package BUILD file exports from dependencies | [338499e5](https://app.buildbuddy.io/invocation/338499e5-4d1b-425e-b3b5-e2c825be278d) | [ff92e91d](https://app.buildbuddy.io/invocation/ff92e91d-dbf1-474f-bd18-00ddaf9df837) |
+| Inherit public headers and Mongo textual inputs through existing C++ deps; locate Rust repositories through real Cargo manifests | [e4e24fe5](https://app.buildbuddy.io/invocation/e4e24fe5-073e-4cbd-b79e-c8a40877e7d1) | [d92d3d1f](https://app.buildbuddy.io/invocation/d92d3d1f-3be6-4266-95fd-54e2494872c4) |
+| Supply private Postgres OpenSSL and libcxxabi includes with `implementation_deps` | [426e77d3](https://app.buildbuddy.io/invocation/426e77d3-7692-4480-8f6c-8042391c8ad7) | [a8badca3](https://app.buildbuddy.io/invocation/a8badca3-c103-43f9-a434-aaff9a690b01) |
+| Remove unused translation units, build files and directories from compiler inputs (before changing the global include feature) | [ff50469b](https://app.buildbuddy.io/invocation/ff50469b-d885-47d4-8abb-a62a45a8a16f) | [4282634b](https://app.buildbuddy.io/invocation/4282634b-3942-4253-863f-08ca850a2de9) |
+| Set `common --features=system_include_paths`; remove per-library feature attributes | [b26876e4](https://app.buildbuddy.io/invocation/b26876e4-3642-4bd7-b74a-2a0f710da365) | [b7b065d2](https://app.buildbuddy.io/invocation/b7b065d2-83ee-4d0c-b321-b37cc10ed342) |
+| Replace exported Postgres/libpqxx source headers with `postgres_headers` and `libpqxx_headers` library dependencies | [599bc775](https://app.buildbuddy.io/invocation/599bc775-52eb-495c-b525-ce53c1e797a5) | [e2b5aede](https://app.buildbuddy.io/invocation/e2b5aede-f072-4727-b347-90bc20cf93e1) |
+| Supply libpqxx extensionless wrappers in `textual_hdrs`; remove unneeded PostgreSQL inputs from libpqxx | [f61afa2c](https://app.buildbuddy.io/invocation/f61afa2c-bd39-4817-8c97-ba76ac0090a7) | [04be19aa](https://app.buildbuddy.io/invocation/04be19aa-5f84-4423-9f0f-7cecd40e1897) |
+| Remove remaining PostgreSQL/libpqxx native compiler inputs and export only licenses | [32d0583d](https://app.buildbuddy.io/invocation/32d0583d-6340-47d3-adff-75e70f8aa2c1) | [3889a2c1](https://app.buildbuddy.io/invocation/3889a2c1-e9df-46be-aeba-c0a4399b9fdb) |
+| Remove PostgreSQL source filename colons, unused local data, and OpenSSL template compiler inputs | [11f3af33](https://app.buildbuddy.io/invocation/11f3af33-3a06-49f4-873e-d3a40477dc99) | [ec8840bb](https://app.buildbuddy.io/invocation/ec8840bb-6bf5-4ef7-85c8-ad37194aba43) |
+| Simplify source filenames in all externals and use 316 order-identical globs in 45 repositories | [edac5f3d](https://app.buildbuddy.io/invocation/edac5f3d-36a4-4ddf-a56a-80019a822873) | [12f2d76e](https://app.buildbuddy.io/invocation/12f2d76e-dd34-4f6a-8248-6fd4249f9271) |
+| Remove 17,431 raw header references supplied by public or own implementation dependencies across all external owners | [e52e9900](https://app.buildbuddy.io/invocation/e52e9900-f1e2-46a5-bf5f-b81f133c5a77) | [836ec5d5](https://app.buildbuddy.io/invocation/836ec5d5-0a99-4db5-bceb-df1083421947) |
+| Remove 41,115 captured data-file inputs from native libraries; declare all Sparsehash extensionless headers on their library | [f8f92940](https://app.buildbuddy.io/invocation/f8f92940-11fa-4d2d-9cd7-cebfd177bd72) | [f00daa53](https://app.buildbuddy.io/invocation/f00daa53-c3bb-40ab-9a1a-1752d59ce241) |
+| Inherit OpenSSL public include directories through reachable library dependencies in 21 external repositories | [4b04bcc0](https://app.buildbuddy.io/invocation/4b04bcc0-991a-45be-862d-f2f3b57308ad) | [08e21950](https://app.buildbuddy.io/invocation/08e21950-02d9-4a2e-93b5-415689aced47) |
+| Supply `libcxxabi_headers` through `implementation_deps` in 57 external repositories | [54a9bf39](https://app.buildbuddy.io/invocation/54a9bf39-85ad-4290-ba29-5a3ab6cea9ce) | [ffd6c028](https://app.buildbuddy.io/invocation/ffd6c028-a56c-41c0-af53-a37329fb6f20) |
+
+`@chdig_crates//:perfetto_protos-0.51.1` also compiled using the registered
+`@protobuf//:protoc` on both
+[x86-64](https://app.buildbuddy.io/invocation/1b34c694-6e96-459d-a72b-b408f9796fa9)
+and [ARM64](https://app.buildbuddy.io/invocation/fc2b1cb6-2efa-4451-9eab-a9a428811df6).
+Both runs returned `PERFETTO_BUILD_STATUS=0`.
+
 After using the recorded CMake compiler version in Arrow, Mongo C and Mongo
 C++ generated headers, the same x86-64 hashes and `cmp=0` were verified in
 [BuildBuddy 49f16579](https://app.buildbuddy.io/invocation/49f16579-c602-4eb5-8570-111469b2417a).
