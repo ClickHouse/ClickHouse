@@ -160,11 +160,15 @@ Lack of proactive alerting integration with enterprise incident management syste
 ```yaml
 scrape_configs:
   - job_name: "clickhouse"
-    static_configs:
-      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus/discovery
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
+    honor_labels: true
 ```
 
 For comprehensive setup including detailed Prometheus/Grafana configuration and advanced alerting, see the [ClickHouse Cloud Observability Guide](/guides/use-cases/observability/cloud-monitoring#prometheus).
