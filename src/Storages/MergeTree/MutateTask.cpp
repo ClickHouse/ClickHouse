@@ -4944,15 +4944,41 @@ bool MutateTask::prepare()
         settings.materialize_ttl_recalculate_only = materialize_ttl_recalculate_only;
         settings.ttl_only_drop_parts = ttl_only_drop_parts;
 
-        ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            *ctx->data, ctx->source_part, alter_conversions,
-            ctx->metadata_snapshot, ctx->for_interpreter,
-            ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+        auto prepare_interpreter = [&]
+        {
+            ctx->interpreter = std::make_unique<MutationsInterpreter>(
+                *ctx->data, ctx->source_part, alter_conversions,
+                ctx->metadata_snapshot, ctx->for_interpreter,
+                ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
-        ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
-        ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
-        ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
-        ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+            ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
+            ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
+            ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
+            ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+        };
+
+        prepare_interpreter();
+
+        /// A TTL-only command can still rebuild a deferred commit-order or broken projection.
+        /// Replan with the normal `Compact` column reads when interpretation discovers required writes.
+        if (ctx->recalculate_ttl_only
+            && (!ctx->materialized_projections.empty() || !ctx->materialized_indices.empty()
+                || !ctx->materialized_statistics.empty() || !ctx->indices_to_drop_names.empty()))
+        {
+            ctx->recalculate_ttl_only = false;
+            ctx->for_interpreter.clear();
+            MutationHelpers::splitAndModifyMutationCommands(
+                ctx->source_part,
+                ctx->metadata_snapshot,
+                alter_conversions,
+                ctx->commands_for_part,
+                ctx->for_interpreter,
+                ctx->for_file_renames,
+                ctx->num_for_file_renames_from_commands,
+                ctx->log);
+            prepare_interpreter();
+        }
+
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         /// TTL inputs remain in the pipeline header, but none of them are written in recalc-only mode.
         if (!ctx->recalculate_ttl_only)
