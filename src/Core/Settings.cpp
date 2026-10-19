@@ -3802,7 +3802,7 @@ start using external aggregation.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
-    DECLARE(UInt64, min_bytes_before_external_group_by, 64_MiB, R"(
+    DECLARE(UInt64, min_bytes_before_external_group_by, 0, R"(
 The minimum size in bytes of the aggregation state of one thread before external `GROUP BY` writes it to disk.
 
 When the memory of the query is over `max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` because of other operators, for example a hash join that holds a large table, each thread would otherwise write every block it aggregates to disk as a separate small file. Reading many small files back costs more memory than the writes saved. With this setting a thread keeps aggregating until its own state reaches the given size, and only then writes it out as one file.
@@ -3814,7 +3814,7 @@ Possible values:
 - A positive integer, the size in bytes.
 - `0` — no minimum, the state is written as soon as the threshold is reached.
 )", 0, \
-        {"26.11", 64_MiB, 64_MiB, "New setting: the minimum size of the aggregation state of one thread before external `GROUP BY` writes it to disk, so that a query that is already over the threshold does not write every block as a separate file."}) \
+        {"26.11", 0, 0, "New setting: the minimum size of the aggregation state of one thread before external `GROUP BY` writes it to disk, so that a query that is already over the threshold does not write every block as a separate file."}) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
 The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
