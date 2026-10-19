@@ -460,9 +460,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker, bool sort_totals)
 {
-    bool increase_sort_description_compile_attempts = true;
+    bool increase_sort_description_compile_attempts = !sort_totals;
+    const size_t num_streams = sort_totals ? 1 : pipeline.getNumStreams();
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
     if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
@@ -481,7 +482,7 @@ void SortingStep::mergeSorting(
         [&, increase_sort_description_compile_attempts](
             const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
         {
-            if (stream_type == QueryPipelineBuilder::StreamType::Totals)
+            if ((stream_type == QueryPipelineBuilder::StreamType::Totals) != sort_totals)
                 return nullptr;
 
             // For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
@@ -498,9 +499,9 @@ void SortingStep::mergeSorting(
                 sort_settings.max_block_bytes,
                 limit_,
                 increase_sort_description_compile_attempts_current,
-                sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
+                sort_settings.max_bytes_before_remerge / num_streams,
                 sort_settings.remerge_lowered_memory_bytes_ratio,
-                sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
+                sort_settings.max_bytes_in_block_before_external_sort / num_streams,
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
                 sort_settings.min_free_disk_space, threshold_tracker);
@@ -513,14 +514,17 @@ void SortingStep::fullSortStreams(
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
     const bool skip_partial_sort,
-    TopKThresholdTrackerPtr threshold_tracker)
+    TopKThresholdTrackerPtr threshold_tracker,
+    const bool sort_totals)
 {
+    const auto sorted_stream_type = sort_totals ? QueryPipelineBuilder::StreamType::Totals : QueryPipelineBuilder::StreamType::Main;
+
     if (!skip_partial_sort || limit_)
     {
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                if (stream_type != sorted_stream_type)
                     return nullptr;
 
                 return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
@@ -533,14 +537,14 @@ void SortingStep::fullSortStreams(
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                if (stream_type != sorted_stream_type)
                     return nullptr;
 
                 return std::make_shared<LimitsCheckingTransform>(header, limits);
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, sort_totals);
 }
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
