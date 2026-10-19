@@ -9,3 +9,6 @@ FAULT_INJECTED
 1
 0
 0
+retry: data deleted, metadata kept
+retry: files kept
+3

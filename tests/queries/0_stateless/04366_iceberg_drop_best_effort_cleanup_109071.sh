@@ -71,3 +71,28 @@ for _ in {1..120}; do [ -z "$(find "${TABLE_PATH}" -type f 2>/dev/null)" ] && br
 find "${TABLE_PATH}" -type f 2>/dev/null | wc -l
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_ATOMIC}"
 rm -rf "${TABLE_PATH}"
+
+# Atomic table whose drop is retried after its files were deleted, as by another replica, and another table was
+# created at its path: the other table keeps its files.
+DB_RETRY="${DB}_retry"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_RETRY} ENGINE = Atomic"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_RETRY}.t (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_RETRY}.t SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${DB_RETRY}.t SYNC" &
+for _ in {1..120}; do
+    [ -z "$(find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}metadata/*" 2>/dev/null)" ] && break
+    sleep 0.5
+done
+[ -z "$(find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}metadata/*" 2>/dev/null)" ] \
+    && [ -n "$(find "${TABLE_PATH}metadata" -name '*.metadata.json' 2>/dev/null)" ] && echo "retry: data deleted, metadata kept"
+rm -rf "${TABLE_PATH}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_RETRY}.t2 (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_RETRY}.t2 SETTINGS allow_insert_into_iceberg = 1 VALUES (3)"
+FILES_BEFORE=$(cd "${TABLE_PATH}" && find . -type f | sort)
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail"
+wait
+[ "$(cd "${TABLE_PATH}" && find . -type f | sort)" = "${FILES_BEFORE}" ] && echo "retry: files kept"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_RETRY}.t2"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_RETRY}"
+rm -rf "${TABLE_PATH}"

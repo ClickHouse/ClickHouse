@@ -1829,8 +1829,40 @@ void IcebergMetadata::drop(
         }
     };
 
+    const bool collect_files = policy != DropCleanupPolicy::AsyncRetry || !files_to_drop;
+
+    /// Another replica of a Replicated database can have deleted the table, and another table can be at its
+    /// location since. Not read through the cache: that table can reuse the file names of this one.
+    if (!catalog)
+    {
+        bool own_metadata = false;
+        bool other_metadata = false;
+        for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
+        {
+            auto metadata = getMetadataJSONObject(
+                path, object_storage, /* metadata_cache */ nullptr, context, log,
+                getCompressionMethodFromMetadataFile(path), std::nullopt);
+            std::optional<String> uuid;
+            if (metadata->has(Iceberg::f_table_uuid))
+                uuid = normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid));
+            if (uuid == persistent_components.table_uuid)
+            {
+                own_metadata = true;
+                break;
+            }
+            other_metadata = true;
+        }
+        /// A retry still deletes what is left of this table when no other table is there.
+        if (!own_metadata && (collect_files || other_metadata))
+        {
+            LOG_INFO(log, "No metadata file of the Iceberg table is left at '{}', nothing to delete", persistent_components.table_path);
+            dropFromCatalog(context, catalog, storage_id);
+            return;
+        }
+    }
+
     /// Only the files of this table: other tables can share its location.
-    if (policy != DropCleanupPolicy::AsyncRetry || !files_to_drop)
+    if (collect_files)
     {
         auto reachable = Iceberg::collectReachableFiles(
             object_storage, persistent_components, data_lake_settings, context, log, catalog, storage_id.getTableName());

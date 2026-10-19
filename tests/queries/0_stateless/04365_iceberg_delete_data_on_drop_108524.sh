@@ -47,4 +47,15 @@ echo "inner: $(find "${TABLE_PATH}" -type f ! -path "${TABLE_PATH}inner/*" | wc 
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_inner"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_inner SYNC"
 
+# Setting on: the files are already deleted, as by another replica, and a table created at the path since keeps its files.
+rm -rf "${TABLE_PATH}"
+create_table
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+rm -rf "${TABLE_PATH}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_new (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_new SETTINGS allow_insert_into_iceberg = 1 VALUES (3)"
+${CLICKHOUSE_CLIENT} --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_new"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_new SYNC"
+
 rm -rf "${TABLE_PATH}"
