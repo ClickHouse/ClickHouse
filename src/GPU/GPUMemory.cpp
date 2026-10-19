@@ -21,8 +21,8 @@ namespace DB::GPU
 
 PinnedMemoryPool & PinnedMemoryPool::instance()
 {
-    /// Never destroyed, see the comment of the class.
-    [[clang::no_destroy]] static PinnedMemoryPool instance;
+    /// Outlives the `GPUDevice`, see the comment of the class.
+    static PinnedMemoryPool instance;
     return instance;
 }
 

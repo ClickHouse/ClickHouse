@@ -27,9 +27,9 @@ namespace DB::GPU
 /// is slow. The pool keeps the memory freed into it for reuse, up to its release threshold, so a large query does not
 /// keep its peak of unswappable memory after it ends.
 ///
-/// The `GPUDevice` makes the pool at the start of the server and drains it at shutdown, but it lives as long as the
-/// process: a buffer may be freed after the device is gone, by a query that outlived the shutdown, and
-/// `PinnedAllocator::free` must not throw.
+/// The `GPUDevice` makes the pool at the start of the server and drains it at shutdown, but the pool is a static, which
+/// is destroyed only at the exit of the process: a buffer may be freed after the device is gone, by a query that
+/// outlived the shutdown, and `PinnedAllocator::free` must not throw.
 class PinnedMemoryPool : private boost::noncopyable
 {
 public:
