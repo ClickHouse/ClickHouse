@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -2171,9 +2170,7 @@ ch_cc_library(
     srcs = (glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/auth/bearer-token-provider/DefaultBearerTokenProviderChain.cpp",
         "src/aws-cpp-sdk-core/source/auth/bearer-token-provider/SSOBearerTokenProvider.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/auth/signer-provider/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/signer/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/*.cpp"]) + [
-        "src/aws-cpp-sdk-core/source/config/defaults/ClientConfigurationDefaults.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/endpoint/*.cpp"]) + [
+    ] + glob(["src/aws-cpp-sdk-core/source/auth/signer-provider/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/signer/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/*.cpp"]) + ["src/aws-cpp-sdk-core/source/config/defaults/ClientConfigurationDefaults.cpp"] + glob(["src/aws-cpp-sdk-core/source/endpoint/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/endpoint/internal/AWSEndpointAttribute.cpp",
         "src/aws-cpp-sdk-core/source/external/cjson/cJSON.cpp",
         "src/aws-cpp-sdk-core/source/external/tinyxml2/tinyxml2.cpp",
@@ -2187,9 +2184,7 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/net/SimpleUDP.cpp",
         "src/aws-cpp-sdk-core/source/net/linux-shared/Net.cpp",
         "src/aws-cpp-sdk-core/source/net/linux-shared/SimpleUDP.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + [
-        "src/aws-cpp-sdk-core/source/smithy/client/AwsSmithyClientBase.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/smithy/client/schema/*.cpp"]) + [
+    ] + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + ["src/aws-cpp-sdk-core/source/smithy/client/AwsSmithyClientBase.cpp"] + glob(["src/aws-cpp-sdk-core/source/smithy/client/schema/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/smithy/identity/AuthSchemeOption.cpp",
         "src/aws-cpp-sdk-core/source/smithy/tracing/TracingUtils.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/*.cpp"]) + [
@@ -2197,152 +2192,16 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/utils/cbor/CborValue.cpp",
         "src/aws-cpp-sdk-core/source/utils/checksum/XXHash.cpp",
         "src/aws-cpp-sdk-core/source/utils/component-registry/ComponentRegistry.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/utils/crypto/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/crypto/crt/*.cpp"]) + [
-        "src/aws-cpp-sdk-core/source/utils/crypto/factory/Factories.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/utils/event/*.cpp"]) + [
+    ] + glob(["src/aws-cpp-sdk-core/source/utils/crypto/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/crypto/crt/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/crypto/factory/Factories.cpp"] + glob(["src/aws-cpp-sdk-core/source/utils/event/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/utils/json/JsonSerializer.cpp",
         "src/aws-cpp-sdk-core/source/utils/local/Random.cpp",
         "src/aws-cpp-sdk-core/source/utils/local/stream/CloseableStreamBuf.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/logging/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/utils/memory/AWSMemory.cpp",
         "src/aws-cpp-sdk-core/source/utils/memory/stl/SimpleStringStream.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + [
-        "src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp",
-    ] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + [
-        "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp",
-        "@clickhouse_aws_c_cal//:include/aws/cal/cal.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/ecc.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/ed25519.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/exports.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/hash.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/hkdf.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/hmac.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/private/der.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/private/ecc.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/private/opensslcrypto_common.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/private/rsa.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/private/symmetric_cipher_priv.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/rsa.h",
-        "@clickhouse_aws_c_cal//:include/aws/cal/symmetric_cipher.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/arrays.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/bytestrings.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/callbacks.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/cbor_export.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/common.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/configuration.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/data.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/encoding.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/floats_ctrls.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/builder_callbacks.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/encoders.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/loaders.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/memory_utils.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/stack.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/internal/unicode.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/ints.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/maps.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/serialization.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/streaming.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/strings.h",
-        "@clickhouse_aws_c_common//:source/external/libcbor/cbor/tags.h",
-        "@clickhouse_aws_c_compression//:include/aws/compression/compression.h",
-        "@clickhouse_aws_c_compression//:include/aws/compression/exports.h",
-        "@clickhouse_aws_c_compression//:include/aws/compression/huffman.h",
-        "@clickhouse_aws_c_compression//:include/aws/compression/private/huffman_testing.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream_channel_handler.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream_exports.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream_rpc.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream_rpc_client.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/event_stream_rpc_server.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/private/event_stream_rpc_priv.h",
-        "@clickhouse_aws_c_event_stream//:include/aws/event-stream/private/event_stream_rpc_test_helper.h",
-        "@clickhouse_aws_c_http//:include/aws/http/connection.h",
-        "@clickhouse_aws_c_http//:include/aws/http/connection_manager.h",
-        "@clickhouse_aws_c_http//:include/aws/http/exports.h",
-        "@clickhouse_aws_c_http//:include/aws/http/http.h",
-        "@clickhouse_aws_c_http//:include/aws/http/http2_stream_manager.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/connection_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/connection_manager_system_vtable.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/connection_monitor.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h1_connection.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h1_decoder.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h1_encoder.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h1_stream.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h2_connection.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h2_decoder.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h2_frames.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/h2_stream.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/hpack.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/http2_stream_manager_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/http_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/no_proxy.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/proxy_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/random_access_set.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/request_response_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/strutil.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/websocket_decoder.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/websocket_encoder.h",
-        "@clickhouse_aws_c_http//:include/aws/http/private/websocket_impl.h",
-        "@clickhouse_aws_c_http//:include/aws/http/proxy.h",
-        "@clickhouse_aws_c_http//:include/aws/http/request_response.h",
-        "@clickhouse_aws_c_http//:include/aws/http/server.h",
-        "@clickhouse_aws_c_http//:include/aws/http/statistics.h",
-        "@clickhouse_aws_c_http//:include/aws/http/status_code.h",
-        "@clickhouse_aws_c_http//:include/aws/http/websocket.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/exports.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_auto_ranged_get.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_auto_ranged_put.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_checksum_context.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_checksums.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_client_impl.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_copy_object.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_default_buffer_pool.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_default_meta_request.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_endpoint_resolver.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_list_objects.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_list_parts.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_meta_request_impl.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_paginator.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_parallel_input_stream.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_part_streaming_input_stream.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_platform_info.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_request.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_request_messages.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3_util.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/private/s3express_credentials_provider_impl.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/s3.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/s3_buffer_pool.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/s3_client.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/s3_endpoint_resolver.h",
-        "@clickhouse_aws_c_s3//:include/aws/s3/s3express_credentials_provider.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/checksums.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/crc.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/exports.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/private/crc32_priv.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/private/crc64_priv.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/private/crc_util.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/private/xxhash_priv.h",
-        "@clickhouse_aws_checksums//:include/aws/checksums/xxhash.h",
-    ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "generated/src/aws-cpp-sdk-glue/include/**/*.h",
-            "generated/src/aws-cpp-sdk-s3/include/**/*.h",
-            "src/aws-cpp-sdk-core/include/**/*.h",
-        ])),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "generated/src/aws-cpp-sdk-glue/include/**/*.h",
-            "generated/src/aws-cpp-sdk-s3/include/**/*.h",
-            "src/aws-cpp-sdk-core/include/**/*.h",
-        ])),
-    }),
-    additional_compiler_inputs = (([
+    ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp"] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + ["@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"]),
+    hdrs = ["@clickhouse_sysroot//:linux_native_headers"],
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse//:contrib/aws-cmake/AwsFeatureTests.cmake",
         "@clickhouse//:contrib/aws-cmake/AwsGetVersion.cmake",
@@ -2350,13 +2209,8 @@ ch_cc_library(
         "@clickhouse//:contrib/aws-cmake/AwsThreadAffinity.cmake",
         "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake",
         "@clickhouse//:contrib/aws-cmake/CMakeLists.txt",
-        "@clickhouse_aws_c_http//:include/aws/http/private/hpack_header_static_table.def",
-        "@clickhouse_aws_c_http//:include/aws/http/private/hpack_huffman_static_table.def",
-        "@clickhouse_openssl//:include/crypto/riscv_arch.def",
-    ] + [
-    ]) + [
         "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -2380,157 +2234,11 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    local_includes = select({
-        "@platforms//cpu:x86_64": (([
-            repository_local_include(
-                repository_path("contrib/aws-c-cal") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-event-stream") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-checksums") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-http") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-compression") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-s3") + "/include",
-                "contrib/aws",
-            ),
-            "src/aws-cpp-sdk-core/include",
-        ] + [
-            "config/x86_64/contrib/aws-cmake/include",
-        ]) + [
-            "generated/src/aws-cpp-sdk-s3/include",
-            repository_local_include(
-                repository_path("contrib/aws-c-auth") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-io") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-crt-cpp") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-mqtt") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-sdkutils") + "/include",
-                "contrib/aws",
-            ),
-            "generated/src/aws-cpp-sdk-glue/include",
-            repository_local_include("contrib/openssl-cmake/common/include", "contrib/aws"),
-            repository_local_include(
-                repository_path("contrib/openssl") + "/include",
-                "contrib/aws",
-            ),
-        ]),
-        "@platforms//cpu:aarch64": (([
-            repository_local_include(
-                repository_path("contrib/aws-c-cal") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-event-stream") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-checksums") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-http") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-compression") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-s3") + "/include",
-                "contrib/aws",
-            ),
-            "src/aws-cpp-sdk-core/include",
-        ] + [
-            "config/aarch64/contrib/aws-cmake/include",
-        ]) + [
-            "generated/src/aws-cpp-sdk-s3/include",
-            repository_local_include(
-                repository_path("contrib/aws-c-auth") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-io") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-crt-cpp") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-mqtt") + "/include",
-                "contrib/aws",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-sdkutils") + "/include",
-                "contrib/aws",
-            ),
-            "generated/src/aws-cpp-sdk-glue/include",
-            repository_local_include("contrib/openssl-cmake/common/include", "contrib/aws"),
-            repository_local_include(
-                repository_path("contrib/openssl") + "/include",
-                "contrib/aws",
-            ),
-        ]),
-    }),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
         "@llvm-project//libunwind:headers",
-        "@clickhouse_aws_c_auth//:aws_c_auth_headers",
-        "@clickhouse_aws_c_common//:aws_c_common_headers",
-        "@clickhouse_aws_c_io//:aws_c_io_headers",
-        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils_headers",
-        "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers",
-        "@clickhouse_aws_crt_cpp//:aws_crt_cpp",
-        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+        ":aws_headers",
     ],
     alwayslink = False,
 )
@@ -2593,4 +2301,35 @@ cc_library(
         "generated/src/aws-cpp-sdk-s3/include/**/*.h",
         "src/aws-cpp-sdk-core/include/**/*.h",
     ]),
+    includes = [
+        "src/aws-cpp-sdk-core/include",
+        "generated/src/aws-cpp-sdk-s3/include",
+        "generated/src/aws-cpp-sdk-glue/include",
+    ],
+    deps = [
+        "@clickhouse_aws//:aws_config_headers",
+        "@clickhouse_aws_c_common//:aws_c_common_headers",
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream_headers",
+        "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers",
+    ],
+)
+
+cc_library(
+    name = "aws_config_headers",
+    hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "config/x86_64/contrib/aws-cmake/include/aws/common/config.h",
+            "config/x86_64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+            "config/x86_64/contrib/aws-cmake/include/aws/crt/Config.h",
+        ],
+        "@platforms//cpu:aarch64": [
+            "config/aarch64/contrib/aws-cmake/include/aws/common/config.h",
+            "config/aarch64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+            "config/aarch64/contrib/aws-cmake/include/aws/crt/Config.h",
+        ],
+    }),
+    includes = select({
+        "@platforms//cpu:x86_64": ["config/x86_64/contrib/aws-cmake/include"],
+        "@platforms//cpu:aarch64": ["config/aarch64/contrib/aws-cmake/include"],
+    }),
 )
