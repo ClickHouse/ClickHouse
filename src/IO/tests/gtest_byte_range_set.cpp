@@ -176,7 +176,7 @@ TEST(ByteRangeSet, CoalesceKeepsContiguousEnd)
     EXPECT_TRUE(ByteRangeSet{}.coalesce(100).empty());
 
     /// `ReaderExecutor` looks run ends up in the coalesced set: every offset must get the answer of the walk.
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     for (size_t round = 0; round < 200; ++round)
     {
         ByteRangeSet set;
