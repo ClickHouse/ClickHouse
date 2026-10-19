@@ -42,6 +42,8 @@ private:
     const MergedPartOffsets & merged_part_offsets;
     /// Each source's first merged row, used when the merge appends the sources in order.
     std::vector<UInt64> merged_start;
+    /// Per source, the rows dead at the snapshot before each bitmap container; empty without dead rows.
+    std::vector<std::vector<UInt64>> dead_before_container;
     UInt64 merged_rows_count = 0;
 };
 

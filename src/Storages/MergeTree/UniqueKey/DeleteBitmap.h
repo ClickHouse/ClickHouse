@@ -96,8 +96,10 @@ public:
     /// True if no bits are set.
     bool empty() const;
 
-    /// |bitmap ∩ [begin, end)|, computed as `rank(end-1) - rank(begin-1)`.
-    /// O(log N) per `rank` on bitset containers, O(log K) on array containers.
+    /// Rows per roaring container: the low 16 bits of a row. CRoaring keeps this internal.
+    static constexpr UInt64 CONTAINER_ROWS = 1 << 16;
+
+    /// |bitmap ∩ [begin, end)|. In 32-bit mode reads only the containers the range covers, not the ones before it.
     size_t rangeCardinality(UInt64 begin, UInt64 end) const;
 
     /// All set row indices in ascending order. O(cardinality).

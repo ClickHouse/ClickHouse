@@ -117,6 +117,40 @@ TEST(DeleteBitmapTest, RangeCardinalityRangeAboveUInt32MaxIsZeroInNarrowMode)
     EXPECT_EQ(bm.rangeCardinality(kMax, kMax + 100), 1u);
 }
 
+TEST(DeleteBitmapTest, RangeCardinalityAcrossContainers)
+{
+    /// One container each: sparse, dense, empty, then a contiguous stretch.
+    constexpr UInt64 span = DeleteBitmap::CONTAINER_ROWS;
+    DeleteBitmap bm;
+    for (UInt64 row = 0; row < span; row += 1000)
+        bm.add(row);
+    for (UInt64 row = span; row < 2 * span; row += 2)
+        bm.add(row);
+    for (UInt64 row = 3 * span + 100; row < 3 * span + 5000; ++row)
+        bm.add(row);
+    const auto rows = bm.toVector();
+
+    const auto expected = [&](UInt64 begin, UInt64 end)
+    {
+        return static_cast<size_t>(std::lower_bound(rows.begin(), rows.end(), end) - std::lower_bound(rows.begin(), rows.end(), begin));
+    };
+
+    EXPECT_EQ(bm.rangeCardinality(span - 1, span + 1), 1u);
+    EXPECT_EQ(bm.rangeCardinality(2 * span, 3 * span), 0u);
+    EXPECT_EQ(bm.rangeCardinality(0, 4 * span), rows.size());
+
+    std::mt19937_64 rng(42);
+    std::uniform_int_distribution<UInt64> pick(0, 4 * span);
+    for (size_t i = 0; i < 10000; ++i)
+    {
+        UInt64 begin = pick(rng);
+        UInt64 end = pick(rng);
+        if (begin > end)
+            std::swap(begin, end);
+        ASSERT_EQ(bm.rangeCardinality(begin, end), expected(begin, end)) << "[" << begin << ", " << end << ")";
+    }
+}
+
 /// ---------- 32 → 64-bit auto-upgrade ----------
 
 TEST(DeleteBitmapTest, AutoUpgradeOnAdd)

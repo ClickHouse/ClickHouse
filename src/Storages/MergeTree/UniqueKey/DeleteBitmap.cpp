@@ -220,9 +220,8 @@ namespace
         const UInt64 hi_inclusive = std::min(end - 1, max_row);
         if (hi_inclusive < begin)
             return 0;
-        const uint64_t upper = r.rank(static_cast<uint32_t>(hi_inclusive));
-        const uint64_t lower = (begin == 0) ? 0 : r.rank(static_cast<uint32_t>(begin - 1));
-        return static_cast<size_t>(upper - lower);
+        return static_cast<size_t>(roaring::api::roaring_bitmap_range_cardinality_closed(
+            &r.roaring, static_cast<uint32_t>(begin), static_cast<uint32_t>(hi_inclusive)));
     }
     size_t rangeCardinalityAny(const roaring::Roaring64Map & r, UInt64 begin, UInt64 end)
     {
@@ -364,7 +363,6 @@ bool DeleteBitmap::empty() const
 
 size_t DeleteBitmap::rangeCardinality(UInt64 begin, UInt64 end) const
 {
-    /// |bitmap ∩ [begin, end)| = rank(end-1) - rank(begin-1).
     if (end <= begin || empty())
         return 0;
     return std::visit([&](const auto & p) { return rangeCardinalityAny(*p, begin, end); }, bitmap);

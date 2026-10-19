@@ -51,23 +51,36 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
 
         merged_start[i] = merged_rows_count;
         merged_rows_count += live_at_snapshot;
+
+        auto & dead_before = dead_before_container.emplace_back();
+        if (source_bitmaps[i]->empty())
+            continue;
+        dead_before.reserve(sources[i]->rows_count / DeleteBitmap::CONTAINER_ROWS + 1);
+        UInt64 dead = 0;
+        for (UInt64 container_start = 0; container_start < sources[i]->rows_count; container_start += DeleteBitmap::CONTAINER_ROWS)
+        {
+            dead_before.push_back(dead);
+            dead += source_bitmaps[i]->rangeCardinality(container_start, container_start + DeleteBitmap::CONTAINER_ROWS);
+        }
     }
 }
 
 /// The merge skipped the rows dead at the snapshot, so its row mapping indexes the rows each source
 /// sent: source row `r` is the `r - rank(r)`-th, where `rank(r)` counts the snapshot bitmap's rows
 /// before `r`. Without a sorting key the merge appends the sources in order.
-///
-/// TODO(unique-key): `rangeCardinality` walks the bitmap's containers before `source_row` for every
-/// index entry. A per-source array of merged rows, filled in one pass over the bitmap, would make
-/// each lookup one read.
 std::optional<UInt64> UniqueKeyMergeRowMap::toMergedRow(size_t source_index, UInt64 source_row) const
 {
     const DeleteBitmap & source_bitmap = *source_bitmaps[source_index];
     if (source_bitmap.contains(source_row))
         return std::nullopt;
 
-    const UInt64 live_index = source_row - source_bitmap.rangeCardinality(0, source_row);
+    UInt64 live_index = source_row;
+    if (const auto & dead_before = dead_before_container[source_index]; !dead_before.empty())
+    {
+        const UInt64 container = source_row / DeleteBitmap::CONTAINER_ROWS;
+        chassert(container < dead_before.size());
+        live_index -= dead_before[container] + source_bitmap.rangeCardinality(container * DeleteBitmap::CONTAINER_ROWS, source_row);
+    }
     if (merged_part_offsets.isMappingEnabled())
         return merged_part_offsets[source_index, live_index];
     return merged_start[source_index] + live_index;
