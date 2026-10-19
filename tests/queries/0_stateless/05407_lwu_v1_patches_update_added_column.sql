@@ -18,7 +18,7 @@ SELECT * FROM t_lwu_v1_added_column ORDER BY id;
 SELECT id, s, n, a FROM t_lwu_v1_added_column PREWHERE s = 'p1' ORDER BY id;
 
 OPTIMIZE TABLE t_lwu_v1_added_column FINAL;
-SELECT id, s, n, a FROM t_lwu_v1_added_column WHERE id < 5 ORDER BY id;
+SELECT id, s, n, a FROM t_lwu_v1_added_column WHERE id < 5 ORDER BY id SETTINGS apply_patch_parts = 0;
 
 DROP TABLE IF EXISTS t_lwu_v1_added_column_apply;
 CREATE TABLE t_lwu_v1_added_column_apply (id Int64, s String, n Nullable(Int64)) ENGINE = MergeTree ORDER BY id
