@@ -31,7 +31,7 @@ struct HashJoinBuildLayout;
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
 /// transforms needed by GraceHashJoin. When HashJoin is used,
-/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
 /// GraceHashJoin), since spilling may reorder rows.
@@ -93,6 +93,7 @@ public:
 
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool isDelayedBlocksProcessingEnabled() const override;
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
