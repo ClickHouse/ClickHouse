@@ -1980,6 +1980,53 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
     return FieldRef(field.columns, field.row_idx, result_idx);
 }
 
+/// Whether `CAST` from `from_type` to `to_type` may pair the elements of two named tuples, at any depth, by name in
+/// another order than by position, as a comparison pairs them: the converted constant of `Tuple(b String, a String)`
+/// is no longer the value compared with a key `Tuple(a String, b String)`. A `Dynamic` or `Variant` may hold any
+/// named tuple.
+static bool castMayReorderTupleElements(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to))
+        return false;
+
+    if (isDynamic(from) || isVariant(from))
+        return anyInTypeTree(*to, [](const IDataType & type)
+        {
+            const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+            return tuple && tuple->hasExplicitNames();
+        });
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+        return castMayReorderTupleElements(from_array->getNestedType(), to_array->getNestedType());
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+        return castMayReorderTupleElements(from_map->getNestedType(), to_map->getNestedType());
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple)
+        return false;
+
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames() && from_tuple->getElementNames() != to_tuple->getElementNames())
+        return true;
+
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    if (from_elements.size() != to_elements.size())
+        return true;
+
+    for (size_t i = 0; i < from_elements.size(); ++i)
+        if (castMayReorderTupleElements(from_elements[i], to_elements[i]))
+            return true;
+    return false;
+}
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -2011,6 +2058,9 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    if (castMayReorderTupleElements(result_type, in_argument_type))
+        return false;
+
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2283,8 +2333,9 @@ static bool isFixedStringConstant(
 /// A `Dynamic` value keeps its type, and values of different types inside a `Tuple`, `Array` or `Map` compare by
 /// the type rather than by the value, unlike the original key: `([1], 1) = CAST(([1::Int64], 1) AS Dynamic)` is true.
 /// A tuple comparison compares a `FixedString` element zero-padded with a `String` one, but the cast to `String`
-/// drops the trailing zero bytes: `(toFixedString('ab', 4), 1) = ('ab\0', 1)` is true. An `Array` or a `Map` is
-/// compared after a cast to the common type, as the key.
+/// drops the trailing zero bytes: `(toFixedString('ab', 4), 1) = ('ab\0', 1)` is true. It compares an `Enum` element
+/// with a `String` one by the value of the element, but the cast to `String` orders the names. An `Array` or a `Map`
+/// is compared after a cast to the common type, as the key.
 static bool castChangesKeyComparison(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     const auto from = removeLowCardinalityAndNullable(from_type);
@@ -2310,56 +2361,10 @@ static bool castChangesKeyComparison(const DataTypePtr & from_type, const DataTy
     {
         const auto from_element = removeLowCardinalityAndNullable(from_elements[i]);
         const auto to_element = removeLowCardinalityAndNullable(to_elements[i]);
-        if ((isFixedString(from_element) && !isFixedString(to_element)) || castChangesKeyComparison(from_element, to_element))
+        if ((isFixedString(from_element) && !isFixedString(to_element)) || (isEnum(from_element) && !isEnum(to_element))
+            || castChangesKeyComparison(from_element, to_element))
             return true;
     }
-    return false;
-}
-
-/// Whether `CAST` from `from_type` to `to_type` may pair the elements of two named tuples, at any depth, by name in
-/// another order than by position, as a comparison pairs them: the converted constant of `Tuple(b String, a String)`
-/// is no longer the value compared with a key `Tuple(a String, b String)`. A `Dynamic` or `Variant` may hold any
-/// named tuple.
-static bool castMayReorderTupleElements(const DataTypePtr & from_type, const DataTypePtr & to_type)
-{
-    const auto from = removeLowCardinalityAndNullable(from_type);
-    const auto to = removeLowCardinalityAndNullable(to_type);
-    if (from->equals(*to))
-        return false;
-
-    if (isDynamic(from) || isVariant(from))
-        return anyInTypeTree(*to, [](const IDataType & type)
-        {
-            const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
-            return tuple && tuple->hasExplicitNames();
-        });
-
-    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
-    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
-    if (from_array && to_array)
-        return castMayReorderTupleElements(from_array->getNestedType(), to_array->getNestedType());
-
-    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
-    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
-    if (from_map && to_map)
-        return castMayReorderTupleElements(from_map->getNestedType(), to_map->getNestedType());
-
-    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
-    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
-    if (!from_tuple || !to_tuple)
-        return false;
-
-    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames() && from_tuple->getElementNames() != to_tuple->getElementNames())
-        return true;
-
-    const auto & from_elements = from_tuple->getElements();
-    const auto & to_elements = to_tuple->getElements();
-    if (from_elements.size() != to_elements.size())
-        return true;
-
-    for (size_t i = 0; i < from_elements.size(); ++i)
-        if (castMayReorderTupleElements(from_elements[i], to_elements[i]))
-            return true;
     return false;
 }
 
