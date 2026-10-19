@@ -1,0 +1,5 @@
+644325524701193974
+585234855093075967
+581021526535438335
+Exception: The argument 'latitude' (120) of function geoToH3 is out of bounds because latitude must be in the range [-90, 90]. (ARGUMENT_OUT_OF_BOUND)
+Exception: The argument 'latitude' (120) of function geoToH3 is out of bounds because latitude must be in the range [-90, 90]. (ARGUMENT_OUT_OF_BOUND)
