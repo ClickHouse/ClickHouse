@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <queue>
 
 namespace DB
 {
@@ -156,9 +155,9 @@ std::optional<size_t> findFragmentIndex(const FragmentGraph & graph, UInt32 id)
     return it - graph.fragments.begin();
 }
 
-/// Validates the graph (see `validateFragmentGraph`) and sorts it. Ready fragments are taken in the order of ids
-/// for determinism. The ids assigned by the cutter already ascend from producers to consumers; the sort does not
-/// rely on that, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
+/// Validates the graph (see `validateFragmentGraph`) and sorts it producers first, as `computeLevels` needs. The sort
+/// detects cycles. The ids assigned by the cutter mostly ascend from producers to consumers, but the order of ids is
+/// not topological, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
 TopologicalOrder sortTopologically(const FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
@@ -190,21 +189,17 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
         ++in_degree[*consumer];
     }
 
-    std::priority_queue<std::pair<UInt32, size_t>, std::vector<std::pair<UInt32, size_t>>, std::greater<>> ready;
+    /// Kahn's algorithm, with `order` as the queue of fragments whose producers are all taken. The fragments of a
+    /// cycle never become ready, so `order` ends up short.
+    result.order.reserve(num_fragments);
     for (size_t i = 0; i < num_fragments; ++i)
         if (in_degree[i] == 0)
-            ready.emplace(graph.fragments[i].id, i);
+            result.order.push_back(i);
 
-    result.order.reserve(num_fragments);
-    while (!ready.empty())
-    {
-        const auto [id, i] = ready.top();
-        ready.pop();
-        result.order.push_back(i);
-        for (size_t consumer : consumers[i])
+    for (size_t pos = 0; pos < result.order.size(); ++pos)
+        for (size_t consumer : consumers[result.order[pos]])
             if (--in_degree[consumer] == 0)
-                ready.emplace(graph.fragments[consumer].id, consumer);
-    }
+                result.order.push_back(consumer);
 
     if (result.order.size() != num_fragments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has a cycle");
