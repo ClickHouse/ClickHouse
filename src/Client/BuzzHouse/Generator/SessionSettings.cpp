@@ -836,15 +836,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
-    {"dictionary_lazy_load",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"'auto'", "0", "1"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
     {"dictionary_use_async_executor", trueOrFalseSettingNoOracle},
     {"dictionary_validate_primary_key_type", trueOrFalseSettingNoOracle},
     {"discard_query_data", trueOrFalseSettingNoOracle},

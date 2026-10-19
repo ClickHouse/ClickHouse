@@ -3296,9 +3296,21 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
     }
 
+    SettingValues * dsvs = nullptr;
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, formatSettings, cd->mutable_setting_values());
+        dsvs = cd->mutable_setting_values();
+        generateSettingValues(rg, formatSettings, dsvs);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        /// Honored only in the dictionary DDL, a session value has no effect
+        static const DB::Strings lazyLoadChoices = {"'auto'", "0", "1"};
+
+        dsvs = dsvs ? dsvs : cd->mutable_setting_values();
+        SetValue * sv = dsvs->has_set_value() ? dsvs->add_other_values() : dsvs->mutable_set_value();
+        sv->set_property("dictionary_lazy_load");
+        sv->set_value(rg.pickRandomly(lazyLoadChoices));
     }
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
