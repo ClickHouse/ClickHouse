@@ -1,0 +1,71 @@
+-- past `index_scan_budget_rows` an index estimate reads a sample of index windows.
+-- the twin table with the materialized indexes gives the real granules, and the sampled span must hold them
+
+DROP TABLE IF EXISTS t_budget;
+DROP TABLE IF EXISTS t_budget_real;
+
+-- b follows the table order, c has a random value in each granule
+CREATE TABLE t_budget (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_budget_real (a UInt64, b UInt64, c UInt64, INDEX idx_b b TYPE minmax GRANULARITY 1, INDEX idx_c c TYPE minmax GRANULARITY 2)
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_budget SELECT number, intDiv(number, 100), cityHash64(intDiv(number, 100)) % 3 FROM numbers(12000);
+INSERT INTO t_budget_real SELECT * FROM t_budget;
+
+CREATE HYPOTHETICAL INDEX idx_b ON t_budget (b) TYPE minmax GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX idx_c ON t_budget (c) TYPE minmax GRANULARITY 2;
+
+-- the real granules of the twin table, by predicate
+CREATE TEMPORARY TABLE real_granules (predicate String, granules UInt64);
+INSERT INTO real_granules SELECT 'b < 60', extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')
+FROM (EXPLAIN indexes = 1 SELECT a FROM t_budget_real WHERE b < 60 SETTINGS use_skip_indexes_on_data_read = 0);
+INSERT INTO real_granules SELECT 'c = 0', extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')
+FROM (EXPLAIN indexes = 1 SELECT a FROM t_budget_real WHERE c = 0 SETTINGS use_skip_indexes_on_data_read = 0);
+INSERT INTO real_granules SELECT 'b < 60 AND c = 0', extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')
+FROM (EXPLAIN indexes = 1 SELECT a FROM t_budget_real WHERE b < 60 AND c = 0 SETTINGS use_skip_indexes_on_data_read = 0);
+INSERT INTO real_granules SELECT 'b = 42', extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')
+FROM (EXPLAIN indexes = 1 SELECT a FROM t_budget_real WHERE b = 42 SETTINGS use_skip_indexes_on_data_read = 0);
+
+SELECT '-- the real granules of the twin table';
+SELECT * FROM real_granules ORDER BY predicate;
+
+SELECT '-- a full scan reads every window, so the numbers are exact';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ')
+FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_budget WHERE b < 60 AND c = 0)
+WHERE match(explain, '^(With |\\(combined)|^ +(marks|marks_span|skip_ratio|empirical_status|sampled_marks):');
+
+-- the estimate, the span and whether the span holds the real granules
+CREATE TEMPORARY TABLE sampled (candidate String, predicate String, report String);
+INSERT INTO sampled SELECT pair.1, pair.2, w
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS w FROM (EXPLAIN WHATIF index_scan_budget_rows = 1000 SELECT a FROM t_budget WHERE b < 60 AND c = 0))
+ARRAY JOIN [('idx_b', 'b < 60'), ('idx_c', 'c = 0'), ('(combined', 'b < 60 AND c = 0')] AS pair;
+INSERT INTO sampled SELECT 'idx_b', 'b = 42', arrayStringConcat(groupArray(explain), '\n')
+FROM (EXPLAIN WHATIF index_scan_budget_rows = 1000 SELECT a FROM t_budget WHERE b = 42);
+
+SELECT '-- past the budget each index reads a sample of its windows, and the span holds the real granules';
+SELECT
+    sampled.predicate,
+    candidate,
+    extract(block, '(?s)^.*?sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(block, '^With [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    granules AS real,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM (SELECT *, substring(report, position(report, 'With ' || candidate || ' ')) AS block FROM sampled WHERE candidate != '(combined') AS sampled
+INNER JOIN real_granules ON real_granules.predicate = sampled.predicate
+ORDER BY sampled.predicate;
+
+SELECT '-- a sample leaves the other windows unknown, so the combined row gets no estimate';
+SELECT extract(report, '(?s)\\(combined: .*?empirical_status: +(\\w+)'), extract(report, '(?s)\\(combined: .*?empirical_reason: +([^\\n]+)')
+FROM sampled
+WHERE candidate = '(combined';
+
+-- the baseline is every second granule. A GRANULARITY 2 window holds one baseline granule, a GRANULARITY 4 window holds two
+SELECT '-- max_rows_to_read lowers the budget, and a limit below the smallest sample leaves the estimate unsupported';
+CREATE HYPOTHETICAL INDEX idx_d ON t_budget (c) TYPE minmax GRANULARITY 4;
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ')
+FROM (EXPLAIN WHATIF SELECT a FROM t_budget WHERE a IN (SELECT number * 200 + 50 FROM numbers(60)) AND c = 0 SETTINGS max_rows_to_read = 6000)
+WHERE match(explain, '^With idx_[cd]|^ +(marks|empirical_status|empirical_reason|sampled_marks):');
+
+DROP TABLE t_budget;
+DROP TABLE t_budget_real;
