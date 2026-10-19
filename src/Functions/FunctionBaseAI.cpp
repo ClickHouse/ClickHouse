@@ -49,8 +49,14 @@ namespace Setting
     extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool ai_function_allow_sql_named_collections;
+}
+
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
@@ -250,6 +256,11 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
 
     context->checkAccess(AccessType::NAMED_COLLECTION, credentials);
     const auto & collection = NamedCollectionFactory::instance().get(credentials);
+    if (!context->getServerSettings()[ServerSetting::ai_function_allow_sql_named_collections]
+        && collection->getSourceId() != NamedCollection::SourceId::CONFIG)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "AI named collection '{}' is not defined in the server configuration file, and the server setting "
+            "'ai_function_allow_sql_named_collections' is disabled", credentials);
 
     AIParams params;
     params.collection.collection_name = credentials;
@@ -480,7 +491,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
-    auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+    auto provider = createAIProvider(
+        getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

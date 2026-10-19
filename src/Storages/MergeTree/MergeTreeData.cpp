@@ -135,6 +135,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
@@ -239,7 +240,6 @@ namespace ProfileEvents
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
-    extern const Event LoadedStatisticsMicroseconds;
     extern const Event LoadedStatistics;
 }
 
@@ -293,7 +293,6 @@ namespace Setting
     extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
     extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
     extern const SettingsBool use_statistics;
-    extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
@@ -371,6 +370,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
+    extern const MergeTreeSettingsBool prewarm_statistics_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
@@ -383,7 +383,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
-    extern const MergeTreeSettingsSeconds refresh_statistics_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -406,6 +405,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
+    extern const ServerSettingsDouble statistics_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
@@ -567,6 +567,77 @@ static bool hasColumnsWithDynamicSubcolumns(const Block & block)
     return false;
 }
 
+namespace
+{
+
+struct TableDiskRoot
+{
+    String storage_description;
+    String storage_namespace;
+    fs::path path;
+    String disk_name;
+    const MergeTreeData * owner;
+};
+
+std::mutex table_disk_roots_mutex;
+std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
+
+/// Whether one path is equal to the other one or contains it, compared by path components.
+bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
+{
+    auto [lhs_it, rhs_it] = std::mismatch(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+    return lhs_it == lhs.end() || rhs_it == rhs.end();
+}
+
+}
+
+void MergeTreeData::acquireTableDiskRoots()
+{
+    std::vector<TableDiskRoot> roots;
+    for (const auto & disk : getDisks())
+    {
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        auto path = fs::path(disk->getPath()).lexically_normal();
+        if (!path.has_filename() && path.has_relative_path())
+            path = path.parent_path();
+
+        auto object_storage = disk->getObjectStorage();
+        roots.push_back({object_storage->getDescription(), object_storage->getObjectsNamespace(), std::move(path), disk->getName(), this});
+    }
+
+    std::lock_guard lock(table_disk_roots_mutex);
+    for (const auto & root : roots)
+    {
+        for (const auto & owned : table_disk_roots)
+        {
+            if (owned.storage_description != root.storage_description || owned.storage_namespace != root.storage_namespace
+                || !pathsOverlap(owned.path, root.path))
+                continue;
+
+            String remedy;
+            if (owned.owner->is_dropped)
+                remedy = "It is dropped and keeps its data until the drop finishes, retry after that (`DROP TABLE ... SYNC` waits for the drop)";
+            else if (owned.owner->is_detached)
+                remedy = "It is detached and its detached instance is still alive, retry after it is released (in an `Atomic` database `DETACH TABLE ... SYNC` waits for that)";
+            else
+                remedy = "A writable disk with `table_disk = true` can hold the data of only one table, use a read-only disk for the other tables";
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
+                getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
+                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
+        }
+    }
+    table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());
+}
+
+void MergeTreeData::releaseTableDiskRoots()
+{
+    std::lock_guard lock(table_disk_roots_mutex);
+    std::erase_if(table_disk_roots, [this](const TableDiskRoot & root) { return root.owner == this; });
+}
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
@@ -574,6 +645,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if ((*settings)[MergeTreeSetting::table_disk])
     {
         LOG_TRACE(log, "Table is located directly on disk (without database layer)");
+        acquireTableDiskRoots();
     }
     else
     {
@@ -654,6 +726,40 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+namespace
+{
+
+/// The parts locks of any table this thread holds, counted by `PartsLockHoldCount`.
+thread_local size_t parts_locks_held = 0;
+
+}
+
+bool partsLockHeldByCurrentThread()
+{
+    return parts_locks_held > 0;
+}
+
+PartsLockHoldCount::PartsLockHoldCount() : held(true)
+{
+    ++parts_locks_held;
+}
+
+PartsLockHoldCount & PartsLockHoldCount::operator=(PartsLockHoldCount && other) noexcept
+{
+    release();
+    held = std::exchange(other.held, false);
+    return *this;
+}
+
+void PartsLockHoldCount::release() noexcept
+{
+    if (!std::exchange(held, false))
+        return;
+    chassert(parts_locks_held > 0, "a parts lock is released on a thread that did not take it");
+    --parts_locks_held;
+}
+
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -663,7 +769,6 @@ DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeDat
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::PartsLocks);
 }
-
 
 DataPartsLock::~DataPartsLock()
 {
@@ -685,6 +790,11 @@ DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
     ProfileEvents::increment(ProfileEvents::SharedPartsLocks);
 }
 
+void DataPartsSharedLock::unlock()
+{
+    lock.unlock();
+    hold_count.release();
+}
 
 DataPartsSharedLock::~DataPartsSharedLock()
 {
@@ -927,7 +1037,7 @@ MergeTreeData::MergeTreeData(
             bitmap_cache = ctx->getDeleteBitmapCache();
 
         unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
-            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
+            *this, std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
     }
 
     String reason;
@@ -1025,29 +1135,19 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    ConditionSelectivityEstimatorPtr cached;
-    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
-    {
-        std::lock_guard<std::mutex> lock(stats_mutex);
-        cached = cached_estimator;
-    }
+    /// The statistics are cached per part and column, and a query merges the statistics of its parts
+    /// on the fly, which is cheap. So a query over the parts left after partition and primary-key
+    /// pruning costs the same as a query over the whole table, and the statistics of a part are read
+    /// from disk once, by the first query that needs them.
+    auto statistics_cache = getContext()->getStatisticsCache();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    /// The cache contains statistics for the active-part snapshot seen by the last refresh.
-    /// Reuse it only when the query reads the same ordered parts. Otherwise load and merge
-    /// statistics for the parts left after partition and primary-key pruning. A changed active-part
-    /// sequence invalidates the full-set cache until a refresh publishes the new active snapshot.
-    /// The copied shared pointer keeps the cached snapshot alive after the mutex is released.
-    if (cached && !cached->isStale(parts))
-        return cached;
-
-    LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
-        auto stats = part.data_part->loadStatistics(required_columns);
-        estimator_builder.markDataPart(part.data_part);
+        auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
+        estimator_builder.incrementRowCount(part.data_part->rows_count);
         for (const auto & [column_name, stat] : stats)
             estimator_builder.addStatistics(column_name, stat);
     }
@@ -2380,8 +2480,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot) const
 {
+    chassert(!hasUniqueKey() || uk_read_snapshot);
+
     if (parts.empty())
         return 0;
 
@@ -2431,7 +2533,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     {
         if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
-            res += part.data_part->rows_count;
+            res += uk_read_snapshot ? uk_read_snapshot->liveRows(*part.data_part) : part.data_part->rows_count;
     }
     return res;
 }
@@ -3523,38 +3625,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 }
 
-void MergeTreeData::startStatisticsCache()
-{
-    const auto settings = getSettings();
-    UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-    std::lock_guard lock(refresh_stats_task_mutex);
-    if (refresh_stats_task)
-    {
-        refresh_stats_cancelled = true;
-        refresh_stats_task->deactivate();
-    }
-    if (refresh_statistics_seconds && !refresh_stats_stopped)
-    {
-        refresh_stats_cancelled = false;
-        LOG_INFO(log, "Start to refresh statistics");
-        refresh_stats_task = getContext()->getSchedulePool()->createTask(
-            getStorageID(), "MergeTreeData::refreshStatistics",
-            [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
-
-        refresh_stats_task->activateAndSchedule();
-    }
-}
-
-void MergeTreeData::stopStatisticsCache()
-{
-    /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
-    std::lock_guard lock(refresh_stats_task_mutex);
-    refresh_stats_stopped = true;
-    refresh_stats_cancelled = true;
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
-}
-
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
@@ -3565,8 +3635,7 @@ catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
     /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
-    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
-    /// reschedule that refreshStatistics performs in its own catch block.
+    /// refresh task; otherwise the read-only table stays stale until the server restarts.
     refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
@@ -3715,72 +3784,26 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 }
 
-void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
-try
-{
-    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
-    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-
-    /// Queries do not read patch parts, otherwise the cache would never match.
-    std::erase_if(data_parts, [](const auto & part) { return part->info.isPatch(); });
-
-    if (cached_estimator)
-    {
-        if (!cached_estimator->isStale(data_parts))
-        {
-            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
-            if (interval_seconds)
-                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-            return;
-        }
-    }
-    LOG_DEBUG(log, "Refreshing statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
-    for (const DataPartPtr & data_part : data_parts)
-    {
-        if (refresh_stats_cancelled)
-            return;
-        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
-        auto stats = data_part->loadStatistics();
-        estimator_builder.markDataPart(data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
-    }
-    std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh statistics");
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-    else
-        throw;
-}
-
 MergeTreeData::~MergeTreeData()
 {
     /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
-    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
-    /// are declared after their task holders, so they are destroyed before the holders' own
-    /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
-    /// activated after the shutdown (a table startup or an ALTER of
-    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
-    /// before any member is destroyed.
+    /// `unexpected_data_parts`, `refresh_parts_mutex`) that are declared after their task holders,
+    /// so they are destroyed before the holders' own destructors deactivate the tasks. `shutdown`
+    /// deactivates the tasks too, but a task activated after the shutdown (a table startup racing
+    /// with a drop) can still be running here, so join it before any member is destroyed.
     try
     {
         /// Sets the cancellation flags before deactivating, so a running load exits early.
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to deactivate a background task");
     }
+
+    releaseTableDiskRoots();
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -4272,6 +4295,9 @@ MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_unc
     if ((*settings)[MergeTreeSetting::prewarm_primary_key_cache])
         result.primary_index_cache = getPrimaryIndexCache();
 
+    if ((*settings)[MergeTreeSetting::prewarm_statistics_cache])
+        result.statistics_cache = getContext()->getStatisticsCache();
+
     if ((*settings)[MergeTreeSetting::prewarm_mark_cache])
     {
         result.mark_cache = getContext()->getMarkCache();
@@ -4287,7 +4313,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
         return;
 
     Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark and/or primary index caches");
+    LOG_TRACE(log, "Prewarming caches");
 
     auto data_parts = getDataPartsVectorForInternalUsage();
 
@@ -4307,6 +4333,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
     double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
     double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
     double index_mark_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::index_mark_cache_prewarm_ratio];
+    double statistics_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::statistics_cache_prewarm_ratio];
 
     Names columns_to_prewarm_marks;
 
@@ -4372,12 +4399,24 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
             added_task = true;
         }
 
+        if (caches.statistics_cache && enough_space(caches.statistics_cache, statistics_ratio_to_prewarm))
+        {
+            runner.enqueueAndKeepTrack([&enough_space, &caches, statistics_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
+            {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
+                if (enough_space(caches.statistics_cache, statistics_ratio_to_prewarm))
+                    part->loadStatisticsToCache(*caches.statistics_cache);
+            });
+
+            added_task = true;
+        }
+
         if (!added_task)
             break;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {:.3f} seconds", watch.elapsedSeconds());
+    LOG_TRACE(log, "Prewarmed caches in {:.3f} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -5124,6 +5163,30 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 }
 
 /// ----- UNIQUE KEY -----
+
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(CSN snapshot_csn) const
+{
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
+}
+
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(const ContextPtr & local_context) const
+{
+    /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
+    if (auto txn = local_context->getCurrentTransaction())
+        return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
+
+    /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
+    /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a
+    /// read-only transaction is a list erase and no Keeper traffic.
+    auto txn = TransactionManager::instance().beginTransaction();
+    const CSN snapshot_csn = txn->getSnapshot();
+    auto pin = std::make_shared<const MergeTreeTransactionHolder>(txn, /*autocommit=*/false);
+
+    LOG_TRACE(log, "UNIQUE KEY READ: pinned csn {} on tid {} for the duration of the read",
+        snapshot_csn, txn->tid);
+
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
+}
 
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
 {
@@ -6708,6 +6771,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         alter_effective_settings = std::move(copy);
     }
 
+    if ((*settings_from_storage)[MergeTreeSetting::table_disk])
+    {
+        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
+        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+        const auto new_storage_policy = new_disk.changed
+            ? local_context->getStoragePolicyFromDisk(new_disk)
+            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+        if (new_storage_policy != getStoragePolicy())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The disk of table {} with `table_disk = true` cannot be changed",
+                getStorageID().getNameForLogs());
+    }
+
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
     /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
     /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
@@ -7258,9 +7335,6 @@ void MergeTreeData::changeSettings(
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
-        UInt64 has_refresh_statistics_interval_changed
-            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -7284,11 +7358,6 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
-
-        if (has_refresh_statistics_interval_changed)
-        {
-            startStatisticsCache();
-        }
     }
 }
 
@@ -8130,6 +8199,14 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
             throw;
         }
     }
+
+    /// The caches are keyed by the path of the active part, and a later part with the same name on the
+    /// same disk (for example, fetched again after `SYSTEM RESTORE REPLICA`) must not see the entries of
+    /// this one. The keys are derived from the root path of the part storage, which `renameToDetached`
+    /// changes to the `detached` directory, so the entries must be evicted before the rename: afterwards
+    /// the keys no longer match and the entries would stay in the caches. The part is already `Deleting`
+    /// here, so even if the rename throws, it is not returned to the working set with its caches cleared.
+    asMutableDeletingPart(part)->clearCaches();
 
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
 
@@ -9065,6 +9142,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
+    const MergeTreeData::DataPartState & state, const String & partition_id) const
+{
+    auto lock = readLockParts();
+    return getDataPartsVectorInPartitionForInternalUsage(state, partition_id, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
@@ -14844,32 +14928,22 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    auto base = [&]() -> StorageMetadataHandle
-    {
-        if (bypass_metadata_cache)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
-        auto it = cache->find(this);
-        if (it != cache->end())
-            return it->second;
+    auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
+        return it->second;
 
-        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-        return cache->emplace(this, metadata).first->second;
-    }();
-
-    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    return std::make_shared<StorageInMemoryMetadata>(*base);
-#else
-    return base;
-#endif
+    const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    return cache->emplace(this, metadata).first->second;
 }
 
 StorageSnapshotPtr
@@ -14881,7 +14955,21 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
 
-    auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
+    /// No later than the part list, so every kill visible at the csn has its writer's part in the list.
+    if (metadata_snapshot->hasUniqueKey())
+        snapshot_data->uk_read_snapshot = makeDeleteBitmapSnapshot(query_context);
+
+    RangesInDataPartsPtr query_ranges;
+    DataPartsVectorPtr query_parts;
+    if (const auto & uk_read_snapshot = snapshot_data->uk_read_snapshot)
+    {
+        /// Not every Active part: a UNIQUE KEY commit publishes its part Active before its commit point.
+        auto parts = getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID());
+        query_ranges = std::make_shared<const RangesInDataParts>(parts);
+        query_parts = std::make_shared<const DataPartsVector>(std::move(parts));
+    }
+    else
+        std::tie(query_ranges, query_parts) = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
     auto parts_info = getPartsSnapshotInfo(*query_parts);
