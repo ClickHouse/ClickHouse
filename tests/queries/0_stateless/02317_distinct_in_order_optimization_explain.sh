@@ -66,15 +66,16 @@ $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order
 $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
 
 echo "-- Check reading in order for distinct"
+# The `algorithm: Thread` checks need several streams, so do not lower `max_threads=0` (auto) to the fair share of CPU slots.
 echo "-- disabled, distinct columns match sorting key"
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 --use_concurrency_control_for_max_threads=0 -q "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns match sorting key"
 # read_in_order_two_level_merge_threshold is set here to avoid repeating MergeTreeInOrder in output
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns DON't form prefix of sorting key"
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 --use_concurrency_control_for_max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
