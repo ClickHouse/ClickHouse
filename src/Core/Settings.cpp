@@ -5102,7 +5102,7 @@ Filters on the prefix columns are supported. Other filters are supported when th
 
 For example, with `ORDER BY (symbol, ts)`, `SELECT symbol, argMax(price, ts) FROM t GROUP BY symbol` reads about one granule per symbol in each part.
 )", 0, \
-        {"26.10", false, false, "New setting to skip granules that cannot contain any group's answer for `GROUP BY` with `max`/`min` of a sorting key column, `DISTINCT` and `LIMIT BY` on a sorting key prefix, using the primary index."}) \
+        {"26.11", false, false, "New setting to skip granules that cannot contain any group's answer for `GROUP BY` with `max`/`min` of a sorting key column, `DISTINCT` and `LIMIT BY` on a sorting key prefix, using the primary index."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
 Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
