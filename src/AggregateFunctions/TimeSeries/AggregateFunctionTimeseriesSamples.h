@@ -24,6 +24,22 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+/// A view of sorted `(timestamp, value)` pairs. `forEachSample` matches `AggregateFunctionTimeseriesSamples`,
+/// so an aggregator can read a window slice without copying it into a bucket.
+template <typename TimestampType, typename ValueType>
+struct AggregateFunctionTimeseriesSampleSpan
+{
+    const std::pair<TimestampType, ValueType> * begin = nullptr;
+    const std::pair<TimestampType, ValueType> * end = nullptr;
+
+    template <typename F>
+    void forEachSample(F && f) const
+    {
+        for (const auto * sample = begin; sample != end; ++sample)
+            f(sample->first, sample->second);
+    }
+};
+
 /// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the largest real value (a NaN survives only when every sample at the timestamp is NaN).
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
@@ -167,6 +183,37 @@ public:
                     "Cannot deserialize data: timestamp {} is outside its bucket's range",
                     static_cast<Int64>(timestamp));
         });
+    }
+
+    void ensureSorted()
+    {
+        sort();
+    }
+
+    size_t size() const
+    {
+        return buffer.size();
+    }
+
+    const std::pair<TimestampType, ValueType> * data() const
+    {
+        return buffer.data();
+    }
+
+    /// Calls `f(data, size)` with samples sorted by timestamp and with duplicate timestamps collapsed.
+    /// A sorted state is passed through; an unsorted state is sorted into a temporary copy.
+    template <typename F>
+    void withSortedSamples(F && f) const
+    {
+        if (sorted)
+        {
+            f(buffer.data(), buffer.size());
+            return;
+        }
+
+        Buffer sorted_buffer = buffer;
+        sortBuffer(sorted_buffer);
+        f(sorted_buffer.data(), sorted_buffer.size());
     }
 
     /// Invokes `f(timestamp, value)` for every sample, in ascending timestamp order with duplicates collapsed.

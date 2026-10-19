@@ -96,7 +96,8 @@ struct AggregateFunctionTimeseriesChangesTraits
         /// not the two-stacks path which combines values out of time order.
         static_assert(decltype(sliding_sum)::is_invertible);
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        template <typename SampleRange>
+        void add(const SampleRange & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             /// Preaggregate the bucket's samples (`forEachSample` visits them in ascending timestamp order) into a per-bucket summary.
             Summary summary;

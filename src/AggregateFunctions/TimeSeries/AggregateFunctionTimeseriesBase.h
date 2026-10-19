@@ -70,6 +70,18 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
+/// `Traits::keep_bucket_map` leaves the per-bucket hash map in place. Quantile and MAD set it:
+/// their sliding sorted values need the per-bucket split.
+template <typename T, typename = void>
+struct TimeseriesKeepBucketMap : std::false_type
+{
+};
+
+template <typename T>
+struct TimeseriesKeepBucketMap<T, std::void_t<decltype(T::keep_bucket_map)>> : std::bool_constant<T::keep_bucket_map>
+{
+};
+
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
 /// equal sizes and adding the data to the grid buckets. The actual aggregation logic within buckets is implemented in derived classes.
@@ -100,10 +112,24 @@ public:
 
     using Bucket = typename Traits::Bucket;
 
+    /// One flat array of samples, instead of a hash map of buckets, when the bucket stores raw samples.
+    /// Add appends in timestamp order and clears `sorted` on the first out-of-order sample. Finalize sorts
+    /// once, then walks the grid with two pointers. The serialized form stays the per-bucket format.
+    static constexpr bool use_flat_sorted_samples =
+        std::is_same_v<Bucket, AggregateFunctionTimeseriesSamples<TimestampType, ValueType>>
+        && !TimeseriesKeepBucketMap<Traits>::value;
+
+    using SampleSpan = AggregateFunctionTimeseriesSampleSpan<TimestampType, ValueType>;
+
     struct State
     {
-        /// Maps bucket index to the set of all timestamps and values
-        TimeSeriesBucketsMap<Bucket> buckets;
+        using Storage = std::conditional_t<
+            use_flat_sorted_samples,
+            AggregateFunctionTimeseriesSamples<TimestampType, ValueType>,
+            TimeSeriesBucketsMap<Bucket>>;
+
+        /// Flat sample array, or the bucket map, depending on `use_flat_sorted_samples`.
+        Storage buckets;
     };
 
     /// Types of timestamps and intervals with the scale of the grid: grid points, bucket bounds, windows, cut-offs
@@ -321,6 +347,12 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if constexpr (use_flat_sorted_samples)
+        {
+            data(place)->buckets.merge(data(rhs)->buckets);
+        }
+        else
+        {
         auto & buckets = data(place)->buckets;
         const auto & rhs_buckets = data(rhs)->buckets;
         buckets.reserve(rhs_buckets.size());
@@ -329,10 +361,17 @@ public:
             auto & bucket = buckets[rhs_bucket.getKey()];
             bucket.merge(rhs_bucket.getMapped());
         }
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        if constexpr (use_flat_sorted_samples)
+        {
+            serializeFlatSamples(data(place)->buckets, buf);
+        }
+        else
+        {
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
         writeBinaryLittleEndian(bucket_count, buf);
 
@@ -342,6 +381,7 @@ public:
         {
             writeBinaryLittleEndian(entry.getKey(), buf);
             entry.getMapped().serialize(buf);
+        }
         }
     }
 
@@ -365,6 +405,12 @@ public:
         if (buckets_size > bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
+        if constexpr (use_flat_sorted_samples)
+        {
+            deserializeFlatSamples(data(place)->buckets, buf, buckets_size);
+        }
+        else
+        {
         /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
         /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
         /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
@@ -383,6 +429,7 @@ public:
 
             /// Validate that each deserialized sample falls into this bucket's timestamp range.
             bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
+        }
         }
     }
 
@@ -438,6 +485,12 @@ protected:
         if (!grid_size)
             return;
 
+        if constexpr (use_flat_sorted_samples)
+        {
+            doInsertResultIntoFlat(place, writer);
+        }
+        else
+        {
         const auto & buckets = data(place)->buckets;
         auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(buckets.size()));
 
@@ -482,6 +535,7 @@ protected:
                 removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
+        }
         }
     }
 
@@ -1121,8 +1175,13 @@ private:
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
-        auto & bucket = data(place)->buckets[bucket_index];
-        bucket.add(timestamp, value);
+        if constexpr (use_flat_sorted_samples)
+            data(place)->buckets.add(timestamp, value);
+        else
+        {
+            auto & bucket = data(place)->buckets[bucket_index];
+            bucket.add(timestamp, value);
+        }
     }
 
     static constexpr ALWAYS_INLINE Int64 toInt64(GridScaleTimestampType timestamp)
@@ -1231,7 +1290,12 @@ private:
             /// against an infinite loop.
             const size_t count = std::max<size_t>(run, static_cast<size_t>(1));
             if (sample_class.bucket_index != NO_BUCKET)
-                state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+            {
+                if constexpr (use_flat_sorted_samples)
+                    state->buckets.addMany(timestamps + i, values + i, count);
+                else
+                    state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+            }
             i += count;
         }
     })
@@ -1399,6 +1463,115 @@ private:
     const FunctionImpl & derived() const
     {
         return static_cast<const FunctionImpl &>(*this);
+    }
+
+    struct FlatBucketGroup
+    {
+        size_t index;
+        size_t begin;
+        size_t end;
+    };
+
+    /// Groups sorted samples by the bucket `classifySample` would have chosen. Indexes increase with time.
+    void collectFlatBucketGroups(
+        const std::pair<TimestampType, ValueType> * sample_data,
+        size_t sample_count,
+        VectorWithMemoryTracking<FlatBucketGroup> & groups) const
+    {
+        size_t position = 0;
+        while (position < sample_count)
+        {
+            const size_t bucket_index = bucketIndexForTimestamp(sample_data[position].first);
+            if (bucket_index == NO_BUCKET)
+            {
+                ++position;
+                continue;
+            }
+
+            const size_t begin = position;
+            do
+            {
+                ++position;
+            }
+            while (position < sample_count && bucketIndexForTimestamp(sample_data[position].first) == bucket_index);
+
+            groups.push_back(FlatBucketGroup{bucket_index, begin, position});
+        }
+    }
+
+    void serializeFlatSamples(
+        const AggregateFunctionTimeseriesSamples<TimestampType, ValueType> & samples,
+        WriteBuffer & buf) const
+    {
+        writeBinaryLittleEndian(FORMAT_VERSION, buf);
+        writeBinaryLittleEndian(bucket_count, buf);
+
+        samples.withSortedSamples([&](const std::pair<TimestampType, ValueType> * sample_data, size_t sample_count)
+        {
+            VectorWithMemoryTracking<FlatBucketGroup> groups;
+            collectFlatBucketGroups(sample_data, sample_count, groups);
+
+            writeBinaryLittleEndian(groups.size(), buf);
+            for (const auto & group : groups)
+            {
+                writeBinaryLittleEndian(group.index, buf);
+                writeBinaryLittleEndian(group.end - group.begin, buf);
+                for (size_t index = group.begin; index < group.end; ++index)
+                {
+                    writeBinaryLittleEndian(sample_data[index].first, buf);
+                    writeBinaryLittleEndian(sample_data[index].second, buf);
+                }
+            }
+        });
+    }
+
+    void deserializeFlatSamples(
+        AggregateFunctionTimeseriesSamples<TimestampType, ValueType> & samples,
+        ReadBuffer & buf,
+        size_t buckets_size) const
+    {
+        for (size_t i = 0; i < buckets_size; ++i)
+        {
+            size_t bucket_index = 0;
+            readBinaryLittleEndian(bucket_index, buf);
+
+            if (bucket_index >= bucket_count)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with index {} greater than bucket count {}", bucket_index, bucket_count);
+
+            AggregateFunctionTimeseriesSamples<TimestampType, ValueType> bucket;
+            bucket.deserialize(buf);
+            bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
+            bucket.forEachSample([&samples](TimestampType timestamp, ValueType value)
+            {
+                samples.add(timestamp, value);
+            });
+        }
+    }
+
+    /// Sorts the flat array once, then feeds each non-empty bucket to the sliding aggregator in index order.
+    void doInsertResultIntoFlat(AggregateDataPtr __restrict place, ResultWriter & writer) const
+    {
+        auto & samples = data(place)->buckets;
+        samples.ensureSorted();
+
+        VectorWithMemoryTracking<FlatBucketGroup> groups;
+        collectFlatBucketGroups(samples.data(), samples.size(), groups);
+
+        auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(groups.size()));
+        const auto * sample_data = samples.data();
+
+        size_t group_pos = 0;
+        for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
+        {
+            const size_t window_end = bucketRangeInWindow(grid_index).second;
+            for (; group_pos < groups.size() && groups[group_pos].index < window_end; ++group_pos)
+            {
+                const auto & group = groups[group_pos];
+                aggregator.add(SampleSpan{sample_data + group.begin, sample_data + group.end}, bucketEnd(group.index));
+            }
+            removeOutOfWindow(aggregator, grid_index);
+            writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
+        }
     }
 
     /// Drops buckets that have left grid point `grid_index`'s window from the front of the sliding `aggregator`. A bucket

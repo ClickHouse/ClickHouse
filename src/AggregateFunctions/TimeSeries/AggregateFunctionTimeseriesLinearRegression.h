@@ -147,7 +147,8 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
                 return TimestampType(base);
         }
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        template <typename SampleRange>
+        void add(const SampleRange & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             /// Preaggregate the bucket's samples into centered moments; the accumulation is order-independent, so any iteration order would do.
             Summary summary;

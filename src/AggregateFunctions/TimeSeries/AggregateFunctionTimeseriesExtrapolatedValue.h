@@ -111,7 +111,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         {
         }
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        template <typename SampleRange>
+        void add(const SampleRange & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)

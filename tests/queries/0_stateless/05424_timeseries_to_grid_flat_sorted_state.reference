@@ -1,0 +1,6 @@
+dense step, in-order input equals shuffled input:
+[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+sparse step, in-order input equals shuffled input:
+[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+merge of a sorted partial state and an unsorted partial state:
+[1,1]

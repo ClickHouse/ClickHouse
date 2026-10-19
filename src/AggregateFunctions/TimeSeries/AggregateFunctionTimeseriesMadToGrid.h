@@ -42,6 +42,9 @@ struct AggregateFunctionTimeseriesMadToGridTraits
     /// The bucket stores raw samples: the timestamps are needed to collapse duplicate timestamps into one sample.
     using Bucket = Samples;
 
+    /// The sliding sorted values need the per-bucket split. A flat array would re-sort every window.
+    static constexpr bool keep_bucket_map = true;
+
     /// The sorted values of the window, so the median is read from them without sorting.
     using Summary = AggregateFunctionTimeseriesSortedValues<ValueType>;
 
