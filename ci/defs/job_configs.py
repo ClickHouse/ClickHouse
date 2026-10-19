@@ -1789,6 +1789,8 @@ class JobConfigs:
                 # The whole tree, as Keeper Stress does: listing only the imported modules
                 # misses the configs `cluster.py` reads through `write_embedded_config`.
                 "./tests/integration/helpers/",
+                # The service definitions `cluster.py` starts (Keeper, MinIO and whatever else `dolor.py` enables)
+                "./tests/integration/compose/",
                 # `dolor.py` mounts the TLS material out of `tests/config` as `main_configs`, and
                 # `cluster.py` copies these two out of `CLICKHOUSE_TESTS_BASE_CONFIG_DIR`.
                 "./tests/config/",
