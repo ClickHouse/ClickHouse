@@ -138,12 +138,11 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const PostingList & token_postings)
 {
-    if (is_failed)
+    /// A pattern scan delivers embedded postings again for a token another query already has.
+    if (is_failed || !tokens_with_read_postings.emplace(token).second)
         return;
-
-    ++num_read_postings;
 
     if (!postings)
         postings = token_postings;
@@ -280,7 +279,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & 
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(*postings_ptr);
+        query_builder.addPostings(token, *postings_ptr);
     });
 }
 

@@ -57,8 +57,8 @@ public:
         bool is_bypassed = false;
         /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
         bool is_analysis_incomplete = false;
-        /// Number of tokens whose posting list has already been folded into `postings`.
-        size_t num_read_postings = 0;
+        /// Tokens whose posting list has already been folded into `postings`.
+        absl::flat_hash_set<String> tokens_with_read_postings;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
         size_t num_live_tokens = 0;
 
@@ -67,8 +67,8 @@ public:
         void addMissingToken(std::string_view token);
         void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
         void addRowsRange(RowsRange token_rows_range);
-        void addPostings(const PostingList & token_postings);
-        bool needReadPostings() const { return num_read_postings < tokens.size(); }
+        void addPostings(std::string_view token, const PostingList & token_postings);
+        bool needReadPostings() const { return tokens_with_read_postings.size() < tokens.size(); }
 
         /// Sorted array of `postings`, built once and shared by all readers of the granule.
         /// It is clipped to this query's readable rows, so it must never go to the server-wide postings cache.
