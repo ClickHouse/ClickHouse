@@ -190,6 +190,11 @@ public:
     virtual void releaseWriteBuffer(std::unique_ptr<WriteBuffer> /*write_buffer*/)
     {}
 
+    /// Throws `NOT_ENOUGH_SPACE` if `bytes` more cannot be written, for a file that is appended to after its creation
+    /// (which checks its `reserve_size`). A storage without a disk reservation checks nothing.
+    virtual void checkFreeSpace(size_t /*bytes*/)
+    {}
+
     /// Get location for logging
     virtual String describeFilePath() const = 0;
 
@@ -238,6 +243,9 @@ public:
     Stat finishWriting();
 
     Stat getStat() const;
+
+    /// See `TemporaryFileHolder::checkFreeSpace`.
+    void checkFreeSpace(size_t size);
 
     String describeFilePath() const;
 

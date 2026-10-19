@@ -247,6 +247,30 @@ private:
 };
 #endif
 
+namespace
+{
+
+[[noreturn]] void throwNotEnoughSpace(const Disks & disks, size_t reserve_size)
+{
+    Strings disks_info;
+    for (const auto & d : disks)
+    {
+        auto to_double = [](auto x) { return static_cast<double>(x); };
+        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+            d->getName(),
+            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getKeepingFreeSpace())));
+    }
+
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+        reserve_size, fmt::join(disks_info, ", "));
+}
+
+}
+
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
@@ -260,24 +284,7 @@ public:
         {
             auto reservation = volume->reserve(reserve_size);
             if (!reservation)
-            {
-                auto disks = volume->getDisks();
-                Strings disks_info;
-                for (const auto & d : disks)
-                {
-                    auto to_double = [](auto x) { return static_cast<double>(x); };
-                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
-                        d->getName(),
-                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getKeepingFreeSpace())));
-                }
-
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-                    reserve_size, fmt::join(disks_info, ", "));
-            }
+                throwNotEnoughSpace(volume->getDisks(), reserve_size);
             disk = reservation->getDisk();
         }
         else
@@ -290,6 +297,13 @@ public:
     std::unique_ptr<WriteBuffer> write() override
     {
         return disk->writeFile(path_to_file, buffer_size);
+    }
+
+    void checkFreeSpace(size_t bytes) override
+    {
+        /// The reservation is only a check, as on creation: it is released at once.
+        if (bytes > 0 && !disk->reserve(bytes))
+            throwNotEnoughSpace({disk}, bytes);
     }
 
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
@@ -423,6 +437,11 @@ void TemporaryDataBuffer::nextImpl()
     out_compressed_buf->next();
     BufferBase::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size(), out_compressed_buf->offset());
     updateAllocAndCheck();
+}
+
+void TemporaryDataBuffer::checkFreeSpace(size_t size)
+{
+    file_holder->checkFreeSpace(size);
 }
 
 String TemporaryDataBuffer::describeFilePath() const

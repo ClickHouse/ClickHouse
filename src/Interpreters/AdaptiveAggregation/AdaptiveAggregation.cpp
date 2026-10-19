@@ -453,7 +453,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
         if (!records)
             continue;
 
-        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition);
+        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition, params.min_free_disk_space);
         partitions.releasePartition(partition);
         spilled_records += records;
     }
@@ -467,14 +467,17 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
 }
 
 UInt64 AdaptiveAggregationSession::SpilledPartition::append(
-    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition)
+    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition, size_t min_free_disk_space)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
+    const size_t reserve_size = bytes + min_free_disk_space;
 
     std::lock_guard lock(mutex);
     if (!stream)
-        stream = std::make_unique<TemporaryDataBuffer>(scope);
+        stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
+    else
+        stream->checkFreeSpace(reserve_size);
     writeBinaryLittleEndian(bytes, *stream);
     partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
     record_count += partitions.recordsOf(partition);
