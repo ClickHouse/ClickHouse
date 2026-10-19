@@ -38,6 +38,16 @@ status: not_applicable
 reason: The optimizer weighs an aggregate projection only for a query with GROUP BY or DISTINCT on this table
 empirical_status: unsupported
 empirical_reason: EXPLAIN WHATIF estimates an aggregate projection only from a full scan, because a sample cannot show the number of groups of a part (see projection_scan_budget_rows)
+-- states of different sizes
+Baseline (after PK + partition + existing indexes):
+marks: 30
+With p_u (aggregate projection, hypothetical):
+marks: 1
+verdict: too close to call
+-- no GROUP BY keys
+With p_total (aggregate projection, hypothetical):
+status: not_applicable
+reason: Aggregate projection has no GROUP BY keys, which EXPLAIN WHATIF does not estimate yet
 -- a projection with WHERE
 Baseline (after PK + partition + existing indexes):
 marks: 100

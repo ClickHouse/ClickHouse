@@ -70,6 +70,21 @@ SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF projection_scan_budget_rows = 3000 SELECT b, sum(v) FROM t_est WHERE b < 300 GROUP BY b)
 WHERE match(line, '^(empirical_status:|empirical_reason:)');
 
+-- a state of uniqExact grows with its count of values, so the rows have different widths and the verdict is not firm
+CREATE TABLE u_est AS t_est;
+INSERT INTO u_est SELECT number, number % 300, if(number % 300 < 150, number, 0) FROM numbers(3000);
+CREATE HYPOTHETICAL PROJECTION p_u ON u_est (SELECT b, uniqExact(v) GROUP BY b);
+SELECT '-- states of different sizes';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT b, uniqExact(v) FROM u_est WHERE b < 100 GROUP BY b)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+DROP HYPOTHETICAL PROJECTION p ON t_est;
+CREATE HYPOTHETICAL PROJECTION p_total ON t_est (SELECT sum(v));
+SELECT '-- no GROUP BY keys';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT sum(v) FROM t_est)
+WHERE match(line, '^(With |status:|reason:)');
+
 -- a projection with WHERE aggregates only the rows that pass its filter
 CREATE TABLE w_est AS t_est;
 CREATE TABLE w_real AS t_est;
@@ -90,3 +105,4 @@ DROP TABLE w_est;
 DROP TABLE w_real;
 DROP TABLE e_est;
 DROP TABLE e_real;
+DROP TABLE u_est;
