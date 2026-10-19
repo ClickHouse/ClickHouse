@@ -24,7 +24,7 @@ The following table shows configurations shared by some of the available materia
 | partition_by   | A partition is a logical combination of records in a table by a specified criterion. The partition key can be any expression from the table columns.                             |                |
 | primary_key    | Like order_by, a ClickHouse primary key expression.  If not specified, ClickHouse will use the order by expression as the primary key                                            |                |
 | settings       | A map/dictionary of "TABLE" settings to be used to DDL statements like 'CREATE TABLE' with this model                                                                            |                |
-| query_settings | A map/dictionary of ClickHouse user level settings to be used with `INSERT` or `DELETE` statements in conjunction with this model                                                |                |
+| query_settings | A map/dictionary of user level settings added as a `SETTINGS` clause to the model's `INSERT`/`DELETE` statements and, for views and materialized views, to the stored view query |                |
 | ttl            | A TTL expression to be used with the table.  The TTL expression is a string that can be used to specify the TTL for the table.                                                   |                |
 | sql_security   | The ClickHouse user to use when executing the view's underlying query. [Accepted values](/reference/statements/create/view#sql_security): `definer`, `invoker`.              |                |
 | definer        | If `sql_security` was set to `definer`, you have to specify any existing user or `CURRENT_USER` in the `definer` clause.                                                         |                |
@@ -55,15 +55,12 @@ issue [here](https://github.com/ClickHouse/dbt-clickhouse/issues).
 ### A note on model settings {#a-note-on-model-settings}
 
 ClickHouse has several types/levels of "settings". In the model configuration above, two types of these are
-configurable.  `settings` means the `SETTINGS`
-clause used in `CREATE TABLE/VIEW` types of DDL statements, so this is generally settings that are specific to the
-specific ClickHouse table engine. The new
-`query_settings` is use to add a `SETTINGS` clause to the `INSERT` and `DELETE` queries used for model materialization (
-including incremental materializations).
-There are hundreds of ClickHouse settings, and it's not always clear which is a "table" setting and which is a "user"
-setting (although the latter are generally
-available in the `system.settings` table.)  In general the defaults are recommended, and any use of these properties
-should be carefully researched and tested.
+configurable.
+
+- `settings` means the `SETTINGS` clause used in `CREATE TABLE/VIEW` types of DDL statements, so this is generally settings that are specific to the specific ClickHouse table engine. 
+- `query_settings` is used to add a `SETTINGS` clause to the `INSERT` and `DELETE` queries used for model materialization (including incremental materializations). For views and materialized views, the `SETTINGS` clause is also added to the stored view query, so a materialized view applies these settings on every insert into its source table or refresh.
+
+There are hundreds of ClickHouse settings, and it's not always clear which is a "table" setting and which is a "user" setting (although the latter are generally available in the `system.settings` table.)  In general the defaults are recommended, and any use of these properties should be carefully researched and tested.
 
 ### Column Configuration {#column-configuration}
 
