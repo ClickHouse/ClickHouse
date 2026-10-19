@@ -1023,7 +1023,11 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
         std::move(publish_path),
-        /* path_is_published = */ false);
+        /* path_is_published = */ false,
+        /// A cancelled rewrite of the starting key in HDFS deletes the file the previous insert has committed, and the
+        /// key must not stay taken: the next insert would refuse to write it, or step aside from it, leaving the table
+        /// without its base file. It is still reserved by this insert while the cancelled write cleans up.
+        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); });
 
     /// A truncating insert overwrites the table: it starts from the key chosen above, the split objects
     /// of the previous split inserts are forgotten, and the numbering starts over, overwriting them one by one.

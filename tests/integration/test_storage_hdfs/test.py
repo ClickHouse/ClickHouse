@@ -766,6 +766,20 @@ def test_split_on_write_by_size(started_cluster):
         "select count(), min(x), max(x) from test_split_on_write"
     ) == TSV([[500, 0, 499]])
 
+    # A truncating rewrite that fails: HDFS deletes the file of the cancelled write, and the next
+    # ordinary insert writes it again rather than taking it for the file of the previous insert.
+    node1.query_and_get_error(
+        f"insert into test_split_on_write select throwIf(number = 150) from numbers(500) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert "data.tsv" not in files()
+
+    node1.query(
+        f"insert into test_split_on_write select number from numbers(100) settings {settings}"
+    )
+    assert node1.query(
+        "select count(), min(x), max(x) from test_split_on_write"
+    ) == TSV([[100, 0, 99]])
+
     node1.query("drop table test_split_on_write")
 
     # The table function keeps no list of the files written by a previous insert, so a truncating

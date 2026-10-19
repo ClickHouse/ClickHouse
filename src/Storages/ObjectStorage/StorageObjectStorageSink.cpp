@@ -69,7 +69,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     size_t split_on_write_by_size_bytes_,
     GetNextPathCallback get_next_path_,
     PublishPathCallback publish_path_,
-    bool path_is_published_)
+    bool path_is_published_,
+    RemovedPathCallback on_path_removed_)
     : SinkToStorage(sample_block_)
     , path(path_)
     , object_storage(object_storage_)
@@ -83,6 +84,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , get_next_path(std::move(get_next_path_))
     , publish_path(std::move(publish_path_))
     , path_is_published(path_is_published_)
+    , on_path_removed(std::move(on_path_removed_))
 {
     if (split_on_write_by_size_bytes && !get_next_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");
@@ -198,12 +200,20 @@ void StorageObjectStorageSink::releaseBuffers()
 
 void StorageObjectStorageSink::cancelBuffers()
 {
+    /// A cancelled write into HDFS deletes the file, see `WriteBufferFromHDFS::cancelImpl`.
+    /// Blob storages create the object only when it is committed, so the cancellation leaves the previous one.
+    const bool cancellation_removes_object
+        = destination_buf && !path_is_published && object_storage->getType() == ObjectStorageType::HDFS;
+
     if (writer)
         writer->cancel();
     if (write_buf)
         write_buf->cancel();
     if (destination_buf)
         destination_buf->cancel();
+
+    if (cancellation_removes_object && on_path_removed)
+        on_path_removed(path);
 }
 
 size_t StorageObjectStorageSink::getFileSize() const
@@ -321,7 +331,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         query_settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
         std::move(publish_path),
-        /* path_is_published = */ false);
+        /* path_is_published = */ false,
+        /// See the same callback in `StorageObjectStorage::write`.
+        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); });
 
     /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
     /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert

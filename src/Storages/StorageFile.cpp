@@ -3525,11 +3525,13 @@ private:
 
         /// The file is complete - only now it becomes a part of the table. If the insert fails while
         /// writing it, the table keeps reading the files of the previous shards, and not a truncated one.
+        /// A complete file is not removed as an unfinished one even if the publication fails: the table
+        /// may list it already, as a truncating insert overwrites the files the table knows.
         if (!path_is_published)
         {
+            path_is_published = true;
             if (publish_path)
                 publish_path(path);
-            path_is_published = true;
         }
     }
 
@@ -3721,9 +3723,14 @@ public:
             };
         }
 
+        /// The sink of the partition shares the write lock of the insert: the base `PartitionedSink` cancels and destroys
+        /// the sinks of the partitions only after the members of this class, the lock among them, are destroyed, and
+        /// a sink removes the unfinished file of a failed insert when it is destroyed. Without the lock by then,
+        /// a concurrent truncating insert could already be writing a file of the same name, and lose it.
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
+            RWLockImpl::LockHolder(lock),
             -1,
             /* use_table_fd */false,
             base_path,
@@ -3998,10 +4005,24 @@ void StorageFile::setPaths(Strings new_paths)
 void StorageFile::appendPath(const String & path, bool written_by_split)
 {
     std::lock_guard lock(paths_mutex);
-    if (std::find(paths.begin(), paths.end(), path) == paths.end())
+    const bool is_new_path = std::find(paths.begin(), paths.end(), path) == paths.end();
+    if (is_new_path)
         paths.push_back(path);
-    if (written_by_split)
+    if (!written_by_split)
+        return;
+
+    /// Either both the path and its provenance are registered, or nothing is: a path that is listed without
+    /// its provenance would not be deleted by the next truncating insert that is not split.
+    try
+    {
         paths_written_by_split.insert(path);
+    }
+    catch (...)
+    {
+        if (is_new_path)
+            paths.pop_back();
+        throw;
+    }
 }
 
 Strings StorageFile::getSplitTailSnapshot() const

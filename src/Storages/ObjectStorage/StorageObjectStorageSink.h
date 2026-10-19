@@ -25,6 +25,11 @@ public:
     /// that is still being written or that the insert could not create at all.
     using PublishPathCallback = std::function<void(const String &)>;
 
+    /// Called when the write of an object that is not published yet is cancelled, and the cancellation removes
+    /// the object: HDFS creates the file already when it is opened, and deletes it when the write is cancelled.
+    /// The object of a key that a previous insert has committed is gone then, so the key must not stay taken.
+    using RemovedPathCallback = std::function<void(const String &)>;
+
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage_,
@@ -37,7 +42,8 @@ public:
         size_t split_on_write_by_size_bytes_ = 0,
         GetNextPathCallback get_next_path_ = {},
         PublishPathCallback publish_path_ = {},
-        bool path_is_published_ = true);
+        bool path_is_published_ = true,
+        RemovedPathCallback on_path_removed_ = {});
 
     ~StorageObjectStorageSink() override;
 
@@ -70,6 +76,7 @@ private:
     /// `*_create_new_file_on_insert`; the next objects of a split insert never are. An object that is not,
     /// is registered only after it has been written and committed.
     bool path_is_published = true;
+    const RemovedPathCallback on_path_removed;
 
     /// The buffer that writes into the object storage. It is also used to count the number of bytes
     /// written to the object. It is declared before `write_buf` so that it outlives the compressing
