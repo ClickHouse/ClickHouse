@@ -1253,9 +1253,6 @@ filegroup(
     name = "sources",
     srcs = glob(
         ["**"],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ],
+        exclude = ["**/BUILD.bazel"],
     ),
 )

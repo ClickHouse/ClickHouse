@@ -189,10 +189,6 @@ filegroup(
     name = "cmake_cargo_sources",
     srcs = glob(
         ["**"],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-            "target/**",
-        ],
+        exclude = ["**/BUILD.bazel"],
     ),
 )

@@ -67,13 +67,15 @@ def _function(node, name):
 def simplify_globs(text, files, stats=None):
     """Preserve each glob's sorted files while removing empty include patterns.
 
-    files=None means that source inventory is unavailable. In that case only
-    semantics-preserving syntax changes (macro expansion and native defaults)
-    are permitted. Globs with dynamic patterns or options remain untouched.
+    Bazel disallows empty glob patterns under the pinned configuration. Always
+    require the package file inventory before expanding or simplifying globs.
+    Globs with dynamic patterns or options remain untouched.
     """
+    if files is None:
+        raise ValueError('Cannot simplify globs without their pinned package files')
     stats = Counter() if stats is None else stats
     source = Source(text)
-    globs = GlobFiles(files) if files is not None else None
+    globs = GlobFiles(files)
     edits = []
     for node in ast.walk(source.module):
         if not (_function(node, 'glob') or _function(node, 'header_glob')):
@@ -100,26 +102,18 @@ def simplify_globs(text, files, stats=None):
             patterns = [root + '/*' + suffix for root in patterns for suffix in CC_HEADER_SUFFIXES]
             stats['header_macros'] += 1
         original_patterns, original_excluded = patterns, excluded
-        if globs is not None:
-            original_files = globs.result(patterns, excluded)
-            patterns = [pattern for pattern in patterns if globs.matching(pattern)]
-            included = globs.union(patterns)
-            excluded = [pattern for pattern in excluded if included & globs.matching(pattern)]
-            if globs.result(patterns, excluded) != original_files:
-                raise ValueError('Glob changed its sorted file result at line ' + str(node.lineno))
-            stats['verified_globs'] += 1
-            stats['empty_patterns_removed'] += len(original_patterns) - len(patterns)
-            stats['unmatched_excludes_removed'] += len(original_excluded) - len(excluded)
-        else:
-            stats['inventory_unavailable'] += 1
-            if header_glob:
-                # BUILD and BUILD.bazel cannot match any C/C++ header suffix.
-                excluded = [pattern for pattern in excluded
-                            if not pattern.endswith(('/BUILD', '/BUILD.bazel')) and pattern not in {'BUILD', 'BUILD.bazel'}]
-                stats['unmatched_excludes_removed'] += len(original_excluded) - len(excluded)
+        original_files = globs.result(patterns, excluded)
+        patterns = [pattern for pattern in patterns if globs.matching(pattern)]
+        included = globs.union(patterns)
+        excluded = [pattern for pattern in excluded if included & globs.matching(pattern)]
+        if globs.result(patterns, excluded) != original_files:
+            raise ValueError('Glob changed its sorted file result at line ' + str(node.lineno))
+        stats['verified_globs'] += 1
+        stats['empty_patterns_removed'] += len(original_patterns) - len(patterns)
+        stats['unmatched_excludes_removed'] += len(original_excluded) - len(excluded)
         allow_empty = options.get('allow_empty')
         if isinstance(allow_empty, ast.Constant) and allow_empty.value is True:
-            # Native glob defaults to True; removing it preserves empty globs.
+            # An inventory-proven nonempty glob needs no allow_empty override.
             stats['default_allow_empty_removed'] += 1
             allow_empty = None
         parts = [json.dumps(patterns)]
@@ -129,7 +123,9 @@ def simplify_globs(text, files, stats=None):
             parts.append('allow_empty = ' + source.text(allow_empty))
         if 'exclude_directories' in options:
             parts.append('exclude_directories = ' + source.text(options['exclude_directories']))
-        replacement = 'glob(' + ', '.join(parts) + ')'
+        # Preserve an empty fixed input set as an ordinary list. Neither an
+        # empty pattern nor a glob whose excludes remove all files is valid.
+        replacement = 'glob(' + ', '.join(parts) + ')' if original_files else '[]'
         if replacement != source.text(node):
             edits.append((*source.span(node), replacement))
     if stats['header_macros']:

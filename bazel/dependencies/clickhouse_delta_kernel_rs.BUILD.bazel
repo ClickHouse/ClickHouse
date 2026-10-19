@@ -12,9 +12,6 @@ filegroup(
     name = "cbindgen_sources",
     srcs = glob(
         ["**"],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ],
+        exclude = ["**/BUILD.bazel"],
     ),
 )

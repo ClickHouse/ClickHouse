@@ -16,29 +16,12 @@ filegroup(
     name = "llvm_source_headers",
     srcs = glob([
         "llvm/include/**/*.h",
-        "llvm/include/**/*.hh",
-        "llvm/include/**/*.hpp",
-        "llvm/include/**/*.hxx",
         "llvm/include/**/*.inc",
         "llvm/include/**/*.def",
-        "llvm/include/**/*.ipp",
-        "llvm/include/**/*.inl",
         "llvm/lib/**/*.h",
-        "llvm/lib/**/*.hh",
-        "llvm/lib/**/*.hpp",
-        "llvm/lib/**/*.hxx",
         "llvm/lib/**/*.inc",
         "llvm/lib/**/*.def",
-        "llvm/lib/**/*.ipp",
-        "llvm/lib/**/*.inl",
         "third-party/siphash/include/**/*.h",
-        "third-party/siphash/include/**/*.hh",
-        "third-party/siphash/include/**/*.hpp",
-        "third-party/siphash/include/**/*.hxx",
-        "third-party/siphash/include/**/*.inc",
-        "third-party/siphash/include/**/*.def",
-        "third-party/siphash/include/**/*.ipp",
-        "third-party/siphash/include/**/*.inl",
     ]),
 )
 
@@ -52,24 +35,18 @@ filegroup(
 
 filegroup(
     name = "runtime_source_inputs",
-    srcs = glob(
-        [
-            "libcxx/include/**",
-            "libcxx/src/**",
-            "libcxxabi/include/**",
-            "libcxxabi/src/**",
-            "libunwind/include/**",
-            "libunwind/src/**",
-            "compiler-rt/include/**",
-            "compiler-rt/lib/**",
-            "libc/**",
-            "third-party/siphash/include/**",
-        ],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ],
-    ),
+    srcs = glob([
+        "libcxx/include/**",
+        "libcxx/src/**",
+        "libcxxabi/include/**",
+        "libcxxabi/src/**",
+        "libunwind/include/**",
+        "libunwind/src/**",
+        "compiler-rt/include/**",
+        "compiler-rt/lib/**",
+        "libc/**",
+        "third-party/siphash/include/**",
+    ]),
 )
 
 copy_file(
@@ -12638,22 +12615,10 @@ ch_cc_library(
 
 filegroup(
     name = "runtime_libcxx_headers",
-    srcs = glob(
-        ["libcxx/include/**"],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ],
-    ),
+    srcs = glob(["libcxx/include/**"]),
 )
 
 filegroup(
     name = "runtime_libcxxabi_headers",
-    srcs = glob(
-        ["libcxxabi/include/**"],
-        exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ],
-    ),
+    srcs = glob(["libcxxabi/include/**"]),
 )

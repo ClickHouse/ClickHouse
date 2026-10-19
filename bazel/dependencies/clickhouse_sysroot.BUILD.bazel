@@ -22,10 +22,7 @@ filegroup(
     name = "linux_x86_64_link_files",
     srcs = glob(
         ["linux-x86_64/**"],
-        exclude = [
-            "linux-x86_64/**/include/**",
-            "linux-x86_64/**/share/**",
-        ],
+        exclude = ["linux-x86_64/**/include/**"],
     ),
 )
 
@@ -33,10 +30,7 @@ filegroup(
     name = "linux_aarch64_link_files",
     srcs = glob(
         ["linux-aarch64/**"],
-        exclude = [
-            "linux-aarch64/**/include/**",
-            "linux-aarch64/**/share/**",
-        ],
+        exclude = ["linux-aarch64/**/include/**"],
     ),
 )
 
@@ -50,18 +44,12 @@ filegroup(
 
 filegroup(
     name = "linux_x86_64_compile_files",
-    srcs = glob(
-        ["linux-x86_64/**"],
-        exclude = ["linux-x86_64/**/share/**"],
-    ),
+    srcs = glob(["linux-x86_64/**"]),
 )
 
 filegroup(
     name = "linux_aarch64_compile_files",
-    srcs = glob(
-        ["linux-aarch64/**"],
-        exclude = ["linux-aarch64/**/share/**"],
-    ),
+    srcs = glob(["linux-aarch64/**"]),
 )
 
 filegroup(
