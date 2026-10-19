@@ -159,3 +159,18 @@ $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "DESCRIBE format(JSONEachR
 $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "SELECT a FROM format(JSONEachRow, '{\"a\":\"192.168.1.\\\\u0031\"}')"
 $CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "DESCRIBE format(JSONEachRow, '{\"a\":\"2001:db8:\\\\u003a1\"}')"
 $CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "SELECT a FROM format(JSONEachRow, '{\"a\":\"2001:db8:\\\\u003a1\"}')"
+
+# 21. TSKV decodes escapes before inference, so an escaped IP is not inferred as an IP type
+echo '21. TSKV escaped IP text'
+for setting in "--input_format_try_infer_ipv4=1" "--input_format_try_infer_ipv4=0"; do
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "DESCRIBE format(TSKV, 'ip=192.168.1.\\\\x31\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, 'ip=192.168.1.\\\\x31\\n')"
+done
+for setting in "--input_format_try_infer_ipv6=1" "--input_format_try_infer_ipv6=0"; do
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "DESCRIBE format(TSKV, 'ip=2001:db8:\\\\x3a1\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, 'ip=2001:db8:\\\\x3a1\\n')"
+done

@@ -275,13 +275,14 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
             const size_t bytes_before = in.count();
             readEscapedString(value, in);
             /// This reader decodes escape sequences while the value path parses the original bytes, so a
-            /// field whose escapes were decoded must not infer a number: the number readers would stop at
-            /// the backslash. A decoded escape always changes the byte count, and the one escape branch
-            /// that does not keeps the backslash in the value, which never infers a number.
+            /// field whose escapes were decoded must not infer a number or an IP address: their readers would
+            /// stop at the backslash. A decoded escape always changes the byte count, and the one escape branch
+            /// that does not keeps the backslash in the value, which never infers either.
             const bool had_escape = (in.count() - bytes_before) != value.size();
 
             auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
-            if (had_escape && type && isNumber(removeNullable(recursiveRemoveLowCardinality(type))))
+            const auto inferred = type ? removeNullable(recursiveRemoveLowCardinality(type)) : nullptr;
+            if (had_escape && inferred && (isNumber(inferred) || isIPv4(inferred) || isIPv6(inferred)))
                 type = std::make_shared<DataTypeString>();
 
             names_and_types.emplace_back(std::move(name), std::move(type));

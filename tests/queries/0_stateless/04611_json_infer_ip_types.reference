@@ -72,3 +72,12 @@ a	Nullable(String)
 192.168.1.1
 a	Nullable(String)					
 2001:db8::1
+21. TSKV escaped IP text
+ip	Nullable(String)					
+192.168.1.1
+ip	Nullable(String)					
+192.168.1.1
+ip	Nullable(String)					
+2001:db8::1
+ip	Nullable(String)					
+2001:db8::1
