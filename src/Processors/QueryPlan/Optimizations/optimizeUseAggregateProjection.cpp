@@ -394,7 +394,8 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     const AggregateDescriptions & aggregates,
     const MatchedTrees::Matches & matches,
     const DAGIndex & query_index,
-    const DAGIndex & proj_index)
+    const DAGIndex & proj_index,
+    bool allow_constant_null_check_match)
 {
     AggregateFunctionMatches res;
 
@@ -473,7 +474,9 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     /// Only match null checks directly over physical columns with non-nullable schema types.
                     /// Their results are independent of materialization settings. Require `UInt8` to preserve types.
                     /// See https://github.com/ClickHouse/ClickHouse/issues/68949
-                    if (query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
+                    /// The current schema does not prove the nullability of states stored before pending alters.
+                    if (allow_constant_null_check_match
+                        && query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
                         && isColumnConst(*query_node->column) && query_node->isDeterministic()
                         && proj_node->type == ActionsDAG::ActionType::COLUMN && proj_node->column
                         && isColumnConst(*proj_node->column) && proj_node->isDeterministic()
@@ -555,13 +558,14 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
     const DAGIndex & query_index,
     const Names & keys,
     const AggregateDescriptions & aggregates,
-    size_t max_set_size_for_match)
+    size_t max_set_size_for_match,
+    bool allow_constant_null_check_match)
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
     MatchedTrees::Matches matches = matchTrees(
         info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */, max_set_size_for_match);
-    auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index);
+    auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index, allow_constant_null_check_match);
     if (!matched_aggregates)
         return {};
 
@@ -818,6 +822,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
     const auto metadata = reading.getStorageMetadata();
+    const auto & mutations_snapshot = reading.getMutationsSnapshot();
+    const bool allow_constant_null_check_match = !mutations_snapshot->hasMetadataMutations() && !mutations_snapshot->hasAlterMutations();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     AggregateProjectionCandidates candidates;
@@ -857,7 +863,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match, allow_constant_null_check_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.has_filter = (dag.filter_node != nullptr);
@@ -921,7 +927,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match, allow_constant_null_check_match))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
                 candidate.projection = projection;
@@ -951,6 +957,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
 {
     const auto metadata = reading.getStorageMetadata();
+    const auto & mutations_snapshot = reading.getMutationsSnapshot();
+    const bool allow_constant_null_check_match = !mutations_snapshot->hasMetadataMutations() && !mutations_snapshot->hasAlterMutations();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     ContextPtr context = reading.getContext();
@@ -1007,7 +1015,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match, allow_constant_null_check_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.projection = projection;
