@@ -20,7 +20,7 @@ base_date=$(${CLICKHOUSE_CLIENT} -q "select today()")
 # The root 'query' span finished ten days ago, the child today.
 ${CLICKHOUSE_CLIENT} -q "
     insert into system.opentelemetry_span_log
-        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, finish_date, attribute)
+        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, event_date, attribute)
     values
         ('h', '$trace_id', 1, 0, 'query', 'SERVER',   1000, 5000, toDate('$base_date') - 10, map('clickhouse.query_id', '$query_id')),
         ('h', '$trace_id', 2, 1, 'child', 'INTERNAL', 2000, 3000, toDate('$base_date'),      map())

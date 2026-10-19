@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
@@ -28,6 +29,7 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
+        StreamBaseManifestPtr stream_base_manifest = nullptr,
         SerializationByName serializations_override = {});
 
     void write(const Block & block) override;

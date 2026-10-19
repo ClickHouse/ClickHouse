@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Common/SipHash.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
