@@ -44,6 +44,7 @@ TYPE_UINT8 = b"\x01"
 TYPE_FUNCTION = b"\x24\x00" + TYPE_UINT8
 
 DEPTH = 5000
+SHALLOW_DEPTH = 10
 
 
 def writeVarUInt(x, ba):
@@ -277,7 +278,8 @@ def readException(s):
     return code, text
 
 
-def main():
+def sendPlan(depth):
+    """Sends a `QueryPlan` packet with `depth` nested lambda captures and returns the exception code and text, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -286,18 +288,29 @@ def main():
         sendAddendum(s)
         # Stage 7 == QueryProcessingStage::QueryPlan: the server then expects a QueryPlan packet.
         sendQuery(s, "SELECT 1", 7)
-        s.sendall(buildQueryPlanPacket(plan_version, DEPTH))
+        s.sendall(buildQueryPlanPacket(plan_version, depth))
 
+        # Only the first packet matters: either the exception or the start of the query result.
         packet_type = readVarUInt(s)
-        if packet_type != 2:
-            print("UNEXPECTED PACKET {}".format(packet_type))
-            return
-        code, text = readException(s)
-        # 306 == TOO_DEEP_RECURSION. In sanitizer builds, `checkStackSize` may throw it before the depth limit is reached.
-        if code == 306:
-            print("TOO_DEEP_RECURSION")
-        else:
-            print("UNEXPECTED EXCEPTION {}: {}".format(code, text))
+        if packet_type == 2:  # Exception
+            return readException(s)
+        return None, "packet {}".format(packet_type)
+
+
+def main():
+    # A shallow plan must not hit the recursion limit: it distinguishes the depth limit from rejecting any plan.
+    code, text = sendPlan(SHALLOW_DEPTH)
+    if code == 306:
+        print("UNEXPECTED TOO_DEEP_RECURSION for a shallow plan: {}".format(text))
+    else:
+        print("shallow plan: no TOO_DEEP_RECURSION")
+
+    code, text = sendPlan(DEPTH)
+    # 306 == TOO_DEEP_RECURSION. In sanitizer builds, `checkStackSize` may throw it before the depth limit is reached.
+    if code == 306:
+        print("TOO_DEEP_RECURSION")
+    else:
+        print("UNEXPECTED EXCEPTION {}: {}".format(code, text))
 
 
 main()
