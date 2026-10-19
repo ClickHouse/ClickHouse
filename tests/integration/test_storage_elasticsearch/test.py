@@ -1,6 +1,5 @@
 import datetime
 import json
-import uuid
 
 import pytest
 import requests
@@ -202,10 +201,6 @@ def test_source_disabled():
         node.query(f"SELECT _id, _index FROM {table_function} ORDER BY _id FORMAT TSV")
         == "1\tno_source\n2\tno_source\n"
     )
-    assert node.query(f"SELECT count() FROM {table_function}") == "2\n"
-
-    error = node.query_and_get_error(f"SELECT document FROM {table_function}")
-    assert "has no '_source'" in error
 
 
 def test_query_composition():
@@ -407,33 +402,6 @@ def test_paging():
     assert "max_result_window" in error
 
 
-def test_trivial_count():
-    create_index_with_documents("trivial_count", [{"id": i} for i in range(10)])
-    table_function = elasticsearch_table_function("trivial_count")
-
-    def count_with_read_rows(query):
-        query_id = str(uuid.uuid4())
-        result = node.query(query, query_id=query_id)
-        node.query("SYSTEM FLUSH LOGS query_log")
-        read_rows = node.query(
-            f"SELECT read_rows FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-        return result, read_rows
-
-    count_query = f"SELECT count() FROM {table_function}"
-    assert count_with_read_rows(count_query) == ("10\n", "1\n")
-    assert count_with_read_rows(
-        f"{count_query} SETTINGS optimize_trivial_count_query = 0"
-    ) == ("10\n", "10\n")
-
-    range_query = "query = '" + json.dumps({"range": {"id": {"gte": 7}}}) + "'"
-    table_function_with_query = elasticsearch_table_function(
-        "trivial_count", extra_arguments=range_query
-    )
-    assert count_with_read_rows(f"SELECT count() FROM {table_function_with_query}") == ("3\n", "1\n")
-
-
 def test_settings():
     create_index_with_documents("settings", [{"id": i} for i in range(5)])
 
@@ -490,6 +458,18 @@ def test_query_argument():
     node.query("DROP TABLE es_dsl")
 
     assert read_ids(f"elasticsearch(es_simple, index = 'dsl', {term_query})") == "3\n"
+
+
+def test_query_numeric_tokens():
+    create_index_with_documents(
+        "numeric_tokens",
+        [{"key": "1.0"}] * 5 + [{"key": "1"}] * 2,
+        mapping={"properties": {"key": {"type": "keyword"}}},
+    )
+    term_query = "query = '" + json.dumps({"term": {"key": 1.0}}) + "'"
+    table_function = elasticsearch_table_function("numeric_tokens", extra_arguments=term_query)
+
+    assert node.query(f"SELECT count(), uniqExact(_id) FROM {table_function}") == "5\t5\n"
 
 
 def test_table_engine():

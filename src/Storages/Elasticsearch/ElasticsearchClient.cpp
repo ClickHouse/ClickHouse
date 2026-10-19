@@ -130,13 +130,15 @@ std::unique_ptr<ElasticsearchSearchResponse> ElasticsearchClient::searchIndex(co
 
     request_body.set("track_total_hits", false);
 
-    request_body.set("query", config.parsed_query);
     if (!hit_columns.source_pos)
         request_body.set("_source", false);
 
     std::ostringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     request_body.stringify(body);
-    auto buf = sendRequest(Poco::Net::HTTPRequest::HTTP_POST, uri, body.str(), read_settings, timeouts);
+    String body_str = std::move(body).str();
+    body_str.pop_back();
+    body_str += fmt::format(R"(,"query":{}}})", config.query);
+    auto buf = sendRequest(Poco::Net::HTTPRequest::HTTP_POST, uri, body_str, read_settings, timeouts);
     return std::make_unique<ElasticsearchSearchResponse>(std::move(buf), hit_columns, format_settings);
 }
 
@@ -162,27 +164,6 @@ void ElasticsearchClient::finishPage(const ElasticsearchSearchResponse & respons
         throw Exception(ErrorCodes::INCORRECT_DATA, "Elasticsearch response has no valid 'sort' in the last hit: {}", response.lastSort());
 
     last_document_order_no = sort_values;
-}
-
-UInt64 ElasticsearchClient::countDocuments() const
-{
-    String encoded_index;
-    Poco::URI::encode(config.index, "/", encoded_index);
-    const auto uri = Poco::URI(fmt::format("{}/{}/_count?allow_no_indices=false", config.url, encoded_index), /*enable_url_encoding=*/ false);
-
-    Poco::JSON::Object request_body;
-    request_body.set("query", config.parsed_query);
-
-    std::ostringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    request_body.stringify(body);
-    auto response_json = readJSONObject(*sendRequest(Poco::Net::HTTPRequest::HTTP_POST, uri, body.str(), read_settings, timeouts));
-
-    validateElasticsearchShards(response_json->getObject("_shards"));
-
-    if (!response_json->has("count"))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Elasticsearch response has no 'count': {}", responseExcerpt(response_json));
-
-    return response_json->getValue<UInt64>("count");
 }
 
 void ElasticsearchClient::setPointInTime()

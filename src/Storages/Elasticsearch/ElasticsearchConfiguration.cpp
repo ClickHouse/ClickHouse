@@ -133,15 +133,16 @@ void validate(ElasticsearchConfiguration & configuration, const ContextPtr & con
     if (!auth_headers.empty())
         context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(auth_headers);
 
+    Poco::JSON::Object::Ptr parsed_query;
     try
     {
-        configuration.parsed_query = Poco::JSON::Parser().parse(configuration.query).extract<Poco::JSON::Object::Ptr>();
+        parsed_query = Poco::JSON::Parser().parse(configuration.query).extract<Poco::JSON::Object::Ptr>();
     }
     catch (const Poco::Exception & e)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Elasticsearch query: {}", e.displayText());
     }
-    if (!configuration.parsed_query)
+    if (!parsed_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch query must be a JSON object");
 }
 

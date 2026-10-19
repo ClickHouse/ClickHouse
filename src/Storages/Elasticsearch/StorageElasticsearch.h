@@ -34,10 +34,6 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
-
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

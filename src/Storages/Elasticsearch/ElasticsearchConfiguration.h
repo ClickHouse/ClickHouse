@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Parsers/IAST_fwd.h>
-#include <Poco/JSON/Object.h>
 #include <base/types.h>
 
 namespace DB
@@ -29,7 +28,6 @@ struct ElasticsearchConfiguration
     };
 
     AuthKind auth_kind = AuthKind::None;
-    Poco::JSON::Object::Ptr parsed_query;
 
     String named_collection_name;
 

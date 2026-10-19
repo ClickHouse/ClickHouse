@@ -28,8 +28,6 @@ public:
 
     void finishPage(const ElasticsearchSearchResponse & response);
 
-    UInt64 countDocuments() const;
-
     size_t pageSize() const { return page_size; }
 
 private:

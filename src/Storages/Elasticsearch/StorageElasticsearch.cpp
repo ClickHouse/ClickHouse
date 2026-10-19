@@ -144,12 +144,6 @@ Pipe StorageElasticsearch::read(
         std::make_shared<Block>(std::move(sample_block)), json_column_name));
 }
 
-std::optional<UInt64> StorageElasticsearch::totalRows(ContextPtr query_context) const
-{
-    ElasticsearchClient client(config, query_context, *storage_settings);
-    return client.countDocuments();
-}
-
 VirtualColumnsDescription StorageElasticsearch::createVirtuals()
 {
     VirtualColumnsDescription virtual_columns;
