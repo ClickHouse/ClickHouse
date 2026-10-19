@@ -1,14 +1,17 @@
--- `AS` without a `SETTINGS` clause: `job` comes from the copied `tags_to_columns`,
--- and there is no `min_time`/`max_time` because the copied `store_min_time_and_max_time` is 0
-`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String)
--- `AS` with a `SETTINGS` clause: the written `store_min_time_and_max_time` overrides the copied one so
--- `min_time`/`max_time` appear, the written `aggregate_min_time_and_max_time` is added so they are not
--- aggregated, and `tags_to_columns` is still copied from `ts_src`
-`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))
+-- `AS` without `ENGINE`: the engine is taken from `ts_src` and the settings are merged the same way
+TimeSeries
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), INDEX tags_idx tags TYPE text(tokenizer = \'keyValuePairs\') GRANULARITY 100000000
+`id` Tuple(UInt64, LowCardinality(UUID)), `min_time` SimpleAggregateFunction(min, DateTime64(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3))
 -- the copied `tags_to_columns` fills the dedicated column
 m1	j1
--- `AS` with a reset: the copied `store_min_time_and_max_time = 0` is not inherited, so the setting
--- gets its default value and `min_time`/`max_time` appear, while `tags_to_columns` is still copied
-`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))
--- a written value wins over a reset of the same setting, so there is no `min_time`/`max_time`
-`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String)
+-- a custom SAMPLES engine with its own primary key survives the copy
+ReplacingMergeTree(timestamp) PRIMARY KEY id ORDER BY (id, timestamp)
+-- a tags engine with arguments keeps allow_nullable_key
+ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1, index_granularity = 8192
+-- a tags engine of another kind keeps allow_nullable_key
+MergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1, index_granularity = 8192
+-- the generated tags engine keeps allow_nullable_key
+ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_nullable_key = 1, index_granularity = 8192
+-- allow_nullable_key generated for min_time and max_time goes away with them
+ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time) SETTINGS allow_nullable_key = 1, index_granularity = 8192
+ReplacingMergeTree(v) PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192

@@ -1,26 +1,10 @@
 -- Tags: no-fasttest
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET enable_analyzer = 1;
 SET use_statistics = 1;
-
-DROP TABLE IF EXISTS sc_core SYNC;
-
-CREATE TABLE sc_core
-(
-    k UInt32,
-    v Nullable(Float64)
-)
-ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
-
-INSERT INTO sc_core
-SELECT number, if(number % 20 = 0, NULL, toFloat64(rand()) / 4294967296.0)
-FROM numbers(60000);
-
-ALTER TABLE sc_core ADD STATISTICS v TYPE TDigest;
-ALTER TABLE sc_core MATERIALIZE STATISTICS ALL;
+-- The statistics are declared in `CREATE TABLE` and built on insert, so the test does not need slow `MATERIALIZE STATISTICS` mutations.
+SET materialize_statistics_on_insert = 1;
 
 ------------------------------------------------------------
 -- SUM() must not trigger statistics
@@ -30,21 +14,17 @@ DROP TABLE IF EXISTS sc_unused SYNC;
 CREATE TABLE sc_unused
 (
     k   UInt64,
-    val UInt64
+    val UInt64 STATISTICS(basic)
 )
 ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY k;
 
 INSERT INTO sc_unused
 SELECT number, number % 100
 FROM numbers(50000);
 
-ALTER TABLE sc_unused ADD STATISTICS val TYPE basic;
-ALTER TABLE sc_unused MATERIALIZE STATISTICS ALL;
-
 SELECT sum(val) FROM sc_unused
-SETTINGS use_statistics_cache = 0, log_comment = 'nouse-agg' FORMAT Null;
+SETTINGS log_comment = 'nouse-agg' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -62,22 +42,18 @@ DROP TABLE IF EXISTS st_cm_lc SYNC;
 CREATE TABLE st_cm_lc
 (
     k   UInt32,
-    cat LowCardinality(String)
+    cat LowCardinality(String) STATISTICS(CountMin)
 )
 ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY k;
 
 INSERT INTO st_cm_lc
 SELECT number,
        if(number % 4 = 0, 'PROMO', concat('X', toString(number % 1000)))
 FROM numbers(60000);
 
-ALTER TABLE st_cm_lc ADD STATISTICS cat TYPE CountMin;
-ALTER TABLE st_cm_lc MATERIALIZE STATISTICS ALL;
-
 SELECT count() FROM st_cm_lc WHERE cat = 'PROMO'
-SETTINGS use_statistics_cache = 0, log_comment = 'cm-lc-load' FORMAT Null;
+SETTINGS log_comment = 'cm-lc-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -93,30 +69,22 @@ LIMIT 1;
 DROP TABLE IF EXISTS sj_a SYNC;
 DROP TABLE IF EXISTS sj_b SYNC;
 
-CREATE TABLE sj_a (id UInt32, p UInt8)
+CREATE TABLE sj_a (id UInt32 STATISTICS(Uniq), p UInt8)
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY id;
 
-CREATE TABLE sj_b (id UInt32, t LowCardinality(String))
+CREATE TABLE sj_b (id UInt32 STATISTICS(Uniq), t LowCardinality(String))
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY id;
 
 INSERT INTO sj_a SELECT number, number % 2 FROM numbers(60000);
 INSERT INTO sj_b SELECT number, if(number % 5 = 0, 'PROMO', 'OTHER') FROM numbers(60000);
-
-ALTER TABLE sj_a ADD STATISTICS id TYPE Uniq;
-ALTER TABLE sj_b ADD STATISTICS id TYPE Uniq;
-
-ALTER TABLE sj_a MATERIALIZE STATISTICS ALL;
-ALTER TABLE sj_b MATERIALIZE STATISTICS ALL;
 
 SELECT count()
 FROM sj_a a
 JOIN sj_b b ON a.id = b.id
 WHERE b.t = 'PROMO'
-SETTINGS use_statistics_cache = 0, query_plan_optimize_join_order_limit = 10, log_comment = 'join-load'
+SETTINGS query_plan_optimize_join_order_limit = 10, log_comment = 'join-load'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;

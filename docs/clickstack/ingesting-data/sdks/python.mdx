@@ -6,15 +6,13 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integration', 'application monitoring']
 ---
 
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack uses the OpenTelemetry standard for collecting telemetry data (logs and
 traces). Traces are auto-generated with automatic instrumentation, so manual
 instrumentation isn't required to get value out of tracing.
 
-This guide integrates:
-
-- **Logs**
-- **Metrics**
-- **Traces**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
 ## Getting started {#getting-started}
 
@@ -41,8 +39,8 @@ Afterwards you'll need to configure the following environment variables in your 
 <Tab title="Managed ClickStack">
 
 ```shell
-OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
 ```
 
 </Tab>
@@ -51,8 +49,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ```shell
 export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
 ```
 
 </Tab>

@@ -1,0 +1,14 @@
+0
+0
+0
+0
+05154_grace_hash	1
+05154_hash	1
+05154_parallel_hash	1
+05154_partial_merge	1
+a non-empty right side is unaffected
+5
+an anti join keeps the left rows an empty right side leaves unmatched
+10
+and so does a left join
+10

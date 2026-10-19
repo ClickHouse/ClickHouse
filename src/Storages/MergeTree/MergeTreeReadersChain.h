@@ -30,6 +30,10 @@ struct ColumnForPatch
 using ColumnsForPatch = std::vector<ColumnForPatch>;
 using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
+/// Cached for the same reason as `getMergeTreeRangeReaderLogger`: a readers chain is built for every
+/// read task, and `getLogger` would take a process-global mutex each time.
+LoggerPtr getMergeTreeReadersChainLogger();
+
 class MergeTreeReadersChain
 {
     using DataflowCacheUpdateCallback = std::function<void(
@@ -63,6 +67,7 @@ private:
         Columns & read_columns,
         MergeTreeRangeReader & range_reader,
         const Block & previous_header,
+        const NameSet & previous_step_columns,
         size_t num_read_rows) const;
 
     /// Evaluates default expressions for columns that are absent in part.
@@ -103,6 +108,10 @@ private:
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 
+    /// For every reader, the names of the columns produced by the previous steps of the chain.
+    /// They don't change between blocks, so they are collected once.
+    std::vector<NameSet> previous_steps_columns;
+
     /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
     /// as a function input before any step overwrites them. They must still be converted to
     /// the post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
@@ -116,7 +125,7 @@ private:
     NameSet columns_consumed_by_chain_actions;
 
     bool is_initialized = false;
-    LoggerPtr log = getLogger("MergeTreeReadersChain");
+    LoggerPtr log = getMergeTreeReadersChainLogger();
 };
 
 };

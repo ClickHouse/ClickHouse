@@ -6,6 +6,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
+#include <Common/RegexpUtils.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -139,6 +140,24 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
     }
 
     return pos;
+}
+
+/// Recognizes a POSIX named class such as `[:alpha:]` or `[:^digit:]` written inside a character
+/// class, and returns the position right after its closing `:]`. `pos` points at the `[`.
+/// When this is not a named class, re2 reads the `[` as a literal member of the enclosing class,
+/// and the returned position is just the next character.
+const char * skipPosixNamedClass(const char * pos, const char * end)
+{
+    if (end - pos <= 2 || pos[1] != ':')
+        return pos + 1;
+
+    /// re2 looks for the closing `:]` in the whole rest of the regexp, not only up to the `]` that
+    /// ends the enclosing class, and reads the `[` as a literal when there is none.
+    for (const char * name_end = pos + 2; name_end <= end - 2; ++name_end)
+        if (name_end[0] == ':' && name_end[1] == ']')
+            return name_end + 2;
+
+    return pos + 1;
 }
 
 /// re2 resolves `\<non-alphanumeric>` to that character itself, unlike a sequence such as `\d` or `\x41`.
@@ -339,6 +358,9 @@ const char * analyzeImpl(
 
     bool in_curly_braces = false;
     bool in_square_braces = false;
+    /// The first position of the body of the open character class, so that a `]` written there can be
+    /// recognized as a literal member of the class.
+    const char * square_braces_body_begin = nullptr;
 
     while (pos != end)
     {
@@ -348,10 +370,21 @@ const char * analyzeImpl(
             {
                 ++pos;
                 if (pos == end)
+                {
+                    /// A pattern ending in a lone backslash is invalid in re2 (`trailing \`). Leave it to
+                    /// re2, which rejects it, instead of answering it as a literal search that silently
+                    /// drops the backslash (`match(s, 'abc\')` would match every `abc`).
+                    finish_non_trivial_char();
                     break;
+                }
 
                 if (isEscapedLiteral(*pos))
                     goto ordinary;
+
+                /// An empty `\Q\E` quote is zero-width, so a quantifier after it applies to the character before it.
+                if (depth == 0 && !in_square_braces && !last_substring->first.empty()
+                    && DB::isZeroAllowingQuantifier(DB::skipZeroWidthConstructs(pos - 1, end), end))
+                    DB::dropLastLiteral(last_substring->first);
 
                 /// Consume the whole escape, so its argument bytes are not taken as a literal (issue #106382).
                 finish_non_trivial_char();
@@ -385,8 +418,8 @@ const char * analyzeImpl(
                     {
                         return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
                     };
-                    /// Check for case-insensitive flag.
-                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    /// A flag group, `(?flags)` or `(?flags:regex)`. re2 also accepts an empty flag list, `(?)`.
+                    if (pos + 2 < end && pos[1] == '?' && (is_flag_char(pos[2]) || pos[2] == ')'))
                     {
                         size_t offset = 2;
                         for (; pos + offset < end; ++offset)
@@ -405,10 +438,16 @@ const char * analyzeImpl(
                         /// if this group only contains flags, we have nothing to do.
                         if (*pos == ')')
                         {
-                            has_capture = true;
+                            /// A flag group captures nothing - RE2 counts no capture group for
+                            /// `(?i)` - and `extract` returns the whole match for such a pattern.
                             ++pos;
                             break;
                         }
+
+                        /// `(?flags:regex)` sets the flags for the group it opens, and captures
+                        /// nothing either.
+                        if (*pos == ':')
+                            is_non_capturing_group = true;
                     }
                     /// (?:regex) means non-capturing parentheses group
                     else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
@@ -430,11 +469,12 @@ const char * analyzeImpl(
                     if (pos == end)
                         return pos;
 
-                    has_capture = !is_non_capturing_group;
+                    /// A capture anywhere counts: one seen before this group, one nested inside it,
+                    /// or this group itself when it captures.
+                    has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
-                    if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
-                        (pos + 2 < end && pos[1] == '{' && pos[2] == '0'))
+                    if (DB::isZeroAllowingQuantifier(DB::skipZeroWidthConstructs(pos + 1, end), end))
                     {
                         finish_non_trivial_char();
                     }
@@ -447,8 +487,21 @@ const char * analyzeImpl(
                 break;
 
             case '[':
+                /// RE2 reads a `[` inside an already-open character class as a literal member of that
+                /// class, so it neither opens a class nor nests. Taking it as another class left the
+                /// tracker one level deep after the class had closed, and a top-level `|` after
+                /// `[[]` was then not seen as an alternative at all.
+                /// The one exception is a POSIX named class such as `[[:alpha:]]`, whose inner
+                /// `[:...:]` belongs to the enclosing class and has to be consumed as a whole.
+                if (in_square_braces)
+                {
+                    pos = skipPosixNamedClass(pos, end);
+                    break;
+                }
+
                 in_square_braces = true;
                 ++depth;
+                square_braces_body_begin = pos + 1;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -456,6 +509,18 @@ const char * analyzeImpl(
             case ']':
                 if (!in_square_braces)
                     goto ordinary;
+
+                /// RE2 follows the convention that a `]` written first in a class - right after `[`
+                /// or after `[^` - is a literal member of it rather than its end: `[]a]` is the class
+                /// of `]` and `a`. Closing the class here instead left the rest of its body to be
+                /// analyzed as a top-level literal run, and the prefilter then required a substring
+                /// that the pattern does not.
+                if (pos == square_braces_body_begin
+                    || (pos == square_braces_body_begin + 1 && *square_braces_body_begin == '^'))
+                {
+                    ++pos;
+                    break;
+                }
 
                 --depth;
                 if (depth == 0)
@@ -486,7 +551,7 @@ const char * analyzeImpl(
             case '*':
                 if (depth == 0 && !last_substring->first.empty() && !in_square_braces)
                 {
-                    last_substring->first.resize(last_substring->first.size() - 1);
+                    DB::dropLastLiteral(last_substring->first);
                 }
                 finish_non_trivial_char();
                 ++pos;
@@ -792,6 +857,16 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
     }
 
     return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
+}
+
+const UInt8 * OptimizedRegularExpression::searchRequiredSubstring(const UInt8 * haystack, size_t haystack_size) const
+{
+    chassert(!required_substring.empty());
+
+    if (is_case_insensitive)
+        return case_insensitive_substring_searcher->search(haystack, haystack_size);
+
+    return case_sensitive_substring_searcher->search(haystack, haystack_size);
 }
 
 

@@ -165,19 +165,9 @@ namespace
 
         bool useDefaultImplementationForConstants() const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        String getSignatureString() const override
         {
-            FunctionArgumentDescriptors mandatory_args{
-                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "UInt*"},
-            };
-            FunctionArgumentDescriptors optional_args{
-                {"pad_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String"}
-            };
-
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-            return std::make_shared<DataTypeString>();
+            return "(StringOrFixedString, Integer, [const String]) -> String";
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -227,9 +217,9 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                                && isAllASCII(chars.data(), chars.size());
-            bool is_actually_utf8 = is_utf8 && !all_ascii;
+            bool is_actually_utf8 = is_utf8
+                && !(isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                    && isAllASCII(chars.data(), chars.size()));
 
             if (!is_actually_utf8)
             {

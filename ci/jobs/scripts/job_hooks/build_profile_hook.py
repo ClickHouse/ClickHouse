@@ -3,7 +3,10 @@ import sys
 import traceback
 from pathlib import Path
 
-from ci.jobs.scripts.log_cluster import LogClusterBuildProfileQueries
+from ci.jobs.scripts.log_cluster import (
+    BUILD_PROFILE_USER,
+    LogClusterBuildProfileQueries,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -275,7 +278,7 @@ def check():
         check_start_time = Utils.timestamp_to_str(
             Result.from_fs(Info().job_name).start_time
         )
-        queries = LogClusterBuildProfileQueries()
+        queries = LogClusterBuildProfileQueries(user=BUILD_PROFILE_USER)
 
         def insert_profile_data(build_name, start_time, file):
             # On PRs and for the warmup build the time trace is uploaded

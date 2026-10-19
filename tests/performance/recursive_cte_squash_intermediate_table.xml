@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+    </settings>
+
+    <query>
+        WITH RECURSIVE t AS
+        (
+            SELECT number AS n, toUInt64(0) AS step FROM numbers_mt(100000000) WHERE number % 4096 = 0
+            UNION ALL
+            SELECT n + 1, step + 1 FROM t WHERE step &lt; 20
+        )
+        SELECT count(), sum(n) FROM t
+    </query>
+</test>

@@ -1,0 +1,13 @@
+fixture-discriminates	1
+alias-is-key-table	1
+alias-is-key-merge-engine	1
+alias-is-key-merge-function	1
+raw-virtual-not-key-table	0
+raw-virtual-not-key-merge-engine	0
+raw-virtual-not-key-merge-function	0
+ordinary-column-collision	1
+subquery-left-side	1
+natural-join-ignores-virtuals	1
+bare-virtual-using-key	1
+compatibility-setting-off	0
+synthesized-column-renamed	1

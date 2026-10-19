@@ -184,6 +184,7 @@ private:
             AttributeContainerType<Object>>
             container;
 
+        /// `VectorWithMemoryTracking<bool>` instantiates the bit-packed `std::vector<bool>` specialization.
         std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
     };
 
@@ -668,7 +669,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
             bytes_allocated += container.size() * sizeof(ValueType);
 
             if (attribute.is_value_nullable)
-                bytes_allocated += (*attribute.is_value_nullable).size() * sizeof(bool);
+                bytes_allocated += ((*attribute.is_value_nullable).capacity() + 7) / 8;
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
@@ -1061,10 +1062,6 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         auto keys_column = getColumnFromPODArray(std::move(keys));
         key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
     }
-    else
-    {
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-    }
 
     key_columns.emplace_back(ColumnWithTypeAndName{std::move(key_to_index_column), std::make_shared<DataTypeUInt64>(), ""});
 
@@ -1114,6 +1111,8 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         std::move(data_columns),
         max_block_size,
         std::move(read_keys_func));
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        coordinator->setSerializedKeys(std::move(keys));
     auto result = coordinator->read(num_streams);
 
     return result;
