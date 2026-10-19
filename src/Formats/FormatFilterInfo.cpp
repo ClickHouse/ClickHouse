@@ -66,9 +66,7 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
 void validateIcebergFieldIds(
     const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
 {
-    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id sits on
-    /// the inner type and the path is unchanged. Strip them and keep the same path, mirroring
-    /// prepareColumnNullable/the LowCardinality branch of prepareColumnRecursive.
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id is on the inner type, under the same path.
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable:
@@ -88,8 +86,6 @@ void validateIcebergFieldIds(
             "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
             path);
 
-    /// Recurse into composites, building the same dotted paths that buildSubFieldIds() and the
-    /// composite branches use, so every nested logical field is validated against the latest schema.
     switch (type->getTypeId())
     {
         case TypeIndex::Tuple:
