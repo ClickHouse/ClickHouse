@@ -9,6 +9,9 @@ SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_mi
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET distributed_plan_join_runtime_filters = 1;
+-- CI randomizes the bloom filter down to 1 KiB, where it saturates and is dropped before it is
+-- sent, so no filter state reaches an exchange.
+SET join_runtime_bloom_filter_bytes = 524288;
 -- Four build tasks, so more than one partial goes into the merge tree (the bucket count is kept
 -- even for tiny tables, see `setupDistributedReadBuckets`).
 SET distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
