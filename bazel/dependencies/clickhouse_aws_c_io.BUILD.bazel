@@ -41,12 +41,7 @@ ch_cc_library(
         "source/tls_channel_handler_shared.c",
         "source/tracing.c",
         "source/linux/epoll_event_loop.c",
-    ] + glob(["source/posix/*.c"]) + [
-        "source/darwin/dispatch_queue_event_loop_private.h",
-        "source/pkcs11/v2.40/pkcs11.h",
-        "source/pkcs11_private.h",
-        "source/s2n/s2n_apple_keychain.h",
-    ]),
+    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"])),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -81,13 +76,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "aws_c_io__compile_3",
-    srcs = [
-        "source/tls_channel_handler.c",
-        "source/darwin/dispatch_queue_event_loop_private.h",
-        "source/pkcs11/v2.40/pkcs11.h",
-        "source/pkcs11_private.h",
-        "source/s2n/s2n_apple_keychain.h",
-    ],
+    srcs = (["source/tls_channel_handler.c"] + glob(["source/**/*.h"])),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
