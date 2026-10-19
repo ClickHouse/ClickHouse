@@ -340,6 +340,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
@@ -410,17 +412,27 @@ public:
             || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
-        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
-        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
-        /// "no catalog integration", the same as the base-class default.
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
 #else
         return nullptr;
+#endif
+    }
+
+    ASTs completeEngineArgsFromCatalog(
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) override
+    {
+#if USE_AVRO && USE_PARQUET
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return {};
+        auto args = datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        datalake_database->applyCatalogSpecificConfiguration(*this);
+        return args;
+#else
+        return {};
 #endif
     }
 
@@ -484,6 +496,18 @@ private:
     /// republish in update() cannot destroy the object they are still calling into.
     std::shared_ptr<IDataLakeMetadata> current_metadata TSA_GUARDED_BY(metadata_mutex);
     LoggerPtr log = getLogger("DataLakeConfiguration");
+
+#if USE_AVRO && USE_PARQUET
+    static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
+    {
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+    }
+#endif
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {

@@ -158,7 +158,7 @@ RUN case "${TARGETARCH}" in \
 # cmake/target.cmake plus the RelWithDebInfo optimization flags.
 RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
   && em++ -O3 -sMEMORY64=1 -fwasm-exceptions -pthread \
-      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
+      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=2147483648 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
       -g0 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
       /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
   && rm -f /tmp/em_prewarm.*

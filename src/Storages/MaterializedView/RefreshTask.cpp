@@ -25,6 +25,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
@@ -1405,6 +1406,13 @@ void RefreshTask::executeRefresh()
         znode.attempt_number = 0;
         znode.randomness_obsolete = drawRandomness();
     }
+    else if (retriesExhausted(znode))
+    {
+        /// `determineNextRefreshTime` will skip to the next scheduled refresh as if this one succeeded.
+        /// Consume the dependency refreshes this attempt ran after, as a success would. Otherwise they
+        /// still look new, and a view without REFRESH EVERY starts another refresh right away, forever.
+        znode.last_success_dependencies = std::move(execution.dependencies);
+    }
     execution.znode = znode;
 
     chassert(execution.state == ExecutionState::State::Running);
@@ -1452,7 +1460,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
-            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
+            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, DeferredTable::Load).get();
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;
@@ -1506,7 +1514,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             });
 
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
-            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
+            /// the refresh write (`WRITTEN_ROWS`/`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
             refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -1721,6 +1729,12 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
+bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
+{
+    Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
+    return retries >= 0 && znode.attempt_number > retries;
+}
+
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
     UInt64 delay_ms = 0;
@@ -1738,7 +1752,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
-    if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
+    if (retriesExhausted(znode))
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);

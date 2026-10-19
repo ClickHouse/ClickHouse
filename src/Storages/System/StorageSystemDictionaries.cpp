@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -78,6 +79,10 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
             "LOADED_AND_RELOADING — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: SYSTEM RELOAD DICTIONARY query, timeout, dictionary config has changed), "
             "FAILED_AND_RELOADING — Could not load the dictionary as a result of an error and is loading now."
         },
+        {"is_lazy", DataTypeFactory::instance().get("Bool"),
+            "Whether the dictionary is loaded on first use rather than eagerly. "
+            "Reflects the `dictionary_lazy_load` setting of the dictionary, or the `dictionaries_lazy_load` server setting if it is `auto`. "
+            "A lazy dictionary stays in the NOT_LOADED status until it is used for the first time."},
         {"origin", std::make_shared<DataTypeString>(), "Path to the configuration file that describes the dictionary."},
         {"type", std::make_shared<DataTypeString>(), "Type of a dictionary allocation. Storing Dictionaries in Memory."},
         {"key.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of key names provided by the dictionary."},
@@ -137,6 +142,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(dict_id.table_name);
         res_columns[i++]->insert(dict_id.uuid);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
+        res_columns[i++]->insert(external_dictionaries.isObjectLazy(*load_result.config));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
         if (dict_ptr)

@@ -16,6 +16,7 @@
     "ko/reference/settings/server-settings/settings/background-schedule",
     "ko/reference/settings/server-settings/settings/backup",
     "ko/reference/settings/server-settings/settings/backups",
+    "ko/reference/settings/server-settings/settings/columns-cache",
     "ko/reference/settings/server-settings/settings/compiled-expression",
     "ko/reference/settings/server-settings/settings/concurrent-threads",
     "ko/reference/settings/server-settings/settings/cpu-slot",

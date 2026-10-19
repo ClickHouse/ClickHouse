@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -454,14 +452,11 @@ bool isCommittedToSetQuery(IParser::Pos pos)
     return pos->type == TokenType::Comma || pos->type == TokenType::Semicolon || pos->type == TokenType::EndOfStream;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSetQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSet(StatementFactory & factory)
-{
-    factory.registerStatement("SET",
+    documentation["SET"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -538,7 +533,9 @@ SET param = value
 SET profile = 'profile-name-from-the-settings-file'
 )",
         .related = {"SET ROLE", "CREATE SETTINGS PROFILE", "SHOW", "ALTER TABLE ... MODIFY SETTING"},
-    });
+    };
+
+    return documentation;
 }
 
 }
