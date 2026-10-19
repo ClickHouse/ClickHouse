@@ -137,10 +137,12 @@ namespace
 /// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
 /// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
 /// "external data for query processing". Such a body must come with a length on a non-chunked request.
-/// Media types are case-insensitive, so the check must not depend on the header casing.
+/// Match URL-encoded forms case-insensitively. Keep multipart framing aligned with the existing
+/// case-sensitive multipart consumers until those are updated together.
 bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
-    return isContentType(request, "application/x-www-form-urlencoded") || isMultipartFormData(request);
+    return isContentType(request, "application/x-www-form-urlencoded")
+        || startsWith(request.getContentType(), "multipart/form-data");
 }
 
 /// Only table paths with a known format and no path filters can be used as upload destinations.
@@ -1790,6 +1792,10 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
 
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
+    /// Only the built-in catch-all enables path uploads. Config-defined handlers keep their query parameters.
+    if (allow_path_table_uploads && request.getMethod() == HTTPRequest::HTTP_PUT && params.has(param_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads do not support the 'query' parameter");
+
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body

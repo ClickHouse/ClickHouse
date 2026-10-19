@@ -69,8 +69,17 @@ Compression extension 'gz' specified without a format
 HTTP PUT table uploads require a non-empty request body
 -- an unframed PUT upload is rejected with 411
 unframed-status: 411
--- an explicit INSERT query remains read-only on PUT
-Cannot execute query in readonly mode
+-- PUT with an explicit INSERT query is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- PUT with an explicit SELECT query is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- PUT with an empty query parameter is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- query-bearing PUT inserted no rows
+0
 -- an explicit readonly setting remains enforced
 Cannot execute query in readonly mode
 -- PUT still requires the INSERT privilege

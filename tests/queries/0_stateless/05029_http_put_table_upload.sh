@@ -234,11 +234,24 @@ print("unframed-status:", status)
 PY
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 44" | grep -qx '0'
 
-echo "-- an explicit INSERT query remains read-only on PUT"
-printf '4,"four"\n' \
-    | curl -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+echo "-- PUT with an explicit INSERT query is rejected"
+printf '46,"query-insert"\n' \
+    | curl -sS -w '\nHTTP %{http_code}\n' -X PUT -H 'Content-Type: text/csv' --data-binary @- \
         "${BASE_URL}/${DB}/${TABLE}.CSV?query=INSERT%20INTO%20${TABLE}%20FORMAT%20CSV" 2>&1 \
-    | grep -oE "Cannot execute query in readonly mode"
+    | grep -oE "HTTP PUT table uploads do not support the 'query' parameter|HTTP 400"
+
+echo "-- PUT with an explicit SELECT query is rejected"
+curl -sS -w '\nHTTP %{http_code}\n' -X PUT -H 'Content-Type: text/csv' --data-binary '' \
+    "${BASE_URL}/${DB}/${TABLE}.CSV?query=SELECT+1" 2>&1 \
+    | grep -oE "HTTP PUT table uploads do not support the 'query' parameter|HTTP 400"
+
+echo "-- PUT with an empty query parameter is rejected"
+curl -sS -w '\nHTTP %{http_code}\n' -X PUT -H 'Content-Type: text/csv' --data-binary '' \
+    "${BASE_URL}/${DB}/${TABLE}.CSV?query=" 2>&1 \
+    | grep -oE "HTTP PUT table uploads do not support the 'query' parameter|HTTP 400"
+
+echo "-- query-bearing PUT inserted no rows"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 46"
 
 echo "-- an explicit readonly setting remains enforced"
 printf '4,"four"\n' \
