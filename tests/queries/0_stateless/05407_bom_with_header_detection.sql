@@ -51,3 +51,11 @@ SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,2020,b",c\n1,2,3,4\n') SETTINGS input_
 -- A variable number of columns in the rows read as data during header detection.
 SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,2020,b",c\nx,y,z\n') SETTINGS input_format_csv_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;
 SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBF"a,2020,b",c\nx,y,z\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',', input_format_custom_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;
+
+-- The rows read during header detection are kept when the end of data is reached.
+SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,2020,b",c\nx,,z,w,lost\n') SETTINGS input_format_csv_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;
+SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBF"a,2020,b",c\nx,,z,w,lost\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',', input_format_custom_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;
+
+-- The row with type names must have the same number of fields as the variant without the BOM.
+SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,2020,b",c\nString,String,String,String\nx,2\n') SETTINGS input_format_csv_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;
+SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBF"a,2020,b",c\nString,String,String,String\nx,2\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',', input_format_custom_allow_variable_number_of_columns = 1 FORMAT TSVWithNames;

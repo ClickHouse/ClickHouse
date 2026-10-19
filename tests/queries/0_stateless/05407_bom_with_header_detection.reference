@@ -53,3 +53,17 @@ x	y	z	\N
 c1	c2	c3	c4
 ﻿"a	2020	b"	c
 x	y	z	\N
+c1	c2	c3	c4	c5
+﻿"a	2020	b"	c	\N
+x	\N	z	w	lost
+c1	c2	c3	c4	c5
+﻿"a	2020	b"	c	\N
+x	0	z	w	lost
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+String	String	String	String
+x	2	\N	\N
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+String	String	String	String
+x	2	\N	\N

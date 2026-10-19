@@ -696,7 +696,10 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         /// with all String elements are most likely a header.
         if (haveNotStringAndNotNullType(data_types))
         {
-            if (header_candidate_has_other_number_of_fields && data_types.size() != header_candidate_types.size())
+            /// The row with type names must also have the same number of fields as the header candidate.
+            if (header_candidate_has_other_number_of_fields
+                && (data_types.size() != header_candidate_types.size()
+                    || (second_row_can_be_type_names && second_row_types.size() != header_candidate_types.size())))
             {
                 buffer_types_of_rows_read_as_data();
                 return;
@@ -729,6 +732,14 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         /// so, the first two rows with all String elements can be real data and we cannot use them as a header.
         if (!next_row_types_maybe)
         {
+            /// With a BOM, the first row read as data can contain non String elements, and the following rows
+            /// can have another number of fields, so the types of all rows read so far are combined.
+            if (first_row_without_bom)
+            {
+                buffer_types_of_rows_read_as_data();
+                return;
+            }
+
             /// Buffer first data types from the first row, because it doesn't contain Nulls.
             buffered_types = first_row_types;
             return;
