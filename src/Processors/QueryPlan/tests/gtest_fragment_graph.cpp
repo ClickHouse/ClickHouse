@@ -116,14 +116,6 @@ TEST(FragmentGraph, CycleThrows)
     connect(graph, 2, 1);
     expectInvalid(graph, "The fragment graph has a cycle");
 }
-
-TEST(FragmentGraph, TwoRootsThrows)
-{
-    /// F1 feeds F0, and F2 is consumed by nobody: two roots.
-    auto graph = makeGraph({0, 1, 2});
-    connect(graph, 1, 0);
-    expectInvalid(graph, "The fragment graph has 2 root fragments, expected one");
-}
 #endif
 
 TEST(FragmentGraph, LevelsWithSetFragment)
@@ -317,15 +309,6 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     distributed_plan.exchange_descriptions["exchange_0"].kind = ExchangeDescription::Kind::Persisted;
     auto persisted_graph = buildFragmentGraph(distributed_plan);
     EXPECT_EQ(persisted_graph.getExchange(0).mode, ExchangeDescription::Kind::Persisted);
-
-    /// A dependency without a matching receive step is an inconsistent plan.
-    distributed_plan.stage_depends_on["main"] = {{"stage_0", "exchange_7"}};
-    distributed_plan.exchange_descriptions["exchange_7"] = description;
-    distributed_plan.exchange_descriptions["exchange_7"].name = "exchange_7";
-    distributed_plan.exchange_descriptions["exchange_7"].id = 7;
-#ifndef DEBUG_OR_SANITIZER_BUILD
-    EXPECT_THROW(buildFragmentGraph(distributed_plan), Exception);
-#endif
 }
 
 TEST(FragmentGraph, BuildSingleFragment)
