@@ -121,7 +121,7 @@ ShuffleSend (exchange_0)
    └──ReadFromMergeTree (default.big)
 
 Exchanges:
-  exchange_0: hash(modulo(__table1.bid, 10_UInt8)), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_0: hash(modulo(bid, 10_UInt8)), streaming, F0 -> F1, buckets 3 -> 3
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- make_distributed_plan = 0

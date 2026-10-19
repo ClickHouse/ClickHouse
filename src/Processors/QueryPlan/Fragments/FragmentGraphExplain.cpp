@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
@@ -28,7 +29,7 @@ const QueryPlan & getPlan(const QueryFragment & fragment)
     return *fragment.plan;
 }
 
-String formatKind(const FragmentExchange & exchange)
+String formatKindRaw(const FragmentExchange & exchange)
 {
     switch (exchange.kind)
     {
@@ -46,6 +47,13 @@ String formatKind(const FragmentExchange & exchange)
             return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
+}
+
+/// With `pretty`, the keys and the sort columns are printed without their table prefix, as in the plan.
+String formatKind(const FragmentExchange & exchange, bool pretty)
+{
+    auto result = formatKindRaw(exchange);
+    return pretty ? QueryPlanFormat::trimColumnIdentifier(result) : result;
 }
 
 std::string_view formatMode(ExchangeDescription::Kind mode)
@@ -107,7 +115,7 @@ void explainFragmentGraph(
         for (const auto & exchange : graph.exchanges)
         {
             buf << fmt::format("  {}: {}, {}, F{} -> F{}",
-                exchange.name, formatKind(exchange), formatMode(exchange.mode), exchange.from, exchange.to);
+                exchange.name, formatKind(exchange, options.pretty), formatMode(exchange.mode), exchange.from, exchange.to);
             if (exchange.source_buckets || exchange.destination_buckets)
                 buf << fmt::format(", buckets {} -> {}", exchange.source_buckets, exchange.destination_buckets);
             buf << '\n';
