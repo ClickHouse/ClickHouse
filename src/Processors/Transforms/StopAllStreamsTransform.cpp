@@ -24,10 +24,11 @@ IProcessor::Status StopAllStreamsTransform::prepare()
     auto & output = outputs.front();
     auto & signal_output = outputs.back();
 
-    if (output.isFinished() && !input.isFinished())
+    /// This processor finishes the output only when it finishes itself, so here the consumer stopped reading.
+    if (output.isFinished())
         signal_pending = true;
 
-    if (signal_pending || output.isFinished() || input.isFinished() || signal_input.isFinished() || signal_input.hasData())
+    if (signal_pending || signal_input.isFinished() || signal_input.hasData())
     {
         input.close();
         output.finish();
@@ -51,6 +52,16 @@ IProcessor::Status StopAllStreamsTransform::prepare()
     {
         input.setNotNeeded();
         return Status::PortFull;
+    }
+
+    /// The stream ended, and the consumer asks for more after processing all its data, so it did not stop
+    /// on the last chunk: finish without telling the other streams.
+    if (input.isFinished())
+    {
+        output.finish();
+        signal_input.close();
+        signal_output.finish();
+        return Status::Finished;
     }
 
     if (input.hasData())
