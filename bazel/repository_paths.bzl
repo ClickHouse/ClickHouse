@@ -75,14 +75,19 @@ def _generated_prefix_maps(arch):
     return [
         "-ffile-prefix-map=bazel/config/" + arch + "/=" + build,
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/" + arch + "/=" + build,
-        "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/=" +
-        build + "contrib/google-cloud-cpp-cmake/",
+        "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/=" + build + "contrib/",
+    ] + [
+        "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/=" + build
+        for label in _REPOSITORIES.values()
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/" + arch + "/=" + build
         for label in _REPOSITORIES.values()
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/llvm-project") +
         "/gen/" + arch + "/=" + build + "contrib/llvm-project/",
+        "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/jemalloc") +
+        "/config/contrib/jemalloc-cmake/include_linux/=" +
+        build + "contrib/jemalloc-cmake/include_linux_" + arch + "/",
     ]
 
 # bazel/BUILD.bazel declares these two use_cmake_metadata settings.

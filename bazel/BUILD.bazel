@@ -15,40 +15,21 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "krb5_generated_headers",
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h"],
-        "@platforms//cpu:aarch64": ["gen/aarch64/contrib/krb5-cmake/include/krb5/krb5.h"],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["gen/x86_64/contrib/krb5-cmake/include"],
-        "@platforms//cpu:aarch64": ["gen/aarch64/contrib/krb5-cmake/include"],
-    }),
+    hdrs = ["gen/contrib/krb5-cmake/include/krb5/krb5.h"],
+    includes = ["gen/contrib/krb5-cmake/include"],
 )
 
 cc_library(
     name = "arrow_flatbuffer_headers",
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
-            "gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
-            "gen/x86_64/contrib/flatbuffers/generated/Schema_generated.h",
-            "gen/x86_64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "gen/x86_64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "gen/x86_64/contrib/flatbuffers/generated/feather_generated.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
-            "gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
-            "gen/aarch64/contrib/flatbuffers/generated/Schema_generated.h",
-            "gen/aarch64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "gen/aarch64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "gen/aarch64/contrib/flatbuffers/generated/feather_generated.h",
-        ],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["gen/x86_64/contrib/flatbuffers"],
-        "@platforms//cpu:aarch64": ["gen/aarch64/contrib/flatbuffers"],
-    }),
+    hdrs = [
+        "gen/contrib/flatbuffers/generated/File_generated.h",
+        "gen/contrib/flatbuffers/generated/Message_generated.h",
+        "gen/contrib/flatbuffers/generated/Schema_generated.h",
+        "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+        "gen/contrib/flatbuffers/generated/Tensor_generated.h",
+        "gen/contrib/flatbuffers/generated/feather_generated.h",
+    ],
+    includes = ["gen/contrib/flatbuffers"],
 )
 
 platform(
@@ -247,7 +228,7 @@ native_stripped_hash(
         srcs = [":build_options_" + arch] + [
             ":" + name
             for name in CODEGEN_RULES
-            if name.startswith("generate_" + arch + "_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
+            if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
         ],
     )
     for arch in [

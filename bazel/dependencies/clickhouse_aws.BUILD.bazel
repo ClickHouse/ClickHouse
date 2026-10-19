@@ -9,33 +9,54 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_6fab289e2f0be7bf",
-    out = "config/x86_64/contrib/aws-cmake/include/aws/common/config.h",
-    substitutions = {
-        "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
-        "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
-        "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
-        "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
-        "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
-        "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
-        "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
-        "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
-        "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
-        "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
-        "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
-        "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
-        "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
-        "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
-        "#cmakedefine AWS_ARCH_ARM64": "/* #undef AWS_ARCH_ARM64 */",
-        "#cmakedefine AWS_ARCH_INTEL": "#define AWS_ARCH_INTEL",
-        "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
-    },
+    name = "configure_include_aws_common_config_h",
+    out = "config/contrib/aws-cmake/include/aws/common/config.h",
+    substitutions = select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
+            "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
+            "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
+            "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
+            "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
+            "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
+            "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
+            "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
+            "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
+            "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
+            "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
+            "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
+            "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
+            "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
+            "#cmakedefine AWS_ARCH_ARM64": "/* #undef AWS_ARCH_ARM64 */",
+            "#cmakedefine AWS_ARCH_INTEL": "#define AWS_ARCH_INTEL",
+            "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
+            "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
+            "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
+            "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
+            "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
+            "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
+            "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
+            "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
+            "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
+            "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
+            "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
+            "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
+            "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
+            "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
+            "#cmakedefine AWS_ARCH_ARM64": "#define AWS_ARCH_ARM64",
+            "#cmakedefine AWS_ARCH_INTEL": "/* #undef AWS_ARCH_INTEL */",
+            "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
+        },
+    }),
     template = "@clickhouse_aws_c_common//:include/aws/common/config.h.in",
 )
 
 expand_template(
-    name = "configure_x86_64_e05b94816b89974d",
-    out = "config/x86_64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+    name = "configure_include_aws_core_SDKConfig_h",
+    out = "config/contrib/aws-cmake/include/aws/core/SDKConfig.h",
     substitutions = {
         "#cmakedefine USE_AWS_MEMORY_MANAGEMENT": "/* #undef USE_AWS_MEMORY_MANAGEMENT */",
     },
@@ -43,62 +64,24 @@ expand_template(
 )
 
 expand_template(
-    name = "configure_x86_64_21c25890d62a9929",
-    out = "config/x86_64/contrib/aws-cmake/include/aws/crt/Config.h",
-    substitutions = {
-        "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
-        "@AWS_CRT_CPP_VERSION_MINOR@": "43",
-        "@AWS_CRT_CPP_VERSION_PATCH@": "8",
-        "@FULL_VERSION@": "0.43.8-clickhouse",
-        "@GIT_HASH@": "8b819009ee01311c3ec6767472a85b82a5f35b7c",
-    },
-    template = "@clickhouse_aws_crt_cpp//:include/aws/crt/Config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_6fab289e2f0be7bf",
-    out = "config/aarch64/contrib/aws-cmake/include/aws/common/config.h",
-    substitutions = {
-        "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
-        "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
-        "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
-        "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
-        "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
-        "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
-        "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
-        "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
-        "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
-        "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
-        "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
-        "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
-        "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
-        "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
-        "#cmakedefine AWS_ARCH_ARM64": "#define AWS_ARCH_ARM64",
-        "#cmakedefine AWS_ARCH_INTEL": "/* #undef AWS_ARCH_INTEL */",
-        "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
-    },
-    template = "@clickhouse_aws_c_common//:include/aws/common/config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_e05b94816b89974d",
-    out = "config/aarch64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
-    substitutions = {
-        "#cmakedefine USE_AWS_MEMORY_MANAGEMENT": "/* #undef USE_AWS_MEMORY_MANAGEMENT */",
-    },
-    template = ":src/aws-cpp-sdk-core/include/aws/core/SDKConfig.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_21c25890d62a9929",
-    out = "config/aarch64/contrib/aws-cmake/include/aws/crt/Config.h",
-    substitutions = {
-        "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
-        "@AWS_CRT_CPP_VERSION_MINOR@": "43",
-        "@AWS_CRT_CPP_VERSION_PATCH@": "8",
-        "@FULL_VERSION@": "0.43.8-clickhouse",
-        "@GIT_HASH@": "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
-    },
+    name = "configure_include_aws_crt_Config_h",
+    out = "config/contrib/aws-cmake/include/aws/crt/Config.h",
+    substitutions = select({
+        "@platforms//cpu:x86_64": {
+            "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
+            "@AWS_CRT_CPP_VERSION_MINOR@": "43",
+            "@AWS_CRT_CPP_VERSION_PATCH@": "8",
+            "@FULL_VERSION@": "0.43.8-clickhouse",
+            "@GIT_HASH@": "8b819009ee01311c3ec6767472a85b82a5f35b7c",
+        },
+        "@platforms//cpu:aarch64": {
+            "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
+            "@AWS_CRT_CPP_VERSION_MINOR@": "43",
+            "@AWS_CRT_CPP_VERSION_PATCH@": "8",
+            "@FULL_VERSION@": "0.43.8-clickhouse",
+            "@GIT_HASH@": "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
+        },
+    }),
     template = "@clickhouse_aws_crt_cpp//:include/aws/crt/Config.h.in",
 )
 
@@ -228,20 +211,10 @@ cc_library(
 
 cc_library(
     name = "aws_config_headers",
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/aws-cmake/include/aws/common/config.h",
-            "config/x86_64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
-            "config/x86_64/contrib/aws-cmake/include/aws/crt/Config.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/aws-cmake/include/aws/common/config.h",
-            "config/aarch64/contrib/aws-cmake/include/aws/core/SDKConfig.h",
-            "config/aarch64/contrib/aws-cmake/include/aws/crt/Config.h",
-        ],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["config/x86_64/contrib/aws-cmake/include"],
-        "@platforms//cpu:aarch64": ["config/aarch64/contrib/aws-cmake/include"],
-    }),
+    hdrs = [
+        "config/contrib/aws-cmake/include/aws/common/config.h",
+        "config/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+        "config/contrib/aws-cmake/include/aws/crt/Config.h",
+    ],
+    includes = ["config/contrib/aws-cmake/include"],
 )

@@ -8,52 +8,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_1256e10b50ec752b",
-    out = "config/x86_64/contrib/thrift-cmake/thrift/config.h",
-    substitutions = {
-        "#cmakedefine PACKAGE_BUGREPORT \"${PACKAGE_BUGREPORT}\"": "/* #undef PACKAGE_BUGREPORT */",
-        "#cmakedefine PACKAGE_TARNAME \"${PACKAGE_TARNAME}\"": "/* #undef PACKAGE_TARNAME */",
-        "#cmakedefine BISON_USE_PARSER_H_EXTENSION 1": "/* #undef BISON_USE_PARSER_H_EXTENSION */",
-        "#cmakedefine PACKAGE_NAME \"${PACKAGE_NAME}\"": "/* #undef PACKAGE_NAME */",
-        "#cmakedefine HAVE_SCHED_GET_PRIORITY_MAX 1": "#define HAVE_SCHED_GET_PRIORITY_MAX 1",
-        "#cmakedefine HAVE_SCHED_GET_PRIORITY_MIN 1": "#define HAVE_SCHED_GET_PRIORITY_MIN 1",
-        "#cmakedefine PACKAGE_URL \"${PACKAGE_URL}\"": "/* #undef PACKAGE_URL */",
-        "#cmakedefine HAVE_GETHOSTBYNAME_R 1": "/* #undef HAVE_GETHOSTBYNAME_R */",
-        "#cmakedefine HAVE_SYS_RESOURCE_H 1": "#define HAVE_SYS_RESOURCE_H 1",
-        "#cmakedefine HAVE_GETHOSTBYNAME 1": "#define HAVE_GETHOSTBYNAME 1",
-        "#cmakedefine PACKAGE \"${PACKAGE}\"": "/* #undef PACKAGE */",
-        "#cmakedefine HAVE_NETINET_IN_H 1": "#define HAVE_NETINET_IN_H 1",
-        "#cmakedefine HAVE_SYS_SELECT_H 1": "#define HAVE_SYS_SELECT_H 1",
-        "#cmakedefine HAVE_SYS_SOCKET_H 1": "#define HAVE_SYS_SOCKET_H 1",
-        "#cmakedefine STRERROR_R_CHAR_P 1": "#define STRERROR_R_CHAR_P 1",
-        "#cmakedefine HAVE_ARPA_INET_H 1": "#define HAVE_ARPA_INET_H 1",
-        "#cmakedefine HAVE_SYS_IOCTL_H 1": "#define HAVE_SYS_IOCTL_H 1",
-        "#cmakedefine HAVE_SYS_PARAM_H 1": "#define HAVE_SYS_PARAM_H 1",
-        "#cmakedefine HAVE_INTTYPES_H 1": "#define HAVE_INTTYPES_H 1",
-        "#cmakedefine HAVE_STRERROR_R 1": "#define HAVE_STRERROR_R 1",
-        "#cmakedefine HAVE_SYS_POLL_H 1": "#define HAVE_SYS_POLL_H 1",
-        "#cmakedefine HAVE_SYS_STAT_H 1": "#define HAVE_SYS_STAT_H 1",
-        "#cmakedefine HAVE_SYS_TIME_H 1": "#define HAVE_SYS_TIME_H 1",
-        "#cmakedefine HAVE_AF_UNIX_H 1": "/* #undef HAVE_AF_UNIX_H */",
-        "#cmakedefine HAVE_PTHREAD_H 1": "#define HAVE_PTHREAD_H 1",
-        "#cmakedefine HAVE_STRINGS_H 1": "#define HAVE_STRINGS_H 1",
-        "#cmakedefine HAVE_SIGNAL_H 1": "#define HAVE_SIGNAL_H 1",
-        "#cmakedefine HAVE_STDINT_H 1": "#define HAVE_STDINT_H 1",
-        "#cmakedefine HAVE_SYS_UN_H 1": "#define HAVE_SYS_UN_H 1",
-        "#cmakedefine HAVE_UNISTD_H 1": "#define HAVE_UNISTD_H 1",
-        "#cmakedefine HAVE_FCNTL_H 1": "#define HAVE_FCNTL_H 1",
-        "#cmakedefine HAVE_NETDB_H 1": "#define HAVE_NETDB_H 1",
-        "#cmakedefine HAVE_SCHED_H 1": "#define HAVE_SCHED_H 1",
-        "#cmakedefine HAVE_POLL_H 1": "#define HAVE_POLL_H 1",
-        "${PACKAGE_VERSION}": "",
-        "${PACKAGE_STRING}": "",
-    },
-    template = ":build/cmake/config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_1256e10b50ec752b",
-    out = "config/aarch64/contrib/thrift-cmake/thrift/config.h",
+    name = "configure_thrift_config_h",
+    out = "config/contrib/thrift-cmake/thrift/config.h",
     substitutions = {
         "#cmakedefine PACKAGE_BUGREPORT \"${PACKAGE_BUGREPORT}\"": "/* #undef PACKAGE_BUGREPORT */",
         "#cmakedefine PACKAGE_TARNAME \"${PACKAGE_TARNAME}\"": "/* #undef PACKAGE_TARNAME */",
@@ -134,30 +90,19 @@ ch_cc_library(
         "lib/cpp/src/thrift/concurrency/Monitor.cpp",
         "lib/cpp/src/thrift/concurrency/Mutex.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/thrift-cmake/thrift/config.h"] + glob([
-            "lib/cpp/src/**/*.h",
-            "lib/cpp/src/**/*.tcc",
-        ]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/thrift-cmake/thrift/config.h"] + glob([
-            "lib/cpp/src/**/*.h",
-            "lib/cpp/src/**/*.tcc",
-        ]),
-    }),
+    hdrs = [":config/contrib/thrift-cmake/thrift/config.h"] + glob([
+        "lib/cpp/src/**/*.h",
+        "lib/cpp/src/**/*.tcc",
+    ]),
     copts = [
         "-w",
         "-std=c++23",
     ],
     includes = [
         "lib/cpp/src",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/thrift-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/thrift-cmake",
-        ],
-    }),
+    ] + [
+        "config/contrib/thrift-cmake",
+    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

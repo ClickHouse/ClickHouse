@@ -26,27 +26,27 @@
       },
       {
         "from": "build_bazel_reference_x86_64",
-        "to": "@build/x86_64"
+        "to": "@build"
       },
       {
         "from": "bazel/config/x86_64",
-        "to": "@build/x86_64"
+        "to": "@build"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64",
-        "to": "@build/x86_64"
+        "to": "@build"
       },
       {
         "from": "build_bazel_reference_aarch64",
-        "to": "@build/aarch64"
+        "to": "@build"
       },
       {
         "from": "bazel/config/aarch64",
-        "to": "@build/aarch64"
+        "to": "@build"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64",
-        "to": "@build/aarch64"
+        "to": "@build"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/lz4+/_virtual_includes/lz4",
@@ -713,196 +713,100 @@
         "to": "contrib/zxc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_arrow/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_arrow/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_aws/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_aws/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_bzip2/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_bzip2/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cassandra/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cassandra/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cyrus_sasl/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cyrus_sasl/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_h3/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_h3/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_jemalloc/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_jemalloc/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libpqxx/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libpqxx/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_librdkafka/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_librdkafka/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libssh/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libssh/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_liburing/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_liburing/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_c_driver/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_c_driver/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_cxx_driver/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_cxx_driver/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_orc/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_orc/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_snappy/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_snappy/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_thrift/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_thrift/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_wasmtime/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_wasmtime/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_xgboost/config/x86_64",
-        "to": "@build/x86_64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_xgboost/config",
+        "to": "@build"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config/x86_64",
-        "to": "@build/x86_64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_arrow/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_aws/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_bzip2/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cassandra/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cyrus_sasl/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_h3/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_jemalloc/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libpqxx/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_librdkafka/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libssh/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_liburing/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_c_driver/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mongo_cxx_driver/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_orc/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_snappy/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_thrift/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_wasmtime/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_xgboost/config/aarch64",
-        "to": "@build/aarch64"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config/aarch64",
-        "to": "@build/aarch64"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config",
+        "to": "@build"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/llvm++llvm+llvm-project/compiler-rt/include",
@@ -966,7 +870,7 @@
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/librdkafka-cmake/auxdir",
-        "to": "@build/x86_64/contrib/librdkafka-cmake"
+        "to": "@build/contrib/librdkafka-cmake"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libcotp/include",
@@ -974,11 +878,11 @@
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/librdkafka-cmake/auxdir",
-        "to": "@build/aarch64/contrib/librdkafka-cmake"
+        "to": "@build/contrib/librdkafka-cmake"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64",
-        "to": "@build/aarch64/contrib/llvm-project"
+        "to": "@build/contrib/llvm-project"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/llvm/include",
@@ -986,7 +890,7 @@
       },
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/x86_64",
-        "to": "@build/x86_64/contrib/llvm-project"
+        "to": "@build/contrib/llvm-project"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/x86_64/llvm/include",
@@ -1003,20 +907,24 @@
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/libcxx/include/c++/v1",
         "to": "contrib/llvm-project/libcxx/include"
+      },
+      {
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib",
+        "to": "@build/contrib"
       }
     ],
     "source_map": [
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/orc_proto.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/arrow-cmake/orc_proto.pb.cc",
+        "to": "@build/contrib/arrow-cmake/orc_proto.pb.cc"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
@@ -1539,92 +1447,92 @@
         "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
+        "to": "@build/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/Security.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/Security.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/Security.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/Security.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/datatransfer.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/datatransfer.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/libhdfs3-cmake/hdfs.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/hdfs.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/hdfs.pb.cc",
+        "to": "@build/contrib/libhdfs3-cmake/hdfs.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/openldap-cmake/lber-version.c",
-        "to": "@build/aarch64/contrib/openldap-cmake/lber-version.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/openldap-cmake/lber-version.c",
+        "to": "@build/contrib/openldap-cmake/lber-version.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/openldap-cmake/ldap-version.c",
-        "to": "@build/aarch64/contrib/openldap-cmake/ldap-version.c"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/openldap-cmake/ldap-version.c",
+        "to": "@build/contrib/openldap-cmake/ldap-version.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
+        "to": "@build/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp",
@@ -1687,108 +1595,8 @@
         "to": "@build/aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/orc_proto.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/Security.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/Security.pb.cc"
-      },
-      {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o",
         "to": "@build/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/datatransfer.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/hdfs.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/hdfs.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/openldap-cmake/lber-version.c",
-        "to": "@build/x86_64/contrib/openldap-cmake/lber-version.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/openldap-cmake/ldap-version.c",
-        "to": "@build/x86_64/contrib/openldap-cmake/ldap-version.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp",
@@ -1851,36 +1659,20 @@
         "to": "@build/x86_64/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "to": "@build/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/contrib/cctz-cmake/TimeZones.generated.cpp",
+        "to": "@build/contrib/cctz-cmake/TimeZones.generated.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "to": "@build/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
+        "to": "@build/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
+        "to": "@build/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_google_cloud_cpp/config/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-        "to": "@build/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_mariadb_connector_c/config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-        "to": "@build/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-        "to": "@build/aarch64/contrib/zlib-ng-cmake/gzread.c"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-        "to": "@build/x86_64/contrib/zlib-ng-cmake/gzread.c"
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_zlib_ng/config/contrib/zlib-ng-cmake/gzread.c",
+        "to": "@build/contrib/zlib-ng-cmake/gzread.c"
       },
       {
         "from": "bazel/config/aarch64/base/base/GitHash.generated.cpp",
@@ -1904,19 +1696,19 @@
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        "to": "@build/aarch64/contrib/arrow-cmake/orc_proto.pb.cc"
+        "to": "@build/contrib/arrow-cmake/orc_proto.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "to": "@build/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp"
+        "to": "@build/contrib/cctz-cmake/TimeZones.generated.cpp"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
@@ -2440,103 +2232,103 @@
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-        "to": "@build/aarch64/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
-        "to": "@build/aarch64/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/Security.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/Security.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/Security.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/datatransfer.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/datatransfer.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/libhdfs3-cmake/hdfs.pb.cc",
-        "to": "@build/aarch64/contrib/libhdfs3-cmake/hdfs.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/hdfs.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-        "to": "@build/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
+        "to": "@build/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/openldap-cmake/lber-version.c",
-        "to": "@build/aarch64/contrib/openldap-cmake/lber-version.c"
+        "to": "@build/contrib/openldap-cmake/lber-version.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/openldap-cmake/ldap-version.c",
-        "to": "@build/aarch64/contrib/openldap-cmake/ldap-version.c"
+        "to": "@build/contrib/openldap-cmake/ldap-version.c"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
-        "to": "@build/aarch64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/zlib-ng-cmake/gzread.c",
-        "to": "@build/aarch64/contrib/zlib-ng-cmake/gzread.c"
+        "to": "@build/contrib/zlib-ng-cmake/gzread.c"
       },
       {
         "from": "build_bazel_reference_aarch64/includes/configs/config_version.cpp",
@@ -2564,19 +2356,19 @@
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
+        "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        "to": "@build/x86_64/contrib/arrow-cmake/orc_proto.pb.cc"
+        "to": "@build/contrib/arrow-cmake/orc_proto.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "to": "@build/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp"
+        "to": "@build/contrib/cctz-cmake/TimeZones.generated.cpp"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
@@ -3100,67 +2892,67 @@
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-        "to": "@build/x86_64/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
+        "to": "@build/contrib/google-cloud-cpp-cmake/internal/build_info.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
-        "to": "@build/x86_64/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
+        "to": "@build/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/Security.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/Security.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/Security.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o",
@@ -3168,39 +2960,39 @@
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/datatransfer.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/datatransfer.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/libhdfs3-cmake/hdfs.pb.cc",
-        "to": "@build/x86_64/contrib/libhdfs3-cmake/hdfs.pb.cc"
+        "to": "@build/contrib/libhdfs3-cmake/hdfs.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-        "to": "@build/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
+        "to": "@build/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/openldap-cmake/lber-version.c",
-        "to": "@build/x86_64/contrib/openldap-cmake/lber-version.c"
+        "to": "@build/contrib/openldap-cmake/lber-version.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/openldap-cmake/ldap-version.c",
-        "to": "@build/x86_64/contrib/openldap-cmake/ldap-version.c"
+        "to": "@build/contrib/openldap-cmake/ldap-version.c"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
-        "to": "@build/x86_64/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
+        "to": "@build/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/zlib-ng-cmake/gzread.c",
-        "to": "@build/x86_64/contrib/zlib-ng-cmake/gzread.c"
+        "to": "@build/contrib/zlib-ng-cmake/gzread.c"
       },
       {
         "from": "build_bazel_reference_x86_64/includes/configs/config_version.cpp",

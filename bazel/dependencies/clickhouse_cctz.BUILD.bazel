@@ -1207,23 +1207,9 @@ _GENERATED_SRCS_0 = [
 ]
 
 genrule(
-    name = "configure_x86_64_c0e732bda67403d4",
+    name = "configure_TimeZones_generated_cpp",
     srcs = _GENERATED_SRCS_0,
-    outs = [
-        "config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-    ],
-    cmd = "$(execpath @clickhouse//bazel:generate_timezones) --output=$@ $(SRCS)",
-    tools = [
-        "@clickhouse//bazel:generate_timezones",
-    ],
-)
-
-genrule(
-    name = "configure_aarch64_c0e732bda67403d4",
-    srcs = _GENERATED_SRCS_0,
-    outs = [
-        "config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-    ],
+    outs = ["config/contrib/cctz-cmake/TimeZones.generated.cpp"],
     cmd = "$(execpath @clickhouse//bazel:generate_timezones) --output=$@ $(SRCS)",
     tools = [
         "@clickhouse//bazel:generate_timezones",
@@ -1268,14 +1254,9 @@ ch_cc_library(
 
 ch_cc_library(
     name = "tzdata",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
-        ],
-    }),
+    srcs = [
+        ":config/contrib/cctz-cmake/TimeZones.generated.cpp",
+    ],
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/embedded/contrib/cctz/testdata/zoneinfo/Africa/Abidjan",

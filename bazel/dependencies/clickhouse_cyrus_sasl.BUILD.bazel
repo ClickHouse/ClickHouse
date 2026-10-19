@@ -9,27 +9,15 @@ exports_files([
 ])
 
 copy_file(
-    name = "configure_x86_64_c0a3fdaa62e2c9c1",
+    name = "configure_prop_h",
     src = ":include/prop.h",
-    out = "config/x86_64/contrib/cyrus-sasl-cmake/prop.h",
+    out = "config/contrib/cyrus-sasl-cmake/prop.h",
 )
 
 copy_file(
-    name = "configure_x86_64_0556187902609143",
+    name = "configure_sasl_sasl_h",
     src = ":include/sasl.h",
-    out = "config/x86_64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
-)
-
-copy_file(
-    name = "configure_aarch64_c0a3fdaa62e2c9c1",
-    src = ":include/prop.h",
-    out = "config/aarch64/contrib/cyrus-sasl-cmake/prop.h",
-)
-
-copy_file(
-    name = "configure_aarch64_0556187902609143",
-    src = ":include/sasl.h",
-    out = "config/aarch64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+    out = "config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
 )
 
 ch_cc_library(
@@ -51,16 +39,10 @@ ch_cc_library(
         "lib/checkpw.c",
         "@clickhouse//:contrib/cyrus-sasl-cmake/config.h",
     ] + glob(["**/*.h"]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/cyrus-sasl-cmake/prop.h",
-            ":config/x86_64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/cyrus-sasl-cmake/prop.h",
-            ":config/aarch64/contrib/cyrus-sasl-cmake/sasl/sasl.h",
-        ],
-    }),
+    hdrs = [
+        ":config/contrib/cyrus-sasl-cmake/prop.h",
+        ":config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+    ],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -69,14 +51,9 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/x86_64/contrib/cyrus-sasl-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/aarch64/contrib/cyrus-sasl-cmake",
-        ],
-    })) + [
+    ] + [
+        "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
+    ]) + [
         "-I",
         "contrib/cyrus-sasl-cmake",
         "-I",

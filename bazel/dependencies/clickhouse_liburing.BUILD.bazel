@@ -8,8 +8,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_8853a83db16a75aa",
-    out = "config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
+    name = "configure_src_include_compat_liburing_compat_h",
+    out = "config/contrib/liburing/src/include-compat/liburing/compat.h",
     substitutions = {
         "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_TIMESPEC": "/* #undef LIBURING_CONFIG_HAS_KERNEL_TIMESPEC */",
         "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_RWF_T": "/* #undef LIBURING_CONFIG_HAS_KERNEL_RWF_T */",
@@ -21,31 +21,8 @@ expand_template(
 )
 
 expand_template(
-    name = "configure_x86_64_6a04057976c64f2b",
-    out = "config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
-    substitutions = {
-        "${LIBURING_VERSION_MAJOR}": "2",
-        "${LIBURING_VERSION_MINOR}": "15",
-    },
-    template = "@clickhouse//:contrib/liburing-cmake/io_uring_version.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_8853a83db16a75aa",
-    out = "config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
-    substitutions = {
-        "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_TIMESPEC": "/* #undef LIBURING_CONFIG_HAS_KERNEL_TIMESPEC */",
-        "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_RWF_T": "/* #undef LIBURING_CONFIG_HAS_KERNEL_RWF_T */",
-        "# cmakedefine LIBURING_CONFIG_HAS_GLIBC_STATX": "/* #undef LIBURING_CONFIG_HAS_GLIBC_STATX */",
-        "# cmakedefine LIBURING_CONFIG_HAS_OPEN_HOW": "/* #undef LIBURING_CONFIG_HAS_OPEN_HOW */",
-        "# cmakedefine LIBURING_CONFIG_HAS_STATX": "/* #undef LIBURING_CONFIG_HAS_STATX */",
-    },
-    template = "@clickhouse//:contrib/liburing-cmake/compat.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_6a04057976c64f2b",
-    out = "config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
+    name = "configure_src_include_liburing_io_uring_version_h",
+    out = "config/contrib/liburing/src/include/liburing/io_uring_version.h",
     substitutions = {
         "${LIBURING_VERSION_MAJOR}": "2",
         "${LIBURING_VERSION_MINOR}": "15",
@@ -72,16 +49,10 @@ ch_cc_library(
             "src/include/liburing/sanitize.h",
         ],
     ),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
-            ":config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
-        ] + glob(["src/include/**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
-            ":config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
-        ] + glob(["src/include/**/*.h"]),
-    }),
+    hdrs = [
+        ":config/contrib/liburing/src/include-compat/liburing/compat.h",
+        ":config/contrib/liburing/src/include/liburing/io_uring_version.h",
+    ] + glob(["src/include/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -91,16 +62,10 @@ ch_cc_library(
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
-    includes = select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/liburing/src/include-compat",
-            "config/x86_64/contrib/liburing/src/include",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/liburing/src/include-compat",
-            "config/aarch64/contrib/liburing/src/include",
-        ],
-    }) + [
+    includes = [
+        "config/contrib/liburing/src/include-compat",
+        "config/contrib/liburing/src/include",
+    ] + [
         "src/include",
     ],
     language = "C",

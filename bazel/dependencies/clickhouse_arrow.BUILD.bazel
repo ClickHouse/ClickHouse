@@ -19,121 +19,106 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_ce11ab53bbf68027",
-    out = "config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-    substitutions = {
-        "#cmakedefine PARQUET_REQUIRE_ENCRYPTION": "/* #undef PARQUET_REQUIRE_ENCRYPTION */",
-        "#cmakedefine ARROW_WITH_OPENTELEMETRY": "/* #undef ARROW_WITH_OPENTELEMETRY */",
-        "#cmakedefine ARROW_JEMALLOC_VENDORED": "/* #undef ARROW_JEMALLOC_VENDORED */",
-        "#cmakedefine ARROW_USE_NATIVE_INT128": "/* #undef ARROW_USE_NATIVE_INT128 */",
-        "#cmakedefine ARROW_ENABLE_THREADING": "/* #undef ARROW_ENABLE_THREADING */",
-        "#cmakedefine ARROW_WITH_UTF8PROC": "/* #undef ARROW_WITH_UTF8PROC */",
-        "#cmakedefine ARROW_WITH_BROTLI": "/* #undef ARROW_WITH_BROTLI */",
-        "#cmakedefine ARROW_WITH_SNAPPY": "/* #undef ARROW_WITH_SNAPPY */",
-        "#cmakedefine ARROW_FILESYSTEM": "/* #undef ARROW_FILESYSTEM */",
-        "#cmakedefine ARROW_FLIGHT_SQL": "/* #undef ARROW_FLIGHT_SQL */",
-        "#cmakedefine ARROW_SUBSTRAIT": "/* #undef ARROW_SUBSTRAIT */",
-        "#cmakedefine ARROW_WITH_MUSL": "/* #undef ARROW_WITH_MUSL */",
-        "#cmakedefine ARROW_WITH_ZLIB": "/* #undef ARROW_WITH_ZLIB */",
-        "#cmakedefine ARROW_WITH_ZSTD": "/* #undef ARROW_WITH_ZSTD */",
-        "@CMAKE_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("x86_64"),
-        "#cmakedefine ARROW_JEMALLOC": "/* #undef ARROW_JEMALLOC */",
-        "#cmakedefine ARROW_MIMALLOC": "/* #undef ARROW_MIMALLOC */",
-        "#cmakedefine ARROW_USE_GLOG": "/* #undef ARROW_USE_GLOG */",
-        "#cmakedefine ARROW_WITH_BZ2": "/* #undef ARROW_WITH_BZ2 */",
-        "#cmakedefine ARROW_WITH_LZ4": "/* #undef ARROW_WITH_LZ4 */",
-        "#cmakedefine ARROW_WITH_RE2": "/* #undef ARROW_WITH_RE2 */",
-        "#cmakedefine ARROW_COMPUTE": "/* #undef ARROW_COMPUTE */",
-        "#cmakedefine ARROW_DATASET": "/* #undef ARROW_DATASET */",
-        "#cmakedefine ARROW_PARQUET": "/* #undef ARROW_PARQUET */",
-        "#cmakedefine ARROW_FLIGHT": "/* #undef ARROW_FLIGHT */",
-        "#cmakedefine ARROW_AZURE": "/* #undef ARROW_AZURE */",
-        "#cmakedefine ARROW_CUDA": "/* #undef ARROW_CUDA */",
-        "#cmakedefine ARROW_HDFS": "/* #undef ARROW_HDFS */",
-        "#cmakedefine ARROW_JSON": "/* #undef ARROW_JSON */",
-        "@ARROW_FULL_SO_VERSION@": "2500.0.0",
-        "@CMAKE_CXX_COMPILER_ID@": "Clang",
-        "#cmakedefine ARROW_CSV": "/* #undef ARROW_CSV */",
-        "#cmakedefine ARROW_GCS": "/* #undef ARROW_GCS */",
-        "#cmakedefine ARROW_IPC": "/* #undef ARROW_IPC */",
-        "#cmakedefine ARROW_ORC": "/* #undef ARROW_ORC */",
-        "@UPPERCASE_BUILD_TYPE@": "",
-        "#cmakedefine ARROW_S3": "/* #undef ARROW_S3 */",
-        "@ARROW_VERSION_MAJOR@": "25",
-        "@ARROW_VERSION_MINOR@": "0",
-        "@ARROW_VERSION_PATCH@": "0",
-        "@ARROW_PACKAGE_KIND@": "",
-        "@ARROW_SO_VERSION@": "2500",
-        "@ARROW_VERSION@": "25.0.0",
-    },
+    name = "configure_cpp_src_arrow_util_config_h",
+    out = "config/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+    substitutions = select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine PARQUET_REQUIRE_ENCRYPTION": "/* #undef PARQUET_REQUIRE_ENCRYPTION */",
+            "#cmakedefine ARROW_WITH_OPENTELEMETRY": "/* #undef ARROW_WITH_OPENTELEMETRY */",
+            "#cmakedefine ARROW_JEMALLOC_VENDORED": "/* #undef ARROW_JEMALLOC_VENDORED */",
+            "#cmakedefine ARROW_USE_NATIVE_INT128": "/* #undef ARROW_USE_NATIVE_INT128 */",
+            "#cmakedefine ARROW_ENABLE_THREADING": "/* #undef ARROW_ENABLE_THREADING */",
+            "#cmakedefine ARROW_WITH_UTF8PROC": "/* #undef ARROW_WITH_UTF8PROC */",
+            "#cmakedefine ARROW_WITH_BROTLI": "/* #undef ARROW_WITH_BROTLI */",
+            "#cmakedefine ARROW_WITH_SNAPPY": "/* #undef ARROW_WITH_SNAPPY */",
+            "#cmakedefine ARROW_FILESYSTEM": "/* #undef ARROW_FILESYSTEM */",
+            "#cmakedefine ARROW_FLIGHT_SQL": "/* #undef ARROW_FLIGHT_SQL */",
+            "#cmakedefine ARROW_SUBSTRAIT": "/* #undef ARROW_SUBSTRAIT */",
+            "#cmakedefine ARROW_WITH_MUSL": "/* #undef ARROW_WITH_MUSL */",
+            "#cmakedefine ARROW_WITH_ZLIB": "/* #undef ARROW_WITH_ZLIB */",
+            "#cmakedefine ARROW_WITH_ZSTD": "/* #undef ARROW_WITH_ZSTD */",
+            "@CMAKE_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("x86_64"),
+            "#cmakedefine ARROW_JEMALLOC": "/* #undef ARROW_JEMALLOC */",
+            "#cmakedefine ARROW_MIMALLOC": "/* #undef ARROW_MIMALLOC */",
+            "#cmakedefine ARROW_USE_GLOG": "/* #undef ARROW_USE_GLOG */",
+            "#cmakedefine ARROW_WITH_BZ2": "/* #undef ARROW_WITH_BZ2 */",
+            "#cmakedefine ARROW_WITH_LZ4": "/* #undef ARROW_WITH_LZ4 */",
+            "#cmakedefine ARROW_WITH_RE2": "/* #undef ARROW_WITH_RE2 */",
+            "#cmakedefine ARROW_COMPUTE": "/* #undef ARROW_COMPUTE */",
+            "#cmakedefine ARROW_DATASET": "/* #undef ARROW_DATASET */",
+            "#cmakedefine ARROW_PARQUET": "/* #undef ARROW_PARQUET */",
+            "#cmakedefine ARROW_FLIGHT": "/* #undef ARROW_FLIGHT */",
+            "#cmakedefine ARROW_AZURE": "/* #undef ARROW_AZURE */",
+            "#cmakedefine ARROW_CUDA": "/* #undef ARROW_CUDA */",
+            "#cmakedefine ARROW_HDFS": "/* #undef ARROW_HDFS */",
+            "#cmakedefine ARROW_JSON": "/* #undef ARROW_JSON */",
+            "@ARROW_FULL_SO_VERSION@": "2500.0.0",
+            "@CMAKE_CXX_COMPILER_ID@": "Clang",
+            "#cmakedefine ARROW_CSV": "/* #undef ARROW_CSV */",
+            "#cmakedefine ARROW_GCS": "/* #undef ARROW_GCS */",
+            "#cmakedefine ARROW_IPC": "/* #undef ARROW_IPC */",
+            "#cmakedefine ARROW_ORC": "/* #undef ARROW_ORC */",
+            "@UPPERCASE_BUILD_TYPE@": "",
+            "#cmakedefine ARROW_S3": "/* #undef ARROW_S3 */",
+            "@ARROW_VERSION_MAJOR@": "25",
+            "@ARROW_VERSION_MINOR@": "0",
+            "@ARROW_VERSION_PATCH@": "0",
+            "@ARROW_PACKAGE_KIND@": "",
+            "@ARROW_SO_VERSION@": "2500",
+            "@ARROW_VERSION@": "25.0.0",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine PARQUET_REQUIRE_ENCRYPTION": "/* #undef PARQUET_REQUIRE_ENCRYPTION */",
+            "#cmakedefine ARROW_WITH_OPENTELEMETRY": "/* #undef ARROW_WITH_OPENTELEMETRY */",
+            "#cmakedefine ARROW_JEMALLOC_VENDORED": "/* #undef ARROW_JEMALLOC_VENDORED */",
+            "#cmakedefine ARROW_USE_NATIVE_INT128": "/* #undef ARROW_USE_NATIVE_INT128 */",
+            "#cmakedefine ARROW_ENABLE_THREADING": "/* #undef ARROW_ENABLE_THREADING */",
+            "#cmakedefine ARROW_WITH_UTF8PROC": "/* #undef ARROW_WITH_UTF8PROC */",
+            "#cmakedefine ARROW_WITH_BROTLI": "/* #undef ARROW_WITH_BROTLI */",
+            "#cmakedefine ARROW_WITH_SNAPPY": "/* #undef ARROW_WITH_SNAPPY */",
+            "#cmakedefine ARROW_FILESYSTEM": "/* #undef ARROW_FILESYSTEM */",
+            "#cmakedefine ARROW_FLIGHT_SQL": "/* #undef ARROW_FLIGHT_SQL */",
+            "#cmakedefine ARROW_SUBSTRAIT": "/* #undef ARROW_SUBSTRAIT */",
+            "#cmakedefine ARROW_WITH_MUSL": "/* #undef ARROW_WITH_MUSL */",
+            "#cmakedefine ARROW_WITH_ZLIB": "/* #undef ARROW_WITH_ZLIB */",
+            "#cmakedefine ARROW_WITH_ZSTD": "/* #undef ARROW_WITH_ZSTD */",
+            "@CMAKE_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("aarch64"),
+            "#cmakedefine ARROW_JEMALLOC": "/* #undef ARROW_JEMALLOC */",
+            "#cmakedefine ARROW_MIMALLOC": "/* #undef ARROW_MIMALLOC */",
+            "#cmakedefine ARROW_USE_GLOG": "/* #undef ARROW_USE_GLOG */",
+            "#cmakedefine ARROW_WITH_BZ2": "/* #undef ARROW_WITH_BZ2 */",
+            "#cmakedefine ARROW_WITH_LZ4": "/* #undef ARROW_WITH_LZ4 */",
+            "#cmakedefine ARROW_WITH_RE2": "/* #undef ARROW_WITH_RE2 */",
+            "#cmakedefine ARROW_COMPUTE": "/* #undef ARROW_COMPUTE */",
+            "#cmakedefine ARROW_DATASET": "/* #undef ARROW_DATASET */",
+            "#cmakedefine ARROW_PARQUET": "/* #undef ARROW_PARQUET */",
+            "#cmakedefine ARROW_FLIGHT": "/* #undef ARROW_FLIGHT */",
+            "#cmakedefine ARROW_AZURE": "/* #undef ARROW_AZURE */",
+            "#cmakedefine ARROW_CUDA": "/* #undef ARROW_CUDA */",
+            "#cmakedefine ARROW_HDFS": "/* #undef ARROW_HDFS */",
+            "#cmakedefine ARROW_JSON": "/* #undef ARROW_JSON */",
+            "@ARROW_FULL_SO_VERSION@": "2500.0.0",
+            "@CMAKE_CXX_COMPILER_ID@": "Clang",
+            "#cmakedefine ARROW_CSV": "/* #undef ARROW_CSV */",
+            "#cmakedefine ARROW_GCS": "/* #undef ARROW_GCS */",
+            "#cmakedefine ARROW_IPC": "/* #undef ARROW_IPC */",
+            "#cmakedefine ARROW_ORC": "/* #undef ARROW_ORC */",
+            "@UPPERCASE_BUILD_TYPE@": "",
+            "#cmakedefine ARROW_S3": "/* #undef ARROW_S3 */",
+            "@ARROW_VERSION_MAJOR@": "25",
+            "@ARROW_VERSION_MINOR@": "0",
+            "@ARROW_VERSION_PATCH@": "0",
+            "@ARROW_PACKAGE_KIND@": "",
+            "@ARROW_SO_VERSION@": "2500",
+            "@ARROW_VERSION@": "25.0.0",
+        },
+    }),
     template = ":cpp/src/arrow/util/config.h.cmake",
 )
 
 expand_template(
-    name = "configure_x86_64_ad311bfb9921531b",
-    out = "config/x86_64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-    substitutions = {
-        "@ARROW_GIT_DESCRIPTION@": "",
-        "@REDACTED_CXX_FLAGS@": "",
-        "@ARROW_GIT_ID@": "",
-    },
-    template = ":cpp/src/arrow/util/config_internal.h.cmake",
-)
-
-expand_template(
-    name = "configure_aarch64_ce11ab53bbf68027",
-    out = "config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-    substitutions = {
-        "#cmakedefine PARQUET_REQUIRE_ENCRYPTION": "/* #undef PARQUET_REQUIRE_ENCRYPTION */",
-        "#cmakedefine ARROW_WITH_OPENTELEMETRY": "/* #undef ARROW_WITH_OPENTELEMETRY */",
-        "#cmakedefine ARROW_JEMALLOC_VENDORED": "/* #undef ARROW_JEMALLOC_VENDORED */",
-        "#cmakedefine ARROW_USE_NATIVE_INT128": "/* #undef ARROW_USE_NATIVE_INT128 */",
-        "#cmakedefine ARROW_ENABLE_THREADING": "/* #undef ARROW_ENABLE_THREADING */",
-        "#cmakedefine ARROW_WITH_UTF8PROC": "/* #undef ARROW_WITH_UTF8PROC */",
-        "#cmakedefine ARROW_WITH_BROTLI": "/* #undef ARROW_WITH_BROTLI */",
-        "#cmakedefine ARROW_WITH_SNAPPY": "/* #undef ARROW_WITH_SNAPPY */",
-        "#cmakedefine ARROW_FILESYSTEM": "/* #undef ARROW_FILESYSTEM */",
-        "#cmakedefine ARROW_FLIGHT_SQL": "/* #undef ARROW_FLIGHT_SQL */",
-        "#cmakedefine ARROW_SUBSTRAIT": "/* #undef ARROW_SUBSTRAIT */",
-        "#cmakedefine ARROW_WITH_MUSL": "/* #undef ARROW_WITH_MUSL */",
-        "#cmakedefine ARROW_WITH_ZLIB": "/* #undef ARROW_WITH_ZLIB */",
-        "#cmakedefine ARROW_WITH_ZSTD": "/* #undef ARROW_WITH_ZSTD */",
-        "@CMAKE_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("aarch64"),
-        "#cmakedefine ARROW_JEMALLOC": "/* #undef ARROW_JEMALLOC */",
-        "#cmakedefine ARROW_MIMALLOC": "/* #undef ARROW_MIMALLOC */",
-        "#cmakedefine ARROW_USE_GLOG": "/* #undef ARROW_USE_GLOG */",
-        "#cmakedefine ARROW_WITH_BZ2": "/* #undef ARROW_WITH_BZ2 */",
-        "#cmakedefine ARROW_WITH_LZ4": "/* #undef ARROW_WITH_LZ4 */",
-        "#cmakedefine ARROW_WITH_RE2": "/* #undef ARROW_WITH_RE2 */",
-        "#cmakedefine ARROW_COMPUTE": "/* #undef ARROW_COMPUTE */",
-        "#cmakedefine ARROW_DATASET": "/* #undef ARROW_DATASET */",
-        "#cmakedefine ARROW_PARQUET": "/* #undef ARROW_PARQUET */",
-        "#cmakedefine ARROW_FLIGHT": "/* #undef ARROW_FLIGHT */",
-        "#cmakedefine ARROW_AZURE": "/* #undef ARROW_AZURE */",
-        "#cmakedefine ARROW_CUDA": "/* #undef ARROW_CUDA */",
-        "#cmakedefine ARROW_HDFS": "/* #undef ARROW_HDFS */",
-        "#cmakedefine ARROW_JSON": "/* #undef ARROW_JSON */",
-        "@ARROW_FULL_SO_VERSION@": "2500.0.0",
-        "@CMAKE_CXX_COMPILER_ID@": "Clang",
-        "#cmakedefine ARROW_CSV": "/* #undef ARROW_CSV */",
-        "#cmakedefine ARROW_GCS": "/* #undef ARROW_GCS */",
-        "#cmakedefine ARROW_IPC": "/* #undef ARROW_IPC */",
-        "#cmakedefine ARROW_ORC": "/* #undef ARROW_ORC */",
-        "@UPPERCASE_BUILD_TYPE@": "",
-        "#cmakedefine ARROW_S3": "/* #undef ARROW_S3 */",
-        "@ARROW_VERSION_MAJOR@": "25",
-        "@ARROW_VERSION_MINOR@": "0",
-        "@ARROW_VERSION_PATCH@": "0",
-        "@ARROW_PACKAGE_KIND@": "",
-        "@ARROW_SO_VERSION@": "2500",
-        "@ARROW_VERSION@": "25.0.0",
-    },
-    template = ":cpp/src/arrow/util/config.h.cmake",
-)
-
-expand_template(
-    name = "configure_aarch64_ad311bfb9921531b",
-    out = "config/aarch64/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+    name = "configure_cpp_src_arrow_util_config_internal_h",
+    out = "config/contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
     substitutions = {
         "@ARROW_GIT_DESCRIPTION@": "",
         "@REDACTED_CXX_FLAGS@": "",
@@ -221,51 +206,27 @@ _GENERATED_DEPS_0 = [
     "@lz4//:lz4_frame",
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = select({
-    "@platforms//cpu:x86_64": [
-        "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-    ],
-    "@platforms//cpu:aarch64": [
-        "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-    ],
-})
+_GENERATED_TEXTUAL_HDRS_0 = [
+    "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
+]
 
-_GENERATED_LOCAL_INCLUDES_1 = select({
-    "@platforms//cpu:x86_64": [
-        repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/flatbuffers", "contrib/arrow"),
-        repository_local_include("contrib/arrow-cmake/cpp/src", "contrib/arrow"),
-        "cpp/src",
-        repository_local_include(
-            repository_path("contrib/libhdfs3") + "/include/hdfs",
-            "contrib/arrow",
-        ),
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/bzip2") + "/config/x86_64/contrib/bzip2",
-            "contrib/arrow",
-        ),
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
-            "contrib/arrow",
-        ),
-    ],
-    "@platforms//cpu:aarch64": [
-        repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/flatbuffers", "contrib/arrow"),
-        repository_local_include("contrib/arrow-cmake/cpp/src", "contrib/arrow"),
-        "cpp/src",
-        repository_local_include(
-            repository_path("contrib/libhdfs3") + "/include/hdfs",
-            "contrib/arrow",
-        ),
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/bzip2") + "/config/aarch64/contrib/bzip2",
-            "contrib/arrow",
-        ),
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
-            "contrib/arrow",
-        ),
-    ],
-}) + [
+_GENERATED_LOCAL_INCLUDES_1 = [
+    repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
+    repository_local_include("contrib/arrow-cmake/cpp/src", "contrib/arrow"),
+    "cpp/src",
+    repository_local_include(
+        repository_path("contrib/libhdfs3") + "/include/hdfs",
+        "contrib/arrow",
+    ),
+    repository_local_include(
+        "$(GENDIR)/" + repository_path("contrib/bzip2") + "/config/contrib/bzip2",
+        "contrib/arrow",
+    ),
+    repository_local_include(
+        "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
+        "contrib/arrow",
+    ),
+] + [
     repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/arrow"),
 ]
 
@@ -486,54 +447,29 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     })),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_bzip2//:config/x86_64/contrib/bzip2/bz_version.h",
-            "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
-        ] + glob([
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_bzip2//:config/aarch64/contrib/bzip2/bz_version.h",
-            "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
-            "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
-        ] + glob([
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ]),
-    }),
+    hdrs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
+        "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
+        "@clickhouse_orc//:config/contrib/orc/c++/include/Adaptor.hh",
+        "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
+        "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config.h",
+        "@clickhouse//:contrib/arrow-cmake/cpp/src/arrow/util/config_internal.h",
+        "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
+    ] + glob([
+        "cpp/src/**/*.h",
+        "cpp/src/**/*.hpp",
+        "cpp/src/**/*.tcc",
+    ]),
     additional_compiler_inputs = (select({
         "@platforms//cpu:x86_64": glob(
             ["cpp/src/**"],
@@ -1017,48 +953,26 @@ ch_cc_library(
     srcs = ([
         "cpp/src/arrow/vendored/musl/strptime.c",
     ] + glob(["cpp/src/arrow/vendored/uriparser/*.c"])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_bzip2//:config/x86_64/contrib/bzip2/bz_version.h",
-            "@clickhouse_orc//:config/x86_64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + glob([
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/File_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Message_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Schema_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/Tensor_generated.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/flatbuffers/generated/feather_generated.h",
-            "@clickhouse_bzip2//:config/aarch64/contrib/bzip2/bz_version.h",
-            "@clickhouse_orc//:config/aarch64/contrib/orc/c++/include/Adaptor.hh",
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
-            "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + glob([
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ]),
-    }),
+    hdrs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
+        "@clickhouse//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
+        "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
+        "@clickhouse_orc//:config/contrib/orc/c++/include/Adaptor.hh",
+        "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
+        "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    ] + glob([
+        "cpp/src/**/*.h",
+        "cpp/src/**/*.hpp",
+        "cpp/src/**/*.tcc",
+    ]),
     additional_compiler_inputs = (([
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -1143,16 +1057,10 @@ cc_library(
 
 ch_cc_library(
     name = "_arrow_flight",
-    srcs = (select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        ],
-    }) + ([
+    srcs = ([
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+    ] + ([
         "cpp/src/arrow/flight/client.cc",
         "cpp/src/arrow/flight/client_cookie_middleware.cc",
         "cpp/src/arrow/flight/client_tracing_middleware.cc",
@@ -1173,20 +1081,12 @@ ch_cc_library(
         "cpp/src/arrow/flight/sql/server.cc",
         "cpp/src/arrow/flight/sql/sql_info_internal.cc",
     ])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-        ],
-    }),
+    hdrs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
+    ],
     additional_compiler_inputs = glob(
         ["cpp/src/**"],
         exclude = [
@@ -1222,60 +1122,34 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/x86_64/contrib/arrow-cmake/cpp/src",
-            "-I",
-            "$(GENDIR)/bazel/gen/x86_64/contrib/arrow-cmake/cpp/src",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/aarch64/contrib/arrow-cmake/cpp/src",
-            "-I",
-            "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
-        ],
-    })) + [
+    ] + [
+        "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/contrib/arrow-cmake/cpp/src",
+        "-I",
+        "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
+    ]) + [
         "-I",
         repository_path("contrib/grpc") + "/include",
         "-I",
         repository_path("contrib/re2"),
     ]),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = (select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/flatbuffers", "contrib/arrow"),
-            "cpp/src",
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
-                "contrib/arrow",
-            ),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/flatbuffers", "contrib/arrow"),
-            "cpp/src",
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
-                "contrib/arrow",
-            ),
-        ],
-    }) + [
+    local_includes = ([
+        repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
+        "cpp/src",
+        repository_local_include(
+            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
+            "contrib/arrow",
+        ),
+    ] + [
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/arrow"),
     ]),
-    textual_hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-    }),
+    textual_hdrs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
+    ],
     deps = [
         ":_arrow",
         "@clickhouse_grpc//:grpc++",
@@ -1519,24 +1393,14 @@ ch_cc_library(
         "-g1",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/flatbuffers", "contrib/arrow"),
-            "cpp/src",
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
-                "contrib/arrow",
-            ),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/flatbuffers", "contrib/arrow"),
-            "cpp/src",
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
-                "contrib/arrow",
-            ),
-        ],
-    }),
+    local_includes = [
+        repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
+        "cpp/src",
+        repository_local_include(
+            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
+            "contrib/arrow",
+        ),
+    ],
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = [
         ":_arrow",
@@ -1788,24 +1652,14 @@ _GENERATED_COPTS_0 = (([
     ],
 })
 
-_GENERATED_LOCAL_INCLUDES_0 = select({
-    "@platforms//cpu:x86_64": [
-        repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/flatbuffers", "contrib/arrow"),
-        "cpp/src",
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
-            "contrib/arrow",
-        ),
-    ],
-    "@platforms//cpu:aarch64": [
-        repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/flatbuffers", "contrib/arrow"),
-        "cpp/src",
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
-            "contrib/arrow",
-        ),
-    ],
-})
+_GENERATED_LOCAL_INCLUDES_0 = [
+    repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
+    "cpp/src",
+    repository_local_include(
+        "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
+        "contrib/arrow",
+    ),
+]
 
 cc_binary(
     name = "parquet_dump_schema",
@@ -1817,14 +1671,9 @@ cc_binary(
         "cpp/src/**/*.hpp",
         "cpp/src/**/*.tcc",
     ])),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-    }),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ] + [],
     copts = _GENERATED_COPTS_0,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -1847,14 +1696,9 @@ cc_binary(
         "cpp/src/**/*.hpp",
         "cpp/src/**/*.tcc",
     ])),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-    }),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ] + [],
     copts = _GENERATED_COPTS_0,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -1877,14 +1721,9 @@ cc_binary(
         "cpp/src/**/*.hpp",
         "cpp/src/**/*.tcc",
     ])),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [],
-    }),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ] + [],
     copts = _GENERATED_COPTS_0,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,

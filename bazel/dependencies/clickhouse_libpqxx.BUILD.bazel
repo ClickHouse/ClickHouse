@@ -18,29 +18,15 @@ cc_library(
 )
 
 expand_template(
-    name = "configure_x86_64_6fedff1c3446af59",
-    out = "config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+    name = "configure_pqxx_config_internal_compiler_h",
+    out = "config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
     substitutions = {},
     template = ":include/pqxx/config.h.in",
 )
 
 expand_template(
-    name = "configure_x86_64_9372f8a8ab9501d3",
-    out = "config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-    substitutions = {},
-    template = ":include/pqxx/config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_6fedff1c3446af59",
-    out = "config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
-    substitutions = {},
-    template = ":include/pqxx/config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_9372f8a8ab9501d3",
-    out = "config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+    name = "configure_pqxx_config_public_compiler_h",
+    out = "config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
     substitutions = {},
     template = ":include/pqxx/config.h.in",
 )
@@ -48,16 +34,10 @@ expand_template(
 ch_cc_library(
     name = "_libpqxx",
     srcs = glob(["src/*.cxx"]) + glob(["src/**/*.hxx"]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
-            ":config/x86_64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
-            ":config/aarch64/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-        ],
-    }),
+    hdrs = [
+        ":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+        ":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -70,14 +50,9 @@ ch_cc_library(
     ],
     local_includes = ([
         "include",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/libpqxx-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/libpqxx-cmake",
-        ],
-    })),
+    ] + [
+        "config/contrib/libpqxx-cmake",
+    ]),
     deps = [
         ":libpqxx_headers",
         "@clickhouse_postgres//:_libpq",

@@ -251,20 +251,12 @@ _GENERATED_COPTS_2 = [
     repository_path("contrib/re2"),
 ]
 
-_GENERATED_LOCAL_INCLUDES_2 = select({
-    "@platforms//cpu:x86_64": [
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/x86_64/contrib/zlib-ng-cmake",
-            "contrib/grpc",
-        ),
-    ],
-    "@platforms//cpu:aarch64": [
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/aarch64/contrib/zlib-ng-cmake",
-            "contrib/grpc",
-        ),
-    ],
-}) + [
+_GENERATED_LOCAL_INCLUDES_2 = [
+    repository_local_include(
+        "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
+        "contrib/grpc",
+    ),
+] + [
     repository_local_include("contrib/c-ares-cmake/linux", "contrib/grpc"),
 ]
 
@@ -672,26 +664,15 @@ ch_cc_library(
         "src/core/xds/grpc/xds_server_grpc.cc",
         "src/core/xds/grpc/xds_transport_grpc.cc",
     ] + glob(["src/core/xds/xds_client/*.cc"])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + _GENERATED_HEADER_INPUTS_2) + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + _GENERATED_HEADER_INPUTS_2) + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = ([
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    ] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.inc",
+    ]),
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
@@ -875,26 +856,15 @@ ch_cc_library(
     ] + glob(["src/core/ext/upbdefs-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + _GENERATED_HEADER_INPUTS_2) + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + _GENERATED_HEADER_INPUTS_2) + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = ([
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    ] + _GENERATED_HEADER_INPUTS_2) + glob([
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.inc",
+    ]),
     additional_compiler_inputs = ([
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -1009,10 +979,7 @@ ch_cc_library(
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    hdrs = [],
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
@@ -1067,10 +1034,7 @@ ch_cc_library(
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    hdrs = [],
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
@@ -1090,14 +1054,9 @@ cc_binary(
         "**/*.hpp",
         "**/*.inc",
     ])),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + []),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + []),
-    }),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ] + [],
     copts = ((([
         "--no-default-config",
         "-fdiagnostics-color=always",
@@ -1356,18 +1315,11 @@ ch_cc_library(
         "src/compiler/python_generator.cc",
         "src/compiler/ruby_generator.cc",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": [] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = [] + glob([
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.inc",
+    ]),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = ["@clickhouse_google_protobuf//:_libprotoc"],
@@ -1708,28 +1660,16 @@ ch_cc_library(
         "src/core/util/validation_errors.cc",
         "src/core/util/work_serializer.cc",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = [
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+    ] + glob([
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.inc",
+    ]),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
@@ -1758,28 +1698,16 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/google/protobuf/empty.upbdefs.c",
         "src/core/ext/upbdefs-gen/google/protobuf/timestamp.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"])),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-            "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = [
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+        "@clickhouse//:contrib/c-ares-cmake/linux/ares_build.h",
+    ] + glob([
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.inc",
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",

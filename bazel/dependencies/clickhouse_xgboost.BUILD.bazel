@@ -8,24 +8,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_7e9adb5d4a91e061",
-    out = "config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
-    substitutions = {
-        "#cmakedefine CMAKE_CURRENT_SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\"": "#define CMAKE_CURRENT_SOURCE_DIR \"contrib/xgboost-cmake\"",
-        "  #cmakedefine DMLC_EXECINFO_H <${DMLC_EXECINFO_H}>": "/* #undef DMLC_EXECINFO_H */",
-        "#cmakedefine DMLC_EXECINFO_H_PRESENT": "/* #undef DMLC_EXECINFO_H_PRESENT */",
-        "#cmakedefine DMLC_NANOSLEEP_PRESENT": "#define DMLC_NANOSLEEP_PRESENT",
-        "#cmakedefine DMLC_CXXABI_H_PRESENT": "#define DMLC_CXXABI_H_PRESENT",
-        "#cmakedefine DMLC_FOPEN_64_PRESENT": "#define DMLC_FOPEN_64_PRESENT",
-        "#cmakedefine DMLC_USE_PARQUET": "/* #undef DMLC_USE_PARQUET */",
-        "${DMLC_CMAKE_LITTLE_ENDIAN}": "1",
-    },
-    template = "@clickhouse_dmlc_core//:cmake/build_config.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_7e9adb5d4a91e061",
-    out = "config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+    name = "configure_dmlc_core_dmlc_build_config_h",
+    out = "config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
     substitutions = {
         "#cmakedefine CMAKE_CURRENT_SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\"": "#define CMAKE_CURRENT_SOURCE_DIR \"contrib/xgboost-cmake\"",
         "  #cmakedefine DMLC_EXECINFO_H <${DMLC_EXECINFO_H}>": "/* #undef DMLC_EXECINFO_H */",
@@ -300,14 +284,9 @@ ch_cc_library(
     ],
     local_includes = ([
         "include",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/xgboost/dmlc-core",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/xgboost/dmlc-core",
-        ],
-    })),
+    ] + [
+        "config/contrib/xgboost/dmlc-core",
+    ]),
     deps = [":_dmlc_core"],
     alwayslink = False,
 )

@@ -10,26 +10,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_12e6f6bdb894c631",
-    out = "config/x86_64/contrib/orc/c++/include/Adaptor.hh",
-    substitutions = {
-        "#cmakedefine HAS_BUILTIN_OVERFLOW_CHECK": "/* #undef HAS_BUILTIN_OVERFLOW_CHECK */",
-        "#cmakedefine HAS_DOUBLE_TO_STRING": "/* #undef HAS_DOUBLE_TO_STRING */",
-        "#cmakedefine HAS_DIAGNOSTIC_PUSH": "#define HAS_DIAGNOSTIC_PUSH",
-        "#cmakedefine HAS_INT64_TO_STRING": "/* #undef HAS_INT64_TO_STRING */",
-        "#cmakedefine NEEDS_Z_PREFIX": "/* #undef NEEDS_Z_PREFIX */",
-        "#cmakedefine HAS_POST_2038": "#define HAS_POST_2038",
-        "#cmakedefine HAS_STD_ISNAN": "#define HAS_STD_ISNAN",
-        "#cmakedefine HAS_PRE_1970": "#define HAS_PRE_1970",
-        "#cmakedefine HAS_STRPTIME": "#define HAS_STRPTIME",
-        "#cmakedefine HAS_PREAD": "#define HAS_PREAD",
-    },
-    template = ":c++/src/Adaptor.hh.in",
-)
-
-expand_template(
-    name = "configure_aarch64_12e6f6bdb894c631",
-    out = "config/aarch64/contrib/orc/c++/include/Adaptor.hh",
+    name = "configure_c_include_Adaptor_hh",
+    out = "config/contrib/orc/c++/include/Adaptor.hh",
     substitutions = {
         "#cmakedefine HAS_BUILTIN_OVERFLOW_CHECK": "/* #undef HAS_BUILTIN_OVERFLOW_CHECK */",
         "#cmakedefine HAS_DOUBLE_TO_STRING": "/* #undef HAS_DOUBLE_TO_STRING */",
@@ -47,14 +29,9 @@ expand_template(
 
 ch_cc_library(
     name = "_orc",
-    srcs = (select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-    }) + ([
+    srcs = ([
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
+    ] + ([
         "c++/src/Adaptor.cc",
         "c++/src/BlockBuffer.cc",
         "c++/src/BloomFilter.cc",
@@ -137,16 +114,10 @@ ch_cc_library(
         "c++/src/wrap/snappy-wrapper.h",
         "c++/src/wrap/zero-copy-stream-wrapper.h",
     ])),
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
-            ":config/x86_64/contrib/orc/c++/include/Adaptor.hh",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.h",
-            ":config/aarch64/contrib/orc/c++/include/Adaptor.hh",
-        ],
-    }) + [
+    hdrs = ([
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
+        ":config/contrib/orc/c++/include/Adaptor.hh",
+    ] + [
         "@clickhouse//:contrib/arrow-cmake/cpp/src/orc/c++/include/orc/orc-config.hh",
         "c++/include/orc/BloomFilter.hh",
         "c++/include/orc/ColumnPrinter.hh",
@@ -244,36 +215,19 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
-                "contrib/orc",
-            ),
-            "c++/include",
-            repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
-            "c++/src",
-            repository_local_include("$(GENDIR)/bazel/gen/x86_64/contrib/arrow-cmake", "contrib/orc"),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
-                "contrib/orc",
-            ),
-            "c++/include",
-            repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
-            "c++/src",
-            repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake", "contrib/orc"),
-        ],
-    }),
-    textual_hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//bazel:gen/aarch64/contrib/arrow-cmake/orc_proto.pb.cc",
-        ],
-    }),
+    local_includes = [
+        repository_local_include(
+            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
+            "contrib/orc",
+        ),
+        "c++/include",
+        repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
+        "c++/src",
+        repository_local_include("$(GENDIR)/bazel/gen/contrib/arrow-cmake", "contrib/orc"),
+    ],
+    textual_hdrs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
+    ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse//:_lz4",

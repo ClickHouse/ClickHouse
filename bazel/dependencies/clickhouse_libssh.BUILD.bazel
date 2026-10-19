@@ -9,19 +9,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_2d945703618ada11",
-    out = "config/x86_64/contrib/libssh/include/libssh/libssh_version.h",
-    substitutions = {
-        "@libssh_VERSION_MAJOR@": "0",
-        "@libssh_VERSION_MINOR@": "12",
-        "@libssh_VERSION_PATCH@": "2",
-    },
-    template = ":include/libssh/libssh_version.h.cmake",
-)
-
-expand_template(
-    name = "configure_aarch64_2d945703618ada11",
-    out = "config/aarch64/contrib/libssh/include/libssh/libssh_version.h",
+    name = "configure_include_libssh_libssh_version_h",
+    out = "config/contrib/libssh/include/libssh/libssh_version.h",
     substitutions = {
         "@libssh_VERSION_MAJOR@": "0",
         "@libssh_VERSION_MINOR@": "12",
@@ -180,16 +169,10 @@ ch_cc_library(
             "@clickhouse//:contrib/libssh-cmake/linux/aarch64/config.h",
         ] + glob(["src/**/*.h"]),
     }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
-            "include/**/*.h",
-            "include/**/*.hpp",
-        ]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
-            "include/**/*.h",
-            "include/**/*.hpp",
-        ]),
-    }),
+    hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + glob([
+        "include/**/*.h",
+        "include/**/*.hpp",
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -202,12 +185,12 @@ ch_cc_library(
         "-I",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/x86_64/contrib/libssh/include",
+            "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
             "-I",
             "contrib/libssh-cmake/linux/x86-64",
         ],
         "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/aarch64/contrib/libssh/include",
+            "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
             "-I",
             "contrib/libssh-cmake/linux/aarch64",
         ],

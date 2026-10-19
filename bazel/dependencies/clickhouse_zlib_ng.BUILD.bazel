@@ -11,8 +11,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_128dc01292e8c548",
-    out = "config/x86_64/contrib/zlib-ng-cmake/gzread.c",
+    name = "configure_gzread_c",
+    out = "config/contrib/zlib-ng-cmake/gzread.c",
     substitutions = {
         "@ZLIB_SYMBOL_PREFIX@": "",
     },
@@ -20,8 +20,8 @@ expand_template(
 )
 
 expand_template(
-    name = "configure_x86_64_7231be0b9290d8e9",
-    out = "config/x86_64/contrib/zlib-ng-cmake/zconf.h",
+    name = "configure_zconf_h",
+    out = "config/contrib/zlib-ng-cmake/zconf.h",
     substitutions = {
         "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */": "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */",
         "#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by configure/cmake/etc */": "#if 1    /* was set to #if 1 by configure/cmake/etc */",
@@ -30,8 +30,8 @@ expand_template(
 )
 
 expand_template(
-    name = "configure_x86_64_65e30839fde2af52",
-    out = "config/x86_64/contrib/zlib-ng-cmake/zlib.h",
+    name = "configure_zlib_h",
+    out = "config/contrib/zlib-ng-cmake/zlib.h",
     substitutions = {
         "@ZLIB_SYMBOL_PREFIX@": "",
     },
@@ -39,45 +39,8 @@ expand_template(
 )
 
 expand_template(
-    name = "configure_x86_64_bc5a52d4c18752c6",
-    out = "config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    substitutions = {
-        "@ZLIB_SYMBOL_PREFIX@": "",
-    },
-    template = ":zlib_name_mangling.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_128dc01292e8c548",
-    out = "config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-    substitutions = {
-        "@ZLIB_SYMBOL_PREFIX@": "",
-    },
-    template = ":gzread.c.in",
-)
-
-expand_template(
-    name = "configure_aarch64_7231be0b9290d8e9",
-    out = "config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-    substitutions = {
-        "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */": "#ifdef NEED_PTRDIFF_T    /* may be set to #if 1 by configure/cmake/etc */",
-        "#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by configure/cmake/etc */": "#if 1    /* was set to #if 1 by configure/cmake/etc */",
-    },
-    template = ":zconf.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_65e30839fde2af52",
-    out = "config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-    substitutions = {
-        "@ZLIB_SYMBOL_PREFIX@": "",
-    },
-    template = ":zlib.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_bc5a52d4c18752c6",
-    out = "config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    name = "configure_zlib_name_mangling_h",
+    out = "config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     substitutions = {
         "@ZLIB_SYMBOL_PREFIX@": "",
     },
@@ -130,7 +93,7 @@ ch_cc_library(
             "arch/x86/compare256_sse2.c",
             "arch/x86/slide_hash_sse2.c",
             "gzlib.c",
-            ":config/x86_64/contrib/zlib-ng-cmake/gzread.c",
+            ":config/contrib/zlib-ng-cmake/gzread.c",
         ],
         "@platforms//cpu:aarch64": [
             "arch/arm/arm_features.c",
@@ -141,34 +104,22 @@ ch_cc_library(
             "arch/arm/compare256_neon.c",
             "arch/arm/slide_hash_neon.c",
             "gzlib.c",
-            ":config/aarch64/contrib/zlib-ng-cmake/gzread.c",
+            ":config/contrib/zlib-ng-cmake/gzread.c",
         ],
     }) + [
         "gzwrite.c",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/zlib-ng-cmake/zconf.h",
-            ":config/x86_64/contrib/zlib-ng-cmake/zlib.h",
-            ":config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/zlib-ng-cmake/zconf.h",
-            ":config/aarch64/contrib/zlib-ng-cmake/zlib.h",
-            ":config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        ] + glob(["**/*.h"]),
-    }),
+    hdrs = [
+        ":config/contrib/zlib-ng-cmake/zconf.h",
+        ":config/contrib/zlib-ng-cmake/zlib.h",
+        ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
+    ] + glob(["**/*.h"]),
     additional_compiler_inputs = ([
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/zlib-ng-cmake/gzread.c",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/zlib-ng-cmake/gzread.c",
-        ],
-    })),
+    ] + [
+        ":config/contrib/zlib-ng-cmake/gzread.c",
+    ]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -176,14 +127,9 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/zlib-ng-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/zlib-ng-cmake",
-        ],
-    }),
+    ] + [
+        "config/contrib/zlib-ng-cmake",
+    ],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [

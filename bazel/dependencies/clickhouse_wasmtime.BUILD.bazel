@@ -8,41 +8,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_92d8fd93281813dd",
-    out = "config/x86_64/contrib/wasmtime/include/wasmtime/conf.h",
-    substitutions = {
-        "#cmakedefine WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC": "/* #undef WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC */",
-        "#cmakedefine WASMTIME_FEATURE_PARALLEL_COMPILATION": "/* #undef WASMTIME_FEATURE_PARALLEL_COMPILATION */",
-        "#cmakedefine WASMTIME_FEATURE_POOLING_ALLOCATOR": "/* #undef WASMTIME_FEATURE_POOLING_ALLOCATOR */",
-        "#cmakedefine WASMTIME_FEATURE_COMPONENT_MODEL": "/* #undef WASMTIME_FEATURE_COMPONENT_MODEL */",
-        "#cmakedefine WASMTIME_FEATURE_DISABLE_LOGGING": "#define WASMTIME_FEATURE_DISABLE_LOGGING",
-        "#cmakedefine WASMTIME_FEATURE_DEBUG_BUILTINS": "#define WASMTIME_FEATURE_DEBUG_BUILTINS",
-        "#cmakedefine WASMTIME_FEATURE_ADDR2LINE": "#define WASMTIME_FEATURE_ADDR2LINE",
-        "#cmakedefine WASMTIME_FEATURE_CRANELIFT": "#define WASMTIME_FEATURE_CRANELIFT",
-        "#cmakedefine WASMTIME_FEATURE_PROFILING": "/* #undef WASMTIME_FEATURE_PROFILING */",
-        "#cmakedefine WASMTIME_FEATURE_WASI_HTTP": "/* #undef WASMTIME_FEATURE_WASI_HTTP */",
-        "#cmakedefine WASMTIME_FEATURE_ALL_ARCH": "/* #undef WASMTIME_FEATURE_ALL_ARCH */",
-        "#cmakedefine WASMTIME_FEATURE_COREDUMP": "#define WASMTIME_FEATURE_COREDUMP",
-        "#cmakedefine WASMTIME_FEATURE_DEMANGLE": "#define WASMTIME_FEATURE_DEMANGLE",
-        "#cmakedefine WASMTIME_FEATURE_GC_NULL": "#define WASMTIME_FEATURE_GC_NULL",
-        "#cmakedefine WASMTIME_FEATURE_LOGGING": "/* #undef WASMTIME_FEATURE_LOGGING */",
-        "#cmakedefine WASMTIME_FEATURE_THREADS": "/* #undef WASMTIME_FEATURE_THREADS */",
-        "#cmakedefine WASMTIME_FEATURE_GC_DRC": "/* #undef WASMTIME_FEATURE_GC_DRC */",
-        "#cmakedefine WASMTIME_FEATURE_PULLEY": "/* #undef WASMTIME_FEATURE_PULLEY */",
-        "#cmakedefine WASMTIME_FEATURE_ASYNC": "/* #undef WASMTIME_FEATURE_ASYNC */",
-        "#cmakedefine WASMTIME_FEATURE_CACHE": "/* #undef WASMTIME_FEATURE_CACHE */",
-        "#cmakedefine WASMTIME_FEATURE_WINCH": "/* #undef WASMTIME_FEATURE_WINCH */",
-        "#cmakedefine WASMTIME_FEATURE_WASI": "/* #undef WASMTIME_FEATURE_WASI */",
-        "#cmakedefine WASMTIME_FEATURE_WAT": "#define WASMTIME_FEATURE_WAT",
-        "#cmakedefine WASMTIME_FEATURE_GC": "#define WASMTIME_FEATURE_GC",
-        "\n": "\r\n",
-    },
-    template = ":crates/c-api/include/wasmtime/conf.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_92d8fd93281813dd",
-    out = "config/aarch64/contrib/wasmtime/include/wasmtime/conf.h",
+    name = "configure_include_wasmtime_conf_h",
+    out = "config/contrib/wasmtime/include/wasmtime/conf.h",
     substitutions = {
         "#cmakedefine WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC": "/* #undef WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC */",
         "#cmakedefine WASMTIME_FEATURE_PARALLEL_COMPILATION": "/* #undef WASMTIME_FEATURE_PARALLEL_COMPILATION */",
@@ -75,14 +42,8 @@ expand_template(
 
 cc_library(
     name = "wasmtime_headers",
-    hdrs = glob(["crates/c-api/include/**/*.h"]) + select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/wasmtime/include/wasmtime/conf.h"],
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/wasmtime/include/wasmtime/conf.h"],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["config/x86_64/contrib/wasmtime/include"],
-        "@platforms//cpu:aarch64": ["config/aarch64/contrib/wasmtime/include"],
-    }) + ["crates/c-api/include"],
+    hdrs = glob(["crates/c-api/include/**/*.h"]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
+    includes = ["config/contrib/wasmtime/include"] + ["crates/c-api/include"],
     textual_hdrs = glob(["crates/c-api/include/**/*.hh"]),
 )
 

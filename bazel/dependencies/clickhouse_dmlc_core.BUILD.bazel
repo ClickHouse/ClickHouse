@@ -44,14 +44,9 @@ ch_cc_library(
         "src/io/threaded_input_split.h",
         "src/io/uri_spec.h",
     ],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_xgboost//:config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_xgboost//:config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
-        ],
-    }) + [
+    hdrs = ([
+        "@clickhouse_xgboost//:config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+    ] + [
         "include/dmlc/any.h",
         "include/dmlc/array_view.h",
         "include/dmlc/base.h",
@@ -124,24 +119,14 @@ ch_cc_library(
         "_XOPEN_SOURCE=700",
         "__USE_XOPEN2K8",
     ],
-    local_includes = select({
-        "@platforms//cpu:x86_64": ([
-            "include",
-        ] + [
-            repository_local_include(
-                repository_path("contrib/xgboost") + "/config/x86_64/contrib/xgboost/dmlc-core",
-                "contrib/dmlc-core",
-            ),
-        ]),
-        "@platforms//cpu:aarch64": ([
-            "include",
-        ] + [
-            repository_local_include(
-                repository_path("contrib/xgboost") + "/config/aarch64/contrib/xgboost/dmlc-core",
-                "contrib/dmlc-core",
-            ),
-        ]),
-    }),
+    local_includes = [
+        "include",
+    ] + [
+        repository_local_include(
+            repository_path("contrib/xgboost") + "/config/contrib/xgboost/dmlc-core",
+            "contrib/dmlc-core",
+        ),
+    ],
     deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

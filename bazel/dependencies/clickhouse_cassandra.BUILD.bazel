@@ -9,29 +9,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_1c5b81888289aa5c",
-    out = "config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
-    substitutions = {
-        "#cmakedefine HAVE_BUILTIN_BSWAP32": "#define HAVE_BUILTIN_BSWAP32",
-        "#cmakedefine HAVE_BUILTIN_BSWAP64": "#define HAVE_BUILTIN_BSWAP64",
-        "#cmakedefine HAVE_BOOST_ATOMIC": "/* #undef HAVE_BOOST_ATOMIC */",
-        "#cmakedefine HAVE_SIGTIMEDWAIT": "#define HAVE_SIGTIMEDWAIT",
-        "#cmakedefine HAVE_ARC4RANDOM": "/* #undef HAVE_ARC4RANDOM */",
-        "#cmakedefine HAVE_STD_ATOMIC": "#define HAVE_STD_ATOMIC",
-        "#cmakedefine HAVE_GETRANDOM": "/* #undef HAVE_GETRANDOM */",
-        "#cmakedefine HAVE_NOSIGPIPE": "/* #undef HAVE_NOSIGPIPE */",
-        "#cmakedefine HAVE_KERBEROS": "/* #undef HAVE_KERBEROS */",
-        "#cmakedefine HAVE_OPENSSL": "#define HAVE_OPENSSL",
-        "#cmakedefine HAVE_TIMERFD": "/* #undef HAVE_TIMERFD */",
-        "#cmakedefine HASH_IN_TR1": "/* #undef HASH_IN_TR1 */",
-        "#cmakedefine HAVE_ZLIB": "#define HAVE_ZLIB",
-    },
-    template = ":driver_config.hpp.in",
-)
-
-expand_template(
-    name = "configure_aarch64_1c5b81888289aa5c",
-    out = "config/aarch64/contrib/cassandra-cmake/driver_config.hpp",
+    name = "configure_driver_config_hpp",
+    out = "config/contrib/cassandra-cmake/driver_config.hpp",
     substitutions = {
         "#cmakedefine HAVE_BUILTIN_BSWAP32": "#define HAVE_BUILTIN_BSWAP32",
         "#cmakedefine HAVE_BUILTIN_BSWAP64": "#define HAVE_BUILTIN_BSWAP64",
@@ -186,26 +165,16 @@ ch_cc_library(
         "src/third_party/hdr_histogram/**/*.hpp",
         "src/third_party/http-parser/**/*.h",
     ]),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
-        ] + glob(["include/**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/cassandra-cmake/driver_config.hpp",
-        ] + glob(["include/**/*.h"]),
-    }),
+    hdrs = [
+        ":config/contrib/cassandra-cmake/driver_config.hpp",
+    ] + glob(["include/**/*.h"]),
     copts = (([
         "-w",
         "-std=c++17",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/cassandra") + "/config/x86_64/contrib/cassandra-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/cassandra") + "/config/aarch64/contrib/cassandra-cmake",
-        ],
-    })) + [
+    ] + [
+        "$(GENDIR)/" + repository_path("contrib/cassandra") + "/config/contrib/cassandra-cmake",
+    ]) + [
         "-I",
         repository_path("contrib/cassandra") + "/src/ssl",
         "-I",
@@ -282,12 +251,8 @@ ch_cc_library(
     ],
     local_includes = ([
         "include",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    ] + [
+    ]),
     deps = [
         "@clickhouse_libuv//:_uv",
         ":_curl_hostcheck",

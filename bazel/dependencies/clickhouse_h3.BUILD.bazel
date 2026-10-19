@@ -8,19 +8,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_abe4826dfceaab50",
-    out = "config/x86_64/contrib/h3/src/h3lib/include/h3api.h",
-    substitutions = {
-        "@H3_VERSION_MAJOR@": "4",
-        "@H3_VERSION_MINOR@": "5",
-        "@H3_VERSION_PATCH@": "0",
-    },
-    template = ":src/h3lib/include/h3api.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_abe4826dfceaab50",
-    out = "config/aarch64/contrib/h3/src/h3lib/include/h3api.h",
+    name = "configure_src_h3lib_include_h3api_h",
+    out = "config/contrib/h3/src/h3lib/include/h3api.h",
     substitutions = {
         "@H3_VERSION_MAJOR@": "4",
         "@H3_VERSION_MINOR@": "5",
@@ -51,10 +40,7 @@ ch_cc_library(
         "src/h3lib/lib/faceijk.c",
         "src/h3lib/lib/baseCells.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]),
-    }),
+    hdrs = [":config/contrib/h3/src/h3lib/include/h3api.h"] + glob(["src/h3lib/include/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -74,14 +60,9 @@ ch_cc_library(
     ],
     local_includes = ([
         "src/h3lib/include",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/h3/src/h3lib/include",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/h3/src/h3lib/include",
-        ],
-    })),
+    ] + [
+        "config/contrib/h3/src/h3lib/include",
+    ]),
     deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,
 )

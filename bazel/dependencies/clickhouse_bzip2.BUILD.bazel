@@ -11,17 +11,8 @@ exports_files([
 ])
 
 expand_template(
-    name = "configure_x86_64_3ed97a267ca30f19",
-    out = "config/x86_64/contrib/bzip2/bz_version.h",
-    substitutions = {
-        "@BZ_VERSION@": "1.0.7",
-    },
-    template = ":bz_version.h.in",
-)
-
-expand_template(
-    name = "configure_aarch64_3ed97a267ca30f19",
-    out = "config/aarch64/contrib/bzip2/bz_version.h",
+    name = "configure_bz_version_h",
+    out = "config/contrib/bzip2/bz_version.h",
     substitutions = {
         "@BZ_VERSION@": "1.0.7",
     },
@@ -39,10 +30,7 @@ ch_cc_library(
         "decompress.c",
         "bzlib.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [":config/x86_64/contrib/bzip2/bz_version.h"] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [":config/aarch64/contrib/bzip2/bz_version.h"] + glob(["**/*.h"]),
-    }),
+    hdrs = [":config/contrib/bzip2/bz_version.h"] + glob(["**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -54,14 +42,9 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/bzip2",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/bzip2",
-        ],
-    }),
+    ] + [
+        "config/contrib/bzip2",
+    ],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
