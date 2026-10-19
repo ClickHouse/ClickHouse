@@ -3421,7 +3421,9 @@ public:
         /// insert would not delete it either, as it deletes only the files the table knows. So the file is removed:
         /// the insert has created it itself - the first file of the insert that steps aside from a non-empty one and
         /// the next files of a split insert are always new names, or names it has truncated and overwritten.
-        const bool file_is_unfinished = !path_is_published && naked_buffer && !use_table_fd;
+        /// A file that already had data before the insert opened it (it is appended to) was not created by the insert,
+        /// and it is never removed.
+        const bool file_is_unfinished = !path_is_published && naked_buffer && !use_table_fd && bytes_in_file_before_write == 0;
         if (isCancelled() || file_is_unfinished)
             cancelBuffers();
         if (file_is_unfinished)
@@ -3453,6 +3455,8 @@ public:
         else
         {
             flags |= O_WRONLY | O_APPEND | O_CREAT;
+            /// Until the size of the opened file is known, it is not treated as one the insert has created.
+            bytes_in_file_before_write = 1;
             naked_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
@@ -3504,8 +3508,10 @@ public:
         if (split_on_write_by_size_bytes && !writer)
         {
             path = get_next_path();
-            initialize();
+            /// Before `initialize`: if it throws after the file has been opened (e.g. while creating the compressing
+            /// wrapper or the output format), the destructor removes the file that is not a part of the table.
             path_is_published = false;
+            initialize();
         }
 
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
