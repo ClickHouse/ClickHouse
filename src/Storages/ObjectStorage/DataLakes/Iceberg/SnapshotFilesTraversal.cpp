@@ -53,7 +53,9 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            files.manifest_paths.insert(manifest_entry.manifest_file_path);
+            /// Manifest files are immutable and shared between snapshots, so each is read once.
+            if (!files.manifest_paths.insert(manifest_entry.manifest_file_path).second)
+                continue;
 
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, external_storages);
@@ -135,8 +137,10 @@ void collectMetadataRootFiles(
 
 /// Ignore deleted historical metadata: `remove_orphan_files` may have removed it on a previous run.
 /// Other errors propagate because they leave the referenced paths unknown.
+/// Manifest lists and manifests of `current_files` are skipped: the caller visits them.
 void collectHistoricalReferences(
     const Poco::JSON::Object::Ptr & current_metadata,
+    const SnapshotReferencedFiles & current_files,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
@@ -170,7 +174,8 @@ void collectHistoricalReferences(
 
     enqueue_log_entries(current_metadata);
 
-    std::unordered_set<IcebergPathFromMetadata> traversed_manifest_lists;
+    std::unordered_set<IcebergPathFromMetadata> traversed_manifest_lists = current_files.manifest_list_paths;
+    std::unordered_set<IcebergPathFromMetadata> traversed_manifests = current_files.manifest_paths;
 
     using ResolvedPath = std::pair<ObjectStoragePtr, String>;
     auto resolve_if_present = [&](const IcebergPathFromMetadata & path) -> std::optional<ResolvedPath>
@@ -247,6 +252,8 @@ void collectHistoricalReferences(
                 object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
             for (const auto & manifest_entry : manifest_keys)
             {
+                if (!traversed_manifests.emplace(manifest_entry.manifest_file_path).second)
+                    continue;
                 visit_history(manifest_entry.manifest_file_path);
                 if (!resolve_if_present(manifest_entry.manifest_file_path))
                 {
@@ -330,6 +337,16 @@ ReachableFilesResult collectReachableFiles(
         visit,
         reachable);
 
+    Poco::JSON::Array::Ptr snapshots;
+    if (metadata->has(f_snapshots))
+        snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+
+    SnapshotReferencedFiles snapshot_files;
+    if (snapshots && snapshots->size() > 0)
+        snapshot_files = collectSnapshotReferencedFiles(
+            snapshots, object_storage, persistent_table_components, context, log,
+            metadata->getValue<Int32>(f_current_schema_id), external_storages);
+
     if (scan_metadata_log_history)
     {
         /// History contributes only existing external files; expired in-table files must remain eligible as orphans.
@@ -355,7 +372,7 @@ ReachableFilesResult collectReachableFiles(
             external_files.push_back({std::move(storage), std::move(key), path});
         };
         collectHistoricalReferences(
-            metadata, object_storage, persistent_table_components, context, log, external_storages,
+            metadata, snapshot_files, object_storage, persistent_table_components, context, log, external_storages,
             metadata->getValue<Int32>(f_current_schema_id), visit_history);
     }
 
@@ -365,17 +382,11 @@ ReachableFilesResult collectReachableFiles(
         return {std::move(reachable), version, metadata_path, std::move(external_files)};
     }
 
-    auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     if (!snapshots || snapshots->size() == 0)
     {
         LOG_INFO(log, "Empty snapshots array, reachable set contains only metadata-root files");
         return {std::move(reachable), version, metadata_path, std::move(external_files)};
     }
-
-    Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
-
-    auto snapshot_files = collectSnapshotReferencedFiles(
-        snapshots, object_storage, persistent_table_components, context, log, current_schema_id, external_storages);
 
     for (const auto & path : snapshot_files.manifest_list_paths)
         visit(path);
