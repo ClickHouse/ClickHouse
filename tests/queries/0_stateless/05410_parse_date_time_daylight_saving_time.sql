@@ -35,3 +35,8 @@ SELECT s, toUnixTimestamp(parseDateTimeInJodaSyntax(concat(s, ' America/New_York
 FROM (SELECT formatDateTime(toDateTime('2026-03-08 00:00:00', 'UTC') + number * 1800, '%Y-%m-%d %H:%i:%s', 'UTC') AS s FROM numbers(10));
 SELECT parseDateTime64InJodaSyntaxOrNull('2026-03-08 02:30:00 America/New_York', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
 SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
+
+-- An offset before the time zone name selects one of the two 02:30.
+SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 +0200 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss Z z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 +0100 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss Z z', 'UTC');
+SELECT parseDateTime64InJodaSyntax('2026-10-25 02:30:00.5 +0100 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss.S Z z', 'UTC');

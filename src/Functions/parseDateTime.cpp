@@ -1850,13 +1850,16 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
-                /// Let `buildDateTime` resolve the offset of the parsed local time in this time zone (the time zone name
-                /// wins over an offset parsed before it), and keep that offset. The offset at the resulting instant differs
-                /// from it for a local time that does not exist, and would move the result away from that of `toDateTime`.
-                parsed_value.has_time_zone_offset = false;
+                const bool has_offset_before_time_zone = parsed_value.has_time_zone_offset;
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
                 {
+                    /// An offset parsed before the time zone name selects the instant, for example one of the two occurrences
+                    /// of a repeated local time, and the time zone gives its offset at that instant. Without such an offset,
+                    /// keep the offset that `buildDateTime` resolved for the local time: the offset at the resulting instant
+                    /// differs from it for a local time that does not exist.
+                    if (has_offset_before_time_zone)
+                        parsed_value.time_zone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
                     return end;
                 }
