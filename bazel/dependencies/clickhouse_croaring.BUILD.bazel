@@ -228,10 +228,9 @@ ch_cc_library(
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,
-    deps = ((([
+    deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
-    ] + [
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_fast_float//:fast_float",
         "@clickhouse_jwt_cpp//:jwt_cpp",
@@ -241,11 +240,10 @@ ch_cc_library(
         "@clickhouse_msgpack_c//:msgpack_c",
         "@clickhouse_pocketfft//:pocketfft",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
-    ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + [
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
-    ]),
-    alwayslink = False,
+    ],
 )
 
 ch_cc_library(
@@ -375,10 +373,9 @@ ch_cc_library(
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,
-    deps = ((([
+    deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
-    ] + [
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_fast_float//:fast_float",
         "@clickhouse_jwt_cpp//:jwt_cpp",
@@ -388,16 +385,15 @@ ch_cc_library(
         "@clickhouse_msgpack_c//:msgpack_c",
         "@clickhouse_pocketfft//:pocketfft",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
-    ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"]) + [
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
-    ]),
-    alwayslink = False,
+    ],
 )
 
 cc_library(
     name = "_roaring",
-    deps = [] + [
+    deps = [
         "@clickhouse//base/base:common",
         ":_roaring__compile_0",
         ":_roaring__compile_1",

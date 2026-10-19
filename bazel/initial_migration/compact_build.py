@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ATTRIBUTES = {
-    "srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "deps",
+    "srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "deps", "implementation_deps",
     "copts", "local_defines", "defines", "features", "linkopts",
     "target_compatible_with", "tools", "visibility", "includes", "local_includes", "data",
 }

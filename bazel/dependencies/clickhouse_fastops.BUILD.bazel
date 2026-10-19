@@ -37,7 +37,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [":_fastops_sve"],
         "//conditions:default": [],
     }),
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -70,5 +69,4 @@ ch_cc_library(
         "@llvm-project//libc:libc_headers",
         "@llvm-project//libunwind:headers",
     ],
-    alwayslink = False,
 )

@@ -44,7 +44,6 @@ ch_cc_library(
         "c++/src",
     ],
     deps = [":_kj"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -68,7 +67,6 @@ ch_cc_library(
         "c++/src",
     ],
     deps = [":_capnp"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -105,5 +103,4 @@ ch_cc_library(
         "c++/src",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

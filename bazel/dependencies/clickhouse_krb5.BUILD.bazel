@@ -1120,7 +1120,6 @@ ch_cc_library(
         "@clickhouse//bazel:krb5_generated_headers",
         "@clickhouse_openssl//:ssl",
     ],
-    alwayslink = False,
 )
 
 perl_library(

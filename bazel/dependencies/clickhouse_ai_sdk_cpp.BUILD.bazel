@@ -13,21 +13,6 @@ _AI_SDK_CPP_LOCAL_INCLUDES = [
     "third_party/concurrentqueue-header-only",
 ]
 
-_GENERATED_DEPS_1 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    ":_ai-sdk-cpp-core",
-    "@clickhouse_brotli//:_brotli",
-    "@clickhouse_llvm_project//:clang_rt_builtins",
-    "@clickhouse_openssl//:crypto",
-    "@clickhouse_llvm_project//:cxx",
-    "@clickhouse_llvm_project//:cxxabi",
-    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
-    "@clickhouse_openssl//:ssl",
-    "@clickhouse_llvm_project//:unwind",
-]
-
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
     srcs = [
@@ -53,7 +38,6 @@ ch_cc_library(
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -92,7 +76,6 @@ ch_cc_library(
         "@clickhouse_openssl//:ssl",
         "@clickhouse_nlohmann_json//:nlohmann_json",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -120,5 +103,4 @@ ch_cc_library(
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
-    alwayslink = False,
 )

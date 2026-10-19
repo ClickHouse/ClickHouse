@@ -15,7 +15,7 @@ ch_cc_library(
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
-    additional_compiler_inputs = (glob(
+    additional_compiler_inputs = glob(
         [
             "include/**",
             "src/**",
@@ -26,9 +26,8 @@ ch_cc_library(
             "src/**/*.h",
             "src/simdjson.cpp",
         ],
-    ) + [
-    ]),
-    copts = (([
+    ),
+    copts = ([
         "-w",
         "-std=c++23",
     ] + select({
@@ -36,7 +35,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "-DSIMDJSON_IMPLEMENTATION_FALLBACK=1",
         ],
-    })) + []),
+    })),
     includes = [
         "include",
     ],
@@ -52,5 +51,4 @@ ch_cc_library(
         "src",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

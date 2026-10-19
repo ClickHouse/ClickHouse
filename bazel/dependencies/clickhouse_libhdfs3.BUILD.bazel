@@ -364,7 +364,6 @@ ch_cc_library(
     deps = (_GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
     ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -488,7 +487,6 @@ ch_cc_library(
     deps = (_GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
     ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
-    alwayslink = False,
 )
 
 cc_library(
@@ -503,7 +501,6 @@ cc_library(
         "-fortify_source",
         "-default_compile_flags",
     ],
-    alwayslink = False,
 )
 
 cc_library(

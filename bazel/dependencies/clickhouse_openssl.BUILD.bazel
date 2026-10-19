@@ -888,11 +888,10 @@ ch_cc_library(
         "**/*.inc",
         "**/*.H",
     ]),
-    additional_compiler_inputs = (select({
+    additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:runtime_source_inputs",
             "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [
             "crypto/LPdir_nyi.c",
             "crypto/LPdir_unix.c",
             "crypto/LPdir_vms.c",
@@ -907,7 +906,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:runtime_source_inputs",
             "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [
             "crypto/LPdir_nyi.c",
             "crypto/LPdir_unix.c",
             "crypto/LPdir_vms.c",
@@ -918,13 +916,7 @@ ch_cc_library(
             "ms/applink.c",
             "providers/implementations/macs/blake2_mac_impl.c",
         ],
-    }) + [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    }),
     copts = [
         "-w",
         "-std=gnu11",
@@ -935,7 +927,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -1011,21 +1002,11 @@ ch_cc_library(
         "**/*.inc",
         "**/*.H",
     ]),
-    additional_compiler_inputs = (select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + ["ms/applink.c"],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + ["ms/applink.c"],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    additional_compiler_inputs = [
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+        "ms/applink.c",
+    ],
     copts = [
         "-Wno-unused-command-line-argument",
     ],
@@ -1033,7 +1014,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
-    alwayslink = False,
 )
 
 cc_library(
@@ -1120,10 +1100,11 @@ ch_cc_library(
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
     ])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + ["ms/applink.c"]),
+        "ms/applink.c",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -1136,7 +1117,6 @@ ch_cc_library(
         ".",
     ],
     deps = [":crypto"],
-    alwayslink = False,
 )
 
 filegroup(

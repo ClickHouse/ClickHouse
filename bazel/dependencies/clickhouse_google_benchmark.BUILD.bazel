@@ -46,7 +46,6 @@ ch_cc_library(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -60,5 +59,4 @@ ch_cc_library(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":google_benchmark"],
-    alwayslink = False,
 )

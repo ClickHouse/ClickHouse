@@ -270,6 +270,8 @@ ch_cc_library(
         "include/libnuraft",
         "include",
     ],
-    deps = ((["@clickhouse_boost//:_boost_coroutine"] + []) + ["@clickhouse//base/base:common"]),
-    alwayslink = False,
+    deps = [
+        "@clickhouse_boost//:_boost_coroutine",
+        "@clickhouse//base/base:common",
+    ],
 )

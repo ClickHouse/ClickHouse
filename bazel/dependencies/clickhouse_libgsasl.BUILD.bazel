@@ -89,5 +89,4 @@ ch_cc_library(
         "digest-md5",
     ],
     deps = ["@clickhouse_krb5//:_krb5"],
-    alwayslink = False,
 )

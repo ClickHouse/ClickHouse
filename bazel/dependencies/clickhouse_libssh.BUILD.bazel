@@ -201,5 +201,4 @@ ch_cc_library(
         "config/contrib/libssh/include",
     ],
     deps = ["@clickhouse_openssl//:crypto"],
-    alwayslink = False,
 )

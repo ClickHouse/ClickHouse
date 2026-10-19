@@ -38,5 +38,4 @@ ch_cc_library(
         "src",
     ],
     deps = ["@clickhouse_openssl//:crypto"],
-    alwayslink = False,
 )

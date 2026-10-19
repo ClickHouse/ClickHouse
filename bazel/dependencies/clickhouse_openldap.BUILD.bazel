@@ -75,7 +75,6 @@ ch_cc_library(
         "libraries/liblber",
     ]),
     deps = ["@clickhouse_openssl//:ssl"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -190,5 +189,4 @@ ch_cc_library(
         "libraries/libldap",
     ]),
     deps = [":_lber"],
-    alwayslink = False,
 )

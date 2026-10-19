@@ -32,5 +32,4 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_log_internal_check_op",
         "@clickhouse_abseil_cpp//:absl_log_internal_conditions",
     ],
-    alwayslink = False,
 )

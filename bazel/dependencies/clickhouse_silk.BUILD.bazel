@@ -25,21 +25,15 @@ ch_cc_library(
         "-std=c++23",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ([
+    local_includes = [
         "include",
         "src",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    ],
     deps = [
         "@clickhouse_boost//:_boost_context",
         "@clickhouse_liburing//:_liburing",
         ":_silk_util",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -60,5 +54,4 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_librseq//:_librseq",
     ],
-    alwayslink = False,
 )

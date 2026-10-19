@@ -901,11 +901,12 @@ def main():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     from initial_migration.compact_external_options import compact as compact_external_options
+    from initial_migration.normalize_cpp_builds import normalize
     for owner, spec in REPOSITORIES.items():
         path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
         if path.is_file():
             content, _ = compact_external_options(path.read_text(), spec['name'], package_sources(owner))
-            path.write_text(content)
+            path.write_text(normalize(content))
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

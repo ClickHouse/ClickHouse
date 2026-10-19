@@ -56,5 +56,4 @@ ch_cc_library(
         ":libpqxx_headers",
         "@clickhouse_postgres//:_libpq",
     ],
-    alwayslink = False,
 )

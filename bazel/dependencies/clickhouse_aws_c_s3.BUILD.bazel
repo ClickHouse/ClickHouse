@@ -19,7 +19,8 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"] + [] + [
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse_aws_c_cal//:aws_c_cal_headers",
         "@clickhouse_aws_checksums//:aws_checksums_headers",
     ],
@@ -42,7 +43,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
     deps = [":aws_c_s3_headers"],
-    alwayslink = False,
 )
 
 cc_library(

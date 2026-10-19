@@ -190,13 +190,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "tss_set=rd_kafka_tss_set",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@lz4//:lz4_frame",
-]
-
 _RDKAFKA_LOCAL_INCLUDES = [
     "src",
     "config/contrib/librdkafka-cmake",
@@ -354,12 +347,12 @@ ch_cc_library(
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
-    deps = ["@lz4//:lz4_frame"] + [
+    deps = [
+        "@lz4//:lz4_frame",
         "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
         "@clickhouse_krb5//:_krb5",
         "@clickhouse_zstd//:_zstd__compile_0",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -418,17 +411,17 @@ ch_cc_library(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
-    deps = ["@lz4//:lz4_frame"] + [
+    deps = [
+        "@lz4//:lz4_frame",
         "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
         "@clickhouse_krb5//:_krb5",
         "@clickhouse_zstd//:_zstd__compile_0",
     ],
-    alwayslink = False,
 )
 
 cc_library(
     name = "_rdkafka",
-    deps = [] + [
+    deps = [
         "@clickhouse_cyrus_sasl//:_sasl2",
         "@clickhouse//base/base:common",
         ":_rdkafka__compile_0",

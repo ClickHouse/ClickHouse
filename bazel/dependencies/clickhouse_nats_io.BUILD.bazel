@@ -63,5 +63,4 @@ ch_cc_library(
         "@clickhouse_libuv//:_uv",
         "@clickhouse_openssl//:ssl",
     ],
-    alwayslink = False,
 )

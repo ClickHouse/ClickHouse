@@ -227,7 +227,6 @@ ch_cc_library(
         "@clickhouse_minizip_ng//:_minizip",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
     ],
-    alwayslink = False,
 )
 
 _GENERATED_LOCAL_DEFINES_0 = [

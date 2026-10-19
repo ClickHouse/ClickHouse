@@ -115,5 +115,4 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_openssl//:ssl",
     ],
-    alwayslink = False,
 )

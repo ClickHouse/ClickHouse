@@ -287,5 +287,4 @@ ch_cc_library(
         "config/contrib/xgboost/dmlc-core",
     ],
     deps = [":_dmlc_core"],
-    alwayslink = False,
 )

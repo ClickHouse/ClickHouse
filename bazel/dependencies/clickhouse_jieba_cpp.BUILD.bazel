@@ -51,5 +51,4 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_darts_clone//:darts_clone",
     ],
-    alwayslink = False,
 )

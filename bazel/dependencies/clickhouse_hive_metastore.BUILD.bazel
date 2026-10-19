@@ -44,5 +44,4 @@ ch_cc_library(
         ".",
     ],
     deps = ["@clickhouse_thrift//:_thrift"],
-    alwayslink = False,
 )

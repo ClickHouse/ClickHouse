@@ -98,12 +98,11 @@ ch_cc_library(
         ":config/contrib/zlib-ng-cmake/zlib.h",
         ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + glob(["**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [
         ":config/contrib/zlib-ng-cmake/gzread.c",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -166,5 +165,4 @@ ch_cc_library(
         "__USE_LARGEFILE64",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

@@ -64,7 +64,6 @@ ch_cc_library(
     # librdkafka's rdxxhash.c includes this source as text.
     textual_hdrs = ["lib/common/xxhash.c"],
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -86,7 +85,6 @@ ch_cc_library(
         "lib/common",
     ],
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 cc_library(

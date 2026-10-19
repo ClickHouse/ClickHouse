@@ -63,5 +63,4 @@ ch_cc_library(
         "config/contrib/h3/src/h3lib/include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

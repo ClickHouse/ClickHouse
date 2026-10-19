@@ -33,5 +33,4 @@ ch_cc_library(
         ".",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

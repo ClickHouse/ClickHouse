@@ -235,7 +235,6 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
     ],
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -360,5 +359,4 @@ ch_cc_library(
         ":_bsoncxx",
         "@clickhouse_mongo_c_driver//:_libmongoc",
     ],
-    alwayslink = False,
 )

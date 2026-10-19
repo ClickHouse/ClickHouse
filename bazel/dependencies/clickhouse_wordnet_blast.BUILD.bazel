@@ -26,5 +26,4 @@ ch_cc_library(
         ".",
     ],
     deps = ["@clickhouse_boost//:_boost_graph"],
-    alwayslink = False,
 )

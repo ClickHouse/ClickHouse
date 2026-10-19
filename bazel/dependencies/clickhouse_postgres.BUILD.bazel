@@ -116,5 +116,4 @@ ch_cc_library(
         repository_local_include("contrib/postgres-cmake", "contrib/postgres"),
     ],
     deps = [":postgres_headers"],
-    alwayslink = False,
 )

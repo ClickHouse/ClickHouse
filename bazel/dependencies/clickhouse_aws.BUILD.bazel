@@ -143,7 +143,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
     deps = [":aws_headers"],
-    alwayslink = False,
 )
 
 cc_library(

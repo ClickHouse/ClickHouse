@@ -96,9 +96,8 @@ ch_cc_library(
         "src/util.c",
         "src/witness.c",
     ]) + glob(["include/**/*.h"]),
-    hdrs = ([
+    hdrs = [
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
-    ] + [
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/internal/jemalloc_preamble.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
@@ -106,7 +105,7 @@ ch_cc_library(
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_protos.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_rename.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_typedefs.h",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -133,5 +132,4 @@ ch_cc_library(
         "config/contrib/jemalloc-cmake/include_linux/jemalloc/internal",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

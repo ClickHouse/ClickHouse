@@ -12,7 +12,7 @@ ch_cc_library(
         "src/simdutf.cpp",
     ] + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = ((glob([
+    additional_compiler_inputs = (glob([
         "src/arm64/*.cpp",
         "src/haswell/*.cpp",
         "src/icelake/*.cpp",
@@ -27,7 +27,6 @@ ch_cc_library(
         "src/fallback/implementation.cpp",
         "src/implementation.cpp",
         "src/simdutf_c.cpp",
-    ]) + [
     ]),
     copts = [
         "-w",
@@ -47,5 +46,4 @@ ch_cc_library(
         "src",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

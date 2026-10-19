@@ -47,7 +47,7 @@ ch_cc_library(
             "-msse2",
         ],
         "@platforms//cpu:aarch64": [],
-    }) + []),
+    })),
     includes = [
         "include",
     ],
@@ -73,5 +73,4 @@ ch_cc_library(
         ),
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

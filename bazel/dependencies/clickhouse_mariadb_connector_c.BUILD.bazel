@@ -347,5 +347,4 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_openssl//:ssl",
     ],
-    alwayslink = False,
 )

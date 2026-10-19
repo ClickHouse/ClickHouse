@@ -115,7 +115,6 @@ ch_cc_library(
         "@llvm-project//libunwind:headers",
         ":aws_c_common_headers",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -144,7 +143,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = [],
     implementation_deps = select({
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
         "@platforms//cpu:aarch64": [],

@@ -57,7 +57,6 @@ ch_cc_library(
         "googletest/include",
     ],
     deps = [":_gtest"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -75,7 +74,6 @@ ch_cc_library(
         "googletest/include",
     ],
     deps = [":_gmock"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -132,5 +130,4 @@ ch_cc_library(
         "googletest/include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )

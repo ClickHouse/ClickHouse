@@ -56,5 +56,4 @@ ch_cc_library(
         "@clickhouse_boost//:_boost_iostreams",
         "@clickhouse_snappy//:_snappy",
     ],
-    alwayslink = False,
 )

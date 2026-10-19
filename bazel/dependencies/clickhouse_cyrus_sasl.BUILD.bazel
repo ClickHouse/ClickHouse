@@ -80,5 +80,4 @@ ch_cc_library(
         "tests",
     ],
     deps = ["@clickhouse_krb5//:_krb5"],
-    alwayslink = False,
 )

@@ -104,7 +104,6 @@ ch_cc_library(
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_0,
-    alwayslink = False,
 )
 
 nasm_objects(
@@ -489,7 +488,6 @@ cc_library(
         "-default_compile_flags",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = False,
 )
 
 cc_library(

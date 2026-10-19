@@ -19,7 +19,10 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"] + [] + ["@clickhouse_aws_c_cal//:aws_c_cal_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse_aws_c_cal//:aws_c_cal_headers",
+    ],
     language = "C",
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -39,7 +42,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
     deps = [":aws_c_auth_headers"],
-    alwayslink = False,
 )
 
 cc_library(

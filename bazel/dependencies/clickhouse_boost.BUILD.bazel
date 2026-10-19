@@ -51,7 +51,6 @@ ch_cc_library(
     deps = _GENERATED_DEPS_0 + [
         ":boost_headers",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -80,7 +79,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
         ],
     })),
-    copts = [],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -89,7 +87,6 @@ ch_cc_library(
     deps = _GENERATED_DEPS_0 + [
         ":boost_headers",
     ],
-    alwayslink = False,
 )
 
 cc_library(
@@ -120,7 +117,6 @@ ch_cc_library(
         ".",
     ],
     deps = [":_boost_context"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -145,7 +141,6 @@ ch_cc_library(
         ":boost_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -166,7 +161,6 @@ ch_cc_library(
         ".",
     ],
     deps = [":_boost_regex"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -179,12 +173,12 @@ ch_cc_library(
         "libs/iostreams/src/zstd.cpp",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": [] + glob([
+        "@platforms//cpu:x86_64": glob([
             "libs/iostreams/**/*.h",
             "libs/iostreams/**/*.hpp",
             "libs/iostreams/**/*.inc",
         ]),
-        "@platforms//cpu:aarch64": [] + glob([
+        "@platforms//cpu:aarch64": glob([
             "libs/iostreams/**/*.h",
             "libs/iostreams/**/*.hpp",
             "libs/iostreams/**/*.inc",
@@ -255,18 +249,12 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }),
+    ],
     deps = [
         ":boost_headers",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -286,7 +274,6 @@ ch_cc_library(
         ":boost_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -311,7 +298,6 @@ ch_cc_library(
         ":boost_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
-    alwayslink = False,
 )
 
 cc_library(
@@ -328,7 +314,6 @@ cc_library(
 
 cc_library(
     name = "boost_asio_headers",
-    hdrs = [],
     includes = ["boost"],
     deps = [":boost_headers"],
 )

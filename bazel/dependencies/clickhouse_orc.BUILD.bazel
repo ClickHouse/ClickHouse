@@ -216,5 +216,4 @@ ch_cc_library(
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zstd//:_zstd",
     ],
-    alwayslink = False,
 )

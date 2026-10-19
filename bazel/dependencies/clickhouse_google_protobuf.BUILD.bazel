@@ -273,7 +273,6 @@ ch_cc_library(
         "src/google/protobuf/util/type_resolver_util.cc",
         "src/google/protobuf/wire_format.cc",
     ],
-    hdrs = [],
     copts = [
         "-w",
         "-std=c++17",
@@ -294,7 +293,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_statusor",
         ":utf8_validity",
     ],
-    alwayslink = False,
 )
 
 _GENERATED_LOCAL_DEFINES_1 = [
@@ -347,7 +345,6 @@ ch_cc_library(
         "third_party/utf8_range",
     ],
     deps = [":utf8_validity"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -625,7 +622,6 @@ ch_cc_library(
         "upb/reflection/cmake",
     ] + _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -686,11 +682,10 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [
-    ]),
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -705,7 +700,6 @@ ch_cc_library(
         "third_party/utf8_range",
     ],
     deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
-    alwayslink = False,
 )
 
 cc_library(
@@ -728,7 +722,7 @@ cc_binary(
     ])),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [],
+    ],
     copts = ((([
         "--no-default-config",
         "-fdiagnostics-color=always",
@@ -991,7 +985,6 @@ ch_cc_library(
         "third_party/utf8_range",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    alwayslink = False,
 )
 
 ch_cc_library(
@@ -1018,5 +1011,4 @@ ch_cc_library(
         "third_party/utf8_range",
     ],
     deps = ["@clickhouse_abseil_cpp//:absl_strings"],
-    alwayslink = False,
 )
