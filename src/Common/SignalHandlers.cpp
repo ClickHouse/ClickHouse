@@ -578,23 +578,21 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
 
 /// Prints an instruction address in the same representation as the symbolized lines below it, so that
 /// the two are comparable and the printed value survives ASLR of a position-independent executable.
+/// An address that does not resolve to a loaded object has no such form and is not printed.
 static void writeResolvedAddress(const void * addr, WriteBuffer & out)
 {
     const auto resolved = StackTrace::resolveAddress(addr);
-    writePointerHex(resolved.address, out);
-
-    switch (resolved.kind)
+    if (!resolved.address)
     {
-        case StackTrace::AddressKind::OtherObject:
-            writeString(" in ", out);
-            writeString(resolved.object, out);
-            break;
-        case StackTrace::AddressKind::UnknownMapping:
-            writeString(" in <unknown>", out);
-            break;
-        case StackTrace::AddressKind::MainObject:
-        case StackTrace::AddressKind::Unsupported:
-            break;
+        writeString("<unknown>", out);
+        return;
+    }
+
+    writePointerHex(resolved.address, out);
+    if (resolved.kind == StackTrace::AddressKind::OtherObject)
+    {
+        writeString(" in ", out);
+        writeString(resolved.object, out);
     }
 }
 
@@ -620,7 +618,8 @@ try
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
               VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              /// `si_pid` and `si_uid` are set only for signals sent by a process; for a fault they overlap `si_addr`.
+              info.si_code > 0 || info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 

@@ -126,7 +126,7 @@ public:
     {
         MainObject,     /// Offset inside the main executable.
         OtherObject,    /// Offset inside the loaded object named by `object`.
-        UnknownMapping, /// No loaded object contains the address, so it is the runtime address.
+        UnknownMapping, /// No loaded object is known to contain the address. The runtime address is not published, so it is null.
         Unsupported,    /// The platform keeps runtime addresses, so it is the argument unchanged.
     };
 
