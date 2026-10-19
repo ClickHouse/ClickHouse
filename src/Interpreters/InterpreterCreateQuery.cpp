@@ -1286,7 +1286,7 @@ namespace
         {
             *ptr = nullptr;
         });
-        /// The child nodes remain reachable here, and `hasSecretParts` traverses them.
+        /// children keeps the old nodes, and hasSecretParts reads them
         storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
@@ -1434,7 +1434,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        /// Check SHOW COLUMNS before reading the source definition, which may contain credentials.
+        /// check SHOW COLUMNS first, else the error tells a user who cannot see the table that it
+        /// holds credentials
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
@@ -1443,9 +1444,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
+        /// SHOW CREATE TABLE masks credentials, so a copy of them gives the source data to a user who
+        /// cannot SELECT it. SHOW COLUMNS already shows the rest
         auto check_access_to_inherited_definition = [&](const IAST & definition)
         {
-            /// `SHOW CREATE TABLE` masks credentials, so inheriting them requires `SELECT`.
             if (definition.hasSecretParts())
                 getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
         };
@@ -1488,6 +1490,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
             create.is_time_series_table = as_create.is_time_series_table;
 
+            /// normalizeTimeSeriesDefinition copies the settings and the inner engines of the source,
+            /// and this query inherits each one it does not give itself
+            if (as_create.is_time_series_table && as_create.storage->settings
+                && !(create.storage && create.storage->settings))
+                check_access_to_inherited_definition(*as_create.storage->settings);
             if (as_create.is_time_series_table && as_create.targets)
                 for (const auto & target : as_create.targets->targets)
                     if (target.inner_engine && !create.getTargetInnerEngine(target.kind))
@@ -1500,10 +1507,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (storage_def)
         {
-            /// Check the definition that will actually be inherited after applying this query's overrides.
+            /// check what the server stores: settings in this query replace the source settings, and
+            /// Null can replace an external engine
             auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
             if (create.storage)
             {
+                /// inheritStorageFromSource keeps the clauses this query gives, so drop them here too
                 if (create.storage->partition_by)
                     inherited->reset(inherited->partition_by);
                 if (create.storage->primary_key)
@@ -1522,6 +1531,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             replaceExternalEngineWithNullIfNeeded(
                 *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+
             check_access_to_inherited_definition(*inherited);
         }
     }
@@ -2985,12 +2995,16 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
-            /// Older workers execute AS without the initiating user's identity.
+            /// this branch returns before setEngine, and the worker builds AS src with no user, so
+            /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
             {
+                /// a worker resolves a name without a database in its own database, so set ours, as
+                /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
-                getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
 
+                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
+                /// what the worker builds, not what our settings give
                 auto preflight_context = Context::createCopy(getContext());
                 if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
                 {
@@ -3002,6 +3016,7 @@ BlockIO InterpreterCreateQuery::execute()
                 auto & inherited = inherited_query->as<ASTCreateQuery &>();
                 InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
 
+                /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
             }
