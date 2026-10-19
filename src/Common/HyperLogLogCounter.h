@@ -198,7 +198,6 @@ public:
         memset(rank_count, 0, size * sizeof(UInt32));
     }
 
-    /// Sets the number of registers of each rank.
     void setRankCounts(std::span<const UInt32, max_rank + 1> counts) { memcpy(rank_count, counts.data(), sizeof(rank_count)); }
 
     DenominatorType get() const
