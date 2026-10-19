@@ -7,6 +7,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
@@ -260,11 +261,29 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(cons
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNormalize(
     const String & s,
     const ColumnsDescription & columns,
-    bool add_minmax_index_for_numeric_columns,
-    bool add_minmax_index_for_string_columns,
+    const StorageInMemoryMetadata & table_metadata,
     ContextPtr context)
 {
     auto result = parseRaw(s);
+
+    /// Whether the table's own stored `SETTINGS` clause enables this implicit-index policy. Only that
+    /// proves that a reserved-name index was implicit: an inherited value may differ from the one the
+    /// table was created with, and a user-declared `auto_minmax_index_*` of a table that inherits the
+    /// policy looks exactly the same. This must match the local loader in `registerStorageMergeTree`,
+    /// otherwise the index is explicit locally but stripped here, and the replica cannot attach.
+    const auto stored_and_enabled = [&](std::string_view name, bool enabled)
+    {
+        if (!enabled || !table_metadata.settings_changes)
+            return false;
+        for (const auto & change : table_metadata.settings_changes->as<const ASTSetQuery &>().changes)
+            if (change.name == name)
+                return true;
+        return false;
+    };
+    const bool add_minmax_index_for_numeric_columns
+        = stored_and_enabled("add_minmax_index_for_numeric_columns", table_metadata.add_minmax_index_for_numeric_columns);
+    const bool add_minmax_index_for_string_columns
+        = stored_and_enabled("add_minmax_index_for_string_columns", table_metadata.add_minmax_index_for_string_columns);
 
     /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
     /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the

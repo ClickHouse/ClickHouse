@@ -1313,8 +1313,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
             auto zk_metadata_parsed = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
                 zk_metadata_str,
                 metadata_snapshot->getColumns(),
-                metadata_snapshot->add_minmax_index_for_numeric_columns,
-                metadata_snapshot->add_minmax_index_for_string_columns,
+                *metadata_snapshot,
                 getContext());
             return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
                 zk_metadata_parsed,
@@ -1848,8 +1847,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
         metadata_str, metadata_snapshot->getColumns(),
-        metadata_snapshot->add_minmax_index_for_numeric_columns,
-        metadata_snapshot->add_minmax_index_for_string_columns,
+        *metadata_snapshot,
         getContext());
     bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->columns, metadata_snapshot->virtuals, getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
 
@@ -6865,8 +6863,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
     auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
         entry.metadata_str, columns_from_entry,
-        current_metadata->add_minmax_index_for_numeric_columns,
-        current_metadata->add_minmax_index_for_string_columns,
+        *current_metadata,
         getContext());
 
     MergeTreeData::DataParts parts;
@@ -12187,8 +12184,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
 
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
-            current_metadata->add_minmax_index_for_numeric_columns,
-            current_metadata->add_minmax_index_for_string_columns,
+            *current_metadata,
             getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
