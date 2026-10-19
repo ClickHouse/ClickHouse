@@ -113,6 +113,7 @@ public:
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+    const SortDescription & getPrefixDescription() const { return prefix_description; }
     Names getPartitionByColumnNames() const;
 
     size_t getScatterPartitions() const { return scatter_partitions; }
@@ -130,6 +131,7 @@ public:
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
+    void disableBuffering() { use_buffering = false; }
     bool getUseBuffering() const { return use_buffering; }
 
     Type getType() const { return type; }
