@@ -191,6 +191,26 @@ SELECT if(explain LIKE '%Window (%', 'Window', 'CAST') FROM
 )
 WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION CAST(%';
 
+SELECT if(explain LIKE '%Window (%', 'Window', 'toLowCardinality') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT toLowCardinality(reinterpretAsUInt64(s)), count() OVER () FROM (SELECT reinterpretAsFixedString(number) AS s FROM numbers(10))
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION toLowCardinality%';
+
+SELECT 'a sparse column';
+DROP TABLE IF EXISTS t_window_push_down_sparse;
+CREATE TABLE t_window_push_down_sparse (s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
+INSERT INTO t_window_push_down_sparse SELECT if(number % 1000 = 0, toString(number), '') FROM numbers(10000);
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(s), count() OVER () FROM t_window_push_down_sparse
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_sparse;
+
 SELECT 'arrayJoin below the window functions';
 SELECT toUInt64(s), count() OVER ()
 FROM (SELECT if(number = 0, 'x', '1') AS s, arrayJoin(if(number = 0, [], [1])) AS a FROM numbers(2))
@@ -238,7 +258,8 @@ CREATE TABLE t_window_push_down (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_window_push_down SELECT concat('p@', toString(number)) FROM numbers(3);
 SELECT toUInt64OrZero(splitByString('@', s)[2]) AS v, count() OVER () AS n
 FROM remote('127.0.0.{1,2}', currentDatabase(), t_window_push_down) ORDER BY v;
--- The expression is computed on the initiator, while the shards send the column.
+-- The columns received from other servers may be sparse, so the expression stays after the window functions,
+-- and the shards send the column.
 SELECT trimLeft(multiIf(
     explain LIKE '%Window (%', 'Window',
     explain LIKE '%FUNCTION toUInt64OrZero%', 'toUInt64OrZero',

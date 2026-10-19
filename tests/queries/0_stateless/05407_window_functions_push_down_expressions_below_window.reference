@@ -63,6 +63,11 @@ toLowCardinality
 Window
 CAST
 Window
+toLowCardinality
+Window
+a sparse column
+cityHash64
+Window
 arrayJoin below the window functions
 1	1
 a table that keeps its columns in memory
@@ -108,7 +113,8 @@ remote
 1	6
 2	6
 2	6
-Window
 toUInt64OrZero
+Window
+Header: __table1.s String
 ReadFromRemote
 Header: __table1.s String

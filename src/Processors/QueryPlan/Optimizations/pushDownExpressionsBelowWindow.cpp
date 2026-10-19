@@ -19,8 +19,6 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -51,6 +49,10 @@ using NodeSet = std::unordered_set<const Node *>;
 bool isStoredInFixedSize(const DataTypePtr & type)
 {
     auto nested_type = removeNullable(type);
+    /// `LowCardinality(UInt64)` is represented by a number as its dictionary type.
+    if (nested_type->lowCardinality())
+        return false;
+
     return nested_type->isValueRepresentedByNumber() || isFixedString(nested_type);
 }
 
@@ -220,6 +222,15 @@ bool mergeTreeColumnHasOwnMemory(const ReadFromMergeTree & read, const String & 
     if (columns.getDefault(column_name))
         return false;
 
+    /// A part can store the column in a sparse serialization, which is read as a sparse column that takes much
+    /// less than the offset per row, while the result of an expression of it can be a full column.
+    for (const auto & part : read.getParts())
+    {
+        const auto & serialization_infos = part.data_part->getSerializationInfos();
+        if (auto it = serialization_infos.find(column_name); it != serialization_infos.end() && it->second->hasCustomSerialization())
+            return false;
+    }
+
     /// The columns whose default expressions read the column, directly or through other columns.
     NameSet dependent_columns{column_name};
     for (bool added = true; added;)
@@ -333,11 +344,10 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
     if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
         return mergeTreeColumnHasOwnMemory(*read_from_merge_tree, column_name);
 
-    /// The reads that create new columns: the columns received from other servers are deserialized separately.
-    /// Others may return columns that stay in memory anyway, like a `Memory` table, a materialized CTE or a prepared
-    /// source, or fill the missing columns with default expressions, so freeing them does not reduce the memory usage.
-    if (typeid_cast<const ReadFromSystemNumbersStep *>(step) || typeid_cast<const ReadFromRemote *>(step)
-        || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step) || typeid_cast<const ReadFromParallelReplicasStep *>(step))
+    /// The reads that create new full columns. Others may return columns that stay in memory anyway, like a `Memory`
+    /// table, a materialized CTE or a prepared source, fill the missing columns with default expressions, like `File`,
+    /// or return sparse columns, like the reads from other servers, so freeing them may not reduce the memory usage.
+    if (typeid_cast<const ReadFromSystemNumbersStep *>(step))
         return true;
 
     if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
