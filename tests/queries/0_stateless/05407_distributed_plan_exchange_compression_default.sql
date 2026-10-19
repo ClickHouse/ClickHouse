@@ -25,13 +25,14 @@ SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
   SETTINGS distributed_plan_exchange_compression_method = 'NONE', network_compression_method = 'ZSTD', log_comment = '05407_none_zstd';
 -- `ZSTD` of the exchange takes its level from `distributed_plan_exchange_zstd_compression_level`, not from
--- `network_zstd_compression_level`.
+-- `network_zstd_compression_level`: only the level of the exchange makes the codec reject a level above 22.
+-- `network_compression_method` is `LZ4`, so that the connection to the client does not use the network level.
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
   SETTINGS distributed_plan_exchange_compression_method = 'ZSTD', distributed_plan_exchange_zstd_compression_level = 1,
-    network_zstd_compression_level = 19, log_comment = '05407_zstd_level_1';
+    network_compression_method = 'LZ4', network_zstd_compression_level = 23, log_comment = '05407_zstd_exchange_level';
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
-  SETTINGS distributed_plan_exchange_compression_method = 'ZSTD', distributed_plan_exchange_zstd_compression_level = 19,
-    network_zstd_compression_level = 1, log_comment = '05407_zstd_level_19';
+  SETTINGS distributed_plan_exchange_compression_method = 'ZSTD', distributed_plan_exchange_zstd_compression_level = 23,
+    network_compression_method = 'LZ4', network_zstd_compression_level = 1; -- { serverError ILLEGAL_CODEC_PARAMETER }
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
   SETTINGS compatibility = '26.10', network_compression_method = 'NONE', log_comment = '05407_compatibility_26_10';
 
@@ -58,10 +59,6 @@ GROUP BY run;
 SELECT run, serialized_bytes > 0 AS measured, sent_bytes < serialized_bytes AS compressed
 FROM v_exchange_codec_default
 ORDER BY run;
-
-SELECT 'level 19 of the exchange packs tighter than level 1:',
-    (SELECT sent_bytes / serialized_bytes FROM v_exchange_codec_default WHERE run = '05407_zstd_level_19')
-      < (SELECT sent_bytes / serialized_bytes FROM v_exchange_codec_default WHERE run = '05407_zstd_level_1');
 
 DROP VIEW v_exchange_codec_default;
 DROP TABLE t_exchange_codec_default;
