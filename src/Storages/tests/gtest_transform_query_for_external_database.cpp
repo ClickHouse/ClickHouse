@@ -292,7 +292,7 @@ static void check(
 
 static void checkNewAnalyzer(
     const State & state,
-    size_t table_num,
+    [[maybe_unused]] size_t table_num,
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
