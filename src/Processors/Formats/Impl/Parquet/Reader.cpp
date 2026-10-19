@@ -1406,33 +1406,6 @@ void Reader::prepareBloomFilterCondition()
     }
 }
 
-std::vector<size_t> Reader::getSortedMetadataOffsets(bool with_column_chunk_copies) const
-{
-    std::vector<size_t> offsets;
-    offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 7);
-    for (const auto & rg : file_metadata.row_groups)
-    {
-        for (const auto & col : rg.columns)
-        {
-            if (with_column_chunk_copies)
-                offsets.push_back(col.file_offset);
-            if (col.__isset.offset_index_offset)
-                offsets.push_back(col.offset_index_offset);
-            if (col.__isset.column_index_offset)
-                offsets.push_back(col.column_index_offset);
-            if (col.meta_data.__isset.dictionary_page_offset)
-                offsets.push_back(col.meta_data.dictionary_page_offset);
-            if (col.meta_data.__isset.index_page_offset)
-                offsets.push_back(col.meta_data.index_page_offset);
-            offsets.push_back(col.meta_data.data_page_offset);
-            if (col.meta_data.__isset.bloom_filter_offset)
-                offsets.push_back(col.meta_data.bloom_filter_offset);
-        }
-    }
-    std::sort(offsets.begin(), offsets.end());
-    return offsets;
-}
-
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
@@ -1591,7 +1564,25 @@ void Reader::initializePrefetches()
         /// reads if it's small.
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
-        std::vector<size_t> all_offsets = getSortedMetadataOffsets(/*with_column_chunk_copies=*/ true);
+        std::vector<size_t> all_offsets;
+        all_offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 6);
+        for (const auto & rg : file_metadata.row_groups)
+        {
+            for (const auto & col : rg.columns)
+            {
+                all_offsets.push_back(col.file_offset);
+                if (col.__isset.offset_index_offset)
+                    all_offsets.push_back(col.offset_index_offset);
+                if (col.__isset.column_index_offset)
+                    all_offsets.push_back(col.column_index_offset);
+                if (col.meta_data.__isset.dictionary_page_offset)
+                    all_offsets.push_back(col.meta_data.dictionary_page_offset);
+                all_offsets.push_back(col.meta_data.data_page_offset);
+                if (col.meta_data.__isset.bloom_filter_offset)
+                    all_offsets.push_back(col.meta_data.bloom_filter_offset);
+            }
+        }
+        std::sort(all_offsets.begin(), all_offsets.end());
         for (RowGroup & row_group : row_groups)
         {
             for (ColumnChunk & column : row_group.columns)

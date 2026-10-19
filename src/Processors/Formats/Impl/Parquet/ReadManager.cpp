@@ -108,8 +108,6 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
-    if (column_data_read_ahead)
-        reader.prefetcher.setBarriers(reader.getSortedMetadataOffsets(/*with_column_chunk_copies=*/ false));
     column_data_read_ahead_row_groups.resize(num_row_groups);
     column_data_read_ahead_run_slots.assign(num_row_groups, 0);
 

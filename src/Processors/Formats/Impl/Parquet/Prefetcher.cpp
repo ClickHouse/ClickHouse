@@ -287,30 +287,14 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
     return charged;
 }
 
-void Prefetcher::setBarriers(std::vector<size_t> sorted_offsets)
-{
-    chassert(std::is_sorted(sorted_offsets.begin(), sorted_offsets.end()));
-    barriers = std::move(sorted_offsets);
-}
-
-bool Prefetcher::noBarrierBetween(size_t begin, size_t end) const
-{
-    if (end <= begin)
-        return true;
-    auto it = std::lower_bound(barriers.begin(), barriers.end(), begin);
-    return it == barriers.end() || *it >= end;
-}
-
 bool Prefetcher::extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const
 {
-    return next.first_range_idx == run.last_range_idx + 1 && noBarrierBetween(run.end, next.begin);
+    return next.first_range_idx == run.last_range_idx + 1 && (next.begin <= run.end || next.begin - run.end < min_bytes_for_seek);
 }
 
 std::optional<Prefetcher::AdjacentRanges> Prefetcher::getAdjacentRanges(const std::vector<PrefetchHandle *> & handles)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
-    /// The ranges' own starts are barriers, so empty means not set.
-    chassert(!barriers.empty());
 
     std::vector<size_t> range_indices;
     range_indices.reserve(handles.size());
@@ -337,7 +321,7 @@ std::optional<Prefetcher::AdjacentRanges> Prefetcher::getAdjacentRanges(const st
     for (size_t i = 1; i < range_indices.size(); ++i)
     {
         const RangeState & range = ranges[range_indices[i]];
-        if (range_indices[i] != range_indices[i - 1] + 1 || !noBarrierBetween(res.end, range.start))
+        if (range_indices[i] != range_indices[i - 1] + 1 || (range.start > res.end && range.start - res.end >= min_bytes_for_seek))
             return std::nullopt;
         res.end = std::max(res.end, range.end);
     }

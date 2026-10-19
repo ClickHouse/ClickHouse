@@ -11,10 +11,9 @@
 # Read-ahead takes at most the column data stage's share (0.2) of the memory the query may still use:
 # the ~8 MB second row group of _big.parquet is not read ahead under a 32 MB limit, but is under 1 GB.
 # Column chunks with an offset index (_pi.parquet) are not read ahead.
-# Small row groups whose chunks are separated only by the writer's metadata copies (_small.parquet, ~1 KB
-# chunks) are read ahead in requests of up to 4 x remote_read_min_bytes_for_seek; the chunks of a column
-# that is not read are not. Row groups of at least remote_read_min_bytes_for_seek / 16 (_medium.parquet, ~8 KB
-# chunks) keep one request each.
+# Small row groups (_small.parquet, ~1 KB chunks) are read ahead in requests of up to 4 x
+# remote_read_min_bytes_for_seek, also when one of their two columns is not read. Row groups of at least
+# remote_read_min_bytes_for_seek / 16 (_medium.parquet, ~8 KB chunks) keep one request each.
 # Reads through the userspace page cache are not read ahead. The CI server has no page cache, so a
 # clickhouse-local with one reads the files, then reads them again without it as a control.
 # A read buffer larger than the file puts the asynchronous prefetch buffer above the page cache
@@ -64,8 +63,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "
     SELECT sumIf(ProfileEvents['S3GetObject'], log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_h_s3_small_row_groups') < 50,
-        sumIf(ProfileEvents['ReadBufferFromS3Bytes'], log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_i_s3_small_row_groups_one_column') * 4
-            < sumIf(ProfileEvents['ReadBufferFromS3Bytes'], log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_h_s3_small_row_groups') * 3,
+        sumIf(ProfileEvents['S3GetObject'], log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_i_s3_small_row_groups_one_column') < 50,
         sumIf(ProfileEvents['S3GetObject'], log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_j_s3_medium_row_groups') > 100
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'

@@ -64,11 +64,7 @@ public:
         const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
         std::vector<size_t> * created_task_first_handle = nullptr);
 
-    /// Not thread safe; called before getAdjacentRanges and extendsAdjacentRanges. Start offsets of the structures that
-    /// the file metadata describes, the registered ranges' own included: adjacent ranges never span one.
-    void setBarriers(std::vector<size_t> sorted_offsets);
-
-    /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with no file structure between them (see setBarriers).
+    /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with gaps below min_bytes_for_seek between them (as in a read task).
     struct AdjacentRanges
     {
         size_t first_range_idx = 0;
@@ -228,9 +224,6 @@ private:
 
     std::atomic<bool> ranges_finalized {false};
 
-    /// See setBarriers. Sorted, immutable once set.
-    std::vector<size_t> barriers;
-
     /// (One mutex for all tasks because it's not used frequently.)
     std::mutex exception_mutex;
 
@@ -243,7 +236,6 @@ private:
     /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
     Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
-    bool noBarrierBetween(size_t begin, size_t end) const;
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
     [[noreturn]] void rethrowException(Task * task);
