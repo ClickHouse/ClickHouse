@@ -255,6 +255,7 @@ private:
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
 
+    const String initial_latest_metadata_query_id;
     mutable std::mutex initial_latest_metadata_mutex;
     mutable std::optional<Iceberg::MetadataFileWithInfo> initial_latest_metadata TSA_GUARDED_BY(initial_latest_metadata_mutex);
 
