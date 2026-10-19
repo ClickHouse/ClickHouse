@@ -13,6 +13,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/getL2CacheSize.h>
@@ -110,91 +111,55 @@ ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 /// so that the cache misses of the inserts overlap.
 constexpr size_t PREFETCH_DISTANCE = 32;
 
-/// Open addressing set with linear probing. The zero key is kept out of the cells, because zero marks an empty cell.
 template <typename Key>
-class FlatSet
+struct SlotHash
 {
+    size_t operator()(Key key) const { return slotHash(key); }
+};
+
+/// Linear probing with the slot selected by the top bits of the hash (see `slotHash`). The hash table never grows by
+/// itself: the load factor of 0.5 is kept by the callers, which rebuild the set (see `growLocalSet`).
+struct SlotGrower : HashTableGrower<1>
+{
+    size_t place(size_t x) const { return x >> (64 - size_degree); }
+    bool overflow(size_t /*elems*/) const { return false; }
+};
+
+/// A `HashSet` with the interface the streams and the buckets use.
+template <typename Key>
+class RadixSet
+{
+    using Set = HashSetTable<Key, HashTableCell<Key, SlotHash<Key>>, SlotHash<Key>, SlotGrower, HashTableAllocator>;
+
 public:
     /// Empties the set and makes its capacity `capacity`, a power of two.
     void reset(size_t capacity)
     {
         chassert(std::has_single_bit(capacity));
-        cells.resize(capacity);
-        memset(cells.data(), 0, capacity * sizeof(Key));
-        mask = capacity - 1;
-        shift = 64 - std::countr_zero(capacity);
-        count = 0;
-        has_zero = false;
+        if (capacity == set.getBufferSizeInCells())
+        {
+            set.clear();
+            return;
+        }
+        set = Set();
+        set.reserve(capacity / 2);
     }
 
     /// Returns true if the key was not in the set.
     ALWAYS_INLINE bool insert(Key key)
     {
-        if (key == Key{})
-        {
-            const bool inserted = !has_zero;
-            has_zero = true;
-            return inserted;
-        }
-
-        size_t place = slotHash(key) >> shift;
-        while (true)
-        {
-            Key & cell = cells[place];
-            if (cell == key)
-                return false;
-            if (cell == Key{})
-            {
-                cell = key;
-                ++count;
-                return true;
-            }
-            place = (place + 1) & mask;
-        }
+        typename Set::LookupResult it;
+        bool inserted;
+        set.emplace(key, it, inserted);
+        return inserted;
     }
 
-    /// Inserts the keys, which must fit without exceeding the load factor of 0.5. The fields are kept in local
-    /// variables, because the stores into the cells could alias them.
+    /// Inserts the keys, which must fit without exceeding the load factor of 0.5.
     template <bool prefetch>
-    void insertMany(const Key * __restrict keys, size_t num_keys)
+    void insertMany(const Key * keys, size_t num_keys)
     {
-        chassert((count + num_keys) * 2 <= capacity());
-        Key * __restrict data = cells.data();
-        const size_t local_mask = mask;
-        const size_t local_shift = shift;
-        size_t local_count = count;
-        bool local_has_zero = has_zero;
-
-        for (size_t i = 0; i < num_keys; ++i)
-        {
-            if (prefetch && i + PREFETCH_DISTANCE < num_keys)
-                __builtin_prefetch(&data[slotHash(keys[i + PREFETCH_DISTANCE]) >> local_shift]);
-
-            const Key key = keys[i];
-            if (key == Key{})
-            {
-                local_has_zero = true;
-                continue;
-            }
-
-            size_t place = slotHash(key) >> local_shift;
-            while (true)
-            {
-                const Key cell = data[place];
-                if (cell == key)
-                    break;
-                if (cell == Key{})
-                {
-                    data[place] = key;
-                    ++local_count;
-                    break;
-                }
-                place = (place + 1) & local_mask;
-            }
-        }
-
-        count = local_count;
-        has_zero = local_has_zero;
+        chassert((numCellsInUse() + num_keys) * 2 <= capacity());
+        set.template insertManyWithoutResize<prefetch ? PREFETCH_DISTANCE : 0>(keys, num_keys);
     }
 
     /// Inserts the keys, choosing whether to prefetch by the size of the set.
@@ -206,28 +171,19 @@ public:
             insertMany<false>(keys, num_keys);
     }
 
-    size_t size() const { return count + has_zero; }
-    size_t capacity() const { return mask + 1; }
-    size_t numCellsInUse() const { return count; }
+    size_t size() const { return set.size(); }
+    size_t capacity() const { return set.getBufferSizeInCells(); }
+    size_t numCellsInUse() const { return set.size() - set.hasZero(); }
 
     template <typename Func>
     void forEach(Func && func) const
     {
-        if (has_zero)
-            func(Key{});
-        for (size_t i = 0; i <= mask; ++i)
-        {
-            if (cells[i] != Key{})
-                func(cells[i]);
-        }
+        for (const auto & cell : set)
+            func(cell.getKey());
     }
 
 private:
-    PODArray<Key> cells;
-    size_t mask = 0;
-    size_t shift = 64;
-    size_t count = 0;
-    bool has_zero = false;
+    Set set;
 };
 
 /// A stream switches from its local set to the routing once the set would outgrow this size.
@@ -472,7 +428,7 @@ public:
             expected = std::min(total, bucket_distinct + bucket_distinct / 16 + MIN_BLOCK_SIZE);
         }
 
-        FlatSet<Key> bucket_set;
+        RadixSet<Key> bucket_set;
         bucket_set.reset(std::bit_ceil(expected * 2));
 
         for (const auto & stream : streams)
@@ -570,7 +526,7 @@ private:
     {
         /// Before the switch to the routing, the keys are inserted into this set. After the switch, it is reused
         /// as the scratch set for the deduplication of buffers.
-        FlatSet<Key> local_set;
+        RadixSet<Key> local_set;
         Mode mode = Mode::BoundedSet;
 
         std::vector<Buffer> local_buffers;
@@ -674,9 +630,9 @@ private:
         stream.num_buffered += num_keys;
     }
 
-    static void growLocalSet(FlatSet<Key> & set)
+    static void growLocalSet(RadixSet<Key> & set)
     {
-        FlatSet<Key> grown;
+        RadixSet<Key> grown;
         grown.reset(set.capacity() * 2);
         set.forEach([&](Key key) { grown.insert(key); });
         set = std::move(grown);
