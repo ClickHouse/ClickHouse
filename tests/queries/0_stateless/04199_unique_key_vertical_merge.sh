@@ -34,10 +34,11 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT unique_key_merge_pause_befo
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_vertical SYNC"
 
 # The UNIQUE KEY is not the ORDER BY prefix, so `id` and the other columns are all gathered.
+# Full part storage pinned: a merge into a Packed part is always horizontal.
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE uk_vertical (id UInt64, s UInt64, a String, b UInt32, c Float64, d Array(UInt8))
 ENGINE = MergeTree ORDER BY s UNIQUE KEY (id)
-SETTINGS merge_selector_algorithm = 'Manual', min_bytes_for_wide_part = 0,
+SETTINGS merge_selector_algorithm = 'Manual', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
          enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
          vertical_merge_algorithm_min_columns_to_activate = 1, vertical_merge_algorithm_min_bytes_to_activate = 0,
          merge_max_block_size = 4, ratio_of_defaults_for_sparse_serialization = 1"

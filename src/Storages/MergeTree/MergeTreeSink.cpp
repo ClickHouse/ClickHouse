@@ -313,15 +313,18 @@ void MergeTreeSink::finishDelayedChunk()
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
+        const bool has_unique_key = metadata_snapshot->hasUniqueKey();
         auto retry_times = 0;
         while (true)
         {
-            partition.temp_part->finalize();
-            partition.temp_part->part->getDataPartStorage().commitTransaction();
+            /// `UniqueKeyCommitBase::stage` commits a unique-key part's storage.
+            partition.temp_part->finalize(/*precommit_storage=*/ !has_unique_key);
+            if (!has_unique_key)
+                partition.temp_part->part->getDataPartStorage().commitTransaction();
 
             auto & part = partition.temp_part->part;
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
-            auto outcome = metadata_snapshot->hasUniqueKey()
+            auto outcome = has_unique_key
                 ? commitUniqueKeyPart(partition, deduplication_hashes)
                 : UniqueKeyInsertOutcome{.conflicting_blocks = commitPart(part, deduplication_hashes)};
 
