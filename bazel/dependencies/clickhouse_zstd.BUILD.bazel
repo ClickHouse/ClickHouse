@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -54,16 +53,15 @@ ch_cc_library(
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-        "-I",
-        repository_path("contrib/zstd") + "/lib/legacy",
-        "-I",
-        repository_path("contrib/zstd") + "/lib/common",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "lib",
+        "lib/legacy",
+        "lib/common",
+    ],
 
     # librdkafka's rdxxhash.c includes this source as text.
     textual_hdrs = ["lib/common/xxhash.c"],
@@ -81,15 +79,14 @@ ch_cc_library(
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-        "-I",
-        repository_path("contrib/zstd") + "/lib/legacy",
-        "-I",
-        repository_path("contrib/zstd") + "/lib/common",
     ],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "lib",
+        "lib/legacy",
+        "lib/common",
+    ],
     deps = _GENERATED_DEPS_0,
     alwayslink = False,
 )

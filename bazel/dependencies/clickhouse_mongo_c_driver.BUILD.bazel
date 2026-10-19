@@ -145,8 +145,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/mongo-c-driver") + "/src/common/src/src",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
@@ -166,6 +164,9 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
+    ],
+    local_includes = [
+        "src/common/src/src",
     ],
     textual_hdrs = ["src/common/src/mlib/vec.th"],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],

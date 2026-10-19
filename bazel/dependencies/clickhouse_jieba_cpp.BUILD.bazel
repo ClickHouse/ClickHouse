@@ -35,8 +35,6 @@ ch_cc_library(
         "-std=c++23",
         "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data",
         "-I",
-        repository_path("contrib/Jieba-CPP") + "/data",
-        "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
     local_defines = [
@@ -46,6 +44,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        "data",
+    ] + [
         "include",
     ],
     deps = [

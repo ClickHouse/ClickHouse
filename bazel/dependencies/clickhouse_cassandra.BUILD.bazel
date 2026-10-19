@@ -168,34 +168,16 @@ ch_cc_library(
     hdrs = [
         ":config/contrib/cassandra-cmake/driver_config.hpp",
     ] + glob(["include/**/*.h"]),
-    copts = (([
+    copts = [
         "-w",
         "-std=c++17",
-        "-I",
-    ] + [
-        "$(GENDIR)/" + repository_path("contrib/cassandra") + "/config/contrib/cassandra-cmake",
-    ]) + [
-        "-I",
-        repository_path("contrib/cassandra") + "/src/ssl",
-        "-I",
-        repository_path("contrib/cassandra") + "/src/third_party/curl",
-        "-I",
-        repository_path("contrib/cassandra") + "/src/third_party/hdr_histogram",
-        "-I",
-        repository_path("contrib/cassandra") + "/src/third_party/http-parser",
-        "-I",
-        repository_path("contrib/cassandra") + "/src/third_party/mt19937_64",
-        "-I",
-        repository_path("contrib/cassandra") + "/src/third_party/rapidjson/rapidjson",
-        "-I",
-        repository_path("contrib/cassandra") + "/src",
         "-I",
         repository_path("contrib/minizip-ng"),
         "-I",
         "contrib/minizip-ng-cmake",
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
-    ]),
+    ],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "CASS_BUILDING",
@@ -250,9 +232,18 @@ ch_cc_library(
         "sparsehash=google",
     ],
     local_includes = ([
+        "config/contrib/cassandra-cmake",
+        "src/ssl",
+        "src/third_party/curl",
+        "src/third_party/hdr_histogram",
+        "src/third_party/http-parser",
+        "src/third_party/mt19937_64",
+        "src/third_party/rapidjson/rapidjson",
+        "src",
+    ] + ([
         "include",
     ] + [
-    ]),
+    ])),
     deps = [
         "@clickhouse_libuv//:_uv",
         ":_curl_hostcheck",
@@ -269,17 +260,6 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_DEPS_1 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@clickhouse_llvm_project//:clang_rt_builtins",
-    "@clickhouse_llvm_project//:cxx",
-    "@clickhouse_llvm_project//:cxxabi",
-    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
-    "@clickhouse_llvm_project//:unwind",
 ]
 
 ch_cc_library(

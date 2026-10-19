@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,16 +9,6 @@ exports_files([
 _GENERATED_COPTS_0 = [
     "-w",
     "-std=gnu11",
-    "-I",
-    repository_path("contrib/zxc") + "/src/lib",
-    "-I",
-    repository_path("contrib/zxc") + "/src/lib/vendors",
-]
-
-_GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
-    "@clickhouse_sysroot//:linux_compile_files",
-    "@clickhouse_llvm_project//:runtime_source_inputs",
-    "@clickhouse_llvm_project//:runtime_generated_headers",
 ]
 
 ch_cc_library(
@@ -48,6 +37,9 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        "src/lib",
+        "src/lib/vendors",
+    ] + [
         "include",
     ],
     deps = (select({
@@ -103,34 +95,6 @@ _GENERATED_COPTS_1 = select({
         "-mbmi",
         "-mbmi2",
         "-mlzcnt",
-        "-I",
-        repository_path("contrib/zxc") + "/src/lib",
-        "-I",
-        repository_path("contrib/zxc") + "/src/lib/vendors",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
-
-_GENERATED_DEPS_2 = select({
-    "@platforms//cpu:x86_64": [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "@clickhouse_llvm_project//:clang_rt_builtins",
-    "@clickhouse_llvm_project//:cxx",
-    "@clickhouse_llvm_project//:cxxabi",
-    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
-    "@clickhouse_llvm_project//:unwind",
-]
-
-_GENERATED_ADDITIONAL_COMPILER_INPUTS_1 = select({
-    "@platforms//cpu:x86_64": [
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -162,6 +126,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -193,10 +164,6 @@ _GENERATED_COPTS_2 = select({
         "-mbmi",
         "-mbmi2",
         "-mlzcnt",
-        "-I",
-        repository_path("contrib/zxc") + "/src/lib",
-        "-I",
-        repository_path("contrib/zxc") + "/src/lib/vendors",
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -228,6 +195,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -243,17 +217,6 @@ _GENERATED_LOCAL_DEFINES_2 = [
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_DEPS_3 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@clickhouse_llvm_project//:clang_rt_builtins",
-    "@clickhouse_llvm_project//:cxx",
-    "@clickhouse_llvm_project//:cxxabi",
-    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
-    "@clickhouse_llvm_project//:unwind",
 ]
 
 ch_cc_library(
@@ -273,6 +236,10 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
+    local_includes = [
+        "src/lib",
+        "src/lib/vendors",
+    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )
@@ -311,6 +278,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -346,6 +320,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -371,6 +352,10 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
+    local_includes = [
+        "src/lib",
+        "src/lib/vendors",
+    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )
@@ -409,6 +394,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -444,6 +436,13 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "src/lib",
+            "src/lib/vendors",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
         "@platforms//cpu:x86_64": [],
@@ -469,6 +468,10 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
+    local_includes = [
+        "src/lib",
+        "src/lib/vendors",
+    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
 )

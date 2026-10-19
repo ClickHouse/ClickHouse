@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -47,36 +46,12 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = (([
+    copts = [
         "-w",
         "-std=gnu11",
         "-I",
-    ] + [
-        "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
-    ]) + [
-        "-I",
         "contrib/cyrus-sasl-cmake",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/plugins",
-        "-I",
-        repository_path("contrib/cyrus-sasl"),
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/include",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/lib",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/sasldb",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/common",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/saslauthd",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/sample",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/utils",
-        "-I",
-        repository_path("contrib/cyrus-sasl") + "/tests",
-    ]),
+    ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
@@ -90,6 +65,19 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "config/contrib/cyrus-sasl-cmake",
+        "plugins",
+        ".",
+        "include",
+        "lib",
+        "sasldb",
+        "common",
+        "saslauthd",
+        "sample",
+        "utils",
+        "tests",
     ],
     deps = ["@clickhouse_krb5//:_krb5"],
     alwayslink = False,

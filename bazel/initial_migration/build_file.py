@@ -10,7 +10,8 @@ from initial_migration import llvm_targets
 from initial_migration.compact_build import compact
 from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, HeaderDirectory,
-    directory_sources, execution_path, package_source_files, package_sources, repository, source_label, source_path,
+    configuration_owner, directory_sources, execution_path, package_source_files, package_sources,
+    repository, source_label, source_path,
     textual_source_names,
 )
 from initial_migration.simplify_globs import GlobFiles, simplify_globs, simplify_source_globs
@@ -134,13 +135,24 @@ class LocalInclude:
     raw_llvm: bool = False
 
 
-def split_system_includes(flags, owner):
+def split_system_includes(flags, owner, native_library):
     options, includes = [], []
     flags = iter(flags)
     for flag in flags:
         if flag == '-isystem':
             directory = next(flags)
             includes.append(LocalInclude(directory, owner))
+        elif flag == '-I' and native_library and owner not in {None, llvm_targets.PREFIX}:
+            directory = next(flags)
+            original = directory
+            if directory.startswith('bazel/config/'):
+                _, _, arch, relative = directory.split('/', 3)
+                if relative.startswith('contrib/') and configuration_owner(relative) == owner:
+                    directory = owner + '/config/' + arch + '/' + relative
+            if repository(directory.removeprefix('$(GENDIR)/')) == owner:
+                includes.append(LocalInclude(directory, owner))
+            else:
+                options.extend([flag, original])
         else:
             options.append(flag)
     return options, includes
@@ -921,7 +933,7 @@ class BuildFile:
                             last_w = max((i for i, flag in enumerate(value) if flag == '-w'), default=-1)
                             value = [flag for i, flag in enumerate(value) if flag != '-w' or i == last_w]
                         if arch in system_includes:
-                            value, includes = split_system_includes(value, self.owner)
+                            value, includes = split_system_includes(value, self.owner, native_library)
                             system_includes[arch] = includes + system_includes[arch]
                         if native_library and language in GLOBAL_COMPILE_OPTIONS:
                             # These original CMake C groups have no -Werror.

@@ -47,11 +47,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
         "-I",
-        repository_path("contrib/minizip-ng"),
-        "-I",
         "contrib/minizip-ng-cmake",
-        "-I",
-        repository_path("contrib/minizip-ng") + "/compat",
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
@@ -117,7 +113,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = select({
+    local_includes = [
+        ".",
+        "compat",
+    ] + select({
         "@platforms//cpu:x86_64": [
         ],
         "@platforms//cpu:aarch64": [

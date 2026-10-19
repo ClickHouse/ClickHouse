@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,8 +22,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -35,6 +32,9 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "libfiu",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,

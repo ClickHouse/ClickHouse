@@ -621,13 +621,12 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++17",
-        "-I",
-        repository_path("contrib/google-protobuf"),
-        "-I",
-        repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+        ".",
+        "upb/reflection/cmake",
+    ] + _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
     alwayslink = False,
 )
@@ -704,15 +703,14 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/google-protobuf"),
-        "-I",
-        repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
+        ".",
+        "upb/reflection/cmake",
+    ] + [
         "src",
         "third_party/utf8_range",
     ],
@@ -977,10 +975,6 @@ cc_binary(
 _GENERATED_COPTS_0 = [
     "-w",
     "-std=gnu11",
-    "-I",
-    repository_path("contrib/google-protobuf") + "/src",
-    "-I",
-    repository_path("contrib/google-protobuf") + "/third_party/utf8_range",
 ]
 
 ch_cc_library(
@@ -1004,6 +998,10 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = [
+        "src",
+        "third_party/utf8_range",
+    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )
@@ -1027,6 +1025,10 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = [
+        "src",
+        "third_party/utf8_range",
+    ],
     deps = ["@clickhouse_abseil_cpp//:absl_strings"],
     alwayslink = False,
 )

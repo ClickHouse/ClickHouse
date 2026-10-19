@@ -157,8 +157,6 @@ ch_cc_library(
         "-I",
         "contrib/libarchive-cmake",
         "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-        "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -241,7 +239,9 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = select({
+    local_includes = [
+        "libarchive",
+    ] + select({
         "@platforms//cpu:x86_64": [
         ],
         "@platforms//cpu:aarch64": [
