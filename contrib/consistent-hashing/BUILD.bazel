@@ -9,11 +9,7 @@ ch_cc_library(
         "consistent_hashing.cpp",
         "popcount.cpp",
     ],
-    hdrs = [
-        "bitops.h",
-        "consistent_hashing.h",
-        "popcount.h",
-    ],
+    hdrs = glob(["*.h"]),
     additional_compiler_inputs = [
         "consistent_hashing.cpp",
         "popcount.cpp",

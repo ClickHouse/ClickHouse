@@ -7,14 +7,7 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse_antlr4_grammars",
     srcs = glob(["generated/antlr4_grammars/*.cpp"]),
-    hdrs = [
-        "generated/antlr4_grammars/PromQLLexer.h",
-        "generated/antlr4_grammars/PromQLParser.h",
-        "generated/antlr4_grammars/PromQLParserBaseListener.h",
-        "generated/antlr4_grammars/PromQLParserBaseVisitor.h",
-        "generated/antlr4_grammars/PromQLParserListener.h",
-        "generated/antlr4_grammars/PromQLParserVisitor.h",
-    ],
+    hdrs = glob(["generated/antlr4_grammars/*.h"]),
     clickhouse_code = True,
     copts = [
         "-w",

@@ -4,7 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "base/poco/LICENSE",
     "cmake/generate_export_header.h.in",
     "cmake/localize_rust_c_symbols.sh",
     "cmake/strip_rust_symbols.sh",
@@ -40,4 +39,7 @@ cc_library(
         "**/*.inc",
         "**/*.def",
     ]),
+    deps = [
+        "//base:headers",
+    ],
 )

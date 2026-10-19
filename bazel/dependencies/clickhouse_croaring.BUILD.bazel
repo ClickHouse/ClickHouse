@@ -9,7 +9,7 @@ exports_files([
 ])
 
 _GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//base/base:time.h",
+    "@clickhouse//base:base/time.h",
     "@clickhouse//contrib/cityhash102:include/city.h",
     "@clickhouse//contrib/cityhash102:include/citycrc.h",
     "@clickhouse//contrib/driftsort:driftsort.h",
@@ -311,7 +311,7 @@ ch_cc_library(
 cc_library(
     name = "_roaring",
     deps = [
-        "@clickhouse//base/base:common",
+        "@clickhouse//base:common",
         ":_roaring__compile_0",
         ":_roaring__compile_1",
     ],

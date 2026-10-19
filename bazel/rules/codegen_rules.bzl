@@ -1322,7 +1322,7 @@ _SHARED_CODEGEN = {
 }
 
 _LICENSE_INPUTS = {
-  "base/poco/LICENSE": "//:base/poco/LICENSE",
+  "base/poco/LICENSE": "//base:poco/LICENSE",
   "contrib/AMQP-CPP/LICENSE": "@clickhouse_amqp_cpp//:LICENSE",
   "contrib/FP16/LICENSE": "@clickhouse_fp16//:LICENSE",
   "contrib/Jieba-CPP/LICENSE": "@clickhouse_jieba_cpp//:LICENSE",

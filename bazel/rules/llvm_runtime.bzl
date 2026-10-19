@@ -1,9 +1,9 @@
 """Compile ClickHouse's runtime sources with their CMake flags and Bazel's Clang."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _resource_dir(ctx, toolchain, features, action):
     # LLVM's registered toolchain declares its compile resource directory in
@@ -22,7 +22,7 @@ def _resource_dir(ctx, toolchain, features, action):
         fail("{}: expected one Clang compile resource directory, found {}".format(ctx.label, directories))
     return directories[0]
 
-def _cmake_runtime_objects_impl(ctx):
+def _llvm_runtime_objects_impl(ctx):
     # One architecture may have fewer File API compile groups than the other.
     if not ctx.files.srcs:
         return [DefaultInfo(files = depset())]
@@ -65,6 +65,7 @@ def _cmake_runtime_objects_impl(ctx):
             "-fmacro-prefix-map=" + ctx.label.workspace_root + "/=" +
             ctx.attr.reference_source_root + "/contrib/llvm-project/",
         )
+
         # Retain the old Bazel filenames for generated inputs in runtime groups
         # which did not use CMake source-prefix mapping.
         generated = ctx.bin_dir.path + "/" + ctx.label.workspace_root + "/gen/"
@@ -89,8 +90,8 @@ def _cmake_runtime_objects_impl(ctx):
         outputs.append(output)
     return [DefaultInfo(files = depset(outputs))]
 
-cmake_runtime_objects = rule(
-    implementation = _cmake_runtime_objects_impl,
+llvm_runtime_objects = rule(
+    implementation = _llvm_runtime_objects_impl,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
         "hdrs": attr.label_list(allow_files = True),

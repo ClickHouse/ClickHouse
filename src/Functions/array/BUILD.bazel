@@ -163,7 +163,7 @@ _GENERATED_HDRS_0 = select({
         "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
         "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
     ],
-}) + [
+}) + ([
     "//rust/workspace:pco/include/pco.h",
     "//rust/workspace:skim/include/skim.h",
     "@clickhouse_arrow//:config/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
@@ -225,26 +225,7 @@ _GENERATED_HDRS_0 = select({
     "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
     "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
     "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    "FunctionArrayMapped.h",
-    "arrayAll.h",
-    "arrayConcat.h",
-    "arrayEnumerateExtended.h",
-    "arrayEnumerateRanked.h",
-    "arrayExists.h",
-    "arrayFilter.h",
-    "arrayIndex.h",
-    "arrayMap.h",
-    "arrayPop.h",
-    "arrayPush.h",
-    "arrayRemove.h",
-    "arrayResize.h",
-    "arraySort.h",
-    "arrayTopK.h",
-    "emptyArrayToSingle.h",
-    "has.h",
-    "hasAllAny.h",
-    "length.h",
-]
+] + glob(["*.h"]))
 
 _GENERATED_LOCAL_DEFINES_0 = [
     "AI_SDK_HAS_ANTHROPIC=1",
@@ -738,7 +719,7 @@ _GENERATED_DEPS_0 = select({
     "//contrib/vectorscan-cmake:headers",
 ] + [
     "//:headers",
-    "//base/base:headers",
+    "//base:base_headers",
     "//src:headers",
     "//src/Access/Common:headers",
     "//src/AggregateFunctions:headers",
@@ -3165,7 +3146,7 @@ cc_library(
         "//src/Functions/GatherUtils:clickhouse_functions_gatherutils",
         "//src/Server/grpc_protos:clickhouse_grpc_protos",
         "//src/Parsers:clickhouse_parsers",
-        "//base/base:common",
+        "//base:common",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",

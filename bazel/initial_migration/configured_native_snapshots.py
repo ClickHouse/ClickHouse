@@ -264,16 +264,21 @@ class Migration:
         data["ignore"]["include_map"] = [{"from": source, "to": dest} for source, dest in include_map.items()]
         return json.dumps(data, indent=2) + "\n"
 
-    def prepare(self):
+    def prepare(self, generated_builds=()):
         tracked = subprocess.check_output([
             "git", "ls-files", "-z", "--", "*.bazel", "*.bzl",
         ], cwd=self.root).decode().split("\0")
+        tracked = list(dict.fromkeys(tracked + [
+            path.relative_to(self.root).as_posix() for path in generated_builds
+        ]))
         changes = {}
         for relative in tracked:
             if not relative:
                 continue
             path = self.root / relative
             if (path.name != "BUILD.bazel" and not path.name.endswith(".BUILD.bazel")) or relative == "bazel/BUILD.bazel":
+                continue
+            if self.ref is None and not path.exists():
                 continue
             original = self.read(path)
             if "config/x86_64/" not in original and "config/aarch64/" not in original:

@@ -1271,7 +1271,7 @@ ch_cc_library(
         ".",
     ],
     deps = [
-        "@clickhouse//base/base:common",
+        "@clickhouse//base:common",
         ":google_cloud_cpp_common",
         "@clickhouse_nlohmann_json//:nlohmann_json",
     ],

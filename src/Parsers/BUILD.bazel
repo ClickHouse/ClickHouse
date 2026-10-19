@@ -626,7 +626,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
         "//src/Access/Common:clickhouse_common_access",
-        "//base/base:common",
+        "//base:common",
         "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility:glibc-compatibility",
         "@clickhouse_openssl//:ssl",
@@ -664,7 +664,7 @@ ch_cc_library(
         "//contrib/pdqsort:headers",
     ] + [
         "//:headers",
-        "//base/base:headers",
+        "//base:base_headers",
         "//src:headers",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",

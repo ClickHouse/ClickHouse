@@ -1,0 +1,93 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "base/time.h",
+    "poco/LICENSE",
+])
+
+ch_cc_library(
+    name = "common",
+    srcs = [
+        "base/argsToConfig.cpp",
+        "base/cgroupsv2.cpp",
+        "base/coverage.cpp",
+        "base/demangle.cpp",
+        "base/Decimal.cpp",
+        "base/getAvailableMemoryAmount.cpp",
+        "base/getFQDNOrHostName.cpp",
+        "base/getL2CacheSize.cpp",
+        "base/getMemoryAmount.cpp",
+        "base/getPageSize.cpp",
+        "base/getThreadId.cpp",
+        "base/int8_to_string.cpp",
+        "base/itoa.cpp",
+        "base/JSON.cpp",
+        "base/mremap.cpp",
+        "base/openpty.cpp",
+        "base/phdr_cache.cpp",
+        "base/preciseExp10.cpp",
+        "base/shift10.cpp",
+        "base/sleep.cpp",
+        "base/terminalColors.cpp",
+        "base/errnoToString.cpp",
+        "base/safeExit.cpp",
+        "base/throwError.cpp",
+        "base/Numa.cpp",
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "base/wide_integer_to_string.cpp",
+    ],
+    clickhouse_code = True,
+    local_defines = [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "WITH_COVERAGE=0",
+        "WITH_COVERAGE_DEPTH=0",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    deps = [
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_magic_enum//:magic_enum",
+        "//contrib/cityhash102:headers",
+        ":base_headers",
+        "//base/poco/Util:poco_util_headers",
+    ],
+)
+
+ch_cc_library(
+    name = "harmful",
+    srcs = [
+        "harmful/harmful.c",
+    ],
+    copts = [
+        "-std=gnu11",
+        "-Wno-error",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    deps = [
+        "@llvm-project//compiler-rt:headers",
+        ":base_headers",
+    ],
+)
+
+cc_library(
+    name = "base_headers",
+    hdrs = glob(["base/**/*.h"]),
+    includes = ["."],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["pcg-random/**/*.hpp"]),
+)

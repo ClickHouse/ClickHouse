@@ -2,7 +2,7 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:cmake_runtime.bzl", "cmake_runtime_objects")
+load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -4229,7 +4229,7 @@ _GENERATED_LOCAL_DEFINES_2 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_0",
     srcs = [
         "compiler-rt/lib/builtins/absvdi2.c",
@@ -4484,7 +4484,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_1",
     srcs = select({
         "@platforms//cpu:x86_64": [
@@ -4616,7 +4616,7 @@ _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = select({
     ],
 })
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_2",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4658,7 +4658,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_3",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4700,7 +4700,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_4",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4742,7 +4742,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_5",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4784,7 +4784,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_6",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4826,7 +4826,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_7",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4868,7 +4868,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_8",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4910,7 +4910,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_9",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4952,7 +4952,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_10",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -4994,7 +4994,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_11",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5036,7 +5036,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_12",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5078,7 +5078,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_13",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5120,7 +5120,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_14",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5162,7 +5162,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_15",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5204,7 +5204,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_16",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5246,7 +5246,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_17",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5288,7 +5288,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_18",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5330,7 +5330,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_19",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5372,7 +5372,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_20",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5414,7 +5414,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_21",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5456,7 +5456,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_22",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5498,7 +5498,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_23",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5540,7 +5540,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_24",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5582,7 +5582,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_25",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5624,7 +5624,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_26",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5666,7 +5666,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_27",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5708,7 +5708,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_28",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5750,7 +5750,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_29",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5792,7 +5792,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_30",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5834,7 +5834,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_31",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5876,7 +5876,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_32",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5918,7 +5918,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_33",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -5960,7 +5960,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_34",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6002,7 +6002,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_35",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6044,7 +6044,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_36",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6086,7 +6086,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_37",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6128,7 +6128,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_38",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6170,7 +6170,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_39",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6212,7 +6212,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_40",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6254,7 +6254,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_41",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6296,7 +6296,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_42",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6338,7 +6338,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_43",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6380,7 +6380,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_44",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6422,7 +6422,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_45",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6464,7 +6464,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_46",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6506,7 +6506,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_47",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6548,7 +6548,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_48",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6590,7 +6590,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_49",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6632,7 +6632,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_50",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6674,7 +6674,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_51",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6716,7 +6716,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_52",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6758,7 +6758,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_53",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6800,7 +6800,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_54",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6842,7 +6842,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_55",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6884,7 +6884,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_56",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6926,7 +6926,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_57",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -6968,7 +6968,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_58",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7010,7 +7010,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_59",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7052,7 +7052,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_60",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7094,7 +7094,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_61",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7136,7 +7136,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_62",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7178,7 +7178,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_63",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7220,7 +7220,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_64",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7262,7 +7262,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_65",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7304,7 +7304,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_66",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7346,7 +7346,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_67",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7388,7 +7388,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_68",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7430,7 +7430,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_69",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7472,7 +7472,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_70",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7514,7 +7514,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_71",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7556,7 +7556,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_72",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7598,7 +7598,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_73",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7640,7 +7640,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_74",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7682,7 +7682,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_75",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7724,7 +7724,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_76",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7766,7 +7766,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_77",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7808,7 +7808,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_78",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7850,7 +7850,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_79",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7892,7 +7892,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_80",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7934,7 +7934,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_81",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -7976,7 +7976,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_82",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8018,7 +8018,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_83",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8060,7 +8060,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_84",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8102,7 +8102,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_85",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8144,7 +8144,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_86",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8186,7 +8186,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_87",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8228,7 +8228,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_88",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8270,7 +8270,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_89",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8312,7 +8312,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_90",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8354,7 +8354,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_91",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8396,7 +8396,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_92",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8438,7 +8438,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_93",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8480,7 +8480,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_94",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8522,7 +8522,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_95",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8564,7 +8564,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_96",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8606,7 +8606,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_97",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8648,7 +8648,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_98",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8690,7 +8690,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_99",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8732,7 +8732,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_100",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8774,7 +8774,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_101",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8816,7 +8816,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_102",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8858,7 +8858,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_103",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8900,7 +8900,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_104",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8942,7 +8942,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_105",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -8984,7 +8984,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_106",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9026,7 +9026,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_107",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9068,7 +9068,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_108",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9110,7 +9110,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_109",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9152,7 +9152,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_110",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9194,7 +9194,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_111",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9236,7 +9236,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_112",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9278,7 +9278,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_113",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9320,7 +9320,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_114",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9362,7 +9362,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_115",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9404,7 +9404,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_116",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9446,7 +9446,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_117",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9488,7 +9488,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_118",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9530,7 +9530,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_119",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9572,7 +9572,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_120",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9614,7 +9614,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_121",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9656,7 +9656,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_122",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9698,7 +9698,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_123",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9740,7 +9740,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_124",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9782,7 +9782,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_125",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -9824,7 +9824,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_126",
     srcs = select({
         "@platforms//cpu:x86_64": [],
@@ -10011,7 +10011,7 @@ _GENERATED_LOCAL_DEFINES_3 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_xray__runtime_objects_0",
     srcs = [
         "compiler-rt/lib/xray/xray_buffer_queue.cpp",
@@ -10147,7 +10147,7 @@ cc_library(
     alwayslink = True,
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "clang_rt_xray__runtime_objects_1",
     srcs = select({
         "@platforms//cpu:x86_64": [
@@ -10227,7 +10227,7 @@ cc_library(
     ],
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "cxx__runtime_objects_0",
     srcs = [
         "libcxx/src/algorithm.cpp",
@@ -10380,7 +10380,7 @@ cc_library(
     ],
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "cxxabi__runtime_objects_0",
     srcs = [
         "libcxxabi/src/abort_message.cpp",
@@ -10491,7 +10491,7 @@ cc_library(
     ],
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "libllvmlibc__runtime_objects_0",
     srcs = [
         "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
@@ -10673,7 +10673,7 @@ _GENERATED_LOCAL_DEFINES_4 = [
     "_LIBUNWIND_REMEMBER_STACK_ALLOC=1",
 ]
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "unwind__runtime_objects_0",
     srcs = [
         "libunwind/src/libunwind.cpp",
@@ -10751,7 +10751,7 @@ cc_library(
     ],
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "unwind__runtime_objects_1",
     srcs = [
         "libunwind/src/UnwindLevel1.c",
@@ -10827,7 +10827,7 @@ cc_library(
     ],
 )
 
-cmake_runtime_objects(
+llvm_runtime_objects(
     name = "unwind__runtime_objects_2",
     srcs = [
         "libunwind/src/UnwindRegistersRestore.S",

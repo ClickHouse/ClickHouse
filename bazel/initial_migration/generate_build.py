@@ -913,7 +913,7 @@ def main():
             content, _ = compact_external_options(path.read_text(), spec['name'], package_sources(owner))
             path.write_text(normalize(content))
     from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
-    for path, content in NativeSnapshots(ROOT).prepare().items():
+    for path, content in NativeSnapshots(ROOT).prepare(native_builds).items():
         path.write_text(content)
     prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
         '@clickhouse_' + name for name in
@@ -946,6 +946,31 @@ def main():
             after = normalize_library_runtime(before, '')
             if after != before:
                 path.write_text(after)
+    from initial_migration.base_cpp_dependencies import run as publish_base_cpp_dependencies
+    publish_base_cpp_dependencies(ROOT, from_generator=True)
+    # Publishing base moves its BUILD file. Resolve globs against the final
+    # package boundaries and retain the exact order of every original file.
+    from initial_migration.first_party_packages import git_inventory
+    header_inventory = git_inventory(ROOT)
+    build_paths = {
+        ROOT / name for name in subprocess.check_output(
+            ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
+             '--', 'BUILD', 'BUILD.bazel', '**/BUILD', '**/BUILD.bazel'], cwd=ROOT,
+        ).decode().split('\0')
+        if name and (ROOT / name).is_file()
+    }
+    final_packages = {
+        path.parent.relative_to(ROOT).as_posix().removeprefix('.') for path in build_paths
+    }
+    for path in sorted(build_paths):
+        package = path.parent.relative_to(ROOT).as_posix().removeprefix('.')
+        if not package or native_directory(package):
+            before = path.read_text()
+            build = Build(ROOT, path, header_inventory, final_packages, before)
+            files = PackageFiles(build.inventory)
+            after = source_globs(before, files, collections.Counter(), [], headers=True)
+            if after != before:
+                path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}, headers=True))
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

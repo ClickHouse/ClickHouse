@@ -376,7 +376,7 @@ CMAKE_LINK = {
     "@clickhouse_abseil_cpp//:absl_random_internal_seed_material",
     "@clickhouse_abseil_cpp//:absl_random_seed_gen_exception",
     "@clickhouse_grpc//:address_sorting",
-    "//base/base:common",
+    "//base:common",
     "//base/poco/Foundation:_poco_foundation",
     "//base/poco/Net:_poco_net",
     "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",

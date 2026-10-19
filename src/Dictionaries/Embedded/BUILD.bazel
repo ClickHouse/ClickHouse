@@ -312,7 +312,7 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_time_zone",
         "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base/base:common",
+        "//base:common",
         "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility:glibc-compatibility",
         "//src/Common/mysqlxx:mysqlxx",
@@ -351,7 +351,7 @@ ch_cc_library(
         "//contrib/pdqsort:headers",
     ] + [
         "//:headers",
-        "//base/base:headers",
+        "//base:base_headers",
         "//src:headers",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",

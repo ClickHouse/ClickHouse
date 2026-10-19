@@ -826,8 +826,8 @@ class BuildFile:
             self.loads.setdefault('@clickhouse//bazel/rules:nasm.bzl', set()).add(kind)
         elif kind == 'cmake_link':
             self.loads.setdefault('@clickhouse//bazel/rules:cmake_link.bzl', set()).add(kind)
-        elif kind == 'cmake_runtime_objects':
-            self.loads.setdefault('@clickhouse//bazel/rules:cmake_runtime.bzl', set()).add(kind)
+        elif kind == 'llvm_runtime_objects':
+            self.loads.setdefault('@clickhouse//bazel/rules:llvm_runtime.bzl', set()).add(kind)
         elif kind.startswith('perl_'):
             self.loads.setdefault('@rules_perl//perl:perl.bzl', set()).add(kind)
         elif kind in {'copy_file', 'expand_template', 'write_file'}:
@@ -837,7 +837,7 @@ class BuildFile:
             if value == []:
                 continue
             paths = key in {'copts', 'local_defines', 'linkopts'}
-            if kind == 'cmake_runtime_objects' and paths:
+            if kind == 'llvm_runtime_objects' and paths:
                 paths = 'cmake_runtime'
             lines.append('    ' + key + ' = ' + starlark(value, 4, paths=paths, step=4) + ',\n')
         self.rules.append(''.join(lines) + ')\n')
@@ -926,7 +926,7 @@ class BuildFile:
                 })
                 attrs['arch'] = select({'@platforms//cpu:' + arch: arch for arch in ARCHES})
                 object_name = name + '__runtime_objects_' + str(index)
-                self.rule('cmake_runtime_objects', object_name, {
+                self.rule('llvm_runtime_objects', object_name, {
                     **attrs,
                     'target_compatible_with': compatible,
                 })

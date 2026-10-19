@@ -33,8 +33,9 @@ from initial_migration.compact_build import (  # noqa: E402
 from initial_migration.simplify_globs import GlobFiles, pattern_expression  # noqa: E402
 
 ATTRIBUTES = ('copts', 'local_includes', 'includes', 'srcs')
-NATIVE = {'cc_library', 'ch_cc_library', 'cc_binary', 'cc_test',
-          'cmake_runtime_objects', 'nasm_objects'}
+HEADER_ATTRIBUTES = (*ATTRIBUTES, 'hdrs', 'textual_hdrs')
+CC_COMPILERS = {'cc_library', 'ch_cc_library', 'cc_binary', 'cc_test'}
+NATIVE = CC_COMPILERS | {'llvm_runtime_objects', 'nasm_objects'}
 CPUS = ('@platforms//cpu:x86_64', '@platforms//cpu:aarch64')
 SOURCE_SUFFIXES = {'.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM'}
 
@@ -92,16 +93,16 @@ def load_package_files(facts_dir, owner, spec):
     return PackageFiles(inventory)
 
 
-def eligible_constants(source):
+def eligible_constants(source, attributes=ATTRIBUTES, kinds=NATIVE):
     """Only constants whose every read is in the selected native attributes."""
     allowed_reads = defaultdict(list)
     for _, rule in source.rules():
-        if function(rule) in NATIVE:
+        if function(rule) in kinds:
             name = attrs(rule).get('name')
             if not isinstance(name, ast.Constant):
                 continue
             for attr in rule.keywords:
-                if attr.arg not in ATTRIBUTES:
+                if attr.arg not in attributes:
                     continue
                 for node in ast.walk(attr.value):
                     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
@@ -115,7 +116,7 @@ def eligible_constants(source):
         if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
                 and isinstance(statement.targets[0], ast.Name)):
             name = statement.targets[0].id
-            for field in ATTRIBUTES:
+            for field in attributes:
                 if (name.startswith('_GENERATED_' + field.upper() + '_') and all_reads[name]
                         and {id(item) for item in all_reads[name]}
                         == {id(item[0]) for item in allowed_reads[name]}
@@ -124,14 +125,14 @@ def eligible_constants(source):
     return result
 
 
-def native_values(source):
-    for name, (statement, field, _) in eligible_constants(source).items():
+def native_values(source, attributes=ATTRIBUTES, kinds=NATIVE):
+    for name, (statement, field, _) in eligible_constants(source, attributes, kinds).items():
         yield field, statement.value, 0, name
     for _, rule in source.rules():
-        if function(rule) not in NATIVE:
+        if function(rule) not in kinds:
             continue
         for attr in rule.keywords:
-            if attr.arg in ATTRIBUTES:
+            if attr.arg in attributes:
                 yield attr.arg, attr.value, attr.col_offset, attrs(rule)['name'].value
 
 
@@ -409,8 +410,23 @@ class OrderedTemplates(ast.NodeTransformer):
         return node
 
 
-def source_globs(text, files, stats, examples):
+def source_globs(text, files, stats, examples, *, headers=False):
+    """Replace contiguous exact-order files; header mode never moves attributes."""
     source = Source(text)
+    if headers:
+        # Use the native package header classes; do not treat .proto, .rl or
+        # other generator inputs as headers merely because they appear in srcs.
+        from initial_migration.first_party_packages import TEXTUAL
+        from initial_migration.repository_inputs import CC_HEADER_SUFFIXES
+        suffixes = set(CC_HEADER_SUFFIXES) | set(TEXTUAL)
+        attributes = HEADER_ATTRIBUTES
+        kinds = CC_COMPILERS
+        fields = {'srcs', 'hdrs', 'textual_hdrs'}
+    else:
+        suffixes = SOURCE_SUFFIXES
+        attributes = ATTRIBUTES
+        kinds = NATIVE
+        fields = {'srcs'}
     rule_names = {kw.value.value for _, rule in source.rules() for kw in rule.keywords
                   if kw.arg == 'name' and isinstance(kw.value, ast.Constant)
                   and isinstance(kw.value.value, str)}
@@ -423,7 +439,7 @@ def source_globs(text, files, stats, examples):
             return None
         path = node.value.removeprefix(':')
         if (path not in files.files or path in rule_names
-                or posixpath.splitext(path)[1] not in SOURCE_SUFFIXES):
+                or posixpath.splitext(path)[1] not in suffixes):
             return None
         return path
 
@@ -435,9 +451,16 @@ def source_globs(text, files, stats, examples):
         # A recursive glob replaces only a contiguous sorted file list and only
         # if no test or other uncompiled source exists beneath this directory.
         yield prefix + '**/*' + suffix
-        for m in re.finditer(r'[_\-.]', stem):
-            yield prefix + stem[:m.end()] + '*' + suffix
-            yield prefix + '*' + stem[m.start():] + suffix
+        if headers:
+            ancestor = posixpath.dirname(directory)
+            while ancestor:
+                yield ancestor + '/**/*' + suffix
+                ancestor = posixpath.dirname(ancestor)
+            yield '**/*' + suffix
+        else:
+            for m in re.finditer(r'[_\-.]', stem):
+                yield prefix + stem[:m.end()] + '*' + suffix
+                yield prefix + '*' + stem[m.start():] + suffix
 
     def visit(node, indent, rule_name):
         if isinstance(node, ast.List):
@@ -456,16 +479,23 @@ def source_globs(text, files, stats, examples):
                     found = files.result((pattern,), ())
                     count = len(found)
                     if count >= 3 and count <= len(values) - index and values[index:index+count] == found:
-                        matches.append((count, -len(pattern), pattern))
+                        if headers:
+                            # Prefer include/Poco/Net/*.h over **/*.h when
+                            # both currently name the same files.
+                            matches.append((count, pattern.split('*', 1)[0].count('/'),
+                                            '**' not in pattern, -len(pattern), pattern))
+                        else:
+                            matches.append((count, -len(pattern), pattern))
                 if not matches:
                     index += 1
                     continue
-                count, _, pattern = max(matches)
+                count, *_, pattern = max(matches)
                 if index > emitted:
                     parts.append(render_list(source, node.elts[emitted:index], indent))
                 parts.append('glob(' + json.dumps([pattern]) + ')')
-                stats['source_globs_added'] += 1
-                stats['source_files_in_new_globs'] += count
+                category = 'header' if headers else 'source'
+                stats[category + '_globs_added'] += 1
+                stats[category + '_files_in_new_globs'] += count
                 if len(examples) < 25:
                     examples.append({'rule': rule_name, 'pattern': pattern, 'sources': count})
                 index += count
@@ -482,20 +512,23 @@ def source_globs(text, files, stats, examples):
             for branch in node.args[0].values:
                 visit(branch, indent + 4, rule_name)
 
-    for field, value, indent, rule_name in native_values(source):
-        if field == 'srcs':
+    for field, value, indent, rule_name in native_values(source, attributes, kinds):
+        if field in fields:
             visit(value, indent, rule_name)
     return source.rewrite(edits)
 
 
 class Verify(ast.NodeTransformer):
     """Expand target fields per CPU, keep every other statement for comparison."""
-    def __init__(self, cpu, files, bindings):
+    def __init__(self, cpu, files, bindings, *, headers=False):
         self.cpu = cpu
         self.files = files
         self.binding_names = bindings
         self.bindings = {}
         self.field = None
+        self.attributes = HEADER_ATTRIBUTES if headers else ATTRIBUTES
+        self.kinds = CC_COMPILERS if headers else NATIVE
+        self.file_fields = {'srcs', 'hdrs', 'textual_hdrs'} if headers else {'srcs'}
         self.tu_counts = Counter()
         self.tu_rules = defaultdict(set)
         self.rules_verified = 0
@@ -519,25 +552,25 @@ class Verify(ast.NodeTransformer):
 
     def visit_Constant(self, node):
         # Local source labels :foo.cc and foo.cc refer to the same package file.
-        if (self.field == 'srcs' and self.files is not None and isinstance(node.value, str)
+        if (self.field in self.file_fields and self.files is not None and isinstance(node.value, str)
                 and node.value.startswith(':') and node.value[1:] in self.files.files):
             return ast.Constant(node.value[1:])
         return node
 
     def visit_BinOp(self, node):
         node = self.generic_visit(node)
-        if self.field in ATTRIBUTES and isinstance(node.op, ast.Add):
+        if self.field in self.attributes and isinstance(node.op, ast.Add):
             if isinstance(node.left, ast.List) and isinstance(node.right, ast.List):
                 return ast.List(elts=node.left.elts + node.right.elts, ctx=ast.Load())
         return node
 
     def visit_Call(self, node):
         name = function(node)
-        if name in NATIVE:
+        if name in self.kinds:
             self.rules_verified += 1
             for kw in node.keywords:
                 old = self.field
-                self.field = kw.arg if kw.arg in ATTRIBUTES else None
+                self.field = kw.arg if kw.arg in self.attributes else None
                 kw.value = self.visit(kw.value)
                 self.field = old
             rule_name = attrs(node)['name'].value
@@ -552,7 +585,7 @@ class Verify(ast.NodeTransformer):
                     self.tu_rules[filename].add(rule_name)
             return node
         node = self.generic_visit(node)
-        if (name == 'select' and self.field in ATTRIBUTES and len(node.args) == 1
+        if (name == 'select' and self.field in self.attributes and len(node.args) == 1
                 and not node.keywords and isinstance(node.args[0], ast.Dict)
                 and all(isinstance(key, ast.Constant) for key in node.args[0].keys)):
             choice = {key.value: value for key, value in zip(node.args[0].keys, node.args[0].values)}
@@ -560,7 +593,7 @@ class Verify(ast.NodeTransformer):
                 return choice[self.cpu]
             if set(choice) <= set(CPUS) | {'//conditions:default'} and '//conditions:default' in choice:
                 return choice['//conditions:default']
-        if (name == 'glob' and self.field == 'srcs' and self.files is not None
+        if (name == 'glob' and self.field in self.file_fields and self.files is not None
                 and len(node.args) == 1):
             options = {kw.arg: kw.value for kw in node.keywords}
             if set(options) <= {'exclude', 'allow_empty', 'exclude_directories'}:
@@ -577,17 +610,20 @@ class Verify(ast.NodeTransformer):
         return node
 
 
-def prove(before, after, files, renamed, path, stats):
-    original_names = set(eligible_constants(Source(before)))
+def prove(before, after, files, renamed, path, stats, *, headers=False):
+    attributes = HEADER_ATTRIBUTES if headers else ATTRIBUTES
+    kinds = CC_COMPILERS if headers else NATIVE
+    original_names = set(eligible_constants(Source(before), attributes, kinds))
     # New template names map to themselves; readable_names() only renames
     # _GENERATED_ native attributes, so it never produces a self-mapping.
     template_names = {key for key, value in renamed.items() if key == value}
     names = original_names | {name for name in renamed.values() if name and name not in template_names}
-    for cpu in CPUS:
+    cpus = (*CPUS, '//conditions:default') if headers else CPUS
+    for cpu in cpus:
         old_templates = OrderedTemplates(cpu, template_names)
         new_templates = OrderedTemplates(cpu, template_names)
-        old = Verify(cpu, files, names)
-        new = Verify(cpu, files, names)
+        old = Verify(cpu, files, names, headers=headers)
+        new = Verify(cpu, files, names, headers=headers)
         old_tree = old.visit(old_templates.visit(ast.parse(before)))
         new_tree = new.visit(new_templates.visit(ast.parse(after)))
         if old_templates.ordered_entries != new_templates.ordered_entries:
@@ -600,11 +636,13 @@ def prove(before, after, files, renamed, path, stats):
                     print('AFTER', ast.unparse(b)[:1500], file=sys.stderr)
                     break
             raise ValueError(f'{path}, {cpu}: expanded BUILD changed')
-        stats['native_rules_verified_two_cpus'] += old.rules_verified
-        stats['template_ordered_items_verified_two_cpus'] += sum(
+        count_key = 'three_configs' if headers else 'two_cpus'
+        stats['native_rules_verified_' + count_key] += old.rules_verified
+        stats['template_ordered_items_verified_' + count_key] += sum(
             len(items) for items in old_templates.ordered_entries.values())
-        stats['extra_occurrences_in_one_tu_list_two_cpus'] += sum(old.tu_counts.values())
-        stats['filenames_compiled_by_multiple_rules_two_cpus'] += sum(len(rules) > 1 for rules in old.tu_rules.values())
+        stats['extra_occurrences_in_one_tu_list_' + count_key] += sum(old.tu_counts.values())
+        stats['filenames_compiled_by_multiple_rules_' + count_key] += sum(
+            len(rules) > 1 for rules in old.tu_rules.values())
 
 
 def compact(text, spec_name, files=None, stats=None, examples=None):
@@ -628,14 +666,14 @@ def compact(text, spec_name, files=None, stats=None, examples=None):
     return after, renamed
 
 
-def format_and_prove(root, before, after, spec_name, files, renamed):
+def format_and_prove(root, before, after, spec_name, files, renamed, *, headers=False):
     if before == after:
         return after
     formatted = subprocess.run(
         ['buildifier', '-mode=fix', '-type=build', '-config=' + str(root / '.buildifier.json')],
         input=after, text=True, stdout=subprocess.PIPE, check=True,
     ).stdout
-    prove(before, formatted, files, renamed, spec_name, Counter())
+    prove(before, formatted, files, renamed, spec_name, Counter(), headers=headers)
     return formatted
 
 

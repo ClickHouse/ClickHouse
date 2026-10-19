@@ -202,6 +202,6 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_boost//:_boost_coroutine",
-        "@clickhouse//base/base:common",
+        "@clickhouse//base:common",
     ],
 )
