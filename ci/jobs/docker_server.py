@@ -788,15 +788,10 @@ def main():
                 )
             )
 
-    # A PR to master only: the `head` images are built from master, where a backported fix is already present.
+    # The server image job validates the tests of both images. Only on a PR to master: a backported fix is in master's `head`.
     bugfix_tests = []
-    if not push and info.workflow_name == "PR":
-        test_prefix = "keeper-" if "keeper image" in info.job_name else "clickhouse-"
-        bugfix_tests = [
-            test
-            for test in changed_tests(info.get_changed_files())
-            if test.startswith(test_prefix)
-        ]
+    if not push and info.workflow_name == "PR" and "server image" in info.job_name:
+        bugfix_tests = changed_tests(info.get_changed_files())
     if not push:
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
@@ -806,8 +801,9 @@ def main():
             for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
         ):
             master_images = [
-                f"{image.name}:head" + ("" if os_ == "ubuntu" else f"-{os_}")
-                for os_ in args.os
+                f"{repo}:head{suffix}"
+                for repo in ("clickhouse/clickhouse-server", "clickhouse/clickhouse-keeper")
+                for suffix in ("", "-alpine", "-distroless")
             ]
             validate_bugfix_tests(test_results, master_images, bugfix_tests)
 

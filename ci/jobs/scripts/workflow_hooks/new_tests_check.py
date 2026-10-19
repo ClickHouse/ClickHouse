@@ -278,8 +278,8 @@ def check():
         )
         return True
 
-    # Docker server/keeper image test: the `Docker server image` and `Docker keeper image` jobs validate it themselves,
-    # they fail when it passes on the `head` images built from master.
+    # Docker server/keeper image test: the `Docker server image` job validates it itself, it fails when the test passes on
+    # the `head` images built from master.
     if has_docker_server:
         print(
             "Docker image test changed (no new functional/integration/unit tests) - pass"

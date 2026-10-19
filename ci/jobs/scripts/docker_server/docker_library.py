@@ -158,23 +158,24 @@ def test_docker_library(test_results, check_images=None) -> None:
 def validate_bugfix_tests(test_results, master_images, tests) -> None:
     """Run a bug fix's changed tests on the images built from master, where they must fail.
 
-    A test passing there does not reproduce the bug. Each test runs only on the images whose `config.sh` list has it,
-    and must be on at least one.
+    A test that passes on every image whose `config.sh` list has it does not reproduce the bug. Like the functional
+    tests' Bugfix validation, failing on one image is enough: a bug can be in one variant only.
     """
     # Cloned by `test_docker_library`, which reports a failed clone itself.
     repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
     run_sh = repo_path / "test/run.sh"
     configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
-    ran = set()
+    failed_on = {test: [] for test in tests}
+    passed_on = {test: [] for test in tests}
+    logs = {test: [] for test in tests}
     pulled_all = True
     for image in master_images:
-        name = f"bugfix validation ({image})"
         if not Shell.check(
             f"docker pull {shlex.quote(image)}", verbose=True, retries=3
         ):
             test_results.append(
                 Result(
-                    name=name,
+                    name=f"bugfix validation ({image})",
                     status=Result.Status.ERROR,
                     info=f"Failed to pull {image}",
                 )
@@ -186,29 +187,43 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
             exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
             if "image has no tests" in stdout:
                 continue
-            ran.add(test)
             if exit_code == 0:
-                status = Result.Status.FAIL
-                info = f"{test} passes on {image}, built from master, so it does not reproduce the bug"
+                passed_on[test].append(image)
             elif f"'{test}' [" in stdout:
-                status = Result.Status.OK
-                info = f"{test} fails on {image}, built from master, as expected"
+                failed_on[test].append(image)
+                logs[test].extend(part for part in (stdout, stderr) if part)
             else:
-                status = Result.Status.ERROR
-                info = f"{test} did not run on {image}"
-            test_results.append(
-                Result(
-                    name=f"bugfix validation: {test} ({image})",
-                    status=status,
-                    info="\n".join(part for part in (info, stdout, stderr) if part),
+                test_results.append(
+                    Result(
+                        name=f"bugfix validation: {test} ({image})",
+                        status=Result.Status.ERROR,
+                        info="\n".join(
+                            part
+                            for part in (
+                                f"{test} did not run on {image}",
+                                stdout,
+                                stderr,
+                            )
+                            if part
+                        ),
+                    )
                 )
-            )
     for test in tests:
-        if test not in ran and pulled_all:
-            test_results.append(
-                Result(
-                    name=f"bugfix validation: {test}",
-                    status=Result.Status.ERROR,
-                    info=f"{test} runs on none of {', '.join(master_images)}",
-                )
+        if failed_on[test]:
+            status = Result.Status.OK
+            info = f"{test} fails on {', '.join(failed_on[test])}, built from master, as expected"
+        elif passed_on[test]:
+            status = Result.Status.FAIL
+            info = f"{test} passes on {', '.join(passed_on[test])}, built from master, so it does not reproduce the bug"
+        elif pulled_all:
+            status = Result.Status.ERROR
+            info = f"{test} runs on none of {', '.join(master_images)}"
+        else:
+            continue
+        test_results.append(
+            Result(
+                name=f"bugfix validation: {test}",
+                status=status,
+                info="\n".join([info, *logs[test]]),
             )
+        )
