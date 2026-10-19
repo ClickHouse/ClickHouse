@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: zookeeper, no-fasttest, no-parallel, no-replicated-database, no-shared-merge-tree
 # Tag no-parallel: SYSTEM RECONNECT ZOOKEEPER expires the Keeper session of every table, and the failpoint is global.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
