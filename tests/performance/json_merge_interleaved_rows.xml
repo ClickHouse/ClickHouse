@@ -1,0 +1,29 @@
+<test>
+    <!-- A merge of parts with interleaved sorting keys inserts into the resulting `JSON` column row by row. With
+         `max_dynamic_paths = 1024` all 200 paths are dynamic paths in every part. With `max_dynamic_paths = 64` every part
+         has its own set of dynamic paths and the rest of the paths in shared data. -->
+    <substitutions>
+        <substitution>
+            <name>max_dynamic_paths</name>
+            <values>
+                <value>1024</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_json_merge_interleaved_{max_dynamic_paths} (id UInt64, json JSON(max_dynamic_paths = {max_dynamic_paths}))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, min_parts_to_merge_at_once = 100
+    </create_query>
+
+    <fill_query>INSERT INTO t_json_merge_interleaved_{max_dynamic_paths} SELECT cityHash64(number), CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 17) % 200), toString(number + x)), range(10)), 'Map(String, String)') FROM numbers(0, 6000)</fill_query>
+    <fill_query>INSERT INTO t_json_merge_interleaved_{max_dynamic_paths} SELECT cityHash64(number), CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 17) % 200), toString(number + x)), range(10)), 'Map(String, String)') FROM numbers(6000, 6000)</fill_query>
+    <fill_query>INSERT INTO t_json_merge_interleaved_{max_dynamic_paths} SELECT cityHash64(number), CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 17) % 200), toString(number + x)), range(10)), 'Map(String, String)') FROM numbers(12000, 6000)</fill_query>
+    <fill_query>INSERT INTO t_json_merge_interleaved_{max_dynamic_paths} SELECT cityHash64(number), CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 17) % 200), toString(number + x)), range(10)), 'Map(String, String)') FROM numbers(18000, 6000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_json_merge_interleaved_{max_dynamic_paths} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_merge_interleaved_{max_dynamic_paths}</drop_query>
+</test>
