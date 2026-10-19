@@ -1689,7 +1689,8 @@ created with `azure_allow_server_credentials_in_user_queries` keeps the server's
 
 When disabled, loading such a table instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table.
-)", 0) \
+)", 0, \
+        {"26.11", true, true, "New setting."}) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
