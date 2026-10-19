@@ -250,6 +250,14 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
 void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 {
     explicit_metadata_file_path.set(std::make_unique<const String>(path));
+    std::lock_guard lock(initial_latest_metadata_mutex);
+    initial_latest_metadata.reset();
+}
+
+void IcebergMetadata::update(const ContextPtr &)
+{
+    std::lock_guard lock(initial_latest_metadata_mutex);
+    initial_latest_metadata.reset();
 }
 
 DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
@@ -263,8 +271,7 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    if (!force_fetch_latest_metadata && !initial_latest_metadata_query_id.empty()
-        && context->getCurrentQueryId() == initial_latest_metadata_query_id && !explicit_metadata_file_path.get())
+    if (!force_fetch_latest_metadata)
     {
         std::optional<Iceberg::MetadataFileWithInfo> latest_metadata;
         {
@@ -316,7 +323,6 @@ IcebergMetadata::IcebergMetadata(
     , persistent_components(std::move(persistent_components_))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
-    , initial_latest_metadata_query_id(initial_latest_metadata_ ? context_->getCurrentQueryId() : String{})
     , initial_latest_metadata(std::move(initial_latest_metadata_))
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
