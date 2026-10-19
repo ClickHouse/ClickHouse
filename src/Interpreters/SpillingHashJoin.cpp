@@ -358,6 +358,8 @@ void SpillingHashJoin::onBuildPhaseFinish()
         else
             hash_join->dropRightBlocksKeptForAnotherAlgorithm();
     }
+
+    build_finished.store(true, std::memory_order_release);
 }
 
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
@@ -503,6 +505,9 @@ IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
 
 IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
 {
+    /// An abandoned build may still be adding blocks, or spilling them to buckets.
+    if (!build_finished.load(std::memory_order_acquire))
+        return nullptr;
     chassert(chosen_join);
     return chosen_join->getDelayedBlocks();
 }

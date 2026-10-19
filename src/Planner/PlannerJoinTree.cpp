@@ -76,6 +76,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -3464,12 +3465,33 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    /// Each stream drops its own duplicates before the join hashes them, and the duplicates of different streams
+    /// are left to the join. The step gives up on a stream that turns out to be mostly unique. It is only an
+    /// optimization, so the limits of `DISTINCT`, which bound the result of the query, do not apply to it.
+    if (join_node.isSetOperation() && preliminaryDistinctIsUseful(settings[Setting::max_threads]))
+    {
+        DistinctStep::Settings distinct_settings(settings);
+        distinct_settings.set_size_limits = {};
+        for (auto * query_plan : {&left_join_tree_query_plan.query_plan, &right_join_tree_query_plan.query_plan})
+        {
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan->getCurrentHeader(),
+                distinct_settings,
+                0 /*limit_hint*/,
+                query_plan->getCurrentHeader()->getNames(),
+                true /*pre_distinct*/);
+            distinct_step->setStepDescription("Preliminary DISTINCT of a set operation input");
+            query_plan->addStep(std::move(distinct_step));
+        }
+    }
+
     auto join_step_logical = buildJoinStepLogical(
         left_join_tree_query_plan.query_plan.getCurrentHeader(),
         right_join_tree_query_plan.query_plan.getCurrentHeader(),
         outer_scope_columns,
         join_node,
         planner_context);
+    join_step_logical->setIsSetOperation(join_node.isSetOperation());
 
     /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
     /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt

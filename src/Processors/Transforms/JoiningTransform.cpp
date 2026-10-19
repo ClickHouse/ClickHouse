@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/Port.h>
 #include <Processors/ISpillable.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
@@ -83,7 +84,7 @@ IProcessor::Status JoiningTransform::prepare()
     if (inputs.size() > 1)
     {
         auto & last_in = inputs.back();
-        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+        if (last_in.isFinished() && !right_abandoned && join->alwaysReturnsEmptySet() && !on_totals)
             stop_reading = true;
     }
 
@@ -125,7 +126,18 @@ IProcessor::Status JoiningTransform::prepare()
             if (last_in.hasData())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
 
-            return Status::NeedData;
+            /// The left side starts to work before the right one is filled, up to what the ports in between hold.
+            /// A set operation is a left semi or anti join, which outputs only left rows, so a stream whose left
+            /// side is exhausted is done: it closes its port to the right side, and once every stream has, the
+            /// right side, which may be unbounded, stops being read and its build is abandoned.
+            const auto & table_join = join->getTableJoin();
+            if (!table_join.readsLeftWhileFillingRight() || !isLeft(table_join.kind()))
+                return Status::NeedData;
+            inputs.front().setNeeded();
+            if (!inputs.front().isFinished() || has_input)
+                return Status::NeedData;
+            last_in.close();
+            right_abandoned = true;
         }
     }
 
@@ -140,7 +152,8 @@ IProcessor::Status JoiningTransform::prepare()
             is_drained = true;
             if (match_counter)
                 match_counter->add(matched_right_rows);
-            if (finish_counter->isLast())
+            /// The join is not built when the right side was abandoned.
+            if (finish_counter->isLast() && !right_abandoned)
             {
                 is_last_drained = true;
                 join->onProbePhaseFinish(match_counter ? match_counter->get() : std::optional<size_t>(0));
@@ -150,7 +163,7 @@ IProcessor::Status JoiningTransform::prepare()
         /// There is a big assumption here: if join supports parallel non-joined block processing, then it is
         /// assumed the query pipeline contains the appropriate `NonJoinedBlocksTransform` processors and we can
         /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
-        if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
+        if (process_non_joined && !right_abandoned && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
             return Status::Ready;
 
         output.finish();

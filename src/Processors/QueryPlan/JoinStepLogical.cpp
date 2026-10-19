@@ -1965,6 +1965,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
+    table_join->setReadsLeftWhileFillingRight(logical_join_info.is_set_operation);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)
@@ -2582,7 +2583,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .is_set_operation = join_step->isSetOperation()
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2889,12 +2891,17 @@ static void serializeNodeList(
 /// Bits of the flags byte written by `JoinStepLogical::serialize`. A reader that does not know a bit
 /// ignores it, so adding one keeps both directions of the wire compatible.
 static constexpr UInt8 JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED = 1 << 0;
+/// Written from step version 1 on: the join executes an `INTERSECT DISTINCT` or `EXCEPT DISTINCT`.
+static constexpr UInt8 JOIN_LOGICAL_FLAG_SET_OPERATION = 1 << 1;
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
+    /// The mark of a set operation goes in the flags from step version 1 on; a reader at version 0 ignores the bit.
     UInt8 flags = 0;
     if (disjunctions_optimization_applied)
         flags |= JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED;
+    if (ctx.step_version >= 1 && is_set_operation)
+        flags |= JOIN_LOGICAL_FLAG_SET_OPERATION;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2992,6 +2999,10 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->optimized = bool(optimizer_flags & 1);
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
     }
+
+    if (ctx.step_version >= 1)
+        step->is_set_operation = bool(flags & JOIN_LOGICAL_FLAG_SET_OPERATION);
+
     return step;
 }
 
@@ -3047,6 +3058,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->is_set_operation = is_set_operation;
 
     return result_step;
 }
@@ -3071,7 +3083,8 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join", JoinStepLogical::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_JOIN}});
 }
 
 
