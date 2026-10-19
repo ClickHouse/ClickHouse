@@ -3952,6 +3952,12 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
+                /// Check `SHOW COLUMNS` before looking the source up, else the error tells a user who cannot
+                /// see the source whether it exists.
+                const bool inherits_engine = !create.storage || !create.storage->engine;
+                if (inherits_engine)
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+
                 /// The initiator can read the source definition only when it holds the source. A
                 /// cross-replication cluster keeps each shard in a database the initiator may not have.
                 if (DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
@@ -3973,7 +3979,7 @@ BlockIO InterpreterCreateQuery::execute()
                     if (inherited.storage && inherited.storage->engine)
                         getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
                 }
-                else if (!create.storage || !create.storage->engine)
+                else if (inherits_engine)
                 {
                     /// The initiator cannot see the engine and the settings the worker inherits, so require
                     /// `SELECT` on the source and `TABLE ENGINE` on every engine, which covers any source. A
