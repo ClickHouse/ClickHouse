@@ -345,6 +345,10 @@ struct QueryGraphBuilder
 
     std::shared_ptr<BuilderContext> context;
 
+    /// Whether this (sub)graph lies inside a null-supplying input of an outer, semi or anti join
+    /// above it, see `canFlattenThroughExpression`.
+    bool below_null_supplying = false;
+
     explicit QueryGraphBuilder(std::shared_ptr<BuilderContext> context_)
         : context(std::move(context_)) {}
 
@@ -528,7 +532,49 @@ static bool isFlattenableJoinSide(JoinKind kind, JoinTableSide side, bool for_co
     return side == JoinTableSide::Left ? isLeft(kind) : isRight(kind);
 }
 
-static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
+/// Whether the given input of a join step is null-supplying: padded with defaults or `NULL` for the
+/// rows of the other input without a match, or, for a semi/anti join, read only through its matches.
+static bool isNullSupplyingSide(JoinKind kind, JoinTableSide side)
+{
+    return side == JoinTableSide::Left ? isRightOrFull(kind) : isLeftOrFull(kind);
+}
+
+/// Whether every output of the expression is one of its inputs, possibly renamed: the projection of a
+/// subquery that only selects columns.
+static bool onlyRenamesColumns(const ActionsDAG & dag)
+{
+    for (const auto * output : dag.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+    }
+    return true;
+}
+
+/// Whether a child join under an `ExpressionStep` may be flattened, looking through the expression.
+/// A passthrough expression can always be looked through. Any other one is merged into the join graph
+/// and evaluated after the reordered joins. Inside a null-supplying input, that is after the outer
+/// join has padded the columns it reads, while the query computes it before: the padded row must get
+/// the default of the computed column, not the expression applied to padded inputs (`bx + 1` gives 1,
+/// not 0). So there only an expression that renames columns, which padding does not change, is merged;
+/// any other keeps the child join a single relation.
+static bool canFlattenThroughExpression(const ActionsDAG & dag, bool merge_expression_into_join, bool below_null_supplying)
+{
+    if (dag.hasArrayJoin())
+        return false;
+    if (isPassthroughActions(dag))
+        return true;
+    if (below_null_supplying && !onlyRenamesColumns(dag))
+        return false;
+    return canMergeExpressionIntoJoinGraph(dag, merge_expression_into_join);
+}
+
+static size_t addChildQueryGraph(
+    QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit,
+    bool below_null_supplying)
 {
     auto * join_node = node;
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
@@ -541,8 +587,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (canMergeExpressionIntoJoinGraph(
-                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
+        else if (canFlattenThroughExpression(
+                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join, below_null_supplying))
         {
             join_node = node->children[0];
         }
@@ -567,6 +613,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
+                child_graph.below_null_supplying = below_null_supplying;
                 buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
 
                 if (expression_step)
@@ -750,11 +797,13 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         && isFlattenableJoinSide(join_kind, JoinTableSide::Left, for_conflict_detector);
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right)
         && isFlattenableJoinSide(join_kind, JoinTableSide::Right, for_conflict_detector);
+    const bool lhs_below_null_supplying = query_graph.below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Left);
+    const bool rhs_below_null_supplying = query_graph.below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Right);
 
     /// Check if flattening children would cause column name clashes between sides.
     if (allow_left_subgraph || allow_right_subgraph)
     {
-        auto get_exposed_columns = [&](QueryPlan::Node * plan, bool allow_flatten) -> NameSet
+        auto get_exposed_columns = [&](QueryPlan::Node * plan, bool allow_flatten, bool below_null_supplying) -> NameSet
         {
             NameSet names;
             auto * check = plan;
@@ -762,9 +811,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             {
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
-                if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression())
-                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
+                if (expr && canFlattenThroughExpression(expr->getExpression(), merge_expression_into_join, below_null_supplying))
                 {
                     check = check->children[0];
                 }
@@ -782,8 +829,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             return names;
         };
 
-        auto lhs_cols = get_exposed_columns(lhs_plan, allow_left_subgraph);
-        auto rhs_cols = get_exposed_columns(rhs_plan, allow_right_subgraph);
+        auto lhs_cols = get_exposed_columns(lhs_plan, allow_left_subgraph, lhs_below_null_supplying);
+        auto rhs_cols = get_exposed_columns(rhs_plan, allow_right_subgraph, rhs_below_null_supplying);
 
         if (std::ranges::any_of(lhs_cols, [&](const auto & name) { return rhs_cols.contains(name); }))
         {
@@ -793,8 +840,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
+    size_t lhs_count = addChildQueryGraph(
+        query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0, lhs_below_null_supplying);
+    size_t rhs_count = addChildQueryGraph(
+        query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, rhs_below_null_supplying);
 
     size_t total_inputs = query_graph.inputs.size();
 
@@ -1443,7 +1492,8 @@ static void collectJoinGraphRelationHeaders(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     std::vector<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children);
+    bool allow_semi_anti_children,
+    bool below_null_supplying);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
 /// that the join order optimizer would produce for it (descending into flattenable child joins).
@@ -1455,7 +1505,8 @@ static void collectJoinGraphRelationHeadersForJoin(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     std::vector<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children)
+    bool allow_semi_anti_children,
+    bool below_null_supplying = false)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
     if (!join_step || join_node.children.size() != 2)
@@ -1470,13 +1521,16 @@ static void collectJoinGraphRelationHeadersForJoin(
     const bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left)
         && isFlattenableJoinSide(join_kind, JoinTableSide::Left, allow_semi_anti_children);
     const size_t lhs_before = relation_headers.size();
-    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
+    collectJoinGraphRelationHeaders(
+        join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers,
+        allow_semi_anti_children, below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Left));
     const size_t lhs_count = relation_headers.size() - lhs_before;
 
     const bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right)
         && isFlattenableJoinSide(join_kind, JoinTableSide::Right, allow_semi_anti_children);
     collectJoinGraphRelationHeaders(
-        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
+        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, relation_headers,
+        allow_semi_anti_children, below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Right));
 }
 
 /// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
@@ -1487,16 +1541,14 @@ static void collectJoinGraphRelationHeaders(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     std::vector<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children)
+    bool allow_semi_anti_children,
+    bool below_null_supplying)
 {
-    /// Peeling must match `addChildQueryGraph`: a passthrough expression is always peeled, a
-    /// non-passthrough one only under `merge_expression_into_join`, which merges it into the join
-    /// and flattens the child join underneath.
+    /// Peeling must match `addChildQueryGraph`, see `canFlattenThroughExpression`.
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
-        expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression())
-            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
+        expression_step && effective->children.size() == 1
+        && canFlattenThroughExpression(expression_step->getExpression(), merge_expression_into_join, below_null_supplying))
     {
         effective = effective->children[0];
     }
@@ -1511,7 +1563,9 @@ static void collectJoinGraphRelationHeaders(
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
-            collectJoinGraphRelationHeadersForJoin(*effective, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
+            collectJoinGraphRelationHeadersForJoin(
+                *effective, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children,
+                below_null_supplying);
             return;
         }
     }
