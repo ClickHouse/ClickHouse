@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
+# Tag no-parallel: Creates and removes a fixed SQL function and a shared `system.webassembly_modules` entry.
 
 # Regression test: a BUFFERED_V1 WebAssembly function that returns a zero-length
 # buffer deserializes to zero rows under a row-based serialization_format. The

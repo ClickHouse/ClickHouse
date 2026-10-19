@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, use_jemalloc
+# Tags: no-fasttest, use_jemalloc, no-parallel:misc-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
 # no-parallel: this test issues `SYSTEM DROP COMPILED EXPRESSION CACHE`, which is process-wide.
 #              Running in parallel with other JIT-using tests would flap their assertions and ours.
 # no-fasttest: requires USE_EMBEDDED_COMPILER, which the fast-test image disables.

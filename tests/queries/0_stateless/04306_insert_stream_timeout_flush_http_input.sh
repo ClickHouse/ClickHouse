@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-flaky-check
+# Tag no-parallel: the partial flush is timing-sensitive; concurrent load can starve the
+# pipeline executor and delay the timeout-based flush past the test's polling deadline.
 # no-fasttest: The test waits for a timeout-based flush from an open HTTP request.
-# no-parallel: The partial flush is timing-sensitive; concurrent load can starve the pipeline executor.
 # no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
 
 set -euo pipefail

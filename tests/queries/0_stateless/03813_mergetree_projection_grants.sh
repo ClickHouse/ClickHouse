@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 # Test that mergeTreeProjection checks table grants correctly.
 # This function should require SELECT permission on the source table.

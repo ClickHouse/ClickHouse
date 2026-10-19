@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-object-storage
+-- Tags: no-object-storage
 -- With s3 policy TTL TO DISK 'default' doesn't work (because we have no default, only 's3')
 
 drop table if exists ttl;

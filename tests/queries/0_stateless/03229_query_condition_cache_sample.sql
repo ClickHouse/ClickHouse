@@ -1,5 +1,7 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tags: no-parallel-replicas, no-parallel, no-release
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `table_uuid` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 --   not reliably reproducible with parallel replicas
 
@@ -25,22 +27,22 @@ INSERT INTO tab SELECT sipHash64(number * 100 + 6), number, 'hit' FROM numbers(1
 
 SELECT '--- WHERE on non-primary-key column';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
 SELECT count() FROM tab SAMPLE 0.1 WHERE val = 'hit' FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT 'A non-SAMPLEing query must returns the entire table content.';
 SELECT count() FROM tab WHERE val = 'hit' SETTINGS use_query_condition_cache = true;
 
 SELECT '--- WHERE on primary key column';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
 SELECT count() FROM tab SAMPLE 0.1 WHERE id = 42 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 SELECT 'A non-SAMPLEing query must returns the entire table content.';
 SELECT count() FROM tab WHERE id = 42;
 

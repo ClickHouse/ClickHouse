@@ -1,10 +1,8 @@
--- Tags: no-parallel
 -- Regression test for wrong results in JOIN with shard-by-PK optimization and query condition cache.
 -- The bug was in optimizeJoinByShards::apply() which assumed contiguous part_index_in_query values,
 -- but filterPartsByQueryConditionCache can drop parts leaving gaps in the indices.
 -- This caused the layer distribution to assign parts to the wrong source, producing 0 rows.
 
-SYSTEM DROP QUERY CONDITION CACHE;
 
 SET enable_join_runtime_filters = 0;
 SET use_query_condition_cache = 1;

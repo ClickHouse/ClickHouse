@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
-# Reason for no-parallel: this test creates global WASM UDFs and a global
-# `system.webassembly_modules` row; concurrent runs in flaky check would race
-# on `CREATE FUNCTION`, `DROP FUNCTION`, and module load/delete.
-#
+# Tags: no-fasttest, no-msan
 # Test passing bare WASM UDF names to higher-order functions.
 # Companion to `04064_bare_function_name_as_lambda.sql` for `LANGUAGE WASM`.
 

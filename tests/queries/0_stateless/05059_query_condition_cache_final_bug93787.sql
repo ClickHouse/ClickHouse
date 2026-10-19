@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-ordinary-database, no-parallel-replicas
--- no-parallel: clears and inspects the instance-wide query condition cache
 -- no-ordinary-database: a database without table UUIDs never populates the cache
+-- Tag no-parallel: clears and inspects the instance-wide query condition cache
 -- no-parallel-replicas: the cache is populated per replica, so this needs a single replica
 
 -- `PREWHERE` runs before `FINAL`, so it can record marks that hold only losing versions. A `FINAL`

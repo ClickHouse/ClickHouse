@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-shared-merge-tree
+-- Tag no-parallel: asserts the process-wide mark cache contents and clears it
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;

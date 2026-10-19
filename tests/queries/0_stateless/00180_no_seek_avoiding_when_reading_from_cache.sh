@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan
+# Tag no-parallel: issues process-wide `SYSTEM CLEAR FILESYSTEM CACHE` and asserts that
+# `hits_s3_sampled` stays fully resident in the shared cache; a concurrent cache user would evict
+# it, so the `filesystem-cache` group is not enough - it must run fully sequentially
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

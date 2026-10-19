@@ -1,4 +1,5 @@
--- Tags: use-xray
+-- Tags: use-xray, no-parallel:xray
+-- Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 -- Test that system.instrumentation.function_id is Int32, not LowCardinality(Int32)
 -- This allows CREATE VIEW without allow_suspicious_low_cardinality_types setting
 

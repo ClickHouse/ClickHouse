@@ -1,4 +1,4 @@
--- Tags: global, no-parallel, no-flaky-check
+-- Tags: global, no-flaky-check
 SET enable_analyzer = 1;
 
 -- { echo }

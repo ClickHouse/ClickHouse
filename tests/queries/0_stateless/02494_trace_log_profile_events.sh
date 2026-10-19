@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-tsan, no-parallel
+# Tag no-parallel: waits for `SYSTEM FLUSH LOGS trace_log` twice, which under parallel load lags for minutes: the flush thread symbolizes every sampled stack (126-150 s per flush in debug builds), so the test exceeds its time limit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

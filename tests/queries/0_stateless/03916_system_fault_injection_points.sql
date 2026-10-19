@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-fasttest
+-- Tag no-parallel: uses a process-global failpoint
 -- Other tests can enable failpoints and interfere with this test
 
 -- Basic: table exists and returns rows

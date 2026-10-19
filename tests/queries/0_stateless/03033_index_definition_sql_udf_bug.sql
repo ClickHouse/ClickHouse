@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP FUNCTION IF EXISTS test_func_1;
 CREATE FUNCTION test_func_1 AS (a, b, c) -> ((a + b) + c);
@@ -19,3 +18,6 @@ INSERT INTO t4_2 (col1, col2, col3) SELECT number, number, number FROM numbers(1
 
 SELECT * FROM t4_2 WHERE test_func_1(col1, col3, col1) = 6
 SETTINGS force_data_skipping_indices = 'ind4';
+
+DROP TABLE t4_2;
+DROP FUNCTION test_func_1;

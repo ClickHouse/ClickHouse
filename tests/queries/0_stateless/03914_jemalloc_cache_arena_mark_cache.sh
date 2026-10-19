@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, use_jemalloc
+# Tags: no-random-settings, no-random-merge-tree-settings, use_jemalloc, no-parallel
+# Tag no-parallel: issues global `SYSTEM DROP MARK CACHE`/`INDEX MARK CACHE`/`UNCOMPRESSED CACHE`/
+# `INDEX UNCOMPRESSED CACHE` and asserts the process-wide `MarkCacheBytes` metric, which any
+# concurrent MergeTree read pollutes; the second round of drops happens after the table is dropped
+# so it cannot be table-scoped - the `mark-cache` group is not enough, it must run sequentially
 
 # Test that mark cache allocations use the dedicated jemalloc cache arena.
 # Arena pactive reclamation is tested by the integration test
@@ -26,7 +30,6 @@ before_bytes=$($CLICKHOUSE_CLIENT -q "
     SYSTEM DROP INDEX MARK CACHE;
     SYSTEM DROP UNCOMPRESSED CACHE;
     SYSTEM DROP INDEX UNCOMPRESSED CACHE;
-    SYSTEM DROP PAGE CACHE;
     SELECT value FROM system.metrics WHERE metric = 'MarkCacheBytes'")
 echo "before_select	0"
 
@@ -56,7 +59,6 @@ for _ in $(seq 1 5); do
         SYSTEM DROP INDEX MARK CACHE;
         SYSTEM DROP UNCOMPRESSED CACHE;
         SYSTEM DROP INDEX UNCOMPRESSED CACHE;
-        SYSTEM DROP PAGE CACHE;
         SELECT value FROM system.metrics WHERE metric = 'MarkCacheBytes'")
 
     if [ "$cleared_bytes" -lt "$after_bytes" ]; then

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 # no-flaky-check: Too slow
+# Tag no-parallel: asserts exact counts over the global `system.filesystem_cache` /
+# `system.remote_data_paths` views; any concurrent test that creates an anonymous
+# `disk(type='cache', ...)` (named `__tmp_internal_*`) pollutes them, so it must run sequentially
 
 set -e
 

@@ -1,5 +1,10 @@
--- Tags: stateful, no-parallel, long
--- no-parallel: drops global mark and filesystem caches
+-- Tags: stateful, long, no-parallel
+-- Tag no-parallel: this test needs `test.hits` reads to go over the (idle, staleness-prone) HTTP
+-- connection pool rather than be served warm, so it issues global, unscoped
+-- `SYSTEM DROP MARK CACHE`/`SYSTEM DROP FILESYSTEM CACHE` (no named filesystem cache to scope to
+-- is known for `test.hits`'s disk in every storage flavor this test runs under). It spans both the
+-- `mark-cache` and `filesystem-cache` groups at once, so it cannot be placed in either single
+-- group without risking those groups' own assertions.
 
 -- Reproducer for stale HTTP connection pool issue with web disk.
 -- S3 silently closes idle keep-alive connections after ~5-20s, but the pool's

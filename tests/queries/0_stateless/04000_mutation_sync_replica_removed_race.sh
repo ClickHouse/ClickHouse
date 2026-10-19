@@ -2,6 +2,8 @@
 # Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # no-fasttest: the fast test binary is built as RelWithDebInfo, where `chassert` is a no-op, so this test
 #              cannot detect the regression there. It keeps running in the debug and sanitizer builds.
+# Tag no-parallel: repeatedly drops and recreates a replica while another query waits for it, so the
+#   race uses shared `ZooKeeper` state that cannot overlap with another test.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/97309
 #

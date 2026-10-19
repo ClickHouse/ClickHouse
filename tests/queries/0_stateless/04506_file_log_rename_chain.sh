@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
+logs_dir=${CLICKHOUSE_USER_FILES_UNIQUE}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 
 rm -rf "${logs_dir}"
 mkdir -p "${logs_dir}/"

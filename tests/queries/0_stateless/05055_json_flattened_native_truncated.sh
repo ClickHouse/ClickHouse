@@ -12,6 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE=$CLICKHOUSE_TMP/flattened_native_$CLICKHOUSE_DATABASE.bin
 
+# The test is about parsing Native blocks, so the inserts are synchronous. With `async_insert` enabled (the
+# `AsyncInsert` jobs), the full-block insert after the truncated ones was seen waiting for the end of the insert
+# past the per-test timeout.
+
 function check_truncated_blocks()
 {
     local table=$1
@@ -26,7 +30,7 @@ function check_truncated_blocks()
     # Sent over HTTP: a client process per truncation is what made this test time out under sanitizers.
     for ((n = 1; n < size; n += 5)); do
         if head -c "$n" "$DATA_FILE" \
-            | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+$table+FORMAT+Native" --data-binary @- \
+            | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+$table+FORMAT+Native" --data-binary @- \
             | grep -q "Exception"
         then
             continue
@@ -37,7 +41,7 @@ function check_truncated_blocks()
     echo "$table: accepted truncated blocks $accepted"
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM $table"
 
-    $CLICKHOUSE_CLIENT -q "INSERT INTO $table FORMAT Native" < "$DATA_FILE"
+    $CLICKHOUSE_CLIENT --async_insert=0 -q "INSERT INTO $table FORMAT Native" < "$DATA_FILE"
     rm "$DATA_FILE"
 }
 

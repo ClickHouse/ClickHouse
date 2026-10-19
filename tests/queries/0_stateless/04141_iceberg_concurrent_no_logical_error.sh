@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, long
+# Tags: no-fasttest, long
 # Tag no-fasttest: Iceberg pulls in extra dependencies.
-# Tag no-parallel: deliberately runs concurrent clients to provoke a TOCTOU race.
 # Tag long: the concurrent read/write loop can run past the 180s flaky-check cap under msan;
 # shrinking it would weaken the concurrency that provokes the race, so exempt it instead.
 
@@ -10,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
-TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+TABLE_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}/${TABLE}/"
 
 LOG_FILE=$(mktemp -t iceberg_concurrent_XXXXXX.log)
 trap "rm -f \"${LOG_FILE}\"; rm -rf \"${TABLE_PATH}\" 2>/dev/null" EXIT

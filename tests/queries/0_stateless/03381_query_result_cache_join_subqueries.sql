@@ -1,15 +1,15 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+
+SET query_cache_tag = '03381_query_result_cache_join_subqueries';
 
 SET enable_analyzer = 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_join_subqueries';
 
 -- Create an entry in the query result cache
 SELECT t1.number, t2.avg FROM numbers(1, 100) as t1 JOIN (SELECT toUInt64(ceil(avg(number))) as avg FROM numbers(1, 100)) AS t2 ON t1.number = t2.avg SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 -- Should be two records (main query and join subquery)
-SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+SELECT count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_join_subqueries') AS test_query_cache WHERE is_subquery = 1;
 
 -- SELECT with sub-query result already in cache
 SELECT t1.number + 1, t2.avg FROM numbers(1, 100) as t1 JOIN (SELECT toUInt64(ceil(avg(number))) as avg FROM numbers(1, 100)) AS t2 ON t1.number = t2.avg SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
@@ -24,4 +24,4 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_join_subqueries';

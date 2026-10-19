@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest, no-debug, no-llvm-coverage, no-parallel
+# Tag no-parallel: checks process-wide `system.jemalloc_sampled_allocations` and `system.jemalloc_profile_text` while holding profiled allocations
 #       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 # NOTE: jemalloc is disabled under sanitizers
 

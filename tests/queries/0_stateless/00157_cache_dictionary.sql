@@ -1,4 +1,4 @@
--- Tags: stateful, no-tsan, no-msan, no-asan, no-parallel
+-- Tags: stateful, no-tsan, no-msan, no-asan
 -- no-parallel: Heavy
 
 -- cache_hits depends on hits_100k, so it has to be dropped first.

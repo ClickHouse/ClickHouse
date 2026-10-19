@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# - no-parallel: the `all` workload is a single global root shared by the whole server
+# Tag no-parallel: the `all` workload is a single global root shared by the whole server
 # - no-fasttest: BACKUP/RESTORE is not available in fasttest builds
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -6,7 +6,8 @@ QueryFinish	SELECT 124437993;	None
 QueryFinish	SELECT 124437994 SETTINGS use_query_cache = 1;	Write
 -- Run the same query with query cache enabled
 124437994
-QueryFinish	SELECT 124437994 SETTINGS use_query_cache = 1;	Write
-QueryFinish	SELECT 124437994 SETTINGS use_query_cache = 1;	Read
+124437994
+124437994
+1	1
 -- Throw exception with query cache enabled
 SELECT 124437995, throwIf(1) SETTINGS use_query_cache = 1;	None

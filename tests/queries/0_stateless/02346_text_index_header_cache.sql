@@ -1,5 +1,5 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 --- These tests verify the caching of a deserialized text index header in the consecutive executions.
 
@@ -9,6 +9,8 @@ SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_header_cache = 1;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
+
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
@@ -33,13 +35,14 @@ SYSTEM STOP MERGES tab;
 DROP VIEW IF EXISTS text_index_cache_stats;
 CREATE VIEW text_index_cache_stats AS (
   SELECT
-    concat('cache_hits = ', toString(ProfileEvents['TextIndexHeaderCacheHits']), ', cache_misses = ', toString(ProfileEvents['TextIndexHeaderCacheMisses']))
+    concat(
+        'cache_hits = ', toString(toUInt8(max(ProfileEvents['TextIndexHeaderCacheHits']) > 0)),
+        ', cache_misses = ', toString(toUInt8(max(ProfileEvents['TextIndexHeaderCacheMisses']) > 0)))
   FROM system.query_log
   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
-  LIMIT 1
 );
 
 SELECT '--- cache miss on the first run.';
@@ -49,6 +52,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_000');
 
 SELECT '--- cache hit on the second run.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
 
 SYSTEM FLUSH LOGS query_log;
@@ -65,6 +72,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_001');
 
 SELECT '--- cache hit on the second run.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 
 SYSTEM FLUSH LOGS query_log;

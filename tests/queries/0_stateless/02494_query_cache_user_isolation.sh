@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, long, no-parallel-replicas
-# Tag no-parallel-replicas: fails with parallel replicas, https://github.com/ClickHouse/clickhouse-private/issues/79502
-# Tag no-parallel: Messes with internal cache
+# Tags: no-fasttest, long, no-parallel-replicas
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 #     long: Sloooow ...
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_cache_tag $CLICKHOUSE_TEST_UNIQUE_NAME"
+
+# Access entities are server-global: derive their names from the per-run unique name so that
+# concurrent runs (including copies of this test in the flaky check) do not collide.
+user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role_1="role_1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+role_2="role_2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # -- Attack 1:
 #    - create a user,
@@ -20,39 +25,42 @@ echo "Attack 1"
 rnd=`tr -dc 1-9 </dev/urandom | head -c 5` # disambiguates the specific query in system.query_log below
 # echo $rnd
 
-# Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+# Start with an empty query cache (QC). The clear is scoped by `TAG` to this test's entries:
+# an unscoped `SYSTEM CLEAR QUERY CACHE` is server-wide and would drop the entries of every
+# other test running at the same time, and this test's own assertions only ever count entries
+# carrying its tag, so the scoped form is equivalent here.
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
-${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
-${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OPTION"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
+${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
+${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO $user WITH GRANT OPTION"
 
 # Insert cache entry
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
 
 # Check that the system view knows the new cache entry
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with old user', count(*) FROM system.query_cache"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT 'system.query_cache with old user', count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '$CLICKHOUSE_TEST_UNIQUE_NAME') AS test_query_cache"
 
 # Run query again. The 1st run must be a cache miss, the 2nd run a cache hit
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
-${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
-${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OPTION"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
+${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
+${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO $user WITH GRANT OPTION"
 
 # system.query_cache reports the old entry. That is okay since the system table only shows the query string, not the query result.
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with new user', count(*) FROM system.query_cache"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT 'system.query_cache with new user', count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '$CLICKHOUSE_TEST_UNIQUE_NAME') AS test_query_cache"
 
 # Run same query as old user. Expect a cache miss.
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
 
 # Cleanup
-${CLICKHOUSE_CLIENT} --query "DROP USER admin"
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "DROP USER $user"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
 # -- Attack 2: (scenario from issue #58054)
 #    - create a user,
@@ -62,50 +70,50 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 echo "Attack 2"
 
 # Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
-${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
-${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OPTION"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
+${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
+${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO $user WITH GRANT OPTION"
 
 # Create table
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP TABLE IF EXISTS user_data"
-${CLICKHOUSE_CLIENT} --user "admin" --query "CREATE TABLE user_data (ID UInt32, userID UInt32) ENGINE = MergeTree ORDER BY userID"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP TABLE IF EXISTS user_data"
+${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE user_data (ID UInt32, userID UInt32) ENGINE = MergeTree ORDER BY userID"
 
 # Create roles with row-level security
 
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE IF EXISTS user_role_1"
-# ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE POLICY IF EXISTS user_policy_1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "CREATE ROLE user_role_1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "GRANT SELECT ON user_data TO user_role_1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "CREATE ROW POLICY user_policy_1 ON user_data FOR SELECT USING userID = 1 TO user_role_1"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE IF EXISTS ${role_1}"
+# ${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE POLICY IF EXISTS user_policy_1"
+${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE ROLE ${role_1}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "GRANT SELECT ON user_data TO ${role_1}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE ROW POLICY user_policy_1 ON user_data FOR SELECT USING userID = 1 TO ${role_1}"
 
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE IF EXISTS user_role_2"
-# ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE POLICY IF EXISTS user_policy_2"
-${CLICKHOUSE_CLIENT} --user "admin" --query "CREATE ROLE user_role_2"
-${CLICKHOUSE_CLIENT} --user "admin" --query "GRANT SELECT ON user_data TO user_role_2"
-${CLICKHOUSE_CLIENT} --user "admin" --query "CREATE ROW POLICY user_policy_2 ON user_data FOR SELECT USING userID = 2 TO user_role_2"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE IF EXISTS ${role_2}"
+# ${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE POLICY IF EXISTS user_policy_2"
+${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE ROLE ${role_2}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "GRANT SELECT ON user_data TO ${role_2}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE ROW POLICY user_policy_2 ON user_data FOR SELECT USING userID = 2 TO ${role_2}"
 
-# Grant roles to admin
-${CLICKHOUSE_CLIENT} --user "admin" --query "GRANT user_role_1, user_role_2 TO admin"
-${CLICKHOUSE_CLIENT} --user "admin" --query "INSERT INTO user_data (ID, userID) VALUES (1, 1), (2, 2), (3, 1), (4, 3), (5, 2), (6, 1), (7, 4), (8, 2)"
+# Grant roles to the user
+${CLICKHOUSE_CLIENT} --user "$user" --query "GRANT ${role_1}, ${role_2} TO $user"
+${CLICKHOUSE_CLIENT} --user "$user" --query "INSERT INTO user_data (ID, userID) VALUES (1, 1), (2, 2), (3, 1), (4, 3), (5, 2), (6, 1), (7, 4), (8, 2)"
 
 # Test...
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 test'"
-${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT '-- policy_1 test'"
+${CLICKHOUSE_CLIENT} --user "$user" "SET ROLE ${role_1}; SELECT * FROM user_data" # should only return rows with userID = 1
 
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 test'"
-${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data" # should only return rows with userID = 2
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT '-- policy_2 test'"
+${CLICKHOUSE_CLIENT} --user "$user" "SET ROLE ${role_2}; SELECT * FROM user_data" # should only return rows with userID = 2
 
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT '-- policy_1 with query cache test'"
+${CLICKHOUSE_CLIENT} --user "$user" "SET ROLE ${role_1}; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
 
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT '-- policy_2 with query cache test'"
+${CLICKHOUSE_CLIENT} --user "$user" "SET ROLE ${role_2}; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
 
 # Cleanup
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_2"
-${CLICKHOUSE_CLIENT} --user "admin" --query "DROP TABLE user_data"
-${CLICKHOUSE_CLIENT} --query "DROP USER admin"
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE ${role_1}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP ROLE ${role_2}"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DROP TABLE user_data"
+${CLICKHOUSE_CLIENT} --query "DROP USER $user"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"

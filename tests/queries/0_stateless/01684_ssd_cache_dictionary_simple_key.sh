@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +29,7 @@ $CLICKHOUSE_CLIENT --query="
     PRIMARY KEY id
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_simple_attributes_source_table'))
     LIFETIME(MIN 1 MAX 1000)
-    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$USER_FILES_PATH/0d'));
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/0d'));
 
     SELECT 'Dictionary cache_dictionary_simple_key_simple_attributes';
     SELECT 'dictGet existing value';
@@ -74,7 +73,7 @@ $CLICKHOUSE_CLIENT --query="
     PRIMARY KEY id
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_complex_attributes_source_table'))
     LIFETIME(MIN 1 MAX 1000)
-    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$USER_FILES_PATH/1d'));
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/1d'));
 
     SELECT 'Dictionary cache_dictionary_simple_key_complex_attributes';
     SELECT 'dictGet existing value';
@@ -116,7 +115,7 @@ $CLICKHOUSE_CLIENT --query="
     PRIMARY KEY id
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_hierarchy_table'))
     LIFETIME(MIN 1 MAX 1000)
-    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$USER_FILES_PATH/2d'));
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/2d'));
 
     SELECT 'Dictionary cache_dictionary_simple_key_hierarchy';
     SELECT 'dictGet';

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: race, no-parallel
+# Tag no-parallel: creates a rootless `CREATE OR REPLACE WORKLOAD`, which claims the single
+# global root-workload slot enforced in `WorkloadEntityStorageBase::storeEntityImpl`; races
+# with other tests doing the same (e.g. `03232_workload_create_and_drop`,
+# `04082_workload_negative_float64_settings`).
 
 # Test for race condition when a workload is dropped while queries are still running.
 # This could cause an exception in the Lease destructor when trying to release CPU resources,

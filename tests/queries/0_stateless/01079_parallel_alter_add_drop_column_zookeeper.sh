@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-fasttest, no-parallel
+# Tag no-parallel: concurrent `OPTIMIZE FINAL` on its replicas waits for queued `ALTER_METADATA` entries while holding `merge_selecting_mutex`; under parallel load this takes minutes and times out the test.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 
 SET optimize_trivial_insert_select = 0;
 

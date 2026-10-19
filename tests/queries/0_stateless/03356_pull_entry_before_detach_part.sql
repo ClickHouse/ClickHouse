@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 -- Forbid fault injection to avoid part name randomization, since we rely on it
 SET insert_keeper_fault_injection_probability=0;

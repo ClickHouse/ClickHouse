@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Tags: use-vectorscan, no-fasttest, no-parallel
+# Tags: use-vectorscan, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-mkdir -p $USER_FILES_PATH/test_02504
+mkdir -p $CLICKHOUSE_USER_FILES_UNIQUE/test_02504
 
-yaml=$USER_FILES_PATH/test_02504/test.yaml
+yaml=$CLICKHOUSE_USER_FILES_UNIQUE/test_02504/test.yaml
 
 cat > "$yaml" <<EOL
 - regexp: 'Linux/(\d+[\.\d]*).+tlinux'
@@ -298,4 +298,4 @@ drop dictionary regexp_dict3;
 drop dictionary regexp_dict4;
 "
 
-rm -rf "$USER_FILES_PATH/test_02504"
+rm -rf "$CLICKHOUSE_USER_FILES_UNIQUE/test_02504"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage, no-fasttest
-# no-parallel: the server allows at most one MASTER/WORKER THREAD resource at a time,
+# Tag no-parallel: the server allows at most one MASTER/WORKER THREAD resource at a time,
 #   and peak_threads_usage is sensitive to concurrent queries
 # no-replicated-database: query_log lookup assumes single-node execution
 # no-async-insert: test measures synchronous INSERT pipeline threading

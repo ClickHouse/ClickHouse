@@ -1,7 +1,7 @@
 -- Tags: no-parallel, no-release
--- Tag no-parallel: Messes with internal cache
--- Tag release: Checks fields in system.query_condition_cache which are not available in release builds
-
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `table_uuid` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- Tests system table 'system.query_condition_cache'
 
 SET allow_experimental_analyzer = 1;
@@ -18,11 +18,11 @@ SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Expect one entry in the cache after the first query.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT 'If the same query runs again, the cache still contains just a single entry.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
@@ -31,10 +31,10 @@ SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Expect one entry in the cache after the first query.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT 'If the same query runs again, the cache still contains just a single entry.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 DROP TABLE tab;

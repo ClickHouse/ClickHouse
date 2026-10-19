@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-parallel-replicas
+# Tags: long, no-parallel-replicas, no-parallel
+# Tag no-parallel: needs a narrow timing window to observe snapshot sharing; under concurrent load all attempts miss it
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel: the test re-attaches a self-referential Alias (the load path tolerates it), and while
-#              it exists any concurrent query that walks the tables of all databases, e.g.
-#              `system.constraints` without a `database` filter, fails with TOO_DEEP_RECURSION.
-#              Server-global poisoning, same class as 02391_recursive_buffer.
+# Tag no-parallel: the test re-attaches a self-referential Alias (the load path tolerates it), and while
+#                  it exists any concurrent query that walks the tables of all databases, e.g.
+#                  `system.constraints` without a `database` filter, fails with TOO_DEEP_RECURSION.
+#                  Server-global poisoning, same class as 02391_recursive_buffer.
 # An Alias whose target does not exist yet is accepted, so the target can later become an Alias
 # itself. Loading such stored metadata must succeed: on that path a rejection fails the whole
 # metadata load, not the one table.

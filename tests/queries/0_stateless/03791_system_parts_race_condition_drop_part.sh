@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race
 # Test for a race condition between reading system.parts and removing parts.
 # The race was in DataPartStorageOnDiskBase::remove() modifying part_dir
 # while getFullPath() was reading it concurrently.

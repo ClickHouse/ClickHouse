@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-msan, no-ubsan
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-fasttest, no-tsan, no-asan, no-msan, no-ubsan
 # no sanitizers -- memory consumption is unpredictable with sanitizers
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

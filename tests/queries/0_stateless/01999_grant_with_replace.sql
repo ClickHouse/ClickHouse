@@ -1,5 +1,5 @@
 -- Tags: no-parallel
-
+-- Tag no-parallel: fixed global access entity names, concurrent flaky-check reruns of this file race on CREATE/DROP
 DROP USER IF EXISTS test_user_01999;
 
 CREATE USER test_user_01999;

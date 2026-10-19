@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-replicated-database
 # no-parallel: creates and drops a global named collection
 # no-replicated-database: named collections are server-global, not database-scoped
 

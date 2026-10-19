@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- ^ User-defined SQL functions are stored at the server level (not per
 -- database), so concurrent runs of this test would collide on the
 -- `CREATE FUNCTION` global namespace and fail with `FUNCTION_ALREADY_EXISTS`.

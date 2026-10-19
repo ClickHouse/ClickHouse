@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: asserts the process-wide primary index cache metrics and clears the cache
 
 DROP TABLE IF EXISTS t_primary_index_cache;
 

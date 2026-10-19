@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
+# Tag no-parallel: creates server-global WASM modules and functions with fixed names
 # Test that WASM UDFs appear correctly in system.functions with proper metadata.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
