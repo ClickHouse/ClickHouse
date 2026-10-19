@@ -75,6 +75,8 @@ def _generated_prefix_maps(arch):
     return [
         "-ffile-prefix-map=bazel/config/" + arch + "/=" + build,
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/" + arch + "/=" + build,
+        "-ffile-prefix-map=$(GENDIR)/bazel/gen/base/=" + build + "base/",
+        "-ffile-prefix-map=$(GENDIR)/bazel/gen/includes/=" + build + "includes/",
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/=" + build + "contrib/",
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/=" + build

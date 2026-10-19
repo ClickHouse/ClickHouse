@@ -3,16 +3,10 @@ load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "ll
 
 package(default_visibility = ["//visibility:public"])
 
-_GENERATED_HDRS_0 = select({
-    "@platforms//cpu:x86_64": [
-        "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-        "//bazel:config/x86_64/includes/configs/config_version.cpp",
-    ],
-    "@platforms//cpu:aarch64": [
-        "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-        "//bazel:config/aarch64/includes/configs/config_version.cpp",
-    ],
-}) + [
+_GENERATED_HDRS_0 = [
+    "//bazel:gen/base/base/GitHash.generated.cpp",
+    "//bazel:gen/includes/configs/config_version.cpp",
+] + [
     "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
     "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
 ]
@@ -22,7 +16,7 @@ _GENERATED_COPTS_0 = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
     "-I",
 ] + (select({
     "@platforms//cpu:x86_64": [
-        "bazel/config/x86_64/includes/configs",
+        "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
         "src",
         "-I",
@@ -30,10 +24,10 @@ _GENERATED_COPTS_0 = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-I",
         "base",
         "-I",
-        "bazel/config/x86_64/base",
+        "$(GENDIR)/bazel/gen/base",
     ],
     "@platforms//cpu:aarch64": [
-        "bazel/config/aarch64/includes/configs",
+        "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
         "src",
         "-I",
@@ -41,7 +35,7 @@ _GENERATED_COPTS_0 = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-I",
         "base",
         "-I",
-        "bazel/config/aarch64/base",
+        "$(GENDIR)/bazel/gen/base",
     ],
 }) + [
     "-I",
@@ -306,7 +300,7 @@ _GENERATED_LOCAL_INCLUDES_0 = ["../../../" + (repository_path("contrib/google-be
         "../../../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-        "../../../" + "bazel/config/x86_64/.",
+        "../../../" + "bazel/gen",
     ],
     "@platforms//cpu:aarch64": [
         "../../../" + "bazel/gen/aarch64/src/Server/grpc_protos",
@@ -339,7 +333,7 @@ _GENERATED_LOCAL_INCLUDES_0 = ["../../../" + (repository_path("contrib/google-be
         "../../../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-        "../../../" + "bazel/config/aarch64/.",
+        "../../../" + "bazel/gen",
     ],
 }) + [
     "../../../" + "bazel/gen/.",
@@ -1541,18 +1535,12 @@ ch_cc_library(
 ch_cc_library(
     name = "benchmark_sched_getcpu_objects",
     srcs = ["sched_getcpu.cpp"],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }),
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }),
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     local_defines = [
         "ENABLE_MULTITARGET_CODE=1",
@@ -1580,40 +1568,23 @@ ch_cc_library(
     alwayslink = True,
 )
 
-_GENERATED_HDRS_1 = select({
-    "@platforms//cpu:x86_64": [
-        "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-        "//bazel:config/x86_64/includes/configs/config_version.cpp",
-    ],
-    "@platforms//cpu:aarch64": [
-        "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-        "//bazel:config/aarch64/includes/configs/config_version.cpp",
-    ],
-})
+_GENERATED_HDRS_1 = [
+    "//bazel:gen/base/base/GitHash.generated.cpp",
+    "//bazel:gen/includes/configs/config_version.cpp",
+]
 
 _GENERATED_COPTS_1 = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
     "-std=c++23",
     "-I",
-] + (select({
-    "@platforms//cpu:x86_64": [
-        "bazel/config/x86_64/includes/configs",
-        "-I",
-        "src",
-        "-I",
-        "base",
-        "-I",
-        "bazel/config/x86_64/base",
-    ],
-    "@platforms//cpu:aarch64": [
-        "bazel/config/aarch64/includes/configs",
-        "-I",
-        "src",
-        "-I",
-        "base",
-        "-I",
-        "bazel/config/aarch64/base",
-    ],
-}) + [
+] + ([
+    "$(GENDIR)/bazel/gen/includes/configs",
+    "-I",
+    "src",
+    "-I",
+    "base",
+    "-I",
+    "$(GENDIR)/bazel/gen/base",
+] + [
     "-I",
     repository_path("contrib/cctz") + "/include",
     "-I",
@@ -2050,26 +2021,15 @@ ch_cc_library(
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -2428,22 +2388,13 @@ ch_cc_library(
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + [
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
     ],

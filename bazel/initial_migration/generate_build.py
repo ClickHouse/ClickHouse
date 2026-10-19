@@ -913,6 +913,9 @@ def main():
         if path.is_file():
             content, _ = compact_external_options(path.read_text(), spec['name'], package_sources(owner))
             path.write_text(normalize(content))
+    from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
+    for path, content in NativeSnapshots(ROOT).prepare().items():
+        path.write_text(content)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

@@ -429,16 +429,10 @@ ch_cc_library(
         "src/VarIterator.cpp",
         "src/Void.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
-    }),
+    hdrs = [
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+    ],
     additional_compiler_inputs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
@@ -648,26 +642,15 @@ ch_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -891,10 +874,7 @@ ch_cc_library(
         "src/pcre_version.c",
         "src/pcre_xclass.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }) + [
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + [
         "src/pcre.h",
         "src/pcre_config.h",
         "src/pcre_internal.h",
@@ -925,10 +905,7 @@ ch_cc_library(
         "-Wno-implicit-int-conversion",
         "-Wno-disabled-macro-expansion",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }),
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

@@ -33,10 +33,7 @@ ch_cc_library(
         "src/Query.cpp",
         "src/Stringifier.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }),
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
@@ -48,10 +45,7 @@ ch_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }),
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -80,10 +74,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_poco_json_pdjson",
     srcs = ["src/pdjson.c"],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }) + ["src/pdjson.h"],
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + ["src/pdjson.h"],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -103,10 +94,7 @@ ch_cc_library(
         "-Wno-unreachable-code-return",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }),
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

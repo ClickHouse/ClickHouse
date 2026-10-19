@@ -2794,16 +2794,10 @@ ch_cc_library(
         "//src/Functions:notEquals.cpp",
         "//src/Functions:registerFunctions.cpp",
     ],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
-    }) + [
+    hdrs = ([
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+    ] + [
         "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
         "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
     ]),
@@ -3230,7 +3224,7 @@ ch_cc_library(
         "-I",
     ] + (select({
         "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -3238,10 +3232,10 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -3249,7 +3243,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -3513,7 +3507,7 @@ ch_cc_library(
             "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/config/x86_64/.",
+            "../" + "bazel/gen",
         ],
         "@platforms//cpu:aarch64": [
             "../" + "bazel/gen/aarch64/src/Server/grpc_protos",
@@ -3546,7 +3540,7 @@ ch_cc_library(
             "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/config/aarch64/.",
+            "../" + "bazel/gen",
         ],
     }) + [
         "../" + "bazel/gen/.",
@@ -4272,16 +4266,10 @@ ch_cc_library(
 
 _GENERATED_HDRS_0 = [
     "//bazel/rust:delta_ffi_headers",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-        "//bazel:config/x86_64/includes/configs/config_version.cpp",
-    ],
-    "@platforms//cpu:aarch64": [
-        "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-        "//bazel:config/aarch64/includes/configs/config_version.cpp",
-    ],
-}) + [
+] + [
+    "//bazel:gen/base/base/GitHash.generated.cpp",
+    "//bazel:gen/includes/configs/config_version.cpp",
+] + [
     "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
     "@clickhouse_libssh//:config/contrib/libssh/include/libssh/libssh_version.h",
     "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
@@ -7665,7 +7653,7 @@ ch_cc_library(
             "IO/AzureBlobStorage/isRetryableAzureException.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
         ],
         "@platforms//cpu:aarch64": [
             "//bazel:gen/aarch64/embedded/src/Common/FrequencyHolder.cpp",
@@ -8036,7 +8024,7 @@ ch_cc_library(
             "IO/AzureBlobStorage/isRetryableAzureException.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
         ],
     }),
     hdrs = _GENERATED_HDRS_0,
@@ -8512,30 +8500,17 @@ ch_cc_library(
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base/widechar_width",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -8641,30 +8616,17 @@ ch_cc_library(
         "-std=c++23",
         "-Wno-reserved-identifier",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base/widechar_width",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -8748,30 +8710,17 @@ ch_cc_library(
         "-U_LIBCPP_HARDENING_MODE",
         "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base/widechar_width",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -8854,30 +8803,17 @@ ch_cc_library(
         "-fomit-frame-pointer",
         "-momit-leaf-frame-pointer",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base/widechar_width",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base/widechar_width",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -9049,8 +8985,8 @@ _GENERATED_HDRS_1 = [
     "//bazel/rust:delta_ffi_headers",
 ] + select({
     "@platforms//cpu:x86_64": [
-        "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-        "//bazel:config/x86_64/includes/configs/config_version.cpp",
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -9126,8 +9062,8 @@ _GENERATED_HDRS_1 = [
         "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
     ],
     "@platforms//cpu:aarch64": [
-        "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-        "//bazel:config/aarch64/includes/configs/config_version.cpp",
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -12245,7 +12181,7 @@ _GENERATED_LOCAL_INCLUDES_1 = [
         "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
         "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-        "../" + "bazel/config/x86_64/.",
+        "../" + "bazel/gen",
     ],
     "@platforms//cpu:aarch64": [
         "../" + "bazel/gen/aarch64/contrib/sql-console-cmake",
@@ -12394,7 +12330,7 @@ _GENERATED_LOCAL_INCLUDES_1 = [
         "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
         "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-        "../" + "bazel/config/aarch64/.",
+        "../" + "bazel/gen",
     ],
 }) + [
     "../" + "bazel/gen/.",
@@ -18105,7 +18041,7 @@ ch_cc_library(
         "-I",
     ] + (select({
         "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -18115,10 +18051,10 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -18128,7 +18064,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -18669,7 +18605,7 @@ ch_cc_library(
         "-I",
     ] + (select({
         "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -18679,10 +18615,10 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -18692,7 +18628,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -19215,7 +19151,7 @@ ch_cc_library(
         "-I",
     ] + (select({
         "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -19225,10 +19161,10 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -19238,7 +19174,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -19726,7 +19662,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v2",
             "-I",
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -19736,11 +19672,11 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
             "-I",
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -19750,7 +19686,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -19816,8 +19752,8 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel/rust:delta_ffi_headers",
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
+            "//bazel:gen/base/base/GitHash.generated.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -22899,7 +22835,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
             "-I",
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "src",
             "-I",
@@ -22909,7 +22845,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
             "-I",
             repository_path("contrib/cctz") + "/include",
             "-I",
@@ -23175,7 +23111,7 @@ ch_cc_library(
             "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/config/x86_64/.",
+            "../" + "bazel/gen",
             "../" + "bazel/gen/x86_64/.",
             "../" + repository_path("contrib/SHA3IUF"),
             "../" + (repository_path("contrib/wasmtime") + "/config/contrib/wasmtime/include"),
@@ -24168,8 +24104,8 @@ cc_test(
             "//bazel:gen/x86_64/contrib/sql-console-cmake/sql_console_compressed/third-party-license-types.json.gz",
             "//bazel:gen/x86_64/contrib/sql-console-cmake/sql_console_compressed/third-party-licenses.json.gz",
             "//bazel/rust:delta_ffi_headers",
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
+            "//bazel:gen/base/base/GitHash.generated.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
             "@clickhouse_google_cloud_cpp//:config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
@@ -24405,8 +24341,8 @@ cc_test(
             "//bazel:gen/aarch64/contrib/sql-console-cmake/sql_console_compressed/third-party-license-types.json.gz",
             "//bazel:gen/aarch64/contrib/sql-console-cmake/sql_console_compressed/third-party-licenses.json.gz",
             "//bazel/rust:delta_ffi_headers",
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
+            "//bazel:gen/base/base/GitHash.generated.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
             "@clickhouse_google_cloud_cpp//:config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
             "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
@@ -25188,7 +25124,7 @@ cc_test(
             "-Werror",
             "-nostdinc++",
             "-I",
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "contrib/libfarmhash",
             "-I",
@@ -25198,7 +25134,7 @@ cc_test(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
@@ -25260,7 +25196,7 @@ cc_test(
             "-Werror",
             "-nostdinc++",
             "-I",
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "contrib/libfarmhash",
             "-I",
@@ -25270,7 +25206,7 @@ cc_test(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -25685,7 +25621,7 @@ cc_test(
             "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/config/x86_64/.",
+            "../" + "bazel/gen",
             "../" + "bazel/gen/.",
             "../" + repository_path("contrib/SHA3IUF"),
             "../" + "bazel/gen/contrib/flatbuffers",
@@ -25747,7 +25683,7 @@ cc_test(
             "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/config/aarch64/.",
+            "../" + "bazel/gen",
             "../" + "bazel/gen/.",
             "../" + repository_path("contrib/SHA3IUF"),
             "../" + "bazel/gen/contrib/flatbuffers",

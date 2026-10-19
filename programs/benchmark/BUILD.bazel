@@ -6,16 +6,10 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse-benchmark-lib",
     srcs = ["Benchmark.cpp"],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
-    }) + [
+    hdrs = ([
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+    ] + [
         "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
         "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
     ]),
@@ -434,7 +428,7 @@ ch_cc_library(
         "-I",
     ] + (select({
         "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "programs/benchmark",
             "-I",
@@ -444,10 +438,10 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/x86_64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
         "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
+            "$(GENDIR)/bazel/gen/includes/configs",
             "-I",
             "programs/benchmark",
             "-I",
@@ -457,7 +451,7 @@ ch_cc_library(
             "-I",
             "base",
             "-I",
-            "bazel/config/aarch64/base",
+            "$(GENDIR)/bazel/gen/base",
         ],
     }) + [
         "-I",
@@ -719,7 +713,7 @@ ch_cc_library(
             "../../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../../" + "bazel/config/x86_64/.",
+            "../../" + "bazel/gen",
         ],
         "@platforms//cpu:aarch64": [
             "../../" + "bazel/gen/aarch64/src/Server/grpc_protos",
@@ -752,7 +746,7 @@ ch_cc_library(
             "../../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
             "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../../" + "bazel/config/aarch64/.",
+            "../../" + "bazel/gen",
         ],
     }) + [
         "../../" + "bazel/gen/.",

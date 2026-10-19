@@ -899,6 +899,14 @@
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/contrib",
         "to": "@build/contrib"
+      },
+      {
+        "from": "bazel-out/k8-opt/bin/bazel/gen/base",
+        "to": "@build/base"
+      },
+      {
+        "from": "bazel-out/k8-opt/bin/bazel/gen/includes",
+        "to": "@build/includes"
       }
     ],
     "source_map": [
@@ -1663,24 +1671,16 @@
         "to": "@build/contrib/zlib-ng-cmake/gzread.c"
       },
       {
-        "from": "bazel/config/aarch64/base/base/GitHash.generated.cpp",
-        "to": "@build/aarch64/base/base/GitHash.generated.cpp"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/base/base/GitHash.generated.cpp",
+        "to": "@build/base/base/GitHash.generated.cpp"
       },
       {
-        "from": "bazel/config/aarch64/includes/configs/config_version.cpp",
-        "to": "@build/aarch64/includes/configs/config_version.cpp"
-      },
-      {
-        "from": "bazel/config/x86_64/base/base/GitHash.generated.cpp",
-        "to": "@build/x86_64/base/base/GitHash.generated.cpp"
-      },
-      {
-        "from": "bazel/config/x86_64/includes/configs/config_version.cpp",
-        "to": "@build/x86_64/includes/configs/config_version.cpp"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/includes/configs/config_version.cpp",
+        "to": "@build/includes/configs/config_version.cpp"
       },
       {
         "from": "build_bazel_reference_aarch64/base/base/GitHash.generated.cpp",
-        "to": "@build/aarch64/base/base/GitHash.generated.cpp"
+        "to": "@build/base/base/GitHash.generated.cpp"
       },
       {
         "from": "build_bazel_reference_aarch64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
@@ -2320,7 +2320,7 @@
       },
       {
         "from": "build_bazel_reference_aarch64/includes/configs/config_version.cpp",
-        "to": "@build/aarch64/includes/configs/config_version.cpp"
+        "to": "@build/includes/configs/config_version.cpp"
       },
       {
         "from": "build_bazel_reference_aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
@@ -2340,7 +2340,7 @@
       },
       {
         "from": "build_bazel_reference_x86_64/base/base/GitHash.generated.cpp",
-        "to": "@build/x86_64/base/base/GitHash.generated.cpp"
+        "to": "@build/base/base/GitHash.generated.cpp"
       },
       {
         "from": "build_bazel_reference_x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
@@ -2984,7 +2984,7 @@
       },
       {
         "from": "build_bazel_reference_x86_64/includes/configs/config_version.cpp",
-        "to": "@build/x86_64/includes/configs/config_version.cpp"
+        "to": "@build/includes/configs/config_version.cpp"
       },
       {
         "from": "build_bazel_reference_x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",

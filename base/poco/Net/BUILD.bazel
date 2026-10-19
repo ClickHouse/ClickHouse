@@ -180,10 +180,7 @@ ch_cc_library(
         "src/WebSocket.cpp",
         "src/WebSocketImpl.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }),
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
@@ -211,10 +208,7 @@ ch_cc_library(
         "-Wno-implicit-int-conversion",
         "-Wno-implicit-int-float-conversion",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }),
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_HAVE_FD_EPOLL",

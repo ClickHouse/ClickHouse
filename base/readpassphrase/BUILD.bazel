@@ -9,10 +9,7 @@ exports_files(["readpassphrase.h"])
 ch_cc_library(
     name = "readpassphrase",
     srcs = ["readpassphrase.c"],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }) + ["readpassphrase.h"],
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + ["readpassphrase.h"],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
@@ -28,10 +25,7 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }) + [
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
         "-I",
         "base/readpassphrase",
     ],

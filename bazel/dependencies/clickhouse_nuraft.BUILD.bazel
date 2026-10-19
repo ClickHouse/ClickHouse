@@ -98,14 +98,9 @@ ch_cc_library(
             "include/libnuraft/timer_task.hxx",
         ],
     ),
-    hdrs = select({
-        "@platforms//cpu:x86_64": ([
-            "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob(["include/**/*.hxx"]),
-        "@platforms//cpu:aarch64": ([
-            "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob(["include/**/*.hxx"]),
-    }),
+    hdrs = ([
+        "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
+    ] + _GENERATED_HEADER_INPUTS_0) + glob(["include/**/*.hxx"]),
     copts = ([
         "-w",
         "-std=c++23",
@@ -114,14 +109,9 @@ ch_cc_library(
         "-I",
         "base",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + [
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         "base/pcg-random",
         "-I",

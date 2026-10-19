@@ -622,16 +622,10 @@ ch_cc_library(
         "LogsQL/ParserLogsQLQuery.cpp",
         "LogsQL/parseLogsQLQuery.cpp",
     ],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
-    }) + [
+    hdrs = ([
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+    ] + [
         "//rust/workspace:polyglot/include/polyglot.h",
         "//rust/workspace:prql/include/prql.h",
     ]),
@@ -951,26 +945,15 @@ ch_cc_library(
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "src",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",

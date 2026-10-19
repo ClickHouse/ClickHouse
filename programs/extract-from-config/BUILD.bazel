@@ -6,16 +6,10 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse-extract-from-config-lib",
     srcs = ["ExtractFromConfig.cpp"],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/base/base/GitHash.generated.cpp",
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
-    }),
+    hdrs = [
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+    ],
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
         "//base/poco/Foundation:src/Environment_UNIX.cpp",
@@ -57,30 +51,17 @@ ch_cc_library(
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "bazel/config/x86_64/includes/configs",
-            "-I",
-            "programs/extract-from-config",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/x86_64/base",
-        ],
-        "@platforms//cpu:aarch64": [
-            "bazel/config/aarch64/includes/configs",
-            "-I",
-            "programs/extract-from-config",
-            "-I",
-            "src",
-            "-I",
-            "base",
-            "-I",
-            "bazel/config/aarch64/base",
-        ],
-    }) + [
+    ] + ([
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "programs/extract-from-config",
+        "-I",
+        "src",
+        "-I",
+        "base",
+        "-I",
+        "$(GENDIR)/bazel/gen/base",
+    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",

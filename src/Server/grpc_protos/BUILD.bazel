@@ -19,12 +19,12 @@ ch_cc_library(
     }),
     hdrs = select({
         "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
             "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
         ],
         "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
+            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
             "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
         ],
@@ -34,10 +34,7 @@ ch_cc_library(
         "-std=c++23",
         "-w",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }) + [
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
         "-I",
         repository_path("contrib/re2"),
     ],

@@ -9,18 +9,12 @@ exports_files(["widechar_width.h"])
 ch_cc_library(
     name = "widechar_width",
     srcs = ["widechar_width.cpp"],
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
-    }) + ["widechar_width.h"],
+    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + ["widechar_width.h"],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["bazel/config/x86_64/includes/configs"],
-        "@platforms//cpu:aarch64": ["bazel/config/aarch64/includes/configs"],
-    }) + [
+    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
         "-I",
         "base/widechar_width",
     ],
