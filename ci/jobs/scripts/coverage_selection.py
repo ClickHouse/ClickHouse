@@ -459,9 +459,15 @@ def rank_candidates(
     return ranked
 
 
-def protect_selection(changed, failed, candidates, normalize, config=SELECTION_CONFIG):
+def protect_selection(
+    changed, failed, candidates, normalize, config=SELECTION_CONFIG, drift=()
+):
     records = {}
-    for source, tests in (("changed", changed), ("previously_failed", failed)):
+    for source, tests in (
+        ("changed", changed),
+        ("previously_failed", failed),
+        ("merge_queue_drift", drift),
+    ):
         for test in tests:
             name = normalize(test)
             if name in records:
