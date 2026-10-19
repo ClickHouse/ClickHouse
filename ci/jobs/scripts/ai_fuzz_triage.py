@@ -38,8 +38,8 @@ job status exactly as the fuzzer set it and only appends a note that triage
 was unavailable.
 
 Relatedness never rests on a record this triage could have written itself: only
-an open issue opened before the tested change, and not filed by triage of a PR
-run, counts as proof that the failure is older (`independent_occurrences`). A
+an open issue recording a post-merge run on the tested branch before the tested
+change counts as proof that the failure is older (`independent_occurrences`). A
 fingerprint found only in closed issues is a fixed bug that came back, which the
 PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`), and so
 does a lookup of those issues that did not complete.
@@ -184,9 +184,16 @@ STACK_DIGEST_LINE_RE = re.compile(
     rf"^{STACK_DIGEST_FIELD}: ([0-9a-f]{{16}})\r?$", re.MULTILINE
 )
 FOUND_BY_LINE_RE = re.compile(r"^Found by [^\n]*? in CI: (\S+)\r?$", re.MULTILINE)
+# A post-merge run that hits an issue it did not file records its branch, so an issue first filed by a PR
+# run, or on another branch, can still prove the failure exists on that branch: `<branch>: <UTC time> <report>`.
+OBSERVED_ON_FIELD = "Fuzz observed on"
+OBSERVED_ON_LINE_RE = re.compile(
+    rf"^{OBSERVED_ON_FIELD} (\S+): (\d{{4}}-\d\d-\d\dT\d\d:\d\d:\d\dZ) \S+\r?$",
+    re.MULTILINE,
+)
 MACHINE_LINE_RE = re.compile(
     rf"^[\s`>*-]*({FINGERPRINT_FIELD}|{STACK_DIGEST_FIELD}|{FOUND_WHILE_TESTING_FIELD}"
-    rf"|Found by [^\n]*? in CI|Caused by|Related):[^\n]*\n?",
+    rf"|Found by [^\n]*? in CI|{OBSERVED_ON_FIELD} [^\n:]*|Caused by|Related):[^\n]*\n?",
     re.MULTILINE | re.IGNORECASE,
 )
 # Frames in the stack digest, below the exception machinery like the STID, but not cut short by it.
@@ -383,8 +390,8 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
             issues += f"  - {url}, text in `{_known_issue_file(url).resolve()}` ({stack})\n"
         return (
             f"- Possible earlier occurrences: these open issues carry this failure's\n"
-            f"  fingerprint and were filed before this {change} by post-merge runs on\n"
-            f"  `{occurrences.branch}`, the branch the {change} is tested against. The\n"
+            f"  fingerprint and record post-merge runs on `{occurrences.branch}`, the\n"
+            f"  branch the {change} is tested against, before this {change}. The\n"
             f"  fingerprint keeps only the names of the top stack frames, cut at\n"
             f"  `<`, so two bugs can share it, and none of these is known to be this one:\n{issues}"
             f"  Compare the stack and error in each issue's text with this failure's (an\n"
@@ -403,8 +410,8 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
             f"  triage, so do not look for one here.\n"
         )
     return f"""\
-- No open issue with this failure's fingerprint was filed before this {change}
-  by a post-merge run on the branch it is tested against; one seen on another
+- No open issue with this failure's fingerprint records a post-merge run on the
+  branch it is tested against before this {change}; one seen on another
   branch does not show the failure was already on this one. Any other issue
   carrying the fingerprint was written by this same triage (an earlier run, a
   sibling job on this commit, or another PR's verdict): it is not evidence, so
@@ -966,16 +973,37 @@ def fixed_occurrences(issues, fingerprint, digest):
     )
 
 
+def _report_branch(report_url):
+    """The branch of a post-merge run's report URL (`REF=<branch>`), or "" for a PR run's or none."""
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(report_url or "").query)
+    return (query.get("REF") or [""])[0]
+
+
 def _issue_branch(issue):
     """The branch of the run that filed the issue, from its `Found by` line, or "" if unknown.
 
     Only `_issue_text` writes that line, with the report URL of a post-merge run (`REF=<branch>`).
     """
     found = FOUND_BY_LINE_RE.findall(issue.get("body") or "")
-    if len(found) != 1:
-        return ""
-    query = urllib.parse.parse_qs(urllib.parse.urlsplit(found[0]).query)
-    return (query.get("REF") or [""])[0]
+    return _report_branch(found[0]) if len(found) == 1 else ""
+
+
+def _branch_observations(issue):
+    """`{branch: earliest time}` of the post-merge runs that hit the issue's failure.
+
+    The run that filed it counts unless it was a PR run, which records that run's verdict
+    rather than an observation; the runs that reused it later add `OBSERVED_ON_FIELD` lines.
+    """
+    body = issue.get("body") or ""
+    observed = {}
+    filed_on = _issue_branch(issue)
+    if filed_on and not FOUND_WHILE_TESTING_RE.search(body):
+        observed[filed_on] = _parse_github_time(issue["createdAt"])
+    for branch, when in OBSERVED_ON_LINE_RE.findall(body):
+        when = _parse_github_time(when)
+        if branch not in observed or when < observed[branch]:
+            observed[branch] = when
+    return observed
 
 
 def _has_fuzz_label(issue):
@@ -995,10 +1023,11 @@ def _tracks_fingerprint(issue, fingerprint):
 def independent_occurrences(issues, fingerprint, cutoff, branch):
     """URLs of the open issues that prove the failure predates the tested change.
 
-    Only a record this triage cannot have written counts: one opened before the
-    change existed and not filed by triage of a PR run, which holds that run's
-    verdict rather than an observation on a branch. Otherwise an earlier run, or
-    a sibling job on the same commit, would confirm its own verdict.
+    Only a record this triage cannot have written counts: a post-merge run's
+    observation (`_branch_observations`) made before the change existed. A PR run's
+    issue holds that run's verdict rather than an observation on a branch, and a
+    later observation could come from an earlier run of this change or a sibling job
+    on the same commit, which would confirm its own verdict.
 
     It must have been observed on `branch`, the one the change goes to: a bug seen
     on master is new to a release branch that a backport brings it to.
@@ -1008,15 +1037,13 @@ def independent_occurrences(issues, fingerprint, cutoff, branch):
     """
     urls = []
     for issue in issues:
-        body = issue.get("body") or ""
+        observed = _branch_observations(issue) if branch else {}
         if (
             (issue.get("state") or "").upper() == "OPEN"
             and _tracks_fingerprint(issue, fingerprint)
             and _has_fuzz_label(issue)
-            and not FOUND_WHILE_TESTING_RE.search(body)
-            and branch
-            and _issue_branch(issue) == branch
-            and _parse_github_time(issue["createdAt"]) < cutoff
+            and branch in observed
+            and observed[branch] < cutoff
         ):
             urls.append(issue["url"])
     return sorted(urls)
@@ -1293,6 +1320,42 @@ def _comment_once(repo_name, issue, job_kind, found_in, deadline):
     )
 
 
+def _record_observation(repo_name, issue, found_in, deadline):
+    """Add this post-merge run's branch to `issue`, unless an earlier observation already has it.
+
+    The body is read again rather than taken from the lookup, whose search results can lag
+    behind an earlier edit. Runs under `_issue_lock`, so no other job edits it meanwhile.
+    """
+    branch = _report_branch(found_in)
+    if not branch:
+        return
+    output = _robot_gh(
+        "issue",
+        "view",
+        str(issue["number"]),
+        "--repo",
+        repo_name,
+        "--json",
+        "body,createdAt",
+        deadline=deadline,
+    )
+    current = json.loads(output)
+    if branch in _branch_observations(current):
+        return
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body = f"{(current.get('body') or '').rstrip()}\n{OBSERVED_ON_FIELD} {branch}: {now} {found_in}"
+    _robot_gh(
+        "issue",
+        "edit",
+        str(issue["number"]),
+        "--repo",
+        repo_name,
+        "--body",
+        body,
+        deadline=deadline,
+    )
+
+
 def _issue_text(
     verdict, failures, *, job_kind, fingerprint, found_in, tested_pr, related
 ):
@@ -1456,6 +1519,11 @@ def _find_or_file_issue(
     tracking = _tracking_issues(issues, digest)
     if tracking:
         _comment_once(repo_name, tracking[0], job_kind, found_in, deadline)
+        if not pr_url:
+            try:
+                _record_observation(repo_name, tracking[0], found_in, deadline)
+            except Exception as e:  # noqa: BLE001 - only later lookups lose this evidence
+                print(f"WARNING: AI fuzz triage: cannot record the observation: {e}")
         return {
             "issue_url": tracking[0]["url"],
             "issue_created": False,
@@ -1754,8 +1822,8 @@ def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
         "verdict": "unrelated",
         "reasoning": (
             f"Known issue: {issue_url} is open, carries this failure's fingerprint "
-            f"and stack, and was filed before this {change}, not by triage of a PR run, so "
-            f"the failure predates the {change}. No agent was run."
+            f"and stack, and records a post-merge run on `{occurrences.branch}` before this "
+            f"{change}, so the failure predates the {change}. No agent was run."
         ),
         "signature": _tracked_signature(failures),
         "issue_url": issue_url,
