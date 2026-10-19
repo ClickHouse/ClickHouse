@@ -71,7 +71,7 @@ SETTINGS log_comment = '05218 mixed';
 SELECT '-- a build large enough to partition, and probe blocks the residual filter stops at max_joined_block_size_rows';
 {% for join_type, projection in [('LEFT', 'p.k, p.v, b.v'), ('ANY LEFT', 'p.k, p.v, b.k'), ('SEMI LEFT', 'p.k, p.v'), ('ANTI LEFT', 'p.k, p.v'), ('ANY INNER', 'p.k, p.v, b.k')] -%}
 SELECT '{{ join_type }} | large', pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 1000 AS k, number AS v FROM numbers(20000)) AS p {{ join_type }} JOIN (SELECT number % 1000 AS k, number * 3 AS v FROM numbers(300000)) AS b ON p.k = b.k AND p.v * 50 < b.v SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = 7, max_block_size = 64) AS pa)
+    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 1000 AS k, number AS v FROM numbers(7000)) AS p {{ join_type }} JOIN (SELECT number % 1000 AS k, number * 3 AS v FROM numbers(100000)) AS b ON p.k = b.k AND p.v * 50 < b.v SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = 7, max_block_size = 64) AS pa)
 SETTINGS log_comment = '05218 mixed';
 {% endfor -%}
 

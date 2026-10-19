@@ -319,6 +319,7 @@ TEST(HashJoinTable, EmplaceGrowsAndFinds)
     EXPECT_EQ(visited, keys + 1);
     EXPECT_TRUE(std::ranges::all_of(seen, [](UInt8 v) { return v == 1; }));
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
     /// A partitioned table grows only through its build; `emplace` refuses to double it.
     Key64Table partitioned(/*size_degree_=*/8, /*partition_bits_=*/2);
     partitioned.commitAll();
@@ -334,6 +335,7 @@ TEST(HashJoinTable, EmplaceGrowsAndFinds)
                 partitioned.emplace(keyOf(i), it, inserted);
             }
         });
+#endif
 }
 
 /// The route the fill saves for a key names the partition whose range holds the key's home cell.

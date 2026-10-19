@@ -110,8 +110,9 @@ SELECT 'left any: ANY joins build no row store', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.k)), countIf(if(p.k < 60000, b.a = p.k OR (p.k < 40000 AND b.a = p.k + 60000), b.a = 0)) = count()) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05139 left any';
 
+-- A budget of 200000 bytes needs 1024 grace buckets and runs for tens of seconds; 1000000 needs 64.
 SELECT 'spill switch: the build blocks handed to grace are rebuilt from the row store', pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 200000) AS pa)
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 1000000) AS pa)
 SETTINGS log_comment = '05139 spill';
 
 SELECT '-- spill switch below parallel_hash_join_threshold: the kept build blocks go to grace as they are';
@@ -120,7 +121,7 @@ SELECT '-- spill switch below parallel_hash_join_threshold: the kept build block
 CREATE TABLE t_rs_build_small ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM t_rs_build WHERE k < 30000;
 
 SELECT 'spill below threshold', pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 200000) AS pa)
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 1000000) AS pa)
 SETTINGS log_comment = '05139 spill below threshold';
 
 SYSTEM FLUSH LOGS query_log;
