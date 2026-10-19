@@ -170,6 +170,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,
+        /* use_aggregation_memory_tracker */ true,
         settings[Setting::group_by_each_block_no_merge]);
 
     aggregator = std::make_unique<Aggregator>(header, params);

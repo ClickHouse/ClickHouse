@@ -11,9 +11,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
-#if CLICKHOUSE_CLOUD
 #include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
-#endif
 
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/SettingsChanges.h>
@@ -66,9 +64,7 @@ private:
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
     UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
-#if CLICKHOUSE_CLOUD
-    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps leased workers alive for the query lifetime
-#endif
+    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps the allocated workers alive for the query lifetime
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -177,6 +173,8 @@ protected:
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
+
+    virtual bool waitsForFilterOnlyStages() const { return false; }
 
     void checkCancelled() const;
 

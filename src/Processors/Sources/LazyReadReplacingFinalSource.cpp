@@ -28,6 +28,7 @@ namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+extern const SettingsBool use_aggregation_memory_tracker;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
@@ -100,9 +101,9 @@ IProcessor::Status LazyReadReplacingFinalSource::prepare()
 
 static void calculateGlobalOffset(ActionsDAG & dag, ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset = false;
-    bool added_part_offset = false;
-    reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+    const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
+    const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
+    const bool added_part_offset = part_offset_columns.added_part_offset;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     const auto * part_starting_offset_in = &dag.addInput("_part_starting_offset", uint64_type);
     const auto * part_offset_in = &dag.addInput("_part_offset", uint64_type);
@@ -289,6 +290,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
             /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+            /*use_aggregation_memory_tracker_=*/settings[Setting::use_aggregation_memory_tracker],
             /*group_by_each_block_no_merge_=*/false);
 
         auto merge_threads = settings[Setting::max_threads];
