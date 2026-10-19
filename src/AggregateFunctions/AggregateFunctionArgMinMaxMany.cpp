@@ -422,6 +422,7 @@ If there are fewer than `N` rows, all `arg` values are returned.
 If there are multiple rows with equal `val`, which of the associated `arg` values are returned, and in which order, is not deterministic.
 Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
 A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
+A `NaN` in `val`, also one nested inside a `Tuple`, `Array` or `Map`, is the worst candidate: it is returned only when there are not enough other values.
 
 **See also**
 
@@ -462,7 +463,7 @@ SELECT argMaxMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 11};
     FunctionDocumentation::Category category_argMaxMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMaxMany = {
         description_argMaxMany,
@@ -488,6 +489,7 @@ If there are fewer than `N` rows, all `arg` values are returned.
 If there are multiple rows with equal `val`, which of the associated `arg` values are returned, and in which order, is not deterministic.
 Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
 A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
+A `NaN` in `val`, also one nested inside a `Tuple`, `Array` or `Map`, is the worst candidate: it is returned only when there are not enough other values.
 
 **See also**
 
@@ -528,7 +530,7 @@ SELECT argMinMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 11};
     FunctionDocumentation::Category category_argMinMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMinMany = {
         description_argMinMany,
