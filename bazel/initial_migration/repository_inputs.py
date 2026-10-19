@@ -335,7 +335,9 @@ def write_overlays(builds, shared_inputs, system_repositories):
             text += build.load_statements()
         features = ', features = ["external_include_paths"]' if prefix in system_repositories else ''
         text += 'package(default_visibility = ["//visibility:public"]' + features + ')\n'
-        text += 'exports_files(' + json.dumps(sorted(EXPORTS[prefix] | {'BUILD.bazel'}), indent=2) + ')\n'
+        exports = EXPORTS[prefix] - {'BUILD', 'BUILD.bazel'}
+        if exports:
+            text += 'exports_files(' + json.dumps(sorted(exports), indent=2) + ')\n'
         if build:
             text += '\n' + build.text()
         (directory / (spec['name'] + '.BUILD.bazel')).write_text(text)

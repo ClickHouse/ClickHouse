@@ -9,7 +9,6 @@ load("@rules_perl//perl:perl.bzl", "perl_binary", "perl_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "NOTICE",
     "src/include/krb5/krb5.hin",
     "src/lib/gssapi/generic/gssapi_err_generic.et",

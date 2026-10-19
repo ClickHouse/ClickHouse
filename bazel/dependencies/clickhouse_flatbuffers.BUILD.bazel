@@ -10,7 +10,6 @@ package(
 )
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "include/codegen/python.cc",
 ])

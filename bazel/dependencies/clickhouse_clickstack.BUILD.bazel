@@ -2,7 +2,6 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "out/404.html",
     "out/__ENV.js",

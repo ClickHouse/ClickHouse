@@ -7,7 +7,6 @@ package(
 )
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "Modern Non-Cryptographic Hash Function and Pseudorandom Number Generator.pdf",
     "README.md",

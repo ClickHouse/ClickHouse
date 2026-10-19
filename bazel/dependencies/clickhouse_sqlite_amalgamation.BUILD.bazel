@@ -9,7 +9,6 @@ package(
 )
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
 ])
 

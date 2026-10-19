@@ -7,7 +7,6 @@ package(
 )
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE.md",
     "README.md",
     "pocketfft_demo.cc",

@@ -4450,7 +4450,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
 ])
 

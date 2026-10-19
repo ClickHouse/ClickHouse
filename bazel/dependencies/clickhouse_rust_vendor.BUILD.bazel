@@ -2,7 +2,6 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "addr2line-0.24.2/LICENSE-APACHE",
     "addr2line-0.25.1/LICENSE-APACHE",
     "addr2line-0.26.0/LICENSE-APACHE",

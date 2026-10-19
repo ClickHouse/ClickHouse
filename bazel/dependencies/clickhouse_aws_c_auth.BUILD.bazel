@@ -6,7 +6,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "include/aws/auth/auth.h",
     "include/aws/auth/aws_imds_client.h",

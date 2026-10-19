@@ -4,7 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "copyright-and-BSD-license.txt",
     "include/SZ3/utils/ska_hash/LICENSE.txt",
     "include/SZ3/version.hpp.in",

@@ -8,10 +8,6 @@ package(
     features = ["external_include_paths"],
 )
 
-exports_files([
-    "BUILD.bazel",
-])
-
 ch_cc_library(
     name = "_wnb",
     srcs = [

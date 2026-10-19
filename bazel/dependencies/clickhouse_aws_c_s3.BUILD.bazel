@@ -6,7 +6,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "include/aws/s3/exports.h",
     "include/aws/s3/private/s3_auto_ranged_get.h",

@@ -4,7 +4,6 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "crates/c-api/include/doc-wasm.h",
     "crates/c-api/include/wasi.h",

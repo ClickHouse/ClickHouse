@@ -2,7 +2,6 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "BUILD.bazel",
     "LICENSE",
     "dist-standalone/assets/ClickHouse-Loading-Cp50uPrc.webp",
     "dist-standalone/assets/ClickHouse-Loading-kVEqsD08.gif",

@@ -16,7 +16,6 @@ exports_files([
     ".gitignore",
     ".vscode/cmake-variants.json",
     ".vscode/extensions.json",
-    "BUILD.bazel",
     "CMakeLists.txt",
     "CMakeSanitize",
     "LICENSE.txt",

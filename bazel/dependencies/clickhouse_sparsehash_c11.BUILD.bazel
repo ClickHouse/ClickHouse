@@ -9,7 +9,6 @@ package(
 exports_files([
     ".gitignore",
     ".travis.yml",
-    "BUILD.bazel",
     "CMakeLists.txt",
     "LICENSE",
     "Makefile",
