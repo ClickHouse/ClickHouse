@@ -228,6 +228,11 @@ tool on an ARM64 executor against the recorded native CMake result.
 | Move ELF comparison, audit and CMake reference scripts into `bazel/initial_migration` (`ce068c5ec`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/5a194734-bc8e-4475-a4d9-7c8322c15126) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/9b339263-77cc-4bc3-ae56-5bb39ab2920e) |
 | Move production rules, code generation inventories, native link plans and build tools into `bazel/rules` (`0b64e208a`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/2f96e64f-bdd4-4e06-b705-a154d4000e84) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/6b6792ef-fe7f-4cde-8b10-19de95b4d386) |
 | Move native rules into source, program and in-tree dependency packages; retain template includes and remove repeated `-w` (`913d21c59`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/c4a7112c-c9fc-49fb-a9c7-5f3588f566e7) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/b60d46a5-8bf1-4fe8-845c-f389b03750de) |
+| Use exact DMLC, ORC and libcotp header globs, Abseil public headers, private external includes, shared options, fewer FastOps rules and C++ defaults, and generated Arrow FlatBuffers headers (`8efcb12c0`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/b170352f-1048-435d-878f-7fef9889cb64) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/46286939-2d68-4b2d-92ef-b102c47ac94d) |
+| Inherit eight dependencies' published includes, share Arrow and AWS substitutions, remove unused Arrow compiler inputs, and inherit 449 existing generated or external public headers (`45276d8c3`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/3d7fb7dc-1d13-4930-a37c-f1687a005951) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/84a65e09-6587-4612-ab15-1d30aed2a88b) |
+| Inherit first-party headers, remove unused first-party compiler inputs and defaults, and use configured output names for GitHash, config and version (`f8b61cbe4`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/b8c4b4f3-3587-42e9-8e3d-4fecc9c26c1e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/103487d0-a768-47f9-bdbf-86111a7aee9e) |
+| Convert first-party source `-I` directories to `local_includes` and inherit public dependency includes (`573c1a784`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/675b44ee-022b-460d-9ea8-853f58908dd6) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/4f7b1327-4b1b-4fcd-84af-06f0770b446e) |
+| Remove 4,762 unused first-party exports, inherit 1,762 generated source declarations, use 179 ordered globs, share own-code C++ defaults, and remove 258 compiler-input references (`0c285c5d8`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/0da6f376-ab20-4205-9a97-9ee14de85553) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/31eb9ea1-1d3d-4cca-a2ec-119dee5712b7) |
 
 Every x86-64 comparison passed `cmp` and `PARITY_STATUS=0`; every ARM64
 comparison reported `ARM_STRIPPED_STATUS=0`. Each batch also reproduced
@@ -246,6 +251,27 @@ and reproduced both original Bazel ELF hashes.
 The native dependencies batch built both of those targets and
 `@clickhouse_thrift//:_thrift` on both CPUs. Both original Bazel ELF
 and selected Clang hashes were unchanged.
+The `8efcb12c0` batch also built
+`@clickhouse_arrow//:parquet_dump_schema`,
+`@clickhouse_arrow//:parquet_reader`, and
+`@clickhouse_arrow//:parquet_scan` on both CPUs. The
+[ARM Parquet checks](https://app.buildbuddy.io/invocation/aa413ce0-b9c4-4370-bff6-4b5d03e67580)
+passed before the ARM ClickHouse run was retried for a transient remote-cache
+input-transfer error; the successful hash comparison is linked above.
+The `45276d8c3` and `f8b61cbe4` batches built the same three Parquet tools
+on both CPUs in the linked invocations.
+
+After `0c285c5d8`, `d9e835140` joins adjacent literal-list expressions
+in first-party C++ attributes. An ordered AST comparison of all 111 source
+BUILD files confirmed identical expressions under every configuration;
+`select`, `glob`, and comprehension expressions were not joined.
+`c4e709f54` removes only the runtime-filter benchmark's use of a shared
+textual-header list. The benchmark retains all 44 headers on each CPU
+through public dependencies; both complete public and compiler-input sets
+and ordered source lists matched across 1,638 configured library comparisons.
+The four database compilations that use that list remain unchanged. The
+benchmark is absent from the ClickHouse `cmake_link` references on both CPUs.
+Neither change modifies the ClickHouse compile or link inputs verified above.
 
 `@clickhouse_sysroot` provides the target glibc headers, Linux headers,
 startup objects, and link libraries that CMake used. The x86 reference uses
