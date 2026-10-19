@@ -31,7 +31,7 @@ SELECT create_table_query LIKE '%version =%'
 FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_ts';
 
 SELECT '-- an altered setting a reset does not touch still takes effect';
-ALTER TABLE t_modify_setting_default_ts MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600, id_generator = DEFAULT;
+ALTER TABLE t_modify_setting_default_ts MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600, tags_deduplication_cache_expiration_seconds = DEFAULT;
 SELECT extract(create_table_query, 'metric_families_deduplication_cache_expiration_seconds = (\\w+)')
 FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_ts';
 

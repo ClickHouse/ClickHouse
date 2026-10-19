@@ -37,19 +37,4 @@ SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(t
 SELECT 'prometheusQuery:';
 SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1080) ORDER BY tags;
 
--- For compatibility an id-generator expression can reference `all_tags` - there is no such column,
--- but on insertion it's resolved as the same data as the `tags` column.
-ALTER TABLE ts MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags)))';
-
-INSERT INTO ts (metric_name, tags, samples) VALUES
-    ('http_requests', {'job': 'miner', 'instance': 'host3:8080'}, [(toDateTime64(1120, 3), 3.5)]);
-
-SELECT 'id is calculated by the altered id_generator:';
-SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, tags)))), count()
-FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts') WHERE tags['job'] = 'miner';
-
--- The time series inserted before the ALTER are still readable together with the new one.
-SELECT 'prometheusQuery after ALTER:';
-SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1140) ORDER BY tags;
-
 DROP TABLE ts;

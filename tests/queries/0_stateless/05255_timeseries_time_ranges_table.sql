@@ -1,13 +1,13 @@
 -- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-parallel-replicas: table functions like `timeSeriesTimeRanges` read the inner tables directly and don't work
--- with parallel replicas.
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTimeRanges`, so each row
+-- is returned once per replica until https://github.com/ClickHouse/ClickHouse/pull/119350 is merged.
 --
 -- A TimeSeries table stores the time range of each time series in the "time ranges" target table,
 -- tables of version 7 or earlier store it in the columns `min_time` and `max_time` of the "tags" table (see TimeSeriesVersion.h).
 -- The generation of the definition is covered by the unit test gtest_normalize_time_series_definition.cpp,
 -- this test checks the write path and which tables the selector reads; the filtering of time series by their time ranges
--- is checked in 05255_timeseries_external_time_ranges_table.sql.
+-- is checked in 05255_timeseries_time_ranges_filter.sql.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';

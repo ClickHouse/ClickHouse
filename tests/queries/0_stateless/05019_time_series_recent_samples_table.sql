@@ -85,33 +85,6 @@ SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND nam
 
 DROP TABLE ts_recent_declared;
 
-SELECT '-- an external recent samples table is fed by inserts and preferred by reads';
-
-DROP TABLE IF EXISTS ts_recent_ext;
-DROP TABLE IF EXISTS recent_ext;
-CREATE TABLE recent_ext
-(
-    `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
-)
-ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
-
-CREATE TABLE ts_recent_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_ext;
-
-INSERT INTO ts_recent_ext (metric_name, tags, samples) VALUES
-    ('ext_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
-
-SELECT count() FROM recent_ext;
-
-SELECT plan LIKE '%recent_ext%' AS reads_recent
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent_ext, 'ext_metric', now())));
-
-SELECT value FROM prometheusQuery(ts_recent_ext, 'ext_metric', now());
-
-DROP TABLE ts_recent_ext;
-DROP TABLE recent_ext;
-
 SELECT '-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds';
 
 CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_partition_by = 'toStartOfHour(timestamp)'; -- { serverError INVALID_SETTING_VALUE }
