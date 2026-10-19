@@ -34,3 +34,12 @@ SELECT hex(c1), c2, c3 FROM format(CustomSeparated, '\xEF\xBB\xBF"a,b",c\nx,y,z\
 SELECT hex(x), y, z FROM format(CustomSeparated, 'x String, y String, z String', '\xEF\xBB\xBF"a,b",c\nx,y,z\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
 SELECT hex(c1), c2 FROM format(CustomSeparated, '\xEF\xBB\xBFbob\t3\n') SETTINGS format_custom_row_between_delimiter = '|';
 SELECT hex(x), y FROM format(CustomSeparated, 'x String, y UInt8', '\xEF\xBB\xBFbob\t3\n') SETTINGS format_custom_row_between_delimiter = '|';
+
+-- Only the first row without the BOM is checked to be a header: with the BOM, a quoted name is split into fields of other types.
+SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,2020,b",c\n1,2\n') FORMAT TSVWithNames;
+SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,b",c\n,\n1,2\n') FORMAT TSVWithNames;
+
+-- A BOM before a nonempty result prefix.
+SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBFprefix:a\tb\n1\t2\n') SETTINGS format_custom_result_before_delimiter = 'prefix:' FORMAT TSVWithNames;
+SELECT * FROM format(CustomSeparated, 'a String, b UInt8', '\xEF\xBB\xBFprefix:a\tb\n1\t2\n') SETTINGS format_custom_result_before_delimiter = 'prefix:' FORMAT TSVWithNames;
+SELECT * FROM format(CustomSeparated, 'a String, b UInt8', '\xEF\xBB\xBFprefix:x\t2\n') SETTINGS format_custom_result_before_delimiter = 'prefix:' FORMAT TSVWithNames;

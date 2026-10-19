@@ -610,7 +610,10 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
 
     /// The first row contains non String elements, it cannot be a header.
     /// With a BOM, the first row cannot be a header if it cannot be read without the BOM.
-    if ((has_bom && !first_row_without_bom) || !checkIfAllTypesAreString(first_row_types) || !checkIfAllTypesAreString(header_candidate_types))
+    /// Only the variant without the BOM is checked: the variant with the BOM can split a quoted name
+    /// containing a delimiter into fields of other types. The types of the variant with the BOM are used
+    /// only if the first row turns out to be data.
+    if ((has_bom && !first_row_without_bom) || !checkIfAllTypesAreString(header_candidate_types))
     {
         buffered_types = first_row_types;
         return;
@@ -651,9 +654,10 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     /// Create default names c1,c2,... for better exception messages.
+    /// The following rows are compared with the header candidate, so use its number of fields.
     std::vector<String> default_colum_names;
-    default_colum_names.reserve(first_row_types.size());
-    for (size_t i = 0; i != first_row_types.size(); ++i)
+    default_colum_names.reserve(header_candidate_types.size());
+    for (size_t i = 0; i != header_candidate_types.size(); ++i)
         default_colum_names.push_back("c" + std::to_string(i + 1));
 
     while (true)
@@ -673,7 +677,22 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         /// with all String elements can be real data and we cannot use them as a header.
         if (checkIfAllTypesAreString(data_types))
         {
-            buffered_types = std::move(data_types);
+            if (checkIfAllTypesAreString(first_row_types))
+            {
+                buffered_types = std::move(data_types);
+            }
+            else
+            {
+                /// With a BOM, the first row read as data can contain non String elements.
+                /// Combine them with the types from the following rows, as without header detection.
+                DataTypes result_types = first_row_types;
+                std::vector<String> first_row_column_names;
+                first_row_column_names.reserve(first_row_types.size());
+                for (size_t i = 0; i != first_row_types.size(); ++i)
+                    first_row_column_names.push_back("c" + std::to_string(i + 1));
+                chooseResultColumnTypes(*this, result_types, data_types, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), first_row_column_names, row);
+                buffered_types = std::move(result_types);
+            }
             return;
         }
 
