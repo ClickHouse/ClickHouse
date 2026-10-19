@@ -12,10 +12,13 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+class DeleteBitmap;
+using ConstDeleteBitmapPtr = std::shared_ptr<const DeleteBitmap>;
+
 /// A reader used in the initial stage of reading to apply index-based filtering. Currently, both skip indexes and
 /// projection indexes are used to identify which granules are relevant to the query, and only those are passed to
 /// subsequent readers. In addition, the projection index constructs a row-level filter to further reduce I/O within
-/// selected granules.
+/// selected granules. A UNIQUE KEY part's delete bitmap drops its dead rows here, before PREWHERE sees them.
 class MergeTreeReaderIndex : public IMergeTreeReader
 {
 public:
@@ -25,6 +28,7 @@ public:
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexReadResultPtr index_read_result_,
         const PaddedPODArray<UInt64> * lazy_materializing_rows_,
+        ConstDeleteBitmapPtr delete_bitmap_,
         BernoulliGranuleFilterPtr bernoulli_filter_ = nullptr);
 
     size_t readRows(
@@ -49,16 +53,19 @@ public:
     {
         /// Bernoulli filter is the only filter for rows that pass PREWHERE;
         /// deferring it would emit unsampled rows to downstream steps.
-        if (bernoulli_filter)
-            return true;
-        return lazy_materializing_rows != nullptr;
+        return lazy_materializing_rows != nullptr || delete_bitmap != nullptr || bernoulli_filter != nullptr;
     }
 
 private:
+    void appendDeleteBitmapFilter(MutableColumnPtr & filter_column, size_t filter_rows_before, size_t starting_row, size_t num_rows) const;
+
     /// Used to filter data during merge tree reading.
     MergeTreeIndexReadResultPtr index_read_result;
 
     const PaddedPODArray<UInt64> * lazy_materializing_rows = nullptr;
+
+    /// Non-empty, or null
+    ConstDeleteBitmapPtr delete_bitmap;
 
     const IMergeTreeReader * main_reader;
 

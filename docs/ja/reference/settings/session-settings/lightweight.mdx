@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -23,11 +23,18 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 設定可能な値:
 
-* `alter_update` - 高コストな mutation を作成する `ALTER UPDATE` クエリを実行します。
+* `alter_update` - 高コストなミューテーションを作成する `ALTER UPDATE` クエリを実行します。
 * `lightweight_update` - 可能であれば論理更新を実行し、できない場合は `ALTER UPDATE` を実行します。
 * `lightweight_update_force` - 可能であれば論理更新を実行し、できない場合は例外をスローします。
 
-## lightweight_deletes_sync
+`DELETE FROM ... ON CLUSTER` では、実行する各ホストが自身の設定に基づいてモードを決定します。そのため、
+プロファイルに異なるデフォルト値が設定されているホストでは、削除が異なるモードで実行される場合があります。レプリケーションされた
+分片では 1 つのレプリカだけで実行されるため、そのレプリカの設定によってモードが決まります。一方、実行を開始したクエリの
+session で値を設定した場合は、その値が優先されます。`distributed_ddl_entry_format_version` が 2 以上であれば、
+分散 DDL エントリに session での設定変更が含まれるためです。デフォルト値はこの条件を満たします。
+設定値に制約を設けているホストでは、値が制約の範囲内に収まるよう調整されます。
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

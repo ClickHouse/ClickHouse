@@ -2,6 +2,14 @@
 
 #include <Storages/MergeTree/BernoulliGranuleFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
+
+namespace ProfileEvents
+{
+extern const Event UniqueKeyBitmapRowsSkipped;
+}
 
 namespace DB
 {
@@ -25,6 +33,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexReadResultPtr index_read_result_,
     const PaddedPODArray<UInt64> * lazy_materializing_rows_,
+    ConstDeleteBitmapPtr delete_bitmap_,
     BernoulliGranuleFilterPtr bernoulli_filter_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
@@ -39,11 +48,12 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
           main_reader_->settings)
     , index_read_result(std::move(index_read_result_))
     , lazy_materializing_rows(lazy_materializing_rows_)
+    , delete_bitmap(std::move(delete_bitmap_))
     , main_reader(main_reader_)
     , bernoulli_filter(std::move(bernoulli_filter_))
 {
-    chassert(lazy_materializing_rows || index_read_result || bernoulli_filter);
-    chassert(lazy_materializing_rows || bernoulli_filter || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+    chassert(lazy_materializing_rows || delete_bitmap || index_read_result || bernoulli_filter);
+    chassert(lazy_materializing_rows || delete_bitmap || bernoulli_filter || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
 }
 
 size_t MergeTreeReaderIndex::readRows(
@@ -83,13 +93,9 @@ size_t MergeTreeReaderIndex::readRows(
     else
         max_rows_to_read = 0;
 
+    /// The filter's length before this call: each filter below appends this call's rows after it.
     MutableColumnPtr & filter_column = res_columns.front();
-    size_t filter_size_before = 0;
-    if (filter_column)
-    {
-        if (const auto * col = typeid_cast<const ColumnUInt8 *>(filter_column.get()))
-            filter_size_before = col->getData().size();
-    }
+    const size_t filter_rows_before = filter_column ? filter_column->size() : 0;
 
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
@@ -116,7 +122,6 @@ size_t MergeTreeReaderIndex::readRows(
 
     if (lazy_materializing_rows)
     {
-
         if (filter_column == nullptr)
         {
             filter_column = ColumnUInt8::create();
@@ -166,7 +171,7 @@ size_t MergeTreeReaderIndex::readRows(
 
         /// If projection or lazy-materializing filters above already appended entries
         /// for these rows, AND Bernoulli with them. Otherwise just append.
-        bool has_prior_filter = filter_data.size() > filter_size_before;
+        bool has_prior_filter = filter_data.size() > filter_rows_before;
         if (has_prior_filter)
         {
             size_t filter_start = filter_data.size() - max_rows_to_read;
@@ -178,8 +183,26 @@ size_t MergeTreeReaderIndex::readRows(
         }
     }
 
+    if (delete_bitmap && max_rows_to_read > 0)
+        appendDeleteBitmapFilter(filter_column, filter_rows_before, starting_row, max_rows_to_read);
+
     current_row += max_rows_to_read;
     return max_rows_to_read;
+}
+
+void MergeTreeReaderIndex::appendDeleteBitmapFilter(
+    MutableColumnPtr & filter_column, size_t filter_rows_before, size_t starting_row, size_t num_rows) const
+{
+    if (filter_column == nullptr)
+        filter_column = ColumnUInt8::create();
+
+    auto & filter_data = assert_cast<ColumnUInt8 &>(*filter_column).getData();
+    chassert(filter_data.size() == filter_rows_before || filter_data.size() == filter_rows_before + num_rows,
+        fmt::format("the index filter has {} row(s) for {} read, {} before this read", filter_data.size(), num_rows, filter_rows_before));
+
+    filter_data.resize_fill(filter_rows_before + num_rows, 1);
+    const size_t dead = delete_bitmap->clearInFilter(starting_row, num_rows, filter_data.data() + filter_rows_before);
+    ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapRowsSkipped, dead);
 }
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark)
