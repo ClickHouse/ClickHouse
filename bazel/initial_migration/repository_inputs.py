@@ -126,6 +126,22 @@ def directory_sources(directory):
 
 
 @cache
+def package_sources(owner):
+    """List files that globs in a generated root package can reach."""
+    if owner:
+        # The archive's BUILD files are removed before Bazel adds the overlay.
+        return (*archived_sources(owner), 'BUILD.bazel')
+    names = subprocess.check_output(
+        ['git', '-C', str(ROOT), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    ).decode().split('\0')
+    packages = {
+        name.rsplit('/', 1)[0] for name in names
+        if '/' in name and Path(name).name in {'BUILD', 'BUILD.bazel'}
+    }
+    return tuple(name for name in names if name and not any(name.startswith(p + '/') for p in packages))
+
+
+@cache
 def textual_source_names(owner):
     """Names present in literal includes of a pinned repo, or None for macros.
 

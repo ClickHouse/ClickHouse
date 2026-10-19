@@ -7,11 +7,12 @@ from pathlib import Path
 import re
 
 from initial_migration import llvm_targets
-from initial_migration.compact_build import compact, header_patterns
+from initial_migration.compact_build import compact
 from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
-    directory_sources, execution_path, repository, source_label, source_path, textual_source_names,
+    directory_sources, execution_path, package_sources, repository, source_label, source_path, textual_source_names,
 )
+from initial_migration.simplify_globs import simplify_globs
 
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
@@ -105,7 +106,6 @@ class Select:
 class Glob:
     patterns: list
     exclude: tuple = ()
-    allow_empty: bool = False
 
 
 @dataclass
@@ -244,11 +244,8 @@ def starlark(value, indent=0, paths=False, step=2):
     if isinstance(value, Select):
         return 'select(' + starlark(value.values, indent, paths, step) + ')'
     if isinstance(value, Glob):
-        patterns = header_patterns(value.patterns)
-        function = 'header_glob' if patterns is not None else 'glob'
-        return function + '(' + json.dumps(value.patterns if patterns is None else patterns) + (
-            ', exclude = ' + json.dumps(value.exclude) if value.exclude else '') + (
-            ', allow_empty = True' if value.allow_empty else '') + ')'
+        return 'glob(' + json.dumps(value.patterns) + (
+            ', exclude = ' + json.dumps(value.exclude) if value.exclude else '') + ')'
     if isinstance(value, dict):
         entries = [json.dumps(k) + ': ' + starlark(v, indent + step, paths or (
             'shell' if k == 'cmd' else k in {
@@ -503,7 +500,7 @@ class BuildFile:
                     excluded = (pattern + '/BUILD', pattern + '/BUILD.bazel')
                     headers = [pattern + '/*' + suffix for suffix in CC_HEADER_SUFFIXES]
                     if custom or field == 'additional_compiler_inputs':
-                        fields[field].append(Glob([pattern], excluded, allow_empty=True))
+                        fields[field].append(Glob([pattern], excluded))
                     else:
                         # Exclude any explicit srcs or generated inputs to
                         # prevent one header from being declared twice.
@@ -514,8 +511,8 @@ class BuildFile:
                             for item in values:
                                 if isinstance(item, str) and item.startswith(prefix):
                                     local.append(item.removeprefix(prefix))
-                        fields[field].append(Glob(headers, (*excluded, *local), allow_empty=True))
-                        fields[non_header_field].append(Glob([pattern], (*excluded, *headers), allow_empty=True))
+                        fields[field].append(Glob(headers, (*excluded, *local)))
+                        fields[non_header_field].append(Glob([pattern], (*excluded, *headers)))
                 else:
                     for path in directory_sources(directory):
                         public = PUBLIC_HEADERS.get(owner)
@@ -906,8 +903,6 @@ class BuildFile:
 
     def load_statements(self):
         loads = dict(self.loads)
-        if any('header_glob(' in rule for rule in self.rules):
-            loads.setdefault('@clickhouse//bazel:ch_cc_library.bzl', set()).add('header_glob')
         paths = {function for function in ('repository_path', 'repository_local_include', 'llvm_toolchain_path', 'cmake_prefix_maps',
                                            'cmake_cxx_compiler_version')
                  if any(function + '(' in rule for rule in self.rules)}
@@ -919,7 +914,7 @@ class BuildFile:
                        for path, names in sorted(loads.items()))
 
     def text(self):
-        return compact('\n'.join(self.rules))
+        return compact(simplify_globs('\n'.join(self.rules), package_sources(self.owner)))
 
 
 def dependency_inputs(builds, owners):

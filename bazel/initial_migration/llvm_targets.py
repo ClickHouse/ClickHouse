@@ -200,7 +200,7 @@ def declare_from_references(root, references):
         for subdir in ('llvm/include', 'llvm/lib', 'third-party/siphash/include')
         for suffix in ('.h', '.hh', '.hpp', '.hxx', '.inc', '.def', '.ipp', '.inl')
     ]
-    build.rule('filegroup', 'llvm_source_headers', {'srcs': Glob(header_patterns, allow_empty=True)})
+    build.rule('filegroup', 'llvm_source_headers', {'srcs': Glob(header_patterns)})
     build.rule('filegroup', 'llvm_tablegen_inputs', {
         'srcs': Glob(['llvm/include/**/*.td', 'llvm/lib/Target/**/*.td']),
     })
@@ -213,7 +213,7 @@ def declare_from_references(root, references):
             'libunwind/include/**', 'libunwind/src/**',
             'compiler-rt/include/**', 'compiler-rt/lib/**', 'libc/**',
             'third-party/siphash/include/**',
-        ], exclude=('**/BUILD', '**/BUILD.bazel'), allow_empty=True),
+        ], exclude=('**/BUILD', '**/BUILD.bazel')),
     })
     for library in ('libcxx', 'libcxxabi'):
         build.rule('filegroup', 'runtime_' + library + '_headers', {

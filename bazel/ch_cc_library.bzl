@@ -3,31 +3,6 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(":repository_paths.bzl", "cmake_prefix_maps", "repository_path")
 
-# Keep in sync with repository_inputs.CC_HEADER_SUFFIXES. The compactor
-# verifies these before converting any generated glob.
-_CC_HEADER_SUFFIXES = [
-    ".h",
-    ".hh",
-    ".hpp",
-    ".ipp",
-    ".hxx",
-    ".h++",
-    ".inc",
-    ".inl",
-    ".tlh",
-    ".tli",
-    ".H",
-    ".tcc",
-]
-
-def header_glob(patterns, **kwargs):
-    """List C/C++ headers in the calling package, preserving native.glob options."""
-    return native.glob([
-        pattern + "/*" + suffix
-        for pattern in patterns
-        for suffix in _CC_HEADER_SUFFIXES
-    ], **kwargs)
-
 # Place these before library copts: several libraries require an older ISA.
 CLICKHOUSE_TARGET_FLAGS = {
     "x86_64": ["-march=x86-64-v3", "-mpclmul", "-mbranches-within-32B-boundaries"],

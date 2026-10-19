@@ -762,7 +762,7 @@ def main():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
         patterns = [directory + '/**/*' + suffix for directory in directories for suffix in CC_HEADER_SUFFIXES]
         build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], {
-            'hdrs': Glob(patterns, allow_empty=True),
+            'hdrs': Glob(patterns),
         })
     external.declare(
         builds, lambda owner: BuildFile(owner, owners, consumers, targets, external_headers=external))
@@ -772,8 +772,8 @@ def main():
     lz4.target('_lz4', native_lz4)
     boost_patterns = ['boost/**/*' + suffix for suffix in CC_HEADER_SUFFIXES]
     builds['contrib/boost'].rule('cc_library', 'boost_headers', {
-        'hdrs': Glob(boost_patterns, allow_empty=True),
-        'textual_hdrs': Glob(['boost/**'], ('**/BUILD', '**/BUILD.bazel', *boost_patterns), allow_empty=True),
+        'hdrs': Glob(boost_patterns),
+        'textual_hdrs': Glob(['boost/**'], ('**/BUILD', '**/BUILD.bazel', *boost_patterns)),
         'features': ['external_include_paths'],
     })
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(

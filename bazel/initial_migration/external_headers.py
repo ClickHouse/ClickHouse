@@ -134,5 +134,5 @@ class HeaderLibraries:
                 for suffix in CC_HEADER_SUFFIXES
             ]
             build.rule('cc_library', name, {
-                'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel'), allow_empty=True),
+                'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel')),
             })

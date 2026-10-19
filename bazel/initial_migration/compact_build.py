@@ -15,9 +15,6 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from initial_migration.repository_inputs import CC_HEADER_SUFFIXES
-
-
 ATTRIBUTES = {
     "srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "deps",
     "copts", "local_defines", "defines", "features", "linkopts",
@@ -260,48 +257,6 @@ def simplify_list_expressions(source):
     return source.rewrite(edits)
 
 
-def header_patterns(patterns):
-    """Recognize only complete, ordered C/C++ suffix lists."""
-    count = len(CC_HEADER_SUFFIXES)
-    if not patterns or len(patterns) % count:
-        return None
-    roots = []
-    for start in range(0, len(patterns), count):
-        suffix = "/*" + CC_HEADER_SUFFIXES[0]
-        first = patterns[start]
-        if not isinstance(first, str) or not first.endswith(suffix):
-            return None
-        root = first.removesuffix(suffix)
-        if patterns[start:start + count] != [root + "/*" + suffix for suffix in CC_HEADER_SUFFIXES]:
-            return None
-        roots.append(root)
-    return roots
-
-
-def factor_header_globs(source):
-    """Replace exact glob patterns; excludes and other keyword tokens stay put."""
-    library = Path(__file__).resolve().parents[1] / "ch_cc_library.bzl"
-    declarations = ast.parse(library.read_text()).body
-    suffixes = next(
-        ast.literal_eval(stmt.value) for stmt in declarations
-        if isinstance(stmt, ast.Assign) and any(isinstance(target, ast.Name)
-            and target.id == "_CC_HEADER_SUFFIXES" for target in stmt.targets)
-    )
-    if suffixes != list(CC_HEADER_SUFFIXES):
-        raise ValueError("header_glob suffixes differ from repository_inputs.CC_HEADER_SUFFIXES")
-    edits = []
-    for node in ast.walk(source.module):
-        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
-                or node.func.id != "glob" or len(node.args) != 1 or not isinstance(node.args[0], ast.List)
-                or any(not isinstance(value, ast.Constant) for value in node.args[0].elts)):
-            continue
-        roots = header_patterns([value.value for value in node.args[0].elts])
-        if roots is not None:
-            edits.append((*source.span(node.func), "header_glob"))
-            edits.append((*source.span(node.args[0]), repr(roots)))
-    return source.rewrite(edits), bool(edits)
-
-
 class Expand(ast.NodeTransformer):
     def __init__(self):
         self.constants = {}
@@ -323,14 +278,6 @@ class Expand(ast.NodeTransformer):
 
     def visit_Call(self, node):
         node = self.generic_visit(node)
-        if isinstance(node.func, ast.Name) and node.func.id == "header_glob":
-            if len(node.args) != 1 or not isinstance(node.args[0], ast.List):
-                raise ValueError("Cannot verify non-literal header_glob patterns")
-            roots = ast.literal_eval(node.args[0])
-            node = ast.Call(func=ast.Name(id="glob", ctx=ast.Load()), args=[ast.List(
-                elts=[ast.Constant(value=root + "/*" + suffix)
-                      for root in roots for suffix in CC_HEADER_SUFFIXES],
-                ctx=ast.Load())], keywords=node.keywords)
         value = shared_cpu_selection(node)
         return value if value is not None else node
 
@@ -358,26 +305,8 @@ class Expand(ast.NodeTransformer):
         return node
 
 
-def compact(text, header_globs=False):
+def compact(text):
     original_text = text
-    if header_globs:
-        source = Source(text)
-        text, changed = factor_header_globs(source)
-        loaded = any(
-            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Name) and stmt.value.func.id == "load"
-            and any(isinstance(arg, ast.Constant) and arg.value == "header_glob" for arg in stmt.value.args[1:])
-            for stmt in source.module.body
-        )
-        if changed and not loaded:
-            # This single declared symbol is the only permitted load change.
-            # Include it in both proof inputs; every other statement, including
-            # all original glob patterns and keywords, must still expand alike.
-            load = 'load("@clickhouse//bazel:ch_cc_library.bzl", "header_glob")\n'
-            for_check = original_text.find("\n") + 1 if original_text.startswith("#") else 0
-            for_output = text.find("\n") + 1 if text.startswith("#") else 0
-            original_text = original_text[:for_check] + load + original_text[for_check:]
-            text = text[:for_output] + load + text[for_output:]
     simplified = text
     while True:
         # Folding adjacent literals can make select branches eligible for
@@ -398,7 +327,6 @@ def compact(text, header_globs=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="replace verified generated BUILD files")
-    parser.add_argument("--header-globs", action="store_true", help="also collapse the full repeated header suffix patterns")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("files", nargs="*", type=Path, help="default: root and generated contrib BUILD files")
     args = parser.parse_args()
@@ -413,7 +341,7 @@ def main():
             "# Generated by bazel/generate_build.py --llvm-references.",
         }:
             raise ValueError(f"Refusing to rewrite a non-generated BUILD: {path}")
-        after = compact(before, header_globs=args.header_globs)
+        after = compact(before)
         total_before += len(before.encode("utf-8"))
         total_after += len(after.encode("utf-8"))
         if before != after:
