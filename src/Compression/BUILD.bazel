@@ -157,39 +157,18 @@ ch_cc_library(
         "getCompressionCodecForFile.cpp",
     ],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + ([
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
         "rust/workspace/pco/include",
         "-I",
-        "base/pcg-random",
-        "-I",
-        "src",
-        "-I",
-        "base",
-        "-I",
-        "$(GENDIR)/bazel/gen/base",
-    ] + [
-        "-I",
-        repository_path("contrib/cctz") + "/include",
-        "-I",
-        repository_path("contrib/re2"),
-        "-I",
         repository_path("contrib/libfiu") + "/libfiu",
         "-I",
-        repository_path("contrib/libssh") + "/include",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-    ]) + [
-        "-I",
-        repository_path("contrib/miniselect") + "/include",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-        "-I",
-        repository_path("contrib/crc32c") + "/include",
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ],
@@ -269,6 +248,11 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        "../../base/pcg-random",
+        "..",
+        "../../base",
+        "../../bazel/gen/base",
+    ] + ([
         "../../" + (repository_path("contrib/sz3") + "/include"),
         "../../" + "contrib/sz3-cmake",
         "../../" + "contrib/jemalloc-cmake/include",
@@ -344,7 +328,7 @@ ch_cc_library(
         "../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../" + (llvm_toolchain_path() + "/libc"),
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
-    ],
+    ]),
     deps = select({
         "@platforms//cpu:x86_64": [
             "@llvm-project//compiler-rt:headers",

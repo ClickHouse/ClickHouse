@@ -112,10 +112,10 @@ ch_cc_library(
         "//bazel:gen/includes/configs/config_version.cpp",
     ],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
-        "-I",
-        repository_path("contrib/cctz") + "/include",
     ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",

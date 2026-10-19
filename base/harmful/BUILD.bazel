@@ -7,12 +7,13 @@ ch_cc_library(
     srcs = ["harmful.c"],
     copts = [
         "-std=gnu11",
-        "-I",
-        "base",
         "-Wno-error",
     ],
     language = "C",
     libcxx_headers = False,
+    local_includes = [
+        "..",
+    ],
     deps = [
         "@llvm-project//compiler-rt:headers",
         "//src:clickhouse_source_headers",

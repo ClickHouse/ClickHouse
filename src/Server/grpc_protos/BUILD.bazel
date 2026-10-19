@@ -30,13 +30,13 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-w",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
-        "-I",
-        repository_path("contrib/re2"),
+        "$(GENDIR)/bazel/gen/includes/configs",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [

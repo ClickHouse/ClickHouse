@@ -11,12 +11,12 @@ ch_cc_library(
     srcs = ["widechar_width.cpp"],
     hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + ["widechar_width.h"],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
-        "-I",
-        "base/widechar_width",
+        "$(GENDIR)/bazel/gen/includes/configs",
     ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -25,6 +25,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        ".",
+    ] + [
         "../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../" + (llvm_toolchain_path() + "/libc"),
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),

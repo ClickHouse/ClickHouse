@@ -155,17 +155,18 @@ class LocalInclude:
     raw_llvm: bool = False
 
 
-def split_system_includes(flags, owner, native_library, public_includes=()):
-    options, includes = [], []
+def split_system_includes(flags, owner, native_library, public_includes=(),
+                          preserve_base_includes=False):
+    options, includes, source_includes = [], [], []
     flags = iter(flags)
     for flag in flags:
         if flag == '-isystem':
             directory = next(flags)
             includes.append(LocalInclude(directory, owner))
-        elif flag == '-I' and native_library and owner not in {None, llvm_targets.PREFIX}:
+        elif flag == '-I' and native_library and owner != llvm_targets.PREFIX:
             directory = next(flags)
             original = directory
-            if directory.startswith('bazel/config/'):
+            if owner is not None and directory.startswith('bazel/config/'):
                 _, _, arch, relative = directory.split('/', 3)
                 if relative.startswith('contrib/') and configuration_owner(relative) == owner:
                     directory = owner + '/config/' + arch + '/' + relative
@@ -174,13 +175,19 @@ def split_system_includes(flags, owner, native_library, public_includes=()):
                 options.extend([flag, original])
             elif original in public_includes:
                 continue
-            elif repository(directory.removeprefix('$(GENDIR)/')) == owner:
+            elif (owner is None and not preserve_base_includes and
+                  (original in {'base', 'src', 'programs'}
+                   or original.startswith(('base/', 'src/', 'programs/'))
+                   or re.fullmatch(r'bazel/config/(?:x86_64|aarch64)/base', original))):
+                # -I source dirs have priority over every captured -isystem.
+                source_includes.append(LocalInclude(directory, owner))
+            elif owner is not None and repository(directory.removeprefix('$(GENDIR)/')) == owner:
                 includes.append(LocalInclude(directory, owner))
             else:
                 options.extend([flag, original])
         else:
             options.append(flag)
-    return options, includes
+    return options, source_includes + includes
 
 
 @dataclass
@@ -974,7 +981,7 @@ class BuildFile:
                         if arch in system_includes:
                             public_includes = set()
                             if native_library and self.owner not in {
-                                None, llvm_targets.PREFIX, 'contrib/arrow', 'contrib/cppkafka',
+                                llvm_targets.PREFIX, 'contrib/arrow', 'contrib/cppkafka',
                             }:
                                 deps = compile_dependencies(inputs[arch]['deps'], variants[arch]['deps'])
                                 if collapse_single:
@@ -990,7 +997,10 @@ class BuildFile:
                                             self.owners.get(cmake_name) == owner and cmake_name in reachable):
                                         public_includes.add((owner + '/' + relative).removesuffix('/.'))
                             value, includes = split_system_includes(
-                                value, self.owner, native_library, public_includes)
+                                value, self.owner, native_library, public_includes,
+                                # NativeSnapshots.base_includes moves common's
+                                # source and generated directories together.
+                                preserve_base_includes=self.owner is None and name == 'common')
                             system_includes[arch] = includes + system_includes[arch]
                         if native_library and language in GLOBAL_COMPILE_OPTIONS:
                             # These original CMake C groups have no -Werror.

@@ -25,9 +25,7 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
-        "-I",
-        "base/readpassphrase",
+        "$(GENDIR)/bazel/gen/includes/configs",
     ],
     language = "C",
     local_defines = [
@@ -37,6 +35,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        ".",
+    ] + [
         "../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../" + (llvm_toolchain_path() + "/libc"),
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),

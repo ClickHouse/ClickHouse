@@ -608,7 +608,9 @@ ch_cc_library(
         "src/Void.cpp",
     ],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-Wno-array-bounds",
         "-Wno-atomic-implicit-seq-cst",
@@ -642,34 +644,11 @@ ch_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + ([
         "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        "src",
-        "-I",
-        "base",
-        "-I",
-        "$(GENDIR)/bazel/gen/base",
-    ] + [
-        "-I",
-        repository_path("contrib/cctz") + "/include",
-        "-I",
-        repository_path("contrib/re2"),
-        "-I",
-        "base/pcg-random",
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
         "-I",
-        repository_path("contrib/libssh") + "/include",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-    ]) + [
-        "-I",
-        repository_path("contrib/miniselect") + "/include",
-        "-I",
-        repository_path("contrib/zstd") + "/lib",
-        "-I",
-        repository_path("contrib/crc32c") + "/include",
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ],
@@ -748,6 +727,11 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        "../../../src",
+        "../..",
+        "../../../bazel/gen/base",
+        "../../pcg-random",
+    ] + ([
         "../../../" + "base/poco/Foundation/include",
         "../../../" + "contrib/jemalloc-cmake/include",
         "../../../" + repository_path("contrib/sparsehash-c11"),
@@ -809,7 +793,7 @@ ch_cc_library(
         "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../../" + (llvm_toolchain_path() + "/libc"),
         "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
-    ],
+    ]),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",

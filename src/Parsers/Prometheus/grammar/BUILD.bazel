@@ -34,14 +34,14 @@ ch_cc_library(
         "generated/antlr4_grammars/PromQLParserVisitor.h",
     ]),
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
+    copts = [
+        "-Wframe-larger-than=65536",
+    ] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
         "-w",
         "-fno-xray-instrument",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
-        "-I",
-        "src/Parsers/Prometheus/grammar/generated",
+        "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
         repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src",
     ],
@@ -52,6 +52,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
+        "generated",
+    ] + [
         "../../../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../../../" + (llvm_toolchain_path() + "/libc"),
         "../../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),

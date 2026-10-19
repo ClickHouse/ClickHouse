@@ -128,13 +128,18 @@ ch_cc_library(
         "-Wno-builtin-requires-header",
         "-I",
         "base/glibc-compatibility/libcxxabi",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["base/glibc-compatibility/musl/x86_64"],
-        "@platforms//cpu:aarch64": ["base/glibc-compatibility/musl/aarch64"],
-    }) + ["-Wno-error"],
+        "-Wno-error",
+    ],
     language = "C",
     libcxx_headers = False,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "musl/x86_64",
+        ],
+        "@platforms//cpu:aarch64": [
+            "musl/aarch64",
+        ],
+    }),
     deps = ["@llvm-project//compiler-rt:headers"],
 )
 
@@ -166,13 +171,17 @@ ch_cc_library(
         "-Wno-builtin-requires-header",
         "-I",
         "base/glibc-compatibility/libcxxabi",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["base/glibc-compatibility/musl/x86_64"],
-        "@platforms//cpu:aarch64": ["base/glibc-compatibility/musl/aarch64"],
-    }),
+    ],
     language = "ASM",
     libcxx_headers = False,
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "musl/x86_64",
+        ],
+        "@platforms//cpu:aarch64": [
+            "musl/aarch64",
+        ],
+    }),
     deps = ["@llvm-project//compiler-rt:headers"],
 )
 

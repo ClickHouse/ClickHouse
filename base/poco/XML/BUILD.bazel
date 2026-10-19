@@ -361,11 +361,7 @@ ch_cc_library(
         "-Wno-unused-macros",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"] + [
-        "-I",
-        "base/poco/XML/include",
-        "-I",
-        "base/poco/Foundation/include",
+        "$(GENDIR)/bazel/gen/includes/configs",
     ],
     language = "C",
     local_defines = [
@@ -378,6 +374,9 @@ ch_cc_library(
         "_poco_xml",
     ],
     local_includes = [
+        "include",
+        "../Foundation/include",
+    ] + [
         "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../../" + (llvm_toolchain_path() + "/libc"),
         "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
