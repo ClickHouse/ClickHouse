@@ -11032,7 +11032,7 @@ The level of ZSTD compression of the streaming exchange of a distributed query p
 
 Possible values:
 
-- Positive integer from 1 to 15.
+- Integer from 1 to 22. Higher levels compress better and slower.
 )", EXPERIMENTAL, \
         {"26.11", 1, 1, "New setting for the level of ZSTD compression of the streaming exchange of a distributed query plan."}) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(

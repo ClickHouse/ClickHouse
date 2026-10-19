@@ -10,6 +10,9 @@ DROP TABLE IF EXISTS t_exchange_codec_default;
 CREATE TABLE t_exchange_codec_default (k String, v UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_exchange_codec_default SELECT concat('key ', toString(number % 1000), ' with some repeated words'), number FROM numbers(100000);
 
+-- The checks of the default need the defaults of this version: with an older `compatibility`, which the stress
+-- test can pass to the client, the exchange uses the network codec.
+SET compatibility = '';
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 SET distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 2;
 
@@ -29,6 +32,11 @@ SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
   SETTINGS distributed_plan_exchange_compression_method = 'ZSTD', distributed_plan_exchange_zstd_compression_level = 19,
     network_zstd_compression_level = 1, log_comment = '05407_zstd_level_19';
+SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
+  SETTINGS compatibility = '26.10', network_compression_method = 'NONE', log_comment = '05407_compatibility_26_10';
+
+SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
+  SETTINGS distributed_plan_exchange_compression_method = 'Delta'; -- { serverError BAD_ARGUMENTS }
 
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log;
