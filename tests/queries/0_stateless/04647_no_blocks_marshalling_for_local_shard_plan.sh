@@ -146,8 +146,8 @@ $INITIAL_CLIENT -q "
 # The plan shape is the invariant being fixed: the locally executed branch must carry no
 # `BlocksMarshalling` step, while the branch read from a remote replica must keep it.
 #
-# The last one asserts that a plan which is serialized and shipped to a shard keeps marshalling:
-# the shard sends its blocks back over the network.
+# The last one asserts that a plan which is serialized and shipped to a shard carries no
+# marshalling step: the shard runs it as shipped, with the sender's steps on top of it.
 $CLIENT -q "
     SELECT '-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps';
     $(marshalling_counts_query "
