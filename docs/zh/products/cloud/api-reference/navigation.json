@@ -26,7 +26,8 @@
       {
         "group": "通知",
         "pages": [
-          "zh/products/cloud/api-reference/notifications/notification-types-get-list"
+          "products/cloud/api-reference/notifications/notification-get-list",
+          "products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {
