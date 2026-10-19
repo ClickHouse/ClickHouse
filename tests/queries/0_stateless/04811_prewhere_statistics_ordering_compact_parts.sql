@@ -4,6 +4,7 @@
 -- collapsing every condition to the same cost and keeping the original WHERE order.
 -- See https://github.com/ClickHouse/ClickHouse/pull/110695
 
+SET min_marks_to_use_statistics = 0;
 SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;

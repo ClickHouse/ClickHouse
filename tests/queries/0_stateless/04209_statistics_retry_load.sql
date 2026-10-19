@@ -3,6 +3,7 @@
 -- Tag no-replicated-database: hypothetical indexes are session-scoped and not replicated.
 -- Tag no-random-settings: keeps the statistics paths and settings deterministic.
 
+SET min_marks_to_use_statistics = 0;
 SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET allow_experimental_statistics = 1;

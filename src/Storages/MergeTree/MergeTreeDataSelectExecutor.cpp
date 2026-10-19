@@ -215,6 +215,44 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
+bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t limit,
+    const Settings & settings,
+    LoggerPtr log)
+{
+    if (limit == 0)
+        return false;
+
+    if (parts.getMarksCountAllParts() < limit)
+        return true;
+
+    if (!metadata_snapshot->hasPrimaryKey() || !key_condition || key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        return false;
+
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
+    /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
+    size_t marks = 0;
+    for (const auto & part : parts)
+    {
+        marks += markRangesFromPKRange(
+            part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
+            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log).getNumberOfMarks();
+
+        if (marks >= limit)
+            return false;
+    }
+
+    return true;
+}
+
+
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
 static std::string toString(const RelativeSize & x)
@@ -691,17 +729,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const ReadFromMergeTree::Indexes & indexes,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
-    const SelectQueryInfo & query_info,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
-    auto res = filterPartsByPartition(
+    return filterPartsByPartition(
         parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
         metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
-    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -889,9 +924,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     {
         size_t total_granules_after = 0;
         for (const auto & part : res_parts)
-        {
-            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        }
+            total_granules_after += part.getMarksCount();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Statistics,

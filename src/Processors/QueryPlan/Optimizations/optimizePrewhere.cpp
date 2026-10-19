@@ -287,11 +287,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// column-size estimates until pruning filters or analyzed parts are available.
     const bool use_pruned_parts = read_from_merge_tree_step
         && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
-    RangesInDataParts prewhere_parts;
+    ReadFromMergeTree::PartsForPrewhere prewhere_parts;
     if (use_pruned_parts)
         prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere();
     auto column_sizes = use_pruned_parts
-        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts)
+        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
         : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
@@ -314,11 +314,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
+    /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
     ConditionSelectivityEstimatorPtr selectivity_estimator;
     if (has_multiple_conditions && read_from_merge_tree_step)
-        selectivity_estimator = use_pruned_parts
-            ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts)
-            : read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+    {
+        if (!use_pruned_parts)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+        else if (prewhere_parts.use_statistics)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts.parts);
+    }
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),

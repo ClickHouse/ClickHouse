@@ -540,8 +540,15 @@ public:
     void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    struct PartsForPrewhere
+    {
+        RangesInDataParts parts;
+        /// Whether the read is large enough for statistics to pay off, see `min_marks_to_use_statistics`.
+        bool use_statistics = true;
+    };
+
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
-    RangesInDataParts getPartsForPrewhere() const;
+    PartsForPrewhere getPartsForPrewhere() const;
     IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;

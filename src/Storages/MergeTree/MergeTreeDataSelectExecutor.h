@@ -220,14 +220,22 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
+    /// Whether fewer than `limit` marks of the parts are left to read after the primary key analysis.
+    /// Stops the analysis as soon as `limit` marks are found. Always false if `limit` is zero.
+    static bool hasFewerMarksToReadThan(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+        size_t limit,
+        const Settings & settings,
+        LoggerPtr log);
+
+    /// Apply snapshot, virtual-column, min-max and partition filters before range analysis.
     static RangesInDataParts filterParts(
         const RangesInDataParts & parts,
         const ReadFromMergeTree::Indexes & indexes,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
-        const SelectQueryInfo & query_info,
-        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
@@ -249,6 +257,8 @@ public:
 
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
+    /// Loading statistics costs a few reads per part, so it runs after the range analysis,
+    /// and only if the read is large enough (see the `min_marks_to_use_statistics` setting).
     static RangesInDataParts filterPartsByStatistics(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,

@@ -294,6 +294,7 @@ namespace Setting
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsUInt64 min_marks_to_use_statistics;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsMaxThreads max_final_threads;
@@ -3648,8 +3649,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         *indexes,
         metadata_snapshot,
         data,
-        query_info_,
-        mutations_snapshot,
         context_,
         max_block_numbers_to_read.get(),
         log,
@@ -4023,6 +4022,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             }
         }
     }
+
+    /// Loading statistics costs a few reads per part, which is more than a small read that pruning
+    /// by statistics could save, so prune only the parts left after the range analysis, and only
+    /// if enough marks are left to read.
+    if (result.parts_with_ranges.getMarksCountAllParts() >= settings[Setting::min_marks_to_use_statistics])
+        result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+            result.parts_with_ranges, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -6569,18 +6575,38 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 }
 
 
-RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
+ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere() const
 {
-    if (analyzed_result_ptr || !indexes)
-        return getParts();
+    const auto & settings = getContext()->getSettingsRef();
+    const UInt64 min_marks_to_use_statistics = settings[Setting::min_marks_to_use_statistics];
 
-    /// Share all part filters with `selectRangesToRead`, including the snapshot boundary and statistics.
+    if (analyzed_result_ptr)
+        return {getParts(), analyzed_result_ptr->selected_marks >= min_marks_to_use_statistics};
+
+    if (!indexes)
+        return {getParts(), true};
+
+    /// Share the part filters with `selectRangesToRead`, including the snapshot boundary.
     /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
     /// so execution must filter again with the final conditions.
     IndexStats unused_stats;
-    return MergeTreeDataSelectExecutor::filterParts(
-        getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
+    PartsForPrewhere res;
+    res.parts = MergeTreeDataSelectExecutor::filterParts(
+        getParts(), *indexes, getStorageMetadata(), data, getContext(),
         max_block_numbers_to_read.get(), log, unused_stats);
+
+    /// The range analysis has not run yet. Bound the number of marks to read by the primary key,
+    /// which stops early for a large read and otherwise needs only the primary index already loaded
+    /// for the read, to not load statistics for a read that is cheaper than loading them.
+    if (getStorageMetadata()->hasStatistics())
+        res.use_statistics = !MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
+            res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_use_statistics, settings, log);
+
+    if (res.use_statistics)
+        res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+            res.parts, getStorageMetadata(), query_info, mutations_snapshot, getContext(), log, unused_stats);
+
+    return res;
 }
 
 IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(

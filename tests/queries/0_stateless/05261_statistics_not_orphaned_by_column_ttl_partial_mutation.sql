@@ -2,6 +2,7 @@
 -- rewrites only the TTL column and carries the other columns of the part over.
 
 DROP TABLE IF EXISTS ttl_stats_orphan_partial;
+SET min_marks_to_use_statistics = 0;
 SET mutations_sync = 2, alter_sync = 2, materialize_statistics_on_insert = 1;
 SET use_statistics = 1, use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
