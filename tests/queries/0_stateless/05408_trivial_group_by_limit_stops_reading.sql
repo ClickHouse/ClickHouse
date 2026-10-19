@@ -48,10 +48,24 @@ SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree' FORMAT Null;
 SELECT k, count() FROM t_group_by_limit_stops_reading GROUP BY k LIMIT 5
 SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree_aggregate' FORMAT Null;
 
+-- The part with the aggregate projection has enough keys; the reading of the part without it has to stop too.
+DROP TABLE IF EXISTS t_group_by_limit_stops_reading_projection;
+CREATE TABLE t_group_by_limit_stops_reading_projection (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+SYSTEM STOP MERGES t_group_by_limit_stops_reading_projection;
+INSERT INTO t_group_by_limit_stops_reading_projection SELECT 7 FROM numbers(5000000);
+ALTER TABLE t_group_by_limit_stops_reading_projection ADD PROJECTION p (SELECT k, count() GROUP BY k);
+INSERT INTO t_group_by_limit_stops_reading_projection SELECT number FROM numbers(1000);
+
+SELECT k FROM t_group_by_limit_stops_reading_projection GROUP BY k LIMIT 5
+SETTINGS max_threads = 4, max_streams_for_merge_tree_reading = 1, optimize_use_projections = 1, force_optimize_projection = 1,
+    log_comment = 'gbl_stop_projection' FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, result_rows, if(startsWith(log_comment, 'gbl_stop_merge_tree'), toString(read_rows < 2000000), '-')
+SELECT log_comment, result_rows,
+    multiIf(startsWith(log_comment, 'gbl_stop_merge_tree'), toString(read_rows < 2000000), log_comment = 'gbl_stop_projection', toString(read_rows < 5000000), '-')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND startsWith(log_comment, 'gbl_stop_') AND type = 'QueryFinish' AND is_initial_query
 ORDER BY log_comment;
 
 DROP TABLE t_group_by_limit_stops_reading;
+DROP TABLE t_group_by_limit_stops_reading_projection;
