@@ -1,7 +1,0 @@
---- unframed output
-   ┌─x─┐
-1. │ 0 │
-2. │ 1 │
-   └───┘
---- framed output
-"packet":"data"
