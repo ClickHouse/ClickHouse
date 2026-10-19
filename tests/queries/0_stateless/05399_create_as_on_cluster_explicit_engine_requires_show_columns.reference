@@ -1,2 +1,0 @@
-without SHOW COLUMNS:
-necessary to have the grant SHOW COLUMNS ON db.plain_src

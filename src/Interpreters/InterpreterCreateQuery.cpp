@@ -1536,36 +1536,36 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
-    }
 
-    if (storage_def)
-    {
-        /// check what the server stores: settings in this query replace the source settings, and
-        /// Null can replace an external engine
-        auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
-        if (create.storage)
+        if (storage_def)
         {
-            /// inheritStorageFromSource keeps the clauses this query gives, so drop them here too
-            if (create.storage->partition_by)
-                inherited->reset(inherited->partition_by);
-            if (create.storage->primary_key)
-                inherited->reset(inherited->primary_key);
-            if (create.storage->order_by)
-                inherited->reset(inherited->order_by);
-            if (create.storage->sample_by)
-                inherited->reset(inherited->sample_by);
-            if (create.storage->ttl_table)
-                inherited->reset(inherited->ttl_table);
-            if (create.storage->unique_key)
-                inherited->reset(inherited->unique_key);
-            if (inherited->settings && create.storage->settings)
-                for (const auto & change : create.storage->settings->changes)
-                    inherited->settings->changes.removeSetting(change.name);
-        }
-        replaceExternalEngineWithNullIfNeeded(
-            *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+            /// check what the server stores: settings in this query replace the source settings, and
+            /// Null can replace an external engine
+            auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
+            if (create.storage)
+            {
+                /// inheritStorageFromSource keeps the clauses this query gives, so drop them here too
+                if (create.storage->partition_by)
+                    inherited->reset(inherited->partition_by);
+                if (create.storage->primary_key)
+                    inherited->reset(inherited->primary_key);
+                if (create.storage->order_by)
+                    inherited->reset(inherited->order_by);
+                if (create.storage->sample_by)
+                    inherited->reset(inherited->sample_by);
+                if (create.storage->ttl_table)
+                    inherited->reset(inherited->ttl_table);
+                if (create.storage->unique_key)
+                    inherited->reset(inherited->unique_key);
+                if (inherited->settings && create.storage->settings)
+                    for (const auto & change : create.storage->settings->changes)
+                        inherited->settings->changes.removeSetting(change.name);
+            }
+            replaceExternalEngineWithNullIfNeeded(
+                *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
 
-        check_access_to_inherited_definition(*inherited);
+            check_access_to_inherited_definition(*inherited);
+        }
     }
 
     if (create.storage)
@@ -3525,9 +3525,6 @@ BlockIO InterpreterCreateQuery::execute()
                 /// a worker resolves a name without a database in its own database, so set ours, as
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
-
-                if (create.storage && create.storage->engine)
-                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
 
                 /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                 /// what the worker builds, not what our settings give
