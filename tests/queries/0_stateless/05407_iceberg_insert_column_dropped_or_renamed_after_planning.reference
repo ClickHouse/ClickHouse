@@ -1,0 +1,21 @@
+drop	Parquet	INCORRECT_DATA	files_unchanged
+drop	Parquet	3
+drop	ORC	INCORRECT_DATA	files_unchanged
+drop	ORC	3
+drop	Avro	INCORRECT_DATA	files_unchanged
+drop	Avro	3
+add	ORC	ok	files_changed
+add	ORC	6
+drop_add	ORC	INCORRECT_DATA	files_unchanged
+drop_add	ORC	3
+drop_add	1
+rename	ORC	INCORRECT_DATA	files_unchanged
+rename	ORC	3
+rename	Avro	INCORRECT_DATA	files_unchanged
+rename	Avro	3
+nested_rename	ORC	INCORRECT_DATA	files_unchanged
+nested_rename	ORC	3
+nested_rename	Avro	INCORRECT_DATA	files_unchanged
+nested_rename	Avro	3
+control	ORC	ok
+control	ORC	6
