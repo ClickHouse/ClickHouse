@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Позволяет подключаться к базе данных [SQLite](https://www.sqlite.org/index.html) и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и SQLite.
 
-<div id="creating-a-database">
-  ## Создание базы данных
-</div>
+## Создание базы данных {#creating-a-database}
 
 ```sql
     CREATE DATABASE sqlite_database
@@ -26,19 +24,15 @@ doc_type: 'reference'
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Поддержка типов данных
-</div>
+## Поддержка типов данных {#data-types-support}
 
 В таблице ниже показано сопоставление типов по умолчанию, когда ClickHouse автоматически определяет схему на основе SQLite:
 
-| SQLite  | ClickHouse                              |
-| ------- | --------------------------------------- |
-| INTEGER | [Int32](/ru/reference/data-types/int-uint) |
-| REAL    | [Float32](/ru/reference/data-types/float)  |
-| TEXT    | [String](/ru/reference/data-types/string)  |
-| TEXT    | [UUID](/ru/reference/data-types/uuid)      |
-| BLOB    | [String](/ru/reference/data-types/string)  |
+| Объявленный тип SQLite               | ClickHouse                                |
+| ------------------------------------ | ----------------------------------------- |
+| Имя типа содержит `INT`              | [`Int64`](/ru/reference/data-types/int-uint) |
+| `REAL`, `FLOAT`, `DOUBLE`            | [`Float64`](/ru/reference/data-types/float)  |
+| Другие типы, включая `TEXT` и `BLOB` | [`String`](/ru/reference/data-types/string)  |
 
 Если вы явно задаёте таблицу с конкретными типами ClickHouse, используя [движок таблицы SQLite](/ru/reference/engines/table-engines/integrations/sqlite), из столбцов SQLite типа TEXT можно разобрать следующие типы ClickHouse:
 
@@ -48,21 +42,17 @@ doc_type: 'reference'
 * [Enum8, Enum16](/ru/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/ru/reference/data-types/decimal)
 * [FixedString](/ru/reference/data-types/fixedstring)
-* Все целочисленные типы ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ru/reference/data-types/int-uint))
+* Все целочисленные типы ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/ru/reference/data-types/int-uint))
 * [Float32, Float64](/ru/reference/data-types/float)
 
 SQLite использует динамическую типизацию, а функции доступа к значениям автоматически выполняют приведение типов. Например, при чтении столбца TEXT как целого числа будет возвращено 0, если текст не удаётся разобрать как число. Это означает, что если для таблицы ClickHouse задан тип, отличный от типа соответствующего столбца SQLite, значения могут молча приводиться к нему вместо того, чтобы вызывать ошибку.
 
-<div id="specifics-and-recommendations">
-  ## Особенности и рекомендации
-</div>
+## Особенности и рекомендации {#specifics-and-recommendations}
 
 SQLite хранит всю базу данных (определения, таблицы, индексы и сами данные) в виде единого кроссплатформенного файла на хост-машине. Во время записи SQLite блокирует весь файл базы данных, поэтому операции записи выполняются последовательно. Операции чтения могут выполняться параллельно.
 SQLite не требует управления службами (например, сценариев запуска) или управления доступом на основе `GRANT` и паролей. Управление доступом осуществляется с помощью прав файловой системы, назначенных самому файлу базы данных.
 
-<div id="usage-example">
-  ## Пример использования
-</div>
+## Пример использования {#usage-example}
 
 База данных ClickHouse, подключенная к SQLite:
 

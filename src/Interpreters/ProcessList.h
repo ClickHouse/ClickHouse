@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
@@ -28,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -37,7 +39,7 @@ namespace DB
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
+class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -78,6 +80,7 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 spillable_memory_bytes;
     ClientInfo client_info;
     bool is_cancelled;
     CancelReason cancel_reason;
@@ -108,9 +111,14 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
+    /// The principal this query runs as; empty when its context has no bound user, as for a query the
+    /// server runs on its own behalf. The name in `client_info` is reusable, so it cannot decide identity.
+    std::optional<UUID> user_id;
+
     /// Acquired workload resources
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
+    mutable std::mutex memory_reservation_mutex;
+    MemoryReservationPtr memory_reservation TSA_GUARDED_BY(memory_reservation_mutex);
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -164,20 +172,20 @@ protected:
 
     struct ExecutorHolder
     {
-        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(IExecutor * e) : executor(e) {}
 
         void cancel();
 
         void remove();
 
-        PipelineExecutor * executor;
+        IExecutor * executor;
         std::mutex mutex;
     };
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
 
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
+    std::unordered_map<IExecutor *, ExecutorHolderPtr> executors;
 
     enum class QueryStreamsStatus : uint8_t
     {
@@ -205,12 +213,14 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
+    const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
+        const std::optional<UUID> & user_id_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
         MemoryReservationPtr && memory_reservation_,
@@ -243,6 +253,7 @@ public:
 
     MemoryReservation * getMemoryReservation() const
     {
+        std::lock_guard lock(memory_reservation_mutex);
         return memory_reservation.get();
     }
 
@@ -277,10 +288,10 @@ public:
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
+    void addPipelineExecutor(IExecutor * e);
 
     /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
+    void removePipelineExecutor(IExecutor * e);
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
@@ -351,15 +362,13 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
-    /// Clears MemoryTracker for the user.
-    /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
-    ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
-    void resetTrackers()
+    /// The amount and the limits are left alone: each query settles what it holds when it ends, and the query
+    /// starting the period writes the limits itself (clearing them here would leave the user unlimited for a moment).
+    void startNewPeriod()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
-        user_memory_tracker.reset();
-        /// Called when the user's last query leaves, so clear the sticky level too - the next query
-        /// must not inherit the previous one's cooldown.
+        user_memory_tracker.resetPeak();
+        /// The query starting the period must not inherit the cooldown left by the previous one.
         user_memory_pressure_monitor.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
@@ -480,6 +489,10 @@ protected:
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
+    /// An unset `expected_user_id` cancels whatever holds the key.
+    CancellationCode sendCancelToQueryImpl(
+        const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id);
+
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
@@ -567,8 +580,20 @@ public:
         return max_waiting_queries_amount.load();
     }
 
+    struct OwnQuery
+    {
+        String user;
+        String query;
+    };
+
+    /// The running query with this id, if it belongs to `user_id`. A query id is unique across users
+    /// while it runs, so the id locates the entry and the user id decides whether it is that user's.
+    std::optional<OwnQuery> tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id);
+
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    /// Cancel it only if it still belongs to `expected_user_id`, since user names are reusable.
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, const UUID & expected_user_id);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
@@ -580,7 +605,8 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    void killAllQueries();
+    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
+    void killAllQueries(bool except_ddl_backups_and_restores = false);
 };
 
 }

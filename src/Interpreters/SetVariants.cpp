@@ -36,7 +36,7 @@ void SetVariantsTemplate<Variant>::init(Type type_)
 }
 
 template <typename Variant>
-size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t num_rows) const
+size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
     requires std::is_same_v<Variant, NonClearableSet>
 {
     chassert(type != Type::EMPTY);
@@ -49,7 +49,7 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         if (type == Type::key_string)
         {
             const auto & offsets = assert_cast<const ColumnString &>(*key_columns.front()).getOffsets();
-            key_bytes = num_rows == 0 ? 0 : offsets[num_rows - 1];
+            key_bytes = num_rows == 0 ? 0 : offsets[start_row + num_rows - 1] - offsets[static_cast<ssize_t>(start_row) - 1];
         }
         else
             key_bytes = num_rows * assert_cast<const ColumnFixedString &>(*key_columns.front()).getN();
@@ -70,29 +70,32 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         }
     };
 
-    switch (type)
-    {
-        case Type::EMPTY: UNREACHABLE();
+    return callOnMethod(estimate);
+}
 
-    #define M(NAME) case Type::NAME: return estimate(*(NAME));
-        APPLY_FOR_SET_VARIANTS(M)
-    #undef M
-    }
-    UNREACHABLE();
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const
+{
+    chassert(type != Type::EMPTY);
+
+    auto estimate = [num_rows, &key_sizes]<typename Method>(const Method &) -> size_t
+    {
+        if constexpr (requires { Method::State::estimatePreparedKeysMemory(num_rows, key_sizes); })
+            return Method::State::estimatePreparedKeysMemory(num_rows, key_sizes);
+        else
+            return 0;
+    };
+
+    return callOnMethod(estimate);
 }
 
 template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 {
-    switch (type)
-    {
-        case Type::EMPTY: return 0;
+    if (empty())
+        return 0;
 
-    #define M(NAME) \
-        case Type::NAME: return (NAME)->data.size();
-        APPLY_FOR_SET_VARIANTS(M)
-    #undef M
-    }
+    return callOnMethod([](const auto & method) -> size_t { return method.data.size(); });
 }
 
 template <typename Variant>
@@ -100,15 +103,8 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
     /// String keys are stored in the string_pool arena, not in the hash table buffer.
     size_t bytes = string_pool.allocatedBytes();
-    switch (type)
-    {
-        case Type::EMPTY: break;
-
-    #define M(NAME) \
-        case Type::NAME: bytes += (NAME)->data.getBufferSizeInBytes(); break;
-        APPLY_FOR_SET_VARIANTS(M)
-    #undef M
-    }
+    if (!empty())
+        bytes += callOnMethod([](const auto & method) -> size_t { return method.data.getBufferSizeInBytes(); });
     return bytes;
 }
 
