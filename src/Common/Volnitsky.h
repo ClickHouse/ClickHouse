@@ -14,7 +14,7 @@
 #include <base/sanitizer_defs.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
-  * http://volnitsky.com/project/str_search/
+  * https://web.archive.org/web/20190930141145/volnitsky.com/project/str_search
   *
   * `haystack` and `needle` can contain zero bytes.
   *
