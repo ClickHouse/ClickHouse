@@ -225,6 +225,10 @@ constexpr size_t MAX_BUCKET_BITS = 12;
 constexpr size_t MIN_BLOCK_SIZE = 16;
 constexpr size_t MAX_BLOCK_CLASS = 6;
 
+/// The arena of the blocks of a stream grows linearly past this size: a stream holds tens of MiB, and the doubling of
+/// the default arena leaves up to half of its last chunk unused.
+constexpr size_t ARENA_LINEAR_GROWTH_THRESHOLD = 1024 * 1024;
+
 /// The rows of one vector register are checked at once to be all equal to the previous row, and skipped then.
 #if defined(__AVX512BW__)
 constexpr size_t DUPLICATES_BLOCK_BYTES = 64;
@@ -530,7 +534,7 @@ private:
         Mode mode = Mode::BoundedSet;
 
         std::vector<Buffer> local_buffers;
-        std::unique_ptr<Arena> arena = std::make_unique<Arena>();
+        std::unique_ptr<Arena> arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         std::array<Block *, MAX_BLOCK_CLASS + 1> free_blocks{};
 
         /// The total number of keys in the buffers, and the number at which they are deduplicated next (see
@@ -772,7 +776,7 @@ private:
 
         stream.local_buffers.clear();
         stream.free_blocks = {};
-        stream.arena = std::make_unique<Arena>();
+        stream.arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         stream.num_buffered = 0;
     }
 
