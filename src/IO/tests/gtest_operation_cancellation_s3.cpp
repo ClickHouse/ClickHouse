@@ -62,10 +62,12 @@ namespace
 class CancellationHTTPHandler final : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit CancellationHTTPHandler(std::atomic_size_t & requests_, bool serve_data_, size_t failures_before_success_)
+    explicit CancellationHTTPHandler(
+        std::atomic_size_t & requests_, bool serve_data_, size_t failures_before_success_, bool wrong_region_)
         : requests(requests_)
         , serve_data(serve_data_)
         , failures_before_success(failures_before_success_)
+        , wrong_region(wrong_region_)
     {
     }
 
@@ -97,6 +99,18 @@ public:
             response.send() << data.substr(begin, end - begin + 1);
             return;
         }
+        if (wrong_region)
+        {
+            const String body = "<Error><Code>AuthorizationHeaderMalformed</Code>"
+                "<Message>Wrong signing region</Message><Region>us-west-2</Region></Error>";
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            response.set("x-amz-bucket-region", "us-west-2");
+            response.setContentType("application/xml");
+            response.setContentLength(body.size());
+            response.setKeepAlive(false);
+            response.send() << body;
+            return;
+        }
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
         response.setContentType("application/xml");
         response.setKeepAlive(false);
@@ -107,26 +121,30 @@ private:
     std::atomic_size_t & requests;
     const bool serve_data;
     const size_t failures_before_success;
+    const bool wrong_region;
 };
 
 class CancellationHTTPFactory final : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    explicit CancellationHTTPFactory(bool serve_data_ = false, size_t failures_before_success_ = std::numeric_limits<size_t>::max())
+    explicit CancellationHTTPFactory(
+        bool serve_data_ = false, size_t failures_before_success_ = std::numeric_limits<size_t>::max(), bool wrong_region_ = false)
         : serve_data(serve_data_)
         , failures_before_success(failures_before_success_)
+        , wrong_region(wrong_region_)
     {
     }
     std::atomic_size_t requests{0};
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
-        return new CancellationHTTPHandler(requests, serve_data, failures_before_success);
+        return new CancellationHTTPHandler(requests, serve_data, failures_before_success, wrong_region);
     }
 
 private:
     const bool serve_data;
     const size_t failures_before_success;
+    const bool wrong_region;
 };
 }
 
@@ -416,6 +434,62 @@ TEST(OperationCancellation, CredentialRetriesRespectCleanupBlocker)
         ThreadStatus::QueryCancellationBlocker cleanup;
         EXPECT_TRUE(config.retryStrategy->ShouldRetry(error, 0));
     }).get();
+}
+
+TEST(OperationCancellation, CancellationPreventsWrongRegionReplay)
+{
+    for (const bool cancel_before_replay : {false, true})
+    {
+        std::async(std::launch::async, [cancel_before_replay]
+        {
+            ThreadStatus status;
+            S3::GetObjectRequest request;
+            request.SetBucket("bucket");
+            request.SetKey("key");
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, [&]
+            {
+                /// Cancel only after `doRequest` has handled the wrong-region response.
+                return cancel_before_replay && request.getRegionOverride() == "us-west-2"
+                    ? CancellationRequest::StopWork : CancellationRequest::None;
+            });
+            ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
+            Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+            Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1, /*wrong_region=*/true);
+            auto & counters = static_cast<CancellationHTTPFactory &>(*factory);
+            Poco::Net::HTTPServer server(factory, socket, new Poco::Net::HTTPServerParams);
+            server.start();
+            SCOPE_EXIT({ server.stopAll(true); });
+            RemoteHostFilter filter;
+            auto config = S3::ClientFactory::instance().createClientConfiguration(
+                "us-east-1", filter, 3, {.max_retries = 0}, false, false, false, false, {}, {}, "http");
+            config.per_request_configuration = {};
+            config.error_report = {};
+            /// Disable SDK retries: the second request must come from the wrong-region branch in `doRequest`.
+            config.retryStrategy = std::make_shared<S3::Client::RetryStrategy>(config.retry_strategy);
+            config.endpointOverride = fmt::format("127.0.0.1:{}", socket.address().port());
+            auto client = S3::Client::create(
+                3, {}, std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test", "test"), config,
+                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, {.use_virtual_addressing = false});
+
+            if (cancel_before_replay)
+            {
+                try
+                {
+                    client->GetObject(request);
+                    ADD_FAILURE() << "Cancelled wrong-region replay must throw";
+                }
+                catch (const Exception & exception)
+                {
+                    EXPECT_EQ(exception.code(), ErrorCodes::ABORTED);
+                }
+            }
+            else
+                EXPECT_TRUE(client->GetObject(request).IsSuccess());
+
+            EXPECT_EQ(request.getRegionOverride(), "us-west-2");
+            EXPECT_EQ(counters.requests.load(), cancel_before_replay ? 1u : 2u);
+        }).get();
+    }
 }
 
 TEST(OperationCancellation, CleanupRespectsZeroRetries)
