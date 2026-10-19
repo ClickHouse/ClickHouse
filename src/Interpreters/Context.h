@@ -652,11 +652,8 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
-    /// True when positional arguments in the outer query have already been resolved by the
-    /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
-    /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
-    /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
-    /// so view-inner queries on the same node are unaffected.
+    /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
+    /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
     bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
@@ -2007,6 +2004,8 @@ public:
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
+    /// For a query that is not printed from the resolved query tree: `context`, or its copy with the flag reset.
+    static ContextPtr withUnresolvedPositionalArguments(const ContextPtr & context);
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
