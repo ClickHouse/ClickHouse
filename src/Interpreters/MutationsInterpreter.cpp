@@ -8,6 +8,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -782,6 +783,10 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
 
         RequiredSourceColumnsVisitor::Data required_columns;
         auto expression = column_default->expression->clone();
+        /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column, as in `TreeRewriter::normalize`.
+        Aliases aliases;
+        MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+        MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
         RequiredSourceColumnsVisitor(required_columns).visit(expression);
         for (const auto & required : required_columns.requiredColumns())
         {
