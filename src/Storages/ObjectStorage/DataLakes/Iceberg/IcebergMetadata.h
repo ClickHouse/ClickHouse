@@ -259,8 +259,6 @@ private:
 
     mutable std::mutex cached_latest_metadata_mutex;
     mutable std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata TSA_GUARDED_BY(cached_latest_metadata_mutex);
-    UInt64 cached_latest_metadata_lookup_id TSA_GUARDED_BY(cached_latest_metadata_mutex) = 0;
-    UInt64 last_metadata_lookup_id TSA_GUARDED_BY(cached_latest_metadata_mutex) = 0;
 
     Iceberg::MetadataFileWithInfo fetchLatestMetadata(const ContextPtr & context, bool force_fetch_latest_metadata) const;
 

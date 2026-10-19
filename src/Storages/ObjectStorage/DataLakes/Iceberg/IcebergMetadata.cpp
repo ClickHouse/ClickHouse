@@ -257,27 +257,16 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
 void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 {
     explicit_metadata_file_path.set(std::make_unique<const String>(path));
-    std::lock_guard lock(cached_latest_metadata_mutex);
-    cached_latest_metadata.reset();
-    cached_latest_metadata_lookup_id = ++last_metadata_lookup_id;
 }
 
 void IcebergMetadata::update(const ContextPtr & context)
 {
-    UInt64 lookup_id = 0;
-    {
-        std::lock_guard lock(cached_latest_metadata_mutex);
-        lookup_id = ++last_metadata_lookup_id;
-    }
     auto latest_metadata = fetchLatestMetadata(context, /* force_fetch_latest_metadata */ false);
     FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_before_publish);
     {
         std::lock_guard lock(cached_latest_metadata_mutex);
-        if (lookup_id > cached_latest_metadata_lookup_id)
-        {
+        if (!cached_latest_metadata || cached_latest_metadata->version <= latest_metadata.version)
             cached_latest_metadata = std::move(latest_metadata);
-            cached_latest_metadata_lookup_id = lookup_id;
-        }
     }
     FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_after_publish);
 }
@@ -307,7 +296,8 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    if (!force_fetch_latest_metadata)
+    if (!force_fetch_latest_metadata && !explicit_metadata_file_path.get()
+        && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         std::optional<Iceberg::MetadataFileWithInfo> latest_metadata;
         {
