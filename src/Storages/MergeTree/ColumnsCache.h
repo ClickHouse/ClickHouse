@@ -328,6 +328,10 @@ public:
     /// ones the recheck has to leave alone, see `removeStaleEntries`.
     std::function<void()> on_entries_inserted_for_test;
 
+    /// Test seam: `setMany` calls this after it has checked the residency of an entry it inserted and
+    /// recorded its stripe again, before it checks the next one. Another thread can evict entries there.
+    std::function<void()> on_residency_checked_for_test;
+
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 

@@ -359,33 +359,40 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
     /// the space left by the protected segment, even when it is within the overall size limit.
     /// In that case the eviction callback has already reset the bit.
-    std::vector<bool> resident(keys.size());
-    for (size_t i = 0; i < keys.size(); ++i)
-        resident[i] = shardOf(keys[i]).contains(keys[i]);
-
+    ///
+    /// A stale writer of the same stripe, racing this call, releases the bucket of the stripe when
+    /// it takes its own entry back out - see below - and the bucket has to be there for every entry
+    /// the cache holds, or `removePart` would walk past this one and leave it resident for a part
+    /// that is gone. So the stripe of every resident entry is recorded again. Recording it costs a
+    /// lookup in a hash set that holds it already in every other case.
+    ///
+    /// The residency is checked and the stripe recorded under the mutex of the shard, then
+    /// `index_mutex` - the order `onEntryRemoval` uses: an eviction of the entry by another thread,
+    /// such as a resize, happens either before, and the entry is not resident, or after, and the
+    /// eviction callback resets the bit. Recorded from a residency sampled earlier, the bucket of
+    /// an entry evicted in between would stay in the index with no entry in any shard.
+    ///
     /// An invalidation can have happened between the check above and the insertion. The entries
     /// are then stale and nobody will look them up under this schema identity, but they would
     /// hold their memory until the eviction reaches them, so take them out right away.
+    std::vector<bool> resident(keys.size());
     bool stale = false;
+    for (size_t i = 0; i < keys.size() && !stale; ++i)
     {
-        std::lock_guard lock(index_mutex);
-        stale = currentGeneration(table_uuid) != expected_table_generation;
-
-        /// A stale writer of the same stripe, racing this call, releases the bucket of the
-        /// stripe when it takes its own entry back out - see below - and the bucket has to be
-        /// there for every entry the cache holds, or `removePart` would walk past this one and
-        /// leave it resident for a part that is gone. Recording it again costs a lookup in a
-        /// hash set that holds it already in every other case.
-        if (!stale)
+        resident[i] = shardOf(keys[i]).doIfContains(keys[i], [&]
         {
-            for (size_t i = 0; i < keys.size(); ++i)
+            std::lock_guard lock(index_mutex);
+            if (currentGeneration(table_uuid) != expected_table_generation)
             {
-                if (!resident[i])
-                    continue;
-                const auto & entry = *to_store[i];
-                part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
+                stale = true;
+                return;
             }
-        }
+            const auto & entry = *to_store[i];
+            part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
+        });
+
+        if (on_residency_checked_for_test)
+            on_residency_checked_for_test();
     }
 
     if (stale)

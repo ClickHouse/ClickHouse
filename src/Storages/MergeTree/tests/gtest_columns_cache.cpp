@@ -713,3 +713,33 @@ TEST(ColumnsCache, MemoryLimitDuringInsertionAndEvictionKeepsTheCacheConsistent)
     EXPECT_EQ(cache.containsPart(second.table_uuid, second.part), has_second);
     EXPECT_TRUE(has_second);
 }
+
+TEST(ColumnsCache, EvictionDuringTheResidencyCheckLeavesNoIndexBehind)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    for (size_t stripe = 0; stripe < 4; ++stripe)
+        entries.push_back(makeEntry(c, stripe, stripe * 8, stripe * 8 + 8));
+
+    /// After the residency of the first entry is checked, the cache is shrunk to nothing, as a resize
+    /// by another thread would do: every entry is evicted, also those that were found resident.
+    bool shrunk = false;
+    cache.on_residency_checked_for_test = [&]
+    {
+        if (shrunk)
+            return;
+        shrunk = true;
+        cache.setConfiguredMaxSizeInBytes(0);
+    };
+    cache.setMany(entries, generation);
+    cache.on_residency_checked_for_test = nullptr;
+
+    EXPECT_TRUE(shrunk);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_EQ(cache.sizeInBytes(), 0u);
+    /// No entry of the part is in the cache, so neither is the part in the index.
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, c.part));
+}

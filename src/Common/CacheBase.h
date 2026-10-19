@@ -168,6 +168,18 @@ public:
         return cache_policy->contains(key);
     }
 
+    /// If the key is in the cache, calls func() under the mutex of the cache, so that the entry cannot be
+    /// evicted meanwhile, and returns true. Like `contains`, does not change the priority of the entry.
+    template <typename Func>
+    bool doIfContains(const Key & key, Func && func) const
+    {
+        std::lock_guard lock(mutex);
+        if (!cache_policy->contains(key))
+            return false;
+        func();
+        return true;
+    }
+
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
