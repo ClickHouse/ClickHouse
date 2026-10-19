@@ -722,7 +722,9 @@ def main():
     headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
         r.is_ok() for r in results if r.name != relocation_headroom.NAME
     )
-    Result.create_from(results=results, files=files).complete_job(do_not_block_pipeline_on_failure=headroom_only)
+    Result.create_from(results=results, files=files).complete_job(
+        do_not_block_pipeline_on_failure=headroom_only, do_not_cache=any(r.do_not_cache() for r in results)
+    )
 
 
 if __name__ == "__main__":

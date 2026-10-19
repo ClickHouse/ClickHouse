@@ -12,6 +12,7 @@ import gzip
 import json
 import struct
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -67,7 +68,9 @@ def headroom(path):
 
 
 def master_baseline(info):
-    """(commit, headroom) of the nearest commit of this run's master chain whose job reported it, else (None, {})."""
+    """(commit, headroom, None) of the nearest commit of this run's master chain whose job reported it, else
+    (None, {}, the last lookup error other than a missing report)."""
+    error = None
     for i, sha in enumerate((info.get_kv_data("master_track_commits_sha") or [])[:MASTER_COMMITS_TO_TRY]):
         try:
             endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]
@@ -80,10 +83,13 @@ def master_baseline(info):
             for result in json.loads(data).get("results", []):
                 if result.get("name") == NAME and result.get("ext", {}).get("relocation_headroom"):
                     behind = f", {i} commits before this run's master parent" if i else ""
-                    return f"{sha[:12]}{behind}", result["ext"]["relocation_headroom"]
+                    return f"{sha[:12]}{behind}", result["ext"]["relocation_headroom"], None
         except Exception as e:
             print(f"No relocation headroom of master {sha}: {e}")
-    return None, {}
+            # The bucket is not listable, so S3 answers 403 for a missing report.
+            if not (isinstance(e, urllib.error.HTTPError) and e.code in (403, 404)):
+                error = e
+    return None, {}, error
 
 
 def check(build_dir, info):
@@ -91,7 +97,7 @@ def check(build_dir, info):
         measured = {binary: headroom(f"{build_dir}/{binary}") for binary in BINARIES}
     except Exception as e:
         return Result(name=NAME, status=Result.Status.ERROR, info=f"Failed to read the section headers: {e}")
-    base_commit, base = master_baseline(info)
+    base_commit, base, error = master_baseline(info)
     lines = [
         "MiB left of the 2 GiB reach of 32-bit PC-relative references"
         + (f", change vs master {base_commit}" if base_commit else ", no master baseline")
@@ -114,25 +120,28 @@ def check(build_dir, info):
             f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB:"
             " shrink the code or the data before the link fails, see #126314"
         )
-    ok = True
+    status, allowed = Result.Status.OK, False
     if decreases and max(decreases)[0] > MAX_DECREASE_MIB * MIB:
         decrease, binary, name = max(decreases)
         lines.append(f"{binary} ({name}) decreased by {decrease / MIB:.2f} MiB, more than {MAX_DECREASE_MIB} MiB")
         if info.pr_number > 0:
-            ok = ALLOW_DECREASE_LABEL in info.pr_labels
+            allowed = ALLOW_DECREASE_LABEL in info.pr_labels
+            status = Result.Status.OK if allowed else Result.Status.FAIL
             lines.append(
                 f"Allowed by the `{ALLOW_DECREASE_LABEL}` label"
-                if ok
+                if allowed
                 else f"If this is expected, add the `{ALLOW_DECREASE_LABEL}` label and push or re-run all jobs"
             )
+    if info.pr_number > 0 and error:
+        status = Result.Status.ERROR
+        lines.append(f"Failed to read the master baseline, re-run the job: {error}")
     text = "\n".join(lines)
     print(text)
-    return Result(
-        name=NAME,
-        status=Result.Status.OK if ok else Result.Status.FAIL,
-        info=text,
-        ext={"relocation_headroom": measured},
-    )
+    ext = {"relocation_headroom": measured}
+    # The label is not a build digest input, so a later commit must not reuse a success that only the label allowed.
+    if allowed:
+        ext["do_not_cache"] = True
+    return Result(name=NAME, status=status, info=text, ext=ext)
 
 
 if __name__ == "__main__":
