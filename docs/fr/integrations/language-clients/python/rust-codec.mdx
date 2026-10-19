@@ -21,9 +21,9 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Des wheels Core sont publiés pour CPython 3.10 à 3.14 ainsi que pour CPython 3.14t en mode free-threaded, sous Linux, macOS et Windows. Sous Python free-threaded, l&#39;importation de l&#39;extension Core ne réactive pas le GIL.
+Des wheels Core sont publiés pour CPython 3.10 à 3.15 ainsi que pour CPython 3.14t et 3.15t en mode free-threaded, sous Linux, macOS et Windows. Sous Python free-threaded, l&#39;importation de l&#39;extension Core ne réactive pas le GIL.
 
-La sortie NumPy et Pandas standard en Rust ne nécessite ni PyArrow ni aucun autre paquet Arrow. Cela concerne `query_np`, `query_df`, leurs variantes en streaming, ainsi que `query(..., use_numpy=True)`. Les requêtes NumPy ne nécessitent pas Pandas. Ajoutez l&#39;extra `async` pour utiliser le client asynchrone.
+La sortie NumPy et Pandas standard en Rust ne nécessite ni PyArrow ni aucun autre paquet Arrow. Cela concerne `query_np`, `query_df`, leurs variantes de streaming, ainsi que `query(..., use_numpy=True)`. Les requêtes NumPy ne nécessitent pas Pandas. Ajoutez l&#39;extra `async` pour utiliser le client asynchrone.
 
 PyArrow reste nécessaire pour les méthodes Arrow et le stockage Pandas basé sur Arrow. Installez l&#39;extra `arrow` pour bénéficier de ces fonctionnalités :
 
@@ -81,25 +81,29 @@ Les appels `query()` bufferisés portant sur des résultats très larges ou enti
 
 Évaluez les performances sur votre propre charge de travail avant d&#39;adopter le codec. Utilisez `native_codec="rust_strict"` pendant vos mesures afin qu&#39;une option non prise en charge ou une dépendance manquante lève une erreur au lieu de rediriger silencieusement la requête vers Python.
 
-## Règles de fallback {#fallback-rules}
+## Règles de repli {#fallback-rules}
 
-Les décisions de fallback sont prises avant que le moindre octet ne soit lu ou envoyé : aucun changement de codec ne survient donc en cours de stream. Pour les requêtes, le choix intervient avant la consommation du response body. Pour les insertions, l&#39;encodeur Rust n&#39;est retenu que si tous les types de colonnes sont pris en charge ; sinon, l&#39;insertion s&#39;exécute intégralement avec le codec Python.
+Les décisions de repli sont prises avant que le moindre octet ne soit lu ou envoyé : aucun changement de codec ne survient donc en cours de stream. Pour les requêtes, le choix intervient avant la consommation du response body. Pour les insertions, l&#39;encodeur Rust n&#39;est retenu que si tous les types de colonnes sont pris en charge ; sinon, l&#39;insertion s&#39;exécute intégralement avec le codec Python.
 
-Lorsque `naive_datetime_insert="server"` est actif, `rust` route vers le codec Python toute insertion contenant une colonne `DateTime` ou `DateTime64`, afin que la timezone déclarée de la colonne ou la server timezone soit appliquée. `rust_strict` rejette cette combinaison. Le mode par défaut `naive_datetime_insert="local"` continue d&#39;utiliser l&#39;encodeur Rust.
+Lorsque `naive_datetime_insert="server"` est actif, `rust` route vers le codec Python toute insertion contenant une colonne `DateTime` ou `DateTime64`, afin que le fuseau horaire déclaré de la colonne ou le fuseau horaire du serveur soit appliqué. `rust_strict` rejette cette combinaison. Le mode par défaut `naive_datetime_insert="local"` continue d&#39;utiliser l&#39;encodeur Rust.
 
-Les requêtes de metadata internes au driver, y compris les statements de reflection du dialect SQLAlchemy, passent toujours par le codec Python, de façon silencieuse, quel que soit le mode.
+Les requêtes Python par lignes et par colonnes (`query`, `query_row_block_stream`, `query_column_block_stream` et `query_rows_stream`) dont les colonnes `DateTime` ou `DateTime64` sans fuseau horaire sont rendues dans un fuseau horaire ambiant autre que UTC (le fuseau horaire du serveur ou le fuseau horaire local) utilisent le codec Rust lorsque le core installé le prend en charge. Les valeurs obtenues sont identiques à celles du codec Python. Le fuseau horaire local n&#39;est admissible que s&#39;il se résout en un nom IANA, c&#39;est-à-dire si `TZ` est défini ou si `tzlocal` est installé. Dans le cas contraire, il s&#39;agit d&#39;un décalage fixe sans nom IANA, et la requête est acheminée vers le codec Python. Les requêtes NumPy et Pandas (`query_np`, `query_df` et leurs variantes de streaming) avec un fuseau horaire ambiant autre que UTC, ainsi que les requêtes qui définissent `query_tz`, `column_tzs` ou un `tz_mode` autre que par défaut, ou qui reçoivent un en-tête de fuseau horaire du serveur, sont toujours acheminées vers le codec Python. `rust_strict` rejette ces cas.
+
+Les requêtes de métadonnées internes au driver, y compris les statements de reflection du dialect SQLAlchemy, passent toujours par le codec Python, de façon silencieuse, quel que soit le mode.
 
 Les payloads Native malformés détectés par le codec Rust lèvent `DataError`.
 
 ## Versioning {#versioning}
 
-`clickhouse-connect-core` est versionné indépendamment de `clickhouse-connect`. L&#39;extra `rust` requiert `clickhouse-connect-core>=0.2.1,<0.3`. Le driver vérifie à la fois la version de l&#39;API de binding et la capability column-buffer lorsqu&#39;un codec Rust est sélectionné. Le wheel core 0.2.0 publié ne dispose pas de la capability column-buffer. Si le wheel installé est incompatible, la création du client lève une `NotSupportedError` pour `rust` comme pour `rust_strict`, indiquant la commande d&#39;upgrade suivante :
+`clickhouse-connect-core` est versionné indépendamment de `clickhouse-connect`. L&#39;extra `rust` requiert `clickhouse-connect-core>=0.2.1,<0.3`. Le driver vérifie à la fois la version de l&#39;API de binding et la capability column-buffer lorsqu&#39;un codec Rust est sélectionné. Le wheel core 0.2.0 publié ne dispose pas de la capability column-buffer. Si le wheel installé est incompatible, la création du client lève une `NotSupportedError` pour `rust` comme pour `rust_strict`, indiquant la commande de mise à niveau suivante :
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
 Les corrections et les améliorations de performances du codec compilé sont livrées dans les releases de `clickhouse-connect-core` et peuvent être obtenues par une simple mise à niveau vers un wheel core compatible. Les modifications de l&#39;intégration Rust du driver nécessitent en revanche une mise à niveau de `clickhouse-connect`.
+
+La prise en charge par Rust des requêtes Python en lignes et en colonnes dans des fuseaux horaires ambiants autres que UTC nécessite `clickhouse-connect>=1.11.0` et `clickhouse-connect-core>=0.2.3`. Mettez à niveau les deux paquets pour en bénéficier. Avec les versions core compatibles plus anciennes, le repli Python existant est conservé en mode `rust`, et le rejet en mode `rust_strict`.
 
 ## Différences de comportement connues {#known-behavior-differences}
 

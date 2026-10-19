@@ -32,7 +32,7 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 
 | 组件         | 支持的版本                                                                                                                                                |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python     | 3.10 至 3.14。实验性支持 3.14t 这类 free-threaded 构建。                                                                                                         |
+| Python     | 3.10 至 3.15。实验性支持 3.14t 和 3.15t 这类 free-threaded 构建。                                                                                                 |
 | ClickHouse | 当前仍受支持的 ClickHouse 发行版。CI 会针对[此处列出的长期支持版和稳定版本发行系列](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json)进行测试。 |
 | SQLAlchemy | 同步 dialect 需要 1.4.40 或更高版本 (低于 3.0) ；异步 dialect 需要 2.0.44 或更高版本 (低于 3.0) 。                                                                           |
 | Pandas     | 2.x 和 3.x                                                                                                                                            |
@@ -40,7 +40,7 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 | aiohttp    | 3.9 或更高版本                                                                                                                                            |
 | 平台         | Linux、macOS 和 Windows，支持范围限于各 Python 版本已发布 wheel 的架构                                                                                                 |
 
-该软件包在可用时会提供已编译的 wheel；如果无法构建 Cython 扩展，则会回退为纯 Python 实现。PyArrow 支持 Python 3.10 至 3.14。Python 3.14 需要 PyArrow 22 或更高版本。
+该软件包在可用时会提供已编译的 wheel；如果无法构建 Cython 扩展，则会回退为纯 Python 实现。PyArrow 支持 Python 3.10 至 3.15。Python 3.14 需要 PyArrow 22 或更高版本，Python 3.15 需要 PyArrow 26 或更高版本。`lz4` 目前尚未发布适用于 CPython 3.15 或 free-threaded 构建的 wheel，因此在 Python 3.15 或 free-threaded Python 上安装时，会从源码构建 `lz4`，此时需要 C 编译器。
 
 ## 安装 {#installation}
 
