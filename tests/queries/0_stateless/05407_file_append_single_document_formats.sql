@@ -32,6 +32,14 @@ INSERT INTO t_protobuf_single VALUES (11, 'b'); -- { serverError CANNOT_APPEND_T
 SELECT 'ProtobufSingle', * FROM t_protobuf_single;
 DROP TABLE t_protobuf_single;
 
+DROP TABLE IF EXISTS t_protobuf;
+CREATE TABLE t_protobuf (id UInt64, s String) ENGINE = File(Protobuf)
+SETTINGS format_schema_source = 'string', format_schema = 'syntax = "proto3"; message M05407 { uint64 id = 1; string s = 2; }', format_schema_message_name = 'M05407';
+INSERT INTO t_protobuf VALUES (1, 'a');
+INSERT INTO t_protobuf VALUES (11, 'b');
+SELECT 'Protobuf', * FROM t_protobuf ORDER BY id;
+DROP TABLE t_protobuf;
+
 DROP TABLE IF EXISTS t_json_each_row;
 CREATE TABLE t_json_each_row (id UInt64, s String) ENGINE = File(JSONEachRow);
 INSERT INTO t_json_each_row VALUES (1, 'a');
