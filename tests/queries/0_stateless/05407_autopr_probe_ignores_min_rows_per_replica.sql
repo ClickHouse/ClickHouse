@@ -6,6 +6,8 @@ SET enable_analyzer=1;
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET query_plan_optimize_join_order_randomize=0;
+-- Don't let the min-bytes gate skip the small reads before the plan with parallel replicas is built.
+SET automatic_parallel_replicas_min_bytes_per_replica=0;
 SET use_query_condition_cache=0;
 
 CREATE TABLE sales (d Date, item UInt32, order_id UInt64) ENGINE = MergeTree ORDER BY (d, item);
@@ -66,7 +68,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Each query is compared with the same query without the setting.
 SELECT q.log_comment,
-    q.ProfileEvents['AutoParallelReplicasPlanBuildMicroseconds'] > 0 AS plan_built,
+    q.ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS plan_built,
     q.ProfileEvents['AutoParallelReplicasPlanWithoutParallelReplicas'] AS plan_without_parallel_replicas,
     q.ProfileEvents['IndexAnalysisRounds'] = base.ProfileEvents['IndexAnalysisRounds'] AS same_index_analysis
 FROM system.query_log AS q, system.query_log AS base
