@@ -4307,11 +4307,14 @@ namespace
                             nested_field_descriptor->full_name());
                     }
 
+                    /// Remove the descriptor on every exit, including skipping an unsupported field,
+                    /// so that `unresolved_descriptors` contains only the chain of fields leading to the current one.
+                    SCOPE_EXIT({ unresolved_descriptors.erase(nested_field_descriptor); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         nested_field_descriptor, skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         return std::nullopt;
-                    unresolved_descriptors.erase(nested_field_descriptor);
                     return NameAndTypePair{fmt::format("{}_{}", field_descriptor->name(), nested_name_and_type->name), nested_name_and_type->type};
                 }
 
@@ -4328,11 +4331,12 @@ namespace
                             "ClickHouse doesn't support type recursion ({})",
                             message_descriptor->field(i)->full_name());
                     }
+                    SCOPE_EXIT({ unresolved_descriptors.erase(message_descriptor->field(i)); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         message_descriptor->field(i), skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         continue;
-                    unresolved_descriptors.erase(message_descriptor->field(i));
                     nested_types.push_back(nested_name_and_type->type);
                     nested_names.push_back(nested_name_and_type->name);
                 }

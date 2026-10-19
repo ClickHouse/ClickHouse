@@ -59,3 +59,14 @@ run_desc $DEPTH 2>&1 | check_too_deep
 run_write 3 | od -An -tx1 -v | tr -d ' \n'
 echo
 run_write $DEPTH 2>&1 | check_too_deep
+
+# Unsupported fields skipped during schema inference must not count as nesting levels:
+# a shallow message with many skipped fields of an empty message type.
+SHALLOW_SCHEMA=$(python3 -c "
+print('syntax = \"proto3\"; message E {} message Inner {' + ' '.join('E e{}={};'.format(i, i + 1) for i in range(1500)) + ' uint32 x=1501;} message Root {Inner m=1;}')
+")
+${CLICKHOUSE_LOCAL} --query "
+DESC format(Protobuf, '')
+SETTINGS format_schema_source = 'string', format_schema = '$SHALLOW_SCHEMA', format_schema_message_name = 'Root',
+    input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference = 1
+"
