@@ -328,6 +328,11 @@ private:
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
     bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
+    /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
+    /// run's value repeated for its rows. The nulls are those of the values.
+    ColumnPtr decodeRunEndEncoded(
+        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map);
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
