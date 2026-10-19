@@ -1934,7 +1934,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 void addWindowSteps(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     WindowAnalysisResult & window_analysis_result,
-    size_t max_step_description_length)
+    const SelectQueryOptions & select_query_options)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1959,9 +1959,13 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+            /// A single stream needs no reshuffle between windows with different partitioning. A cacheable
+            /// logical plan is reused with any thread count (`max_threads` is not part of the query plan
+            /// cache key, and the effective count also depends on free memory and CPU slots), so it
+            /// always keeps the reshuffle, which is merely redundant when the plan runs in one stream.
+            const bool single_stream = !select_query_options.cacheable_logical_plan && getEffectiveMaxThreads(settings) == 1;
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+                || (!single_stream && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
         SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
@@ -1993,7 +1997,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 scatter_partition_by,
                 0 /*limit*/,
                 sort_settings);
-            sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
+            sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", select_query_options.max_step_description_length);
             query_plan.addStep(std::move(sorting_step));
         }
 
@@ -2004,7 +2008,7 @@ void addWindowSteps(QueryPlan & query_plan,
 
         auto window_step
             = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out, sort_settings);
-        window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
+        window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", select_query_options.max_step_description_length);
         query_plan.addStep(std::move(window_step));
     }
 }
@@ -3296,7 +3300,7 @@ void Planner::buildPlanForQueryNode()
                         "Before window functions",
                         useful_sets);
 
-                addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
+                addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options);
             }
 
             if (expression_analysis_result.hasQualify())
