@@ -102,4 +102,22 @@ inline bool maskPresignedURLParameters(std::string & url)
     return true;
 }
 
+/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
+  * presigned-URL query parameters. Returns whether anything was masked.
+  *
+  * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
+  * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
+  * one URL, not a URL embedded in a longer string.
+  */
+inline bool maskURICredentials(std::string & url)
+{
+    /// This release has no `maskURIUserinfo`; this is the regular expression it replaced. The userinfo
+    /// is taken greedily up to the last at-sign before the path, so a password that itself contains an
+    /// at-sign is masked whole.
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    bool masked = RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+    masked |= maskPresignedURLParameters(url);
+    return masked;
+}
+
 }
