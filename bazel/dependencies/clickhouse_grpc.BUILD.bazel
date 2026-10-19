@@ -727,10 +727,6 @@ _GENERATED_COPTS_0 = [
 ]
 
 _GENERATED_LOCAL_INCLUDES_0 = [
-    repository_local_include(
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "contrib/grpc",
-    ),
 ]
 
 _GENERATED_DEPS_1 = [
@@ -772,6 +768,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -2700,6 +2697,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
@@ -2741,10 +2739,6 @@ ch_cc_library(
         repository_local_include("contrib/openssl-cmake/common/include", "contrib/grpc"),
         repository_local_include(
             repository_path("contrib/openssl") + "/include",
-            "contrib/grpc",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/grpc",
         ),
     ]),
@@ -4792,6 +4786,7 @@ ch_cc_library(
     )) + [
     ]),
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
@@ -4830,10 +4825,6 @@ ch_cc_library(
             "contrib/grpc",
         ),
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/grpc"),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/grpc",
-        ),
     ]),
     deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
     alwayslink = False,
@@ -4971,6 +4962,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5036,6 +5028,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5097,6 +5090,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5146,6 +5140,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5189,6 +5184,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5260,6 +5256,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5311,6 +5308,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5356,6 +5354,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5409,6 +5408,7 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,

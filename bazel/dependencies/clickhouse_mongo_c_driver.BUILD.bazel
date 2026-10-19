@@ -275,6 +275,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/mongo-c-driver") + "/src/common/src/src",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "BSON_COMPILATION",
@@ -300,10 +301,6 @@ ch_cc_library(
             "config/aarch64/contrib/mongo-c-driver/src/common/src",
         ],
     }) + [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/mongo-c-driver",
-        ),
     ]),
     textual_hdrs = [":src/common/src/mlib/vec.th"],
     deps = [
@@ -435,6 +432,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "MONGOC_COMPILATION",
@@ -482,10 +480,6 @@ ch_cc_library(
             "contrib/mongo-c-driver",
         ),
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/mongo-c-driver"),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/mongo-c-driver",
-        ),
     ]),
     textual_hdrs = [":src/libmongoc/src/mongoc/mongoc-counters.defs"],
     deps = [

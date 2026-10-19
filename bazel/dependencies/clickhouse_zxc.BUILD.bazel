@@ -42,6 +42,7 @@ ch_cc_library(
     ] + []) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -52,10 +53,6 @@ ch_cc_library(
     ],
     local_includes = [
         "include",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/zxc",
-        ),
     ],
     deps = ([
         "@llvm-project//compiler-rt:headers",
@@ -131,10 +128,6 @@ _GENERATED_COPTS_1 = select({
 
 _GENERATED_LOCAL_INCLUDES_0 = select({
     "@platforms//cpu:x86_64": [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/zxc",
-        ),
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -182,6 +175,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_1,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -249,6 +246,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_2,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -267,10 +268,6 @@ _GENERATED_LOCAL_DEFINES_2 = [
 ]
 
 _GENERATED_LOCAL_INCLUDES_1 = [
-    repository_local_include(
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "contrib/zxc",
-    ),
 ]
 
 _GENERATED_DEPS_3 = [
@@ -302,6 +299,7 @@ ch_cc_library(
     ] + []) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
@@ -344,6 +342,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_1,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -380,6 +382,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_2,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -406,6 +412,7 @@ ch_cc_library(
     ] + []) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
@@ -448,6 +455,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_1,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -484,6 +495,10 @@ ch_cc_library(
         "x86_64",
     ],
     copts = _GENERATED_COPTS_2,
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -510,6 +525,7 @@ ch_cc_library(
     ] + []) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,

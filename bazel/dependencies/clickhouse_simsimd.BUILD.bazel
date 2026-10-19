@@ -27,6 +27,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "SIMSIMD_DYNAMIC_DISPATCH",
@@ -40,10 +41,6 @@ ch_cc_library(
     ],
     local_includes = [
         "include",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/SimSIMD",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

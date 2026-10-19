@@ -126,10 +126,6 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
             repository_path("contrib/openssl") + "/include",
             "contrib/aws-c-io",
         ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/aws-c-io",
-        ),
     ]),
     "@platforms//cpu:aarch64": (([
         repository_local_include(
@@ -209,10 +205,6 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
         repository_local_include("contrib/openssl-cmake/common/include", "contrib/aws-c-io"),
         repository_local_include(
             repository_path("contrib/openssl") + "/include",
-            "contrib/aws-c-io",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/aws-c-io",
         ),
     ]),
@@ -836,6 +828,7 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -1036,6 +1029,7 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",

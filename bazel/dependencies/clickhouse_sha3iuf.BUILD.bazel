@@ -30,6 +30,7 @@ ch_cc_library(
         "-w",
         "-std=gnu99",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -39,10 +40,6 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/SHA3IUF",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

@@ -97,13 +97,10 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib/common",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/zstd",
-        ),
     ],
     deps = _GENERATED_DEPS_0,
     alwayslink = False,

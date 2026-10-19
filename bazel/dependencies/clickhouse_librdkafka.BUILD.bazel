@@ -1467,6 +1467,7 @@ ch_cc_library(
             "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/aarch64/contrib/cyrus-sasl-cmake",
         ],
     })),
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
@@ -1530,10 +1531,6 @@ ch_cc_library(
         repository_local_include("base/poco/Util/include", "contrib/librdkafka"),
         repository_local_include("base/poco/JSON/include", "contrib/librdkafka"),
         repository_local_include("base/poco/XML/include", "contrib/librdkafka"),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/librdkafka",
-        ),
     ]),
     deps = _GENERATED_DEPS_0,
     alwayslink = False,

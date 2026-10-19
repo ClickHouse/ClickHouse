@@ -1701,6 +1701,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = (select({
@@ -1824,10 +1825,6 @@ ch_cc_library(
             "contrib/arrow",
         ),
         repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/arrow"),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/arrow",
-        ),
     ]),
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = ((_GENERATED_DEPS_0 + [

@@ -81,6 +81,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "HAVE_CONFIG_H=1",
@@ -97,10 +98,6 @@ ch_cc_library(
         "src/lib",
         "include",
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/c-ares"),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/c-ares",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

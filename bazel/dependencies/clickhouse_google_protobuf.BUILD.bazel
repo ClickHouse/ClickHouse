@@ -1167,6 +1167,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
@@ -1192,10 +1193,6 @@ ch_cc_library(
     }) + [
         repository_local_include(
             repository_path("contrib/abseil-cpp"),
-            "contrib/google-protobuf",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/google-protobuf",
         ),
     ]),
@@ -1605,13 +1602,10 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/google-protobuf",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -1659,15 +1653,12 @@ ch_cc_library(
     )) + [
     ]),
     copts = _GENERATED_COPTS_0,
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         repository_local_include(
             repository_path("contrib/abseil-cpp"),
-            "contrib/google-protobuf",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/google-protobuf",
         ),
     ],

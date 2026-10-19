@@ -150,6 +150,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/jemalloc") + "/include",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "JEMALLOC_NO_PRIVATE_NAMESPACE",
@@ -170,10 +171,6 @@ ch_cc_library(
             "config/aarch64/contrib/jemalloc-cmake/include_linux_aarch64/jemalloc/internal",
         ],
     }) + [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/jemalloc",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",

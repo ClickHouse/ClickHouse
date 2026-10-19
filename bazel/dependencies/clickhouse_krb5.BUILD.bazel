@@ -1777,6 +1777,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/krb5") + "/src/lib/krb5/os",
     ]),
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "'BINDIR=\"/usr/local/bin\"'",
@@ -1804,10 +1805,6 @@ ch_cc_library(
             repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/krb5-cmake/include", "contrib/krb5"),
         ],
     }) + [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/krb5",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",

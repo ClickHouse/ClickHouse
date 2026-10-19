@@ -726,6 +726,7 @@ ch_cc_library(
             "contrib/vectorscan-cmake/aarch64",
         ],
     })),
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -734,10 +735,6 @@ ch_cc_library(
         "include",
         repository_local_include(
             repository_path("contrib/boost"),
-            "contrib/vectorscan",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/vectorscan",
         ),
     ],

@@ -35,6 +35,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "DUMMY_BACKTRACE",
@@ -45,10 +46,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/libfiu",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

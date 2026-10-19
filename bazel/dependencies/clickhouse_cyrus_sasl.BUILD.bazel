@@ -123,6 +123,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/cyrus-sasl") + "/tests",
     ]),
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "'CONFIGDIR=\"\"'",
@@ -157,10 +158,6 @@ ch_cc_library(
             repository_local_include("$(GENDIR)/bazel/gen/aarch64/contrib/krb5-cmake/include", "contrib/cyrus-sasl"),
         ],
     }) + [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/cyrus-sasl",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",

@@ -42,6 +42,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -51,10 +52,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/xxHash",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

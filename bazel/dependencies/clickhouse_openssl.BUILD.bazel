@@ -3871,15 +3871,12 @@ ch_cc_library(
         "-I",
         repository_path("contrib/openssl"),
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         repository_local_include("contrib/openssl-cmake/common/include", "contrib/openssl"),
         "include",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/openssl",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

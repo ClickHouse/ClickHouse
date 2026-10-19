@@ -107,6 +107,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "LBER_LIBRARY",
@@ -125,10 +126,6 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/liblber",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/openldap",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -346,6 +343,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "LDAP_LIBRARY",
@@ -364,10 +362,6 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/libldap",
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/openldap",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",

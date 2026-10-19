@@ -86,6 +86,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
         "NATS_HAS_TLS",
@@ -101,10 +102,6 @@ ch_cc_library(
         "src/unix",
         repository_local_include(
             repository_path("contrib/libuv") + "/include",
-            "contrib/nats-io",
-        ),
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/nats-io",
         ),
     ],

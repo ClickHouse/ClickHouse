@@ -962,7 +962,6 @@ class BuildFile:
                     if supplied != foreign:
                         raise ValueError(f'Postgres _libpq {arch} changed its OpenSSL or ABI includes: {supplied}')
                     system_includes[arch] = [inc for inc in includes if inc.directory not in foreign]
-                attrs['implementation_deps'] = select(implementation_deps)
             elif native_library and self.owner not in {None, 'contrib/openssl'}:
                 # crypto publishes these public include roots. Only remove a
                 # captured local copy when this compile group already reaches
@@ -978,6 +977,22 @@ class BuildFile:
                     _, _, _, reachable = self.dependency_headers(arch, deps)
                     if 'crypto' in reachable:
                         system_includes[arch] = [inc for inc in includes if inc.directory not in openssl_includes]
+            if native_library and self.owner not in {None, llvm_targets.PREFIX}:
+                # Only the pinned source repository's libcxxabi include root
+                # belongs to libcxxabi_headers. Keep LLVM toolchain includes.
+                for arch, includes in system_includes.items():
+                    if groups[arch]['language'] not in {'C', 'CXX'}:
+                        continue
+                    abi = LocalInclude(llvm_targets.PREFIX + '/libcxxabi/include', self.owner)
+                    if abi in includes:
+                        system_includes[arch] = [inc for inc in includes if inc != abi]
+                        implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(
+                            '@clickhouse_llvm_project//:libcxxabi_headers')
+            if implementation_deps:
+                attrs['implementation_deps'] = select({
+                    '@platforms//cpu:' + arch: implementation_deps.get('@platforms//cpu:' + arch, [])
+                    for arch in ARCHES
+                })
             if any(system_includes.values()):
                 attrs['local_includes'] = select({
                     '@platforms//cpu:' + arch: system_includes.get(arch, [])
