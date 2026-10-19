@@ -158,12 +158,15 @@ def test_docker_library(test_results, check_images=None) -> None:
 def validate_bugfix_tests(test_results, master_images, tests) -> None:
     """Run a bug fix's changed tests on the images built from master, where they must fail.
 
-    A test passing there does not reproduce the bug. Each test runs only on the images whose `config.sh` list has it.
+    A test passing there does not reproduce the bug. Each test runs only on the images whose `config.sh` list has it,
+    and must be on at least one.
     """
     # Cloned by `test_docker_library`, which reports a failed clone itself.
     repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
     run_sh = repo_path / "test/run.sh"
     configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
+    ran = set()
+    pulled_all = True
     for image in master_images:
         name = f"bugfix validation ({image})"
         if not Shell.check(
@@ -176,12 +179,14 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
                     info=f"Failed to pull {image}",
                 )
             )
+            pulled_all = False
             continue
         for test in tests:
             cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {configs}"
             exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
             if "image has no tests" in stdout:
                 continue
+            ran.add(test)
             if exit_code == 0:
                 status = Result.Status.FAIL
                 info = f"{test} passes on {image}, built from master, so it does not reproduce the bug"
@@ -196,5 +201,14 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
                     name=f"bugfix validation: {test} ({image})",
                     status=status,
                     info="\n".join(part for part in (info, stdout, stderr) if part),
+                )
+            )
+    for test in tests:
+        if test not in ran and pulled_all:
+            test_results.append(
+                Result(
+                    name=f"bugfix validation: {test}",
+                    status=Result.Status.ERROR,
+                    info=f"{test} runs on none of {', '.join(master_images)}",
                 )
             )
