@@ -148,6 +148,16 @@ under [Linux ARM64 (native)](#linux-arm64-native).
 | Remove `cmake_native_compile_flags`; default native flags and features in `ch_cc_library` | [6d0f655f](https://app.buildbuddy.io/invocation/6d0f655f-2094-41f4-adb4-7e4c85298eb2) | [b897bd67](https://app.buildbuddy.io/invocation/b897bd67-c016-49a0-90c7-2a97d3df8e92) |
 | Declare Boost, fmt, FlatBuffers and libuv public headers once through their owning dependencies | [0cce2c2a](https://app.buildbuddy.io/invocation/0cce2c2a-44d8-4ef2-a5ea-cedb599d06b5) | [166537b6](https://app.buildbuddy.io/invocation/166537b6-4b94-43d5-82d0-48773f9e3c83) |
 | Collapse 414 single compile-group wrappers and preserve CMake archive and object order | [93c41ed5](https://app.buildbuddy.io/invocation/93c41ed5-3c29-4653-a4ac-616c612f27b6) | [888890f7](https://app.buildbuddy.io/invocation/888890f7-5597-4a4e-9097-c81f065910a1) |
+| Deduplicate Arrow and dependency public headers, compact header globs and remove unused exported inputs | [f5bc803d](https://app.buildbuddy.io/invocation/f5bc803d-21d0-45a4-9004-e2c46ef0ca0e) | [6aae0e32](https://app.buildbuddy.io/invocation/6aae0e32-7f28-4e2f-afd5-584b6b695cc9) |
+| Compile AWS, ORC, DMLC and ICU sources in their owning repositories, with public headers and the original object order | [abed9878](https://app.buildbuddy.io/invocation/abed9878-5651-4c75-9111-48896e062ff4) | [93f97ae5](https://app.buildbuddy.io/invocation/93f97ae5-982c-47fb-a6ef-79b79a288f86) |
+| Declare 23 native header libraries, consume existing Arrow/librdkafka headers, and remove unreferenced external exports | [0637569e](https://app.buildbuddy.io/invocation/0637569e-2bd2-4310-940f-59172a308a1d) | [5f3aeea0](https://app.buildbuddy.io/invocation/5f3aeea0-8d18-4cee-b54d-83a2ca9f83da) |
+
+In the final batch the original CMake and Bazel hashes, ordinary stripped
+hashes, and selected compiler hashes also remained equal to their respective
+values in the tables above and under [Linux ARM64 (native)](#linux-arm64-native).
+All 159 external BUILD files were audited: the remaining export-only
+repositories supply licenses, web resources or compressed language data;
+their configured consumers do not compile C/C++ sources from them.
 
 After using the recorded CMake compiler version in Arrow, Mongo C and Mongo
 C++ generated headers, the same x86-64 hashes and `cmp=0` were verified in

@@ -158,9 +158,22 @@ uses the directory; private headers are in `srcs`. Local headers use
 headers. Each Boost component keeps its own private `libs/<component>`
 inputs. Foreign consumers depend on `boost_headers` and do not copy Boost's
 documentation, tests, and implementation inventories. Public fmt,
-FlatBuffers, and libuv headers likewise come from their existing libraries.
-Other foreign file labels remain exported where a real cross-repository
-consumer still needs them.
+FlatBuffers, libuv, Arrow and librdkafka headers likewise come from their
+existing libraries. For example, cppkafka depends on librdkafka instead of
+listing librdkafka's headers again.
+
+`external_headers.py` declares public `cc_library` targets for header-only
+dependencies such as RapidJSON, nlohmann/json and xsimd. It collects the
+source header directories actually used in the configured native graphs,
+emits header globs in each owning repository, and adds dependencies only for
+headers those globs supply. It leaves generated headers, licenses, Rust
+sources, and generator inputs under their existing rules. Foreign file labels
+remain exported where an actual cross-repository consumer still needs them.
+
+AWS CRT, ORC, DMLC, and ICU translation units compile in their owning fetched
+repositories. ClickHouse configuration inputs remain in `contrib/*-cmake`;
+`cmake_link_plan.py` verifies that the declared CMake archives have the same
+ordered objects after moving compilation.
 
 Textually included implementation files and embedded files remain compiler
 inputs. They must not be compiled as additional translation units: Poco
