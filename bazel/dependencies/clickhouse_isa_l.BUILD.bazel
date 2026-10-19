@@ -528,7 +528,7 @@ nasm_objects(
         "//conditions:default": [],
         "@platforms//cpu:x86_64": [
             "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/x86_64/libcxx/include/c++/v1",
+            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
             "-isystem",
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
         ],

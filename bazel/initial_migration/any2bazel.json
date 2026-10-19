@@ -881,19 +881,11 @@
         "to": "@build/contrib/librdkafka-cmake"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen",
         "to": "@build/contrib/llvm-project"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/llvm/include",
-        "to": "contrib/llvm-project/llvm/include"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/x86_64",
-        "to": "@build/contrib/llvm-project"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/x86_64/llvm/include",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/llvm/include",
         "to": "contrib/llvm-project/llvm/include"
       },
       {
@@ -901,11 +893,7 @@
         "to": "contrib/llvm-project"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/x86_64/libcxx/include/c++/v1",
-        "to": "contrib/llvm-project/libcxx/include"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/libcxx/include/c++/v1",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/libcxx/include/c++/v1",
         "to": "contrib/llvm-project/libcxx/include"
       },
       {
@@ -49571,503 +49559,503 @@
         "to": "contrib/llvm-project/llvm/utils/TableGen/llvm-tblgen.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas16_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas16_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas16_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas16_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas16_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas16_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas16_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas16_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas16_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas16_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas16_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas16_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas16_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas16_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas16_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_cas8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_cas8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_cas8_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldadd8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldadd8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldadd8_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldclr8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldclr8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldclr8_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldeor8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldeor8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldeor8_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_ldset8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_ldset8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_ldset8_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp1_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp1_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp1_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp1_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp1_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp1_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp1_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp1_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp1_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp1_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp1_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp1_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp1_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp1_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp1_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp2_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp2_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp2_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp2_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp2_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp2_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp2_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp2_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp2_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp2_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp2_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp2_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp2_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp2_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp2_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp4_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp4_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp4_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp4_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp4_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp4_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp4_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp4_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp4_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp4_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp4_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp4_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp4_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp4_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp4_5.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp8_1.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp8_1.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp8_1.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp8_2.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp8_2.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp8_2.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp8_3.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp8_3.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp8_3.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp8_4.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp8_4.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp8_4.S"
       },
       {
-        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/aarch64/compiler-rt-outline/outline_atomic_swp8_5.S",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_llvm_project/gen/compiler-rt-outline/outline_atomic_swp8_5.S",
         "to": "build_bazel_reference_aarch64/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_swp8_5.S"
       },
       {

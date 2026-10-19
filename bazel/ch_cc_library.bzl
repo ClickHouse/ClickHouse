@@ -51,7 +51,7 @@ def ch_cc_library(
             options.extend([
                 "-I",
                 "$(GENDIR)/" + repository_path("contrib/llvm-project") +
-                "/gen/" + arch + "/libcxx/include/c++/v1",
+                "/gen/libcxx/include/c++/v1",
             ])
         native_options[cpu] = options
         sysroot_headers[cpu] = [Label("@clickhouse_sysroot//:linux_native_headers")]

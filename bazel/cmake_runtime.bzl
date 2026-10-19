@@ -65,6 +65,10 @@ def _cmake_runtime_objects_impl(ctx):
             "-fmacro-prefix-map=" + ctx.label.workspace_root + "/=" +
             ctx.attr.reference_source_root + "/contrib/llvm-project/",
         )
+        # Retain the old Bazel filenames for generated inputs in runtime groups
+        # which did not use CMake source-prefix mapping.
+        generated = ctx.bin_dir.path + "/" + ctx.label.workspace_root + "/gen/"
+        flags.append("-ffile-prefix-map=" + generated + "=" + generated + ctx.attr.arch + "/")
 
     outputs = []
     for src in ctx.files.srcs:

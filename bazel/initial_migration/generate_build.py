@@ -874,8 +874,10 @@ def main():
         'ignore_directories(' + starlark(['build', 'build_*', 'tmp'] + sorted(REPOSITORIES)) + ')\n')
     from initial_migration.configured_external_outputs import Migration as ExternalConfigs
     from initial_migration.configured_codegen_outputs import Migration as ExternalCodegen
+    from initial_migration.configured_llvm_outputs import Migration as LlvmOutputs
     ExternalConfigs(ROOT).run(write=True)
     ExternalCodegen(ROOT).run(write=True)
+    LlvmOutputs(ROOT).run(write=True)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

@@ -84,6 +84,8 @@ def _generated_prefix_maps(arch):
         for label in _REPOSITORIES.values()
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/llvm-project") +
+        "/gen/=" + build + "contrib/llvm-project/",
+        "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/llvm-project") +
         "/gen/" + arch + "/=" + build + "contrib/llvm-project/",
         "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/jemalloc") +
         "/config/contrib/jemalloc-cmake/include_linux/=" +
