@@ -174,6 +174,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
 
     /// A BOM before the header is not a part of the first column name. It is skipped after the checkpoint,
     /// so if the first row turns out to be data, the rollback below restores it.
+    /// It must be skipped before reading: the values are unescaped while reading, and a BOM before
+    /// a quoted CSV name makes it read as an unquoted value with the quotes.
     skipBOMIfExists(*peekable_buf);
 
     auto first_row_values = format_reader->readRowForHeaderDetection();
@@ -515,6 +517,11 @@ namespace
     }
 
     /// A BOM before the header is not a part of the first column name.
+    /// Unlike `RowInputFormatWithNamesAndTypes::tryDetectHeader`, the schema reader cannot skip the BOM
+    /// before reading the first row: it decides about the header only after reading several rows, and
+    /// if the first row is data, the BOM is a part of its first value and affects the inferred type
+    /// (as without header detection). The fields here are not unescaped yet, so the BOM is a prefix
+    /// of the first field, and it is removed only when the header is detected.
     std::vector<String> removeBOMFromFirstField(std::vector<String> fields)
     {
         if (!fields.empty() && fields[0].starts_with("\xEF\xBB\xBF"))
