@@ -1867,6 +1867,15 @@ TEST(PartitionedHashJoin, DestructionWithAllocationFailure)
     {
         ThreadStatus thread_status;
         thread_status.untracked_memory_limit = 0;
+        Int64 small_allocation_bytes = 0;
+        {
+            const auto before = thread_status.memory_tracker.get();
+            std::vector<UInt8> probe(1, 0);
+            small_allocation_bytes = thread_status.memory_tracker.get() - before;
+        }
+        /// Where small allocations are not charged to the tracker, no fault can be injected into one.
+        if (small_allocation_bytes == 0)
+            GTEST_SKIP() << "Small allocations are not tracked in this build";
         BuildOptions options;
         options.num_threads = 2;
         auto built = buildJoin(/*distinct_keys=*/1, /*duplicates=*/16 * 1024 * 1024, options);
