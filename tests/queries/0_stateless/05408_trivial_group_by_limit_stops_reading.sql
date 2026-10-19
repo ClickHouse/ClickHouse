@@ -53,6 +53,17 @@ SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree' FORMAT Null;
 SELECT k, count() FROM t_group_by_limit_stops_reading GROUP BY k LIMIT 5
 SETTINGS max_threads = 4, log_comment = 'gbl_stop_merge_tree_aggregate' FORMAT Null;
 
+-- Aggregation in order of the sorting key, whose only value makes a single run of the whole table.
+DROP TABLE IF EXISTS t_group_by_limit_stops_reading_in_order;
+CREATE TABLE t_group_by_limit_stops_reading_in_order (p UInt8, k UInt64) ENGINE = MergeTree ORDER BY p
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_group_by_limit_stops_reading_in_order SELECT 0, number % 1000 FROM numbers(2000000);
+
+SELECT p, k FROM t_group_by_limit_stops_reading_in_order GROUP BY p, k LIMIT 5
+SETTINGS max_threads = 1, optimize_aggregation_in_order = 1, log_comment = 'gbl_stop_merge_tree_in_order' FORMAT Null;
+SELECT p, k FROM t_group_by_limit_stops_reading_in_order GROUP BY p, k LIMIT 5
+SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, log_comment = 'gbl_stop_merge_tree_in_order_threads' FORMAT Null;
+
 -- The part with the aggregate projection has enough keys; the reading of the part without it has to stop too.
 DROP TABLE IF EXISTS t_group_by_limit_stops_reading_projection;
 CREATE TABLE t_group_by_limit_stops_reading_projection (k UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -74,3 +85,4 @@ ORDER BY log_comment;
 
 DROP TABLE t_group_by_limit_stops_reading;
 DROP TABLE t_group_by_limit_stops_reading_projection;
+DROP TABLE t_group_by_limit_stops_reading_in_order;

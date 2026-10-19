@@ -664,6 +664,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (!sort_description_for_merging.empty())
     {
+        /// Any `max_rows_to_group_by` groups are enough for the `LIMIT` that follows.
+        size_t in_order_limit_hint = limit_hint;
+        size_t in_order_limit_prefix_columns = limit_hint_prefix_columns;
+        if (transform_params->params.stop_all_streams_at_max_rows_to_group_by)
+        {
+            in_order_limit_hint = transform_params->params.max_rows_to_group_by;
+            in_order_limit_prefix_columns = 0;
+        }
+
         /// We don't rely here on input_stream.sort_description because it is not correctly propagated for now in all cases
         /// see https://github.com/ClickHouse/ClickHouse/pull/45892#discussion_r1094503048
         if (explicit_sorting_required_for_aggregation_in_order)
@@ -682,6 +691,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
              * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
              */
 
+            if (transform_params->params.stop_all_streams_at_max_rows_to_group_by)
+                addStopAllStreamsTransforms({&pipeline});
+
             auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
             size_t counter = 0;
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -698,8 +710,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data,
                     counter++,
-                    limit_hint,
-                    limit_hint_prefix_columns,
+                    in_order_limit_hint,
+                    in_order_limit_prefix_columns,
                     /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
                     /// so these transforms are the last producers of this step's output and have to record
                     /// it themselves. Otherwise the merging transform records it, and recording here too
@@ -725,7 +737,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 group_by_sort_description,
                 max_block_size,
                 aggregation_in_order_max_block_bytes,
-                limit_hint);
+                in_order_limit_hint);
 
             pipeline.addTransform(std::move(transform));
 
@@ -756,8 +768,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
-                    limit_hint,
-                    limit_hint_prefix_columns,
+                    in_order_limit_hint,
+                    in_order_limit_prefix_columns,
                     dataflow_cache_updater);
             });
 
