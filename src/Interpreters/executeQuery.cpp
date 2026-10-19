@@ -164,6 +164,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event ASTFuzzerSkippedCollaborativeWorker;
+    extern const Event ASTFuzzerSkippedSecondaryQuery;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -3651,6 +3652,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
+    /// Any other secondary query's context still holds the callbacks its initiator installed (e.g. the read-task
+    /// callback of a cluster function), which a fuzzed copy must not call. The initiator fuzzes its own query.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSecondaryQuery);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -3673,6 +3682,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
     /// stops the loop in that case.
     QueryStatusPtr process_list_element = context->getProcessListElement();
+    /// Fuzzed queries run without the client's progress callback, which is where HTTP checks for a disconnected client.
+    auto client_connected = context->getClientConnectedCallback();
 
     ASTPtr base_ast = ast;
 
@@ -3688,6 +3699,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         if (process_list_element && !process_list_element->checkTimeLimitSoft())
         {
             LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
+            break;
+        }
+
+        if (client_connected && !client_connected())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: the client has disconnected");
             break;
         }
 
@@ -3796,6 +3813,17 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
+            /// The copy inherits the client's progress callbacks; fuzzed queries must not report into the seed's response.
+            /// The oracle's queries run on copies of this context, so they get the client check from here.
+            ProgressCallback stop_on_client_disconnect;
+            if (client_connected)
+                stop_on_client_disconnect = [client_connected](const Progress &)
+                {
+                    if (!client_connected())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "The client has disconnected");
+                };
+            fuzz_context->setProgressCallback(std::move(stop_on_client_disconnect));
+            fuzz_context->setFileProgressCallback({});
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
@@ -3871,11 +3899,13 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
                         Stopwatch fuzzed_query_watch;
                         executor.setCancelCallback(
-                            [&fuzzed_query_watch, &process_list_element]()
+                            [&fuzzed_query_watch, &process_list_element, &client_connected]()
                             {
                                 if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
                                     return true;
                                 if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                if (client_connected && !client_connected())
                                     return true;
                                 return fuzzed_query_watch.elapsedMilliseconds() > 30000;
                             },
