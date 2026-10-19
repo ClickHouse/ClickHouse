@@ -987,6 +987,8 @@ Because entries are keyed by table UUID, the cache is only active for tables in 
 The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
+
+The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a whole column of one row group, keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A column of a row group is written to the cache only when all rows of the row group are read, before any filter is applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
@@ -2892,6 +2894,8 @@ Possible values:
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
+The setting applies only to the zlib-based methods: `gzip` and `deflate`. The level for other methods (such as `zstd`, `lz4`, `br`, `xz`) is set by [output_format_compression_level](/reference/settings/formats/output-format#output_format_compression_level).
+
 Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
 )", 0) \
     DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
@@ -3883,7 +3887,7 @@ smaller is used. Set both settings to `0` to disable spilling.
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
-    DECLARE(Double, max_bytes_ratio_before_external_set, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_set, 0.5, R"(
 Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
 with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
 
@@ -3893,7 +3897,48 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
+        {"26.11", 0., 0.5, "Enabled spilling of the set of `IN` with a subquery to disk by default, at half of the available server or user memory."}, \
         {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+    DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
+Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
+filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
+of values that are in the set.
+
+A set takes about 1 byte per key for its filter, or the budget, whichever is smaller, where the keys of a
+set are its distinct values, or its distinct tuples for `IN` with several columns:
+
+- If the budget is at least 1 byte per key, the set gets the full filter, and about 97% of the lookups of
+  values that are not in the set skip the disk. For example, a set of 1 million keys takes about 1 MiB.
+- If the budget is smaller, the set gets a weaker filter that fits in the budget, and fewer lookups of
+  values that are not in the set skip the disk. For example, with a quarter of a byte per key, about 60% of
+  such lookups skip the disk instead of 97%.
+- If the budget is less than about 1/7 of a byte per key, the set gets no filter, because such a filter
+  would let too few lookups skip the disk to pay for building it.
+
+With the default budget of 128 MiB, sets of up to about 130 million keys get the full filter, and sets of
+more than about 950 million keys get none. Raise the budget for larger sets when most of the looked-up
+values are not in the set. Lower it when memory is short, or when most of the looked-up values are in the
+set, where the filter does not help. `0` disables the filter.
+
+The filter counts towards the memory usage of the query, such as `max_memory_usage`, but not towards
+`max_bytes_in_set`. The budget applies to each set, not to the query.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+    DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
+Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
+lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
+from disk again. The cache helps when lookups repeatedly need the same blocks, such as lookups of a few
+frequent values or many lookups into a set that fits in the cache. It helps little when lookups spread
+evenly over a set much larger than the cache. `0` disables the cache.
+
+The budget applies per set. The cache counts towards the memory usage of the query, such as
+`max_memory_usage`, but not towards `max_bytes_in_set`.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
@@ -4491,6 +4536,9 @@ Compatibility ignore collation in create table
     DECLARE(String, temporary_files_codec, "LZ4", R"(
 Sets compression codec for temporary files used in sorting and joining operations on disk.
 
+Sets of `IN` that spill to disk do not compress the files that their lookups read, whatever this setting is,
+because decompressing the blocks that each lookup reads costs more than reading the larger files.
+
 Possible values:
 
 - LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
@@ -4996,7 +5044,7 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
-    DECLARE(Bool, exact_division_for_integers, false, R"(
+    DECLARE(Bool, sql_compatible_division_for_integers, false, R"(
 Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
 The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
 Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
@@ -5007,6 +5055,7 @@ or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
 The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
 Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
 )", 0, \
+        {"26.11", false, false, "Use the SQL-compatible name for the integer division setting."}, \
         {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
@@ -8305,7 +8354,14 @@ This is a compatibility setting for the HTTP interface: the header is consumed b
         {"26.8", false, true, "Controls whether the `X-ClickHouse-Format` HTTP header is an alias for `output_format` (overriding the query's `FORMAT` clause), as since 26.8, or for `default_format`, as before 26.8. This entry retroactively documents the 26.8 change so `compatibility` with versions before 26.8 restores the old header behavior."}) \
     \
     DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(
-Sets the safety threshold for data volume generated by function [range](/reference/functions/regular-functions/array-functions#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
+Sets the safety threshold for data volume generated by functions [range](/reference/functions/regular-functions/array-functions#range),
+[arrayPermutations](/reference/functions/regular-functions/array-functions#arrayPermutations),
+[arrayPartialPermutations](/reference/functions/regular-functions/array-functions#arrayPartialPermutations),
+[arrayCombinations](/reference/functions/regular-functions/array-functions#arrayCombinations),
+[timeSeriesRange](/reference/functions/regular-functions/time-series-functions#timeSeriesRange),
+and [timeSeriesFromGrid](/reference/functions/regular-functions/time-series-functions#timeSeriesFromGrid).
+Defines the maximum number of values generated by functions per block of data (sum of array sizes for every row in a block).
+For the combinatorics functions, which return `Array(Array(T))`, every generated inner array counts as its size plus one, so zero-length results still consume the limit.
 
 Possible values:
 
@@ -10034,7 +10090,7 @@ Detect conflicting and redundant comparison conditions on the same expression wi
 )", 0, \
         {"26.7", false, true, "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."}) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
-Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
+Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). If applying the optimization to a query hashes more than this many nodes, the optimization is not applied to that query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
 )", 0, \
         {"26.7", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."}) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
@@ -10625,9 +10681,6 @@ Allows defining columns with [statistics](/reference/engines/table-engines/merge
 )", 0, allow_experimental_statistics, \
         {"26.3", false, true, "Column statistics are now GA. This also applies to the alias `allow_experimental_statistics`."}, \
         {"24.6", false, false, "The setting was renamed. The previous name is `allow_experimental_statistic`. At the time the setting was named `allow_experimental_statistics`, which is now an alias of it."}) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0, \
-        {"26.2", false, true, "Enable statistics cache"}, \
-        {"25.11", 0, 0, "New setting"}) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
@@ -10940,6 +10993,10 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
+    DECLARE(String, distributed_plan_worker_cluster, "", R"(
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+)", PRIVATE_PREVIEW, \
+        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", PRIVATE_PREVIEW, \
@@ -11206,6 +11263,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false, \
         {"26.9", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."}, \
         {"26.6", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."}) \
+    MAKE_OBSOLETE(M, Bool, use_statistics_cache, true, \
+        {"26.2", false, true, "Enable statistics cache"}, \
+        {"25.11", 0, 0, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false, \
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \
