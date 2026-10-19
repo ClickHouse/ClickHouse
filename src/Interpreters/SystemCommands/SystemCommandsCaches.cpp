@@ -261,6 +261,11 @@ void registerSystemCommandsCaches(SystemCommandFactory & factory)
         context.system_context->clearPrimaryIndexCache();
     });
 
+    factory.registerSimpleCommand(Type::CLEAR_STATISTICS_CACHE, AccessType::SYSTEM_DROP_STATISTICS_CACHE, [](ASTSystemQuery &, SystemCommandContext & context)
+    {
+        context.system_context->clearStatisticsCache();
+    });
+
     factory.registerSimpleCommand(Type::CLEAR_UNCOMPRESSED_CACHE, AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE, [](ASTSystemQuery &, SystemCommandContext & context)
     {
         context.system_context->clearUncompressedCache();
