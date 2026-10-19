@@ -1,6 +1,8 @@
 delete_retried 1
 delete_ok 1
 merge_applied	1	1	1
+late_kill_on_the_result	all_1_1_0_2	10	['for_all_1_1_0_2']
+survivors	[3,4,5,6,7,8,9]
 insert_delete_ok 1
 insert_applied	1	1	1	1
 both_deletes_committed	0	0

@@ -248,6 +248,9 @@ SET optimize_use_projections = 0;
 -- bypassing the optimizer guard. The MergeTreeDataSelectExecutor chokepoint still
 -- fails closed for a UNIQUE KEY parent.
 SELECT * FROM mergeTreeProjection(currentDatabase(), uk_t_attach_proj, p); -- { serverError NOT_IMPLEMENTED }
+-- 10e. DROP PROJECTION: red if the mutation guard rejects it.
+ALTER TABLE uk_t_attach_proj DROP PROJECTION p SETTINGS mutations_sync = 2;
+SELECT id, user_id FROM uk_t_attach_proj ORDER BY id;
 DROP TABLE uk_t_attach_proj SYNC;
 
 -- 11. ALTER MODIFY ORDER BY on a unique-key table -> error.

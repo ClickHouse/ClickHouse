@@ -1214,6 +1214,10 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Before the entry is written: the background task would refuse it and leave it queued.
+    if (hasUniqueKey())
+        throwIfInsideTransaction(query_context->getCurrentTransaction(), "A mutation");
+
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See `loadMutations`.
     auto disk = getStoragePolicy()->getAnyDisk();

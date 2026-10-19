@@ -11,6 +11,7 @@ namespace DB
 {
 
 class IDataPartStorage;
+class IMergeTreeDataPart;
 
 /// Primitive file-I/O helpers for delete-bitmap files
 namespace DeleteBitmapFileOps
@@ -65,6 +66,10 @@ namespace DeleteBitmapFileOps
     /// Null when the file is absent -- the one outcome a caller interprets rather than treats as
     /// a failure.
     DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file);
+
+    /// Remove the bitmap files a mutation's clone took from its source, and from its `checksums.txt`.
+    /// Returns the removed files.
+    std::vector<BitmapFile> removeClonedBitmaps(IMergeTreeDataPart & clone);
 
 }
 

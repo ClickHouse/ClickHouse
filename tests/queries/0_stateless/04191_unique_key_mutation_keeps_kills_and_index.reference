@@ -1,0 +1,21 @@
+wide before	95	95	115
+wide after	95	95	115
+wide rows	120
+wide reprobe	105	105
+compact before	95	95	115
+compact after	95	95	115
+compact rows	120
+compact reprobe	105	105
+clone after	95	95	115
+clone rows	120
+clone untouched parts	3
+clone reprobe	105	105
+wide bitmaps	all_1_1_0_4	['for_all_1_1_0_4']
+wide bitmaps	all_2_2_0_4	[]
+wide bitmaps	all_3_3_0_4	[]
+clone bitmaps	all_1_1_0_4	['for_all_1_1_0_4']
+clone bitmaps	all_2_2_0_4	[]
+clone bitmaps	all_3_3_0_4	[]
+wide delete	103	103	151
+wide optimized	103	151
+wide optimized rows	103
