@@ -553,7 +553,7 @@ constexpr bool functionForcesTheReturnType()
 /// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
 static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const ColumnsWithTypeAndName & args, size_t input_rows_count)
 {
-    std::vector<const NullMap *> null_maps;
+    VectorWithMemoryTracking<const NullMap *> null_maps;
     for (const auto & arg : args)
     {
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
