@@ -14,6 +14,8 @@ SET collect_hash_table_stats_during_joins = 0;
 SET max_threads = 8;
 -- The duplicates of one key must arrive in build blocks of 100000 rows, so a random `max_block_size` would change the runs.
 SET max_block_size = 100000;
+-- A randomized join order loses the planner's row estimate that picks the build layout, and the bytes stored for duplicates depend on that layout.
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_sc_b;
 DROP TABLE IF EXISTS t_sc_p;

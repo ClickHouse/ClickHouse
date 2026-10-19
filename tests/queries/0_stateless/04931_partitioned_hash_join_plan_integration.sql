@@ -50,9 +50,10 @@ SELECT 'inner results are unchanged by the runtime filter', pa, pa = pf FROM (SE
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 1) AS pf);
 
 SELECT '-- non-joined rows come from parallel sources under hash';
+-- Sharding the join by primary key ranges runs one join per range, and none has parallel non-joined sources.
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT count() FROM t_phj_plan_probe AS p RIGHT JOIN t_phj_plan_build AS b ON p.k = b.k
-    SETTINGS join_algorithm = 'hash', max_threads = 4
+    SETTINGS join_algorithm = 'hash', max_threads = 4, query_plan_join_shard_by_pk_ranges = 0
 ) WHERE explain LIKE '%NonJoinedBlocks%';
 
 SELECT 'right parity across algorithms and stream counts', pa1, pa1 = pa4, pa1 = pa16 FROM (SELECT
