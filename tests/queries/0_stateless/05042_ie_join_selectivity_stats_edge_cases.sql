@@ -258,6 +258,49 @@ SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l, (SELECT * FROM t_
 WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 SETTINGS join_algorithm = 'hash';
 
+-- A pending metadata-only `DROP COLUMN b3, RENAME COLUMN w TO b3` does not rewrite the part, so its statistics
+-- are still those of the dropped `b3`, under the same name, while the reader resolves `b3` to the old `w`.
+-- The dropped column makes `l.a3 < r.b3` look very selective, but the column read is always greater than `a3`.
+-- Each state has its own choice: the stale statistics would pick `a3 < b3 AND a2 < b2`, the pending rename
+-- falls back to syntax order, and once the rename is materialized the statistics pick `a1 < b1 AND a2 < b2`.
+DROP TABLE IF EXISTS t_sel_edge_rename;
+CREATE TABLE t_sel_edge_rename (b1 UInt32, b2 UInt32, b3 UInt32, w UInt32)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+
+INSERT INTO t_sel_edge_rename SELECT number % 1000, number % 100, number % 10, 200000 + number % 1000 FROM numbers(1000);
+
+-- Stands in for a mutation that is still running on a big table.
+SYSTEM STOP MERGES t_sel_edge_rename;
+ALTER TABLE t_sel_edge_rename DROP COLUMN b3, RENAME COLUMN w TO b3 SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT '-- a pending metadata-only DROP and RENAME COLUMN drops value ranges: syntax order';
+SELECT min(b3), max(b3) FROM t_sel_edge_rename;
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_rename AS r
+    ON l.a1 < r.b1 AND l.a3 < r.b3 AND l.a2 < r.b2
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a2 + a3 + b1 + b2 + b3) FROM t_sel_edge_l AS l JOIN t_sel_edge_rename AS r
+ON l.a1 < r.b1 AND l.a3 < r.b3 AND l.a2 < r.b2;
+
+SELECT count(), sum(a1 + a2 + a3 + b1 + b2 + b3) FROM t_sel_edge_l AS l, t_sel_edge_rename AS r
+WHERE l.a1 < r.b1 AND l.a3 < r.b3 AND l.a2 < r.b2
+SETTINGS join_algorithm = 'hash';
+
+SYSTEM START MERGES t_sel_edge_rename;
+ALTER TABLE t_sel_edge_rename DELETE WHERE 0 SETTINGS mutations_sync = 2;
+
+SELECT '-- the materialized rename restores value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_rename AS r
+    ON l.a1 < r.b1 AND l.a3 < r.b3 AND l.a2 < r.b2
+) WHERE explain LIKE '%Conditions:%';
+
 DROP TABLE t_sel_edge_l;
 DROP TABLE t_sel_edge_r;
 DROP TABLE t_sel_edge_topk;
+DROP TABLE t_sel_edge_rename;

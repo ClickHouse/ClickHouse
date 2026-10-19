@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
@@ -415,6 +416,27 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// In particular, FINAL can synthesize values in SummingMergeTree, AggregatingMergeTree and
         /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
         const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
+        /// A metadata-only `RENAME COLUMN` / `DROP COLUMN` does not rewrite a part. Until it is materialized, the part's
+        /// statistics stay keyed by its old column names, while the reader resolves a renamed column through
+        /// `AlterConversions`: after `DROP COLUMN a, RENAME COLUMN b TO a` the statistics found for `a` describe the
+        /// dropped column, not the old `b`. The snapshot can keep such a mutation after every part has materialized
+        /// it, so ask for the commands still pending for each part, as the reader does. A projection part has a fake
+        /// data version, so its parent decides. The mutation keeps every row, so it leaves the row count exact.
+        const auto has_pending_metadata_mutations = [&]
+        {
+            if (!mutations_snapshot || !mutations_snapshot->hasMetadataMutations())
+                return false;
+            const auto & parts = analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts();
+            return std::ranges::any_of(
+                parts,
+                [&](const RangesInDataPart & part)
+                {
+                    const auto & data_part = part.parent_part ? part.parent_part : part.data_part;
+                    return std::ranges::any_of(
+                        mutations_snapshot->getOnFlyMutationCommandsForPart(data_part),
+                        [](const MutationCommand & command) { return AlterConversions::isSupportedMetadataMutation(command.type); });
+                });
+        };
         /// Predicates cover explicit, deferred, row-policy and runtime filters; query modifiers cover `FINAL`,
         /// `SAMPLE`, stream reads and trivial limits; deleted rows and vector-index selection can prune
         /// rows without a filter step in the plan. A transaction snapshot is deliberately absent: the
@@ -455,7 +477,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     addTransformation(stats.column_stats, RowSubset);
                 if (is_top_k_subset || may_stop_reading_early)
                     addTransformation(stats.column_stats, NonUniformRowSubset);
-                if (has_unsupported_value_changes)
+                if (has_unsupported_value_changes || has_pending_metadata_mutations())
                     addTransformation(stats.column_stats, Unsupported);
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;

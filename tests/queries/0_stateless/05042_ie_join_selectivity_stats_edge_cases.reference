@@ -47,3 +47,10 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 1539	1188750
 1539	1188750
+-- a pending metadata-only DROP and RENAME COLUMN drops value ranges: syntax order
+200000	200999
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+49500	10114483500
+49500	10114483500
+-- the materialized rename restores value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
