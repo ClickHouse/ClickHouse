@@ -410,7 +410,9 @@ static bool partHasPendingMetadataMutationsOnColumns(
 /// and `force_index_by_date` guardrails apply to the main table read, which is analyzed with the
 /// original context, so disable them for the analysis of projection parts. Otherwise a query
 /// whose filter uses the main table's primary key fails with `INDEX_NOT_USED` as soon as the
-/// table has an unrelated projection.
+/// table has an unrelated projection. The guardrail is enforced on the chosen plan instead: a
+/// candidate whose key is unused is not eligible to serve the read (see the `pk_condition_useful`
+/// checks below).
 static ContextPtr getContextForProjectionAnalysis(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -496,6 +498,11 @@ bool analyzeProjectionCandidate(
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+
+    /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
+    /// Only check after filterPartsByProjection to still utilize parts pruning
+    if (context->getSettingsRef()[Setting::force_primary_key] && !projection_result_ptr->pk_condition_useful)
+        return false;
 
     candidate.selected_parts = projection_result_ptr->selected_parts;
     candidate.selected_marks = projection_result_ptr->selected_marks;
@@ -597,6 +604,13 @@ void filterPartsAndCollectProjectionCandidates(
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
         return;
 
+    /// Under `force_primary_key`, read the projection index only when its own key did the filtering.
+    /// Marks can also be dropped without the key (through the query condition cache), which would
+    /// otherwise let a full-scan projection read in. Part-level pruning below stays: it only removes
+    /// parent parts whose ranges are proven empty and reads nothing from the projection.
+    bool projection_index_allowed
+        = !context->getSettingsRef()[Setting::force_primary_key] || projection_result_ptr->pk_condition_useful;
+
     size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
     size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
@@ -604,7 +618,8 @@ void filterPartsAndCollectProjectionCandidates(
     for (auto & part : projection_result_ptr->parts_with_ranges)
     {
         valid_parts.emplace(part.data_part->getParentPart());
-        if (projection.sample_block.has("_parent_part_offset") && part.getRowsCount() <= max_projection_rows_to_use_projection_index
+        if (projection_index_allowed && projection.sample_block.has("_parent_part_offset")
+            && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));

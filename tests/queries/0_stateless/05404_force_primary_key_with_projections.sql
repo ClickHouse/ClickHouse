@@ -39,4 +39,16 @@ SELECT count() FROM t_force_pk_proj WHERE a = 'x' AND c = 42 SETTINGS min_table_
 -- The guardrail still applies to the main table's primary key.
 SELECT count() FROM t_force_pk_proj WHERE c = 42; -- { serverError INDEX_NOT_USED }
 
+-- A forced projection whose key is not constrained is used without the guardrail...
+SELECT sum(v) FROM t_force_pk_proj WHERE a = 'x'
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_normal', force_primary_key = 0;
+
+-- ...but under the guardrail it would be a full scan of the projection, so the query throws.
+SELECT sum(v) FROM t_force_pk_proj WHERE a = 'x'
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_normal'; -- { serverError PROJECTION_NOT_USED }
+
+-- A forced projection whose key is constrained works under the guardrail.
+SELECT sum(v) FROM t_force_pk_proj WHERE a = 'x' AND v >= 30
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_normal';
+
 DROP TABLE t_force_pk_proj;

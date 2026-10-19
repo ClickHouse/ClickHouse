@@ -215,6 +215,10 @@ public:
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
+        /// The filter constrains the primary key of the analyzed parts (the same criterion the
+        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
+        /// the read.
+        bool pk_condition_useful = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -237,6 +241,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -258,6 +263,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

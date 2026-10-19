@@ -2191,6 +2191,8 @@ Disables query execution if indexing by the primary key is not possible.
 Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree).
+
+The check applies to the primary key of the table itself. A projection serves the query only when the query also restricts data ranges by that projection's own key; otherwise the projection is skipped and the table is read instead. A projection forced with [force_optimize_projection](#force_optimize_projection) whose key is not used makes the query throw an exception.
 )", 0) \
     DECLARE(Bool, use_skip_indexes, true, R"(
 Use data skipping indexes during query execution.
