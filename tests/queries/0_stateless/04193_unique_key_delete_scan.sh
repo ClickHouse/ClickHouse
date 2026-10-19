@@ -9,6 +9,7 @@
 #   6. time limit: a soft timeout fails the DELETE instead of committing part of it
 #   7. database: an unqualified table in the predicate is read from the deleted table's database
 #   8. CTE: a CTE in the predicate is read, not a table of the same name
+#   9. subquery limit: a break-mode limit never truncates a predicate subquery
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -183,3 +184,42 @@ $CLICKHOUSE_CLIENT --query "SELECT 'cte_survivors', id FROM uk_del_cte ORDER BY 
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_cte"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_cte_keys"
+
+# 9. subquery limit: red if the subquery stops at the limit and `NOT IN` takes its partial set, so every row
+# but one dies: a read limit and a set limit on the DELETE, then a read limit in the subquery's own `SETTINGS`.
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_notin"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_notin_keys"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_notin (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_notin_keys (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_notin_keys SELECT number FROM numbers(100)"
+
+$CLICKHOUSE_CLIENT --max_rows_to_read 1 --read_overflow_mode break --max_block_size 1 --max_threads 1 \
+    --use_query_cache 0 --use_query_condition_cache 0 --use_index_for_in_with_subqueries 0 \
+    --query "DELETE FROM uk_del_notin WHERE id NOT IN (SELECT id FROM uk_notin_keys)"
+$CLICKHOUSE_CLIENT --query "SELECT 'read_limit_subquery_survivors', count() FROM uk_del_notin"
+
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT --max_rows_in_set 1 --set_overflow_mode break --max_block_size 1 --max_threads 1 \
+    --use_query_cache 0 --use_query_condition_cache 0 --use_index_for_in_with_subqueries 0 \
+    --query "DELETE FROM uk_del_notin WHERE id NOT IN (SELECT id FROM uk_notin_keys)" 2>&1 \
+    | grep -q "SET_SIZE_LIMIT_EXCEEDED" && echo "set_limit_fails_delete 1" || echo "set_limit_fails_delete 0"
+$CLICKHOUSE_CLIENT --query "SELECT 'set_limit_subquery_survivors', count() FROM uk_del_notin"
+
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT --query "
+    DELETE FROM uk_del_notin WHERE id NOT IN (
+        SELECT id FROM uk_notin_keys
+        SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break', max_block_size = 1, max_threads = 1,
+                 use_query_condition_cache = 0, use_index_for_in_with_subqueries = 0)" 2>&1 \
+    | grep -q "TOO_MANY_ROWS" && echo "inner_limit_fails_delete 1" || echo "inner_limit_fails_delete 0"
+$CLICKHOUSE_CLIENT --query "SELECT 'inner_limit_subquery_survivors', count() FROM uk_del_notin"
+
+# A table function's own `SETTINGS` are not query settings and stay untouched.
+$CLICKHOUSE_CLIENT --query "
+    DELETE FROM uk_del_notin WHERE id IN (
+        SELECT 1000 + a FROM generateRandom('a UInt8', 1, 10, 2, SETTINGS null_ratio = 0) LIMIT 3)"
+$CLICKHOUSE_CLIENT --query "SELECT 'table_function_settings_survivors', count() FROM uk_del_notin"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_notin"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_notin_keys"

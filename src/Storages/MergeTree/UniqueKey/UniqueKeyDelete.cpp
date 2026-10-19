@@ -10,6 +10,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -99,6 +102,42 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
     return {partition_ids->begin(), partition_ids->end()};
 }
 
+/// A limit in `break` or `any` mode ends a predicate subquery early without an error, and an incomplete set
+/// under `NOT IN` matches rows it should not. The scan makes every such limit throw instead.
+const Strings & overflowModeSettings()
+{
+    static const Strings names = []
+    {
+        Strings result;
+        for (const auto name : Settings().getAllRegisteredNames())
+            if (name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
+                result.emplace_back(name);
+        return result;
+    }();
+    return names;
+}
+
+/// The `SETTINGS` of the predicate's own subqueries override the scan context's. Appended last, so a `profile`
+/// earlier in the same clause cannot bring a `break` mode back. A table function's `SETTINGS` are its own.
+void makeOverflowModesThrow(IAST & ast)
+{
+    ASTPtr settings;
+    if (const auto * select = ast.as<ASTSelectQuery>())
+        settings = select->settings();
+    else if (const auto * select_with_union = ast.as<ASTSelectWithUnionQuery>())
+        settings = select_with_union->settings_ast;
+
+    if (settings)
+    {
+        auto & changes = settings->as<ASTSetQuery &>().changes;
+        changes.removeSettings(overflowModeSettings());
+        for (const auto & name : overflowModeSettings())
+            changes.emplace_back(name, Field("throw"));
+    }
+    for (const auto & child : ast.children)
+        makeOverflowModesThrow(*child);
+}
+
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
 /// that is never applied: it only carries the predicate and the partition to `MutationsInterpreter`.
 /// An UPDATE because a DELETE stage reads every column; the UPDATE reads only the predicate's.
@@ -132,7 +171,9 @@ MutationCommands scanCommands(
     alter->type = ASTAlterCommand::UPDATE;
     alter->update_assignments = alter->children.emplace_back(std::move(assignments)).get();
     alter->partition = alter->children.emplace_back(std::move(partition)).get();
-    alter->predicate = alter->children.emplace_back(query.predicate->clone()).get();
+    auto predicate = query.predicate->clone();
+    makeOverflowModesThrow(*predicate);
+    alter->predicate = alter->children.emplace_back(std::move(predicate)).get();
 
     const auto & settings = context->getSettingsRef();
     commands.push_back(*MutationCommand::parse(
@@ -176,6 +217,12 @@ struct DeleteStatement
         auto scan_context = Context::createCopy(query_context);
         scan_context->makeQueryContext();
         scan_context->setCurrentTransaction(txn);
+
+        /// The DELETE ignores the query's read limits; in `throw` mode the scan's index analysis would check them.
+        for (const auto * name : {"max_rows_to_read", "max_bytes_to_read", "max_rows_to_read_leaf", "max_bytes_to_read_leaf"})
+            scan_context->setSetting(name, Field(UInt64(0)));
+        for (const auto & name : overflowModeSettings())
+            scan_context->setSetting(name, Field("throw"));
 
         MutationsInterpreter::Settings settings(/*can_execute_=*/true);
         settings.return_mutated_rows = true;

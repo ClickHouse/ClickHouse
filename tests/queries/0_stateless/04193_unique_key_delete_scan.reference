@@ -17,3 +17,9 @@ timeout_fails_delete 1
 time_after_timeout	300
 db_survivors	1
 cte_survivors	2
+read_limit_subquery_survivors	100
+set_limit_fails_delete 1
+set_limit_subquery_survivors	100
+inner_limit_fails_delete 1
+inner_limit_subquery_survivors	100
+table_function_settings_survivors	100
