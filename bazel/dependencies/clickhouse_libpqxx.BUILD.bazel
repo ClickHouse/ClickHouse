@@ -179,26 +179,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/CMakeLists.txt",
-    "include/CMakeLists.txt.template",
-    "include/Makefile.am",
-    "include/Makefile.in",
-    "include/pqxx/Makefile.am",
-    "include/pqxx/Makefile.in",
-    "include/pqxx/config.h.in",
-    "include/pqxx/doc/accessing-results.md",
-    "include/pqxx/doc/binary-data.md",
-    "include/pqxx/doc/datatypes.md",
-    "include/pqxx/doc/escaping.md",
-    "include/pqxx/doc/getting-started.md",
-    "include/pqxx/doc/mainpage.md",
-    "include/pqxx/doc/mainpage.md.template",
-    "include/pqxx/doc/parameters.md",
-    "include/pqxx/doc/performance.md",
-    "include/pqxx/doc/prepared-statement.md",
-    "include/pqxx/doc/streams.md",
-    "include/pqxx/doc/thread-safety.md",
-    "include/pqxx/version.hxx.template",
-])

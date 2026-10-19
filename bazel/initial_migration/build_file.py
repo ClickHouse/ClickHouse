@@ -587,6 +587,21 @@ class BuildFile:
                     if not isinstance(item, str)
                     or not item.startswith('@clickhouse_mongo_c_driver//:')
                 ]
+        if not custom:
+            # PostgreSQL and PQXX publish their headers through cc_library.
+            # Their other captured include-directory files are PostgreSQL
+            # catalog data, translations, scripts and non-selected sources,
+            # not compiler inputs for a different repository. Codegen rules
+            # and these repositories' own compile groups retain their inputs.
+            foreign_postgres = tuple(
+                '@' + REPOSITORIES[owner]['name'] + '//:'
+                for owner in ('contrib/postgres', 'contrib/libpqxx')
+                if owner != self.owner
+            )
+            fields['additional_compiler_inputs'] = [
+                item for item in fields['additional_compiler_inputs']
+                if not isinstance(item, str) or not item.startswith(foreign_postgres)
+            ]
         if not custom and self.owner != 'contrib/abseil-cpp':
             prefix = '@' + REPOSITORIES['contrib/abseil-cpp']['name'] + '//:'
             for field in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
