@@ -382,6 +382,78 @@ void IColumnHelper<Derived, Parent>::gather(ColumnGathererStream & gatherer)
     gatherer.gather(static_cast<Derived &>(*this));
 }
 
+void IColumn::insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted)
+{
+    for (size_t row = 0; row < filter.size(); ++row)
+    {
+        if (static_cast<bool>(filter[row]) != inverted)
+            insertFrom(src, row);
+        else
+            insertDefault();
+    }
+}
+
+template <bool inverted, typename Derived>
+static void insertFromOrDefaultsImpl(Derived & dst, const IColumn & src, const IColumn::Filter & filter)
+{
+    static constexpr size_t chunk_size = 64;
+
+    const UInt8 * filter_data = filter.data();
+    const size_t rows = filter.size();
+
+    auto insert_row = [&](size_t row)
+    {
+        if (static_cast<bool>(filter_data[row]) != inverted)
+            dst.insertFrom(src, row);
+        else
+            dst.insertDefault();
+    };
+
+    auto keep_mask = [&](size_t row)
+    {
+        const UInt64 mask = bytes64MaskToBits64Mask(filter_data + row);
+        return inverted ? ~mask : mask;
+    };
+
+    size_t row = 0;
+    while (row + chunk_size <= rows)
+    {
+        const UInt64 mask = keep_mask(row);
+        if (mask == 0 || mask == std::numeric_limits<UInt64>::max())
+        {
+            /// Consecutive chunks that are entirely kept or entirely blank are inserted with one call.
+            size_t end = row + chunk_size;
+            while (end + chunk_size <= rows && keep_mask(end) == mask)
+                end += chunk_size;
+
+            if (mask)
+                dst.insertRangeFrom(src, row, end - row);
+            else
+                dst.insertManyDefaults(end - row);
+            row = end;
+        }
+        else
+        {
+            for (size_t i = row; i < row + chunk_size; ++i)
+                insert_row(i);
+            row += chunk_size;
+        }
+    }
+
+    for (; row < rows; ++row)
+        insert_row(row);
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted)
+{
+    auto & dst = static_cast<Derived &>(*this);
+    if (inverted)
+        insertFromOrDefaultsImpl<true>(dst, src, filter);
+    else
+        insertFromOrDefaultsImpl<false>(dst, src, filter);
+}
+
 template <typename Derived, bool reversed>
 void compareColumnImpl(
     const Derived & lhs,
