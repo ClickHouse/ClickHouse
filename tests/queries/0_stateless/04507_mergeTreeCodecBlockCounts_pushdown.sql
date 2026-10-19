@@ -2,6 +2,10 @@
 -- no-random-merge-tree-settings: the output enumerates the physical representation, which many randomised settings change
 -- no-object-storage: the FileOpen profile event fires only for local-disk reads.
 
+-- The test compares FileOpen counts. A read through the mmap path skips FileOpen on a
+-- cache hit, so keep mmap reads disabled when randomized settings are applied.
+SET min_bytes_to_use_mmap_io = 0;
+
 DROP TABLE IF EXISTS t_pushdown;
 
 CREATE TABLE t_pushdown (a UInt64 CODEC(LZ4), b UInt64 CODEC(ZSTD))
