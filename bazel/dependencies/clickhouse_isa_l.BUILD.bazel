@@ -63,13 +63,19 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = select({"@platforms//cpu:x86_64": glob([
-        "crc/**/*.h",
-        "erasure_code/**/*.h",
-        "igzip/**/*.h",
-        "include/**/*.h",
-    ]), "@platforms//cpu:aarch64": []}),
-    additional_compiler_inputs = select({"@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"], "@platforms//cpu:aarch64": []}),
+    hdrs = select({
+        "@platforms//cpu:x86_64": glob([
+            "crc/**/*.h",
+            "erasure_code/**/*.h",
+            "igzip/**/*.h",
+            "include/**/*.h",
+        ]),
+        "@platforms//cpu:aarch64": [],
+    }),
+    additional_compiler_inputs = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
+        "@platforms//cpu:aarch64": [],
+    }),
     arches = [
         "x86_64",
     ],
@@ -94,8 +100,6 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_0,
     alwayslink = False,

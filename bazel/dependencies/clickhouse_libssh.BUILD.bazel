@@ -180,13 +180,16 @@ ch_cc_library(
             "@clickhouse//:contrib/libssh-cmake/linux/aarch64/config.h",
         ] + glob(["src/**/*.h"]),
     }),
-    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
-        "include/**/*.h",
-        "include/**/*.hpp",
-    ])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
-        "include/**/*.h",
-        "include/**/*.hpp",
-    ]))}),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [":config/x86_64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
+            "include/**/*.h",
+            "include/**/*.hpp",
+        ]),
+        "@platforms//cpu:aarch64": [":config/aarch64/contrib/libssh/include/libssh/libssh_version.h"] + glob([
+            "include/**/*.h",
+            "include/**/*.hpp",
+        ]),
+    }),
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = ([
         "-w",
@@ -213,8 +216,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
     ],
     deps = ["@clickhouse_openssl//:crypto"],
     alwayslink = False,

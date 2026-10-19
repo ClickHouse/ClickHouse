@@ -38,7 +38,6 @@ ch_cc_library(
         "internal/**/*.h",
         "public/**/*.h",
     ]),
-    additional_compiler_inputs = [],
     copts = ["-w", "-std=c++23", "-Wno-reserved-id-macro", "-Wno-c++11-narrowing"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

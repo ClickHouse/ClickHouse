@@ -10,7 +10,6 @@ exports_files([
 ch_cc_library(
     name = "aws_c_s3",
     srcs = glob(["source/*.c"]),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",

@@ -29,15 +29,18 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/openldap-cmake/lber-version.c",
         ],
     })),
-    hdrs = select({"@platforms//cpu:x86_64": (["@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/lber_types.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_config.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_features.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/portable.h"] + glob([
-        "include/**/*.h",
-        "libraries/liblber/**/*.h",
-        "libraries/liblunicode/ucdata/**/*.h",
-    ])), "@platforms//cpu:aarch64": (["@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/lber_types.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_config.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_features.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/portable.h"] + glob([
-        "include/**/*.h",
-        "libraries/liblber/**/*.h",
-        "libraries/liblunicode/ucdata/**/*.h",
-    ]))}),
+    hdrs = select({
+        "@platforms//cpu:x86_64": ["@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/lber_types.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_config.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/ldap_features.h", "@clickhouse//:contrib/openldap-cmake/linux_x86_64/include/portable.h"] + glob([
+            "include/**/*.h",
+            "libraries/liblber/**/*.h",
+            "libraries/liblunicode/ucdata/**/*.h",
+        ]),
+        "@platforms//cpu:aarch64": ["@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/lber_types.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_config.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/ldap_features.h", "@clickhouse//:contrib/openldap-cmake/linux_aarch64/include/portable.h"] + glob([
+            "include/**/*.h",
+            "libraries/liblber/**/*.h",
+            "libraries/liblunicode/ucdata/**/*.h",
+        ]),
+    }),
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "libraries/liblber/debug.c"],
     copts = [
         "-w",
@@ -231,7 +234,6 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/openldap-cmake/ldap-version.c",
         ] + glob(["libraries/libldap/**/*.h"]),
     }),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers", "libraries/liblber/debug.c", "libraries/libldap/dnssrv.c", "libraries/libldap/error.c", "libraries/libldap/schema.c", "libraries/libldap/string.c"],
     copts = [
         "-w",

@@ -1574,8 +1574,6 @@ ch_cc_library(
         "llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp",
         "llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1713,8 +1711,6 @@ ch_cc_library(
         "llvm/lib/Analysis/ValueTracking.cpp",
         "llvm/lib/Analysis/VectorUtils.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1744,8 +1740,6 @@ _GENERATED_DEPS_4 = [
 ch_cc_library(
     name = "LLVMAsmParser",
     srcs = glob(["llvm/lib/AsmParser/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1785,8 +1779,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/AsmPrinter/WinCFGuard.cpp",
         "llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1826,8 +1818,6 @@ ch_cc_library(
         "llvm/lib/BinaryFormat/Wasm.cpp",
         "llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1845,8 +1835,6 @@ ch_cc_library(
         "llvm/lib/Bitcode/Reader/MetadataLoader.cpp",
         "llvm/lib/Bitcode/Reader/ValueList.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1863,8 +1851,6 @@ ch_cc_library(
         "llvm/lib/Bitcode/Writer/BitWriter.cpp",
         "llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1878,8 +1864,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1893,8 +1877,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Transforms/CFGuard/CFGuard.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -1927,8 +1909,6 @@ _GENERATED_DEPS_6 = [
 ch_cc_library(
     name = "LLVMCGData",
     srcs = glob(["llvm/lib/CGData/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2176,8 +2156,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/WinEHPrepare.cpp",
         "llvm/lib/CodeGen/XRayInstrumentation.cpp",
     ]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2191,8 +2169,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/CodeGenTypes/LowLevelType.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2285,8 +2261,6 @@ ch_cc_library(
         "llvm/lib/IR/Verifier.cpp",
         "llvm/lib/IR/VFABIDemangler.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2310,8 +2284,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Coroutines/SpillUtils.cpp",
         "llvm/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2364,8 +2336,6 @@ ch_cc_library(
         "llvm/lib/DebugInfo/CodeView/TypeStreamMerger.cpp",
         "llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2407,8 +2377,6 @@ ch_cc_library(
         "llvm/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFVerifier.cpp",
     ] + glob(["llvm/lib/DebugInfo/DWARF/LowLevel/*.cpp"])),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2427,8 +2395,6 @@ ch_cc_library(
         "llvm/lib/Demangle/MicrosoftDemangleNodes.cpp",
         "llvm/lib/Demangle/RustDemangle.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2446,8 +2412,6 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/SectionMemoryManager.cpp",
         "llvm/lib/ExecutionEngine/TargetSelect.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2485,8 +2449,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2498,8 +2460,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendHLSL",
     srcs = glob(["llvm/lib/Frontend/HLSL/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2511,8 +2471,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendOffloading",
     srcs = glob(["llvm/lib/Frontend/Offloading/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2524,8 +2482,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendOpenMP",
     srcs = glob(["llvm/lib/Frontend/OpenMP/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2600,8 +2556,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/GlobalISel/RegBankSelect.cpp",
         "llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2615,8 +2569,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Transforms/HipStdPar/HipStdPar.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2630,8 +2582,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/IRPrinter/IRPrintingPasses.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2645,8 +2595,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/IRReader/IRReader.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2658,8 +2606,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMInstCombine",
     srcs = glob(["llvm/lib/Transforms/InstCombine/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2700,8 +2646,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Instrumentation/TypeSanitizer.cpp",
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2716,8 +2660,6 @@ ch_cc_library(
         "llvm/lib/Linker/IRMover.cpp",
         "llvm/lib/Linker/LinkModules.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2815,8 +2757,6 @@ ch_cc_library(
         "llvm/lib/MC/WinCOFFObjectWriter.cpp",
         "llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2844,8 +2784,6 @@ _GENERATED_DEPS_10 = [
 ch_cc_library(
     name = "LLVMMCDisassembler",
     srcs = glob(["llvm/lib/MC/MCDisassembler/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2871,8 +2809,6 @@ ch_cc_library(
         "llvm/lib/MC/MCParser/WasmAsmParser.cpp",
         "llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2884,8 +2820,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMObjCARCOpts",
     srcs = glob(["llvm/lib/Transforms/ObjCARC/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2934,8 +2868,6 @@ ch_cc_library(
         "llvm/lib/Object/WindowsResource.cpp",
         "llvm/lib/Object/XCOFFObjectFile.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2977,8 +2909,6 @@ ch_cc_library(
         "llvm/lib/ObjectYAML/YAML.cpp",
         "llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -2997,8 +2927,6 @@ ch_cc_library(
         "llvm/lib/Passes/PassBuilderPipelines.cpp",
         "llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3032,8 +2960,6 @@ ch_cc_library(
         "llvm/lib/ProfileData/SampleProfWriter.cpp",
         "llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3045,8 +2971,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMRemarks",
     srcs = glob(["llvm/lib/Remarks/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3067,8 +2991,6 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp",
         "llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3080,8 +3002,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMSandboxIR",
     srcs = glob(["llvm/lib/SandboxIR/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3175,8 +3095,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Scalar/TailRecursionElimination.cpp",
         "llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3215,8 +3133,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/SelectionDAG/StatepointLowering.cpp",
         "llvm/lib/CodeGen/SelectionDAG/TargetLowering.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3396,8 +3312,6 @@ ch_cc_library(
         "llvm/lib/Support/Z3Solver.cpp",
         "llvm/lib/Support/zOSLibFunctions.cpp",
     ]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3414,7 +3328,6 @@ ch_cc_library(
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
         "llvm/lib/Support/BLAKE3/blake3_neon.c",
     ]),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = ([
         "-w",
@@ -3509,7 +3422,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = [],
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -3555,7 +3467,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = [],
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -3609,8 +3520,6 @@ ch_cc_library(
         "llvm/lib/Target/TargetMachineC.cpp",
         "llvm/lib/Target/TargetMachine.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3638,8 +3547,6 @@ ch_cc_library(
         "llvm/lib/TargetParser/X86TargetParser.cpp",
         "llvm/lib/TargetParser/XtensaTargetParser.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3667,8 +3574,6 @@ ch_cc_library(
         "llvm/lib/TextAPI/TextStubCommon.cpp",
         "llvm/lib/TextAPI/Utils.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3775,8 +3680,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Utils/ValueMapper.cpp",
         "llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3816,8 +3719,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Vectorize/VPlanUtils.cpp",
         "llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
     ]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -3913,8 +3814,6 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
@@ -3953,8 +3852,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
@@ -3978,8 +3875,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
@@ -3998,8 +3893,6 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMXRay",
     srcs = glob(["llvm/lib/XRay/*.cpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -4057,8 +3950,6 @@ ch_cc_library(
         "llvm/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp",
         "llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -11472,13 +11363,14 @@ cc_library(
     srcs = [
         ":libllvmlibc__runtime_objects_0",
     ],
+    # Link LLVM math before the glibc-compatibility fallbacks reached through rseq.
+    deps = ["@clickhouse//:glibc-rseq"],
     alwayslink = True,
 )
 
 cc_library(
     name = "libllvmlibc",
     deps = [
-        "@clickhouse//:glibc-rseq",
         ":libllvmlibc__compile_0",
     ],
 )
@@ -11839,8 +11731,6 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/SVEIntrinsicOpts.cpp",
         ]),
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "aarch64",
     ],
@@ -11876,8 +11766,6 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp",
         ],
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "aarch64",
     ],
@@ -11901,8 +11789,6 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp",
         ],
     }),
-    hdrs = [],
-    additional_compiler_inputs = [],
     arches = [
         "aarch64",
     ],

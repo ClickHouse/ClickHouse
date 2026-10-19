@@ -137,7 +137,6 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/utils/memory/AWSMemory.cpp",
         "src/aws-cpp-sdk-core/source/utils/memory/stl/SimpleStringStream.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp"] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + ["@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"]),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse//:contrib/aws-cmake/AwsFeatureTests.cmake", "@clickhouse//:contrib/aws-cmake/AwsGetVersion.cmake", "@clickhouse//:contrib/aws-cmake/AwsSIMD.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadAffinity.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake", "@clickhouse//:contrib/aws-cmake/CMakeLists.txt", "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"],
     copts = ["-w", "-std=c++23", "-g1"],
     local_defines = ([

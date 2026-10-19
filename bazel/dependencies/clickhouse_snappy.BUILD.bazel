@@ -100,8 +100,10 @@ ch_cc_library(
         "snappy-stubs-internal.cc",
         "snappy.cc",
     ],
-    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/snappy-cmake/config.h", ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/snappy-cmake/config.h", ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]))}),
-    additional_compiler_inputs = [],
+    hdrs = select({
+        "@platforms//cpu:x86_64": [":config/x86_64/contrib/snappy-cmake/config.h", ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]),
+        "@platforms//cpu:aarch64": [":config/aarch64/contrib/snappy-cmake/config.h", ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h"] + glob(["**/*.h"]),
+    }),
     copts = ["-w", "-std=c++23"],
     includes = [
         ".",
@@ -119,8 +121,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
     ],
     deps = ["@clickhouse//:clang_rt_builtins"],
     alwayslink = False,

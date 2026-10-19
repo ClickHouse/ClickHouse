@@ -33,8 +33,6 @@ ch_cc_library(
         "absl/base/internal/thread_identity.cc",
         "absl/base/internal/unscaledcycleclock.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     includes = [
         ".",
@@ -67,8 +65,6 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/cpu_detect.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -83,8 +79,6 @@ ch_cc_library(
     srcs = [
         "absl/hash/internal/city.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -114,7 +108,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -171,8 +164,6 @@ ch_cc_library(
         "absl/strings/cord.cc",
         "absl/strings/cord_analysis.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -192,8 +183,6 @@ ch_cc_library(
         "absl/strings/internal/cord_rep_crc.cc",
         "absl/strings/internal/cord_rep_consume.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -208,8 +197,6 @@ ch_cc_library(
     srcs = [
         "absl/strings/internal/cordz_functions.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -255,8 +242,6 @@ ch_cc_library(
     srcs = [
         "absl/strings/internal/cordz_handle.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -271,8 +256,6 @@ ch_cc_library(
     srcs = [
         "absl/strings/internal/cordz_info.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -287,8 +270,6 @@ ch_cc_library(
     srcs = [
         "absl/strings/internal/cordz_sample_token.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -306,8 +287,6 @@ ch_cc_library(
         "absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
         "absl/crc/internal/crc_non_temporal_memcpy.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -322,8 +301,6 @@ ch_cc_library(
     srcs = [
         "absl/crc/internal/crc_cord_state.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -339,8 +316,6 @@ ch_cc_library(
         "absl/crc/internal/crc.cc",
         "absl/crc/internal/crc_x86_arm_combined.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -372,8 +347,6 @@ ch_cc_library(
         "absl/debugging/internal/decode_rust_punycode.cc",
         "absl/debugging/internal/utf8_for_code_point.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -389,8 +362,6 @@ ch_cc_library(
         "absl/debugging/internal/demangle.cc",
         "absl/debugging/internal/demangle_rust.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -405,8 +376,6 @@ ch_cc_library(
     srcs = [
         "absl/log/die_if_null.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -421,8 +390,6 @@ ch_cc_library(
     srcs = [
         "absl/debugging/internal/examine_stack.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -441,7 +408,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -456,8 +422,6 @@ ch_cc_library(
     srcs = [
         "absl/debugging/failure_signal_handler.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -472,8 +436,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/commandlineflag.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -492,7 +454,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -507,8 +468,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/usage_config.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -523,8 +482,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/internal/flag.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -560,8 +517,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/marshalling.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -576,8 +531,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/parse.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -592,8 +545,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/internal/private_handle_accessor.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -608,8 +559,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/internal/program_name.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -624,8 +573,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/reflection.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -640,8 +587,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/usage.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -656,8 +601,6 @@ ch_cc_library(
     srcs = [
         "absl/flags/internal/usage.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -672,8 +615,6 @@ ch_cc_library(
     srcs = [
         "absl/synchronization/internal/graphcycles.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -692,7 +633,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -707,8 +647,6 @@ ch_cc_library(
     srcs = [
         "absl/hash/internal/hash.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -724,8 +662,6 @@ ch_cc_library(
         "absl/container/internal/hashtablez_sampler.cc",
         "absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -744,7 +680,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -782,8 +717,6 @@ ch_cc_library(
     srcs = [
         "absl/synchronization/internal/kernel_timeout.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -802,7 +735,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -817,8 +749,6 @@ ch_cc_library(
     srcs = [
         "absl/log/flags.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -833,8 +763,6 @@ ch_cc_library(
     srcs = [
         "absl/log/globals.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -849,8 +777,6 @@ ch_cc_library(
     srcs = [
         "absl/log/initialize.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -865,8 +791,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/check_op.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -881,8 +805,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/conditions.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -917,8 +839,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/fnmatch.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -933,8 +853,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/log_format.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -949,8 +867,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/globals.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -965,8 +881,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/log_sink_set.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -981,8 +895,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/log_message.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1001,7 +913,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1016,8 +927,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/proto.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1032,8 +941,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/structured_proto.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1052,7 +959,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1067,8 +973,6 @@ ch_cc_library(
     srcs = [
         "absl/log/log_sink.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1083,8 +987,6 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/low_level_alloc.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1099,8 +1001,6 @@ ch_cc_library(
     srcs = [
         "absl/profiling/internal/periodic_sampler.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1116,8 +1016,6 @@ ch_cc_library(
         "absl/random/discrete_distribution.cc",
         "absl/random/gaussian_distribution.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1133,8 +1031,6 @@ ch_cc_library(
         "absl/random/internal/chi_square.cc",
         "absl/random/internal/distribution_test_util.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1149,8 +1045,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/entropy_pool.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1169,7 +1063,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1184,8 +1077,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/randen.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1200,8 +1091,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/randen_detect.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1228,8 +1117,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/randen_hwaes.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1244,8 +1131,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/randen_slow.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1260,8 +1145,6 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/seed_material.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1280,7 +1163,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1295,8 +1177,6 @@ ch_cc_library(
     srcs = [
         "absl/random/seed_sequences.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1311,8 +1191,6 @@ ch_cc_library(
     srcs = [
         "absl/container/internal/raw_hash_set.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1327,8 +1205,6 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/raw_logging.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1343,8 +1219,6 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/scoped_set_env.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1363,7 +1237,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1378,7 +1251,6 @@ ch_cc_library(
     srcs = [
         "absl/debugging/stacktrace.cc",
     ],
-    hdrs = [],
     additional_compiler_inputs = ["absl/container/internal/raw_hash_set.cc", "absl/hash/internal/city.cc", "absl/hash/internal/hash.cc", "absl/time/format.cc", "absl/time/internal/cctz/testdata/version"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1396,8 +1268,6 @@ ch_cc_library(
         "absl/status/status.cc",
         "absl/status/status_payload_printer.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1412,8 +1282,6 @@ ch_cc_library(
     srcs = [
         "absl/status/statusor.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1433,8 +1301,6 @@ ch_cc_library(
         "absl/strings/internal/str_format/output.cc",
         "absl/strings/internal/str_format/parser.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1453,7 +1319,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1481,8 +1346,6 @@ ch_cc_library(
         "absl/strings/str_split.cc",
         "absl/strings/substitute.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1499,8 +1362,6 @@ ch_cc_library(
         "absl/strings/internal/utf8.cc",
         "absl/strings/internal/escaping.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1515,8 +1376,6 @@ ch_cc_library(
     srcs = [
         "absl/debugging/symbolize.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1542,8 +1401,6 @@ ch_cc_library(
         "absl/synchronization/notification.cc",
         "absl/synchronization/mutex.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1558,8 +1415,6 @@ ch_cc_library(
     srcs = [
         "absl/base/throw_delegate.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1578,8 +1433,6 @@ ch_cc_library(
         "absl/time/format.cc",
         "absl/time/time.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1606,7 +1459,6 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1621,8 +1473,6 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/vlog_config.cc",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

@@ -471,10 +471,16 @@ def declare_from_references(root, references):
                 })
             ids = {target['id']: n for n, target in graphs[arch].items()}
             depends = [ids[d['id']] for d in value.get('dependencies', [])]
+            if name == 'libllvmlibc' and 'glibc-rseq' in depends:
+                if len(groups) != 1:
+                    raise ValueError(f'{arch} libllvmlibc must have one math object group')
+                # Native links require LLVM math before glibc-compatibility.
+                # rseq already depends on glibc-compatibility; attach rseq to
+                # the math object owner so Bazel preserves that link order.
+                groups[0]['runtime_link_deps'] = ['@clickhouse//:glibc-rseq']
             compiled[arch] = {
                 'groups': groups,
-                'deps': [':' + d for d in depends if d in targets] + (
-                    ['@clickhouse//:glibc-rseq'] if name == 'libllvmlibc' and 'glibc-rseq' in depends else []),
+                'deps': [':' + d for d in depends if d in targets],
                 'kind': 'STATIC_LIBRARY',
                 'linkopts': ['--unwindlib=none'] if name == 'unwind' else [],
                 'alwayslink': name in {'clang_rt_builtins', 'clang_rt_xray', 'libllvmlibc'},

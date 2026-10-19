@@ -57,7 +57,6 @@ ch_cc_library(
         "sdk/storage/azure-storage-common/inc/**/*.hpp",
         "sdk/storage/azure-storage-files-datalake/inc/**/*.hpp",
     ])),
-    additional_compiler_inputs = [],
     copts = ["-w", "-std=c++23", "-I", repository_path("contrib/libxml2") + "/include", "-I", "contrib/libxml2-cmake/linux_x86_64/include"],
     includes = [
         "sdk/core/azure-core/inc",

@@ -863,6 +863,10 @@ class BuildFile:
                 })
                 self.rule('cc_library', name + '__compile_' + str(index), {
                     'srcs': [':' + object_name],
+                    'deps': select({
+                        '@platforms//cpu:' + arch: groups.get(arch, {}).get('runtime_link_deps', [])
+                        for arch in ARCHES
+                    }),
                     'target_compatible_with': compatible,
                     'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
                 })

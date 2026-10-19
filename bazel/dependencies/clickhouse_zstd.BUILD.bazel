@@ -61,8 +61,7 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-    ],
+
     # librdkafka's rdxxhash.c includes this source as text.
     textual_hdrs = ["lib/common/xxhash.c"],
     deps = _GENERATED_DEPS_0,
@@ -75,7 +74,6 @@ ch_cc_library(
         "lib/decompress/huf_decompress_amd64.S",
     ],
     hdrs = glob(["lib/**/*.h"]),
-    additional_compiler_inputs = [],
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",

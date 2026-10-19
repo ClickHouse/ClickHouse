@@ -11,8 +11,6 @@ ch_cc_library(
     srcs = [
         "icudt78l_dat.S",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     language = "ASM",
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",

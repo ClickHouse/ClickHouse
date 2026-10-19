@@ -35,7 +35,6 @@ ch_cc_library(
         "lang/c++/impl/Validator.cc",
     ] + glob(["lang/c++/impl/**/*.hh"]),
     hdrs = glob(["lang/c++/api/**/*.hh"]),
-    additional_compiler_inputs = [],
     copts = ["-w", "-std=c++17"],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",

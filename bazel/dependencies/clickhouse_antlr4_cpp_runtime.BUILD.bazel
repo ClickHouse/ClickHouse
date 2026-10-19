@@ -13,7 +13,6 @@ ch_cc_library(
         "runtime/Cpp/runtime/src/internal/Synchronization.cpp",
     ] + glob(["runtime/Cpp/runtime/src/misc/*.cpp"]) + glob(["runtime/Cpp/runtime/src/support/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/pattern/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/xpath/*.cpp"])),
     hdrs = glob(["runtime/Cpp/runtime/src/**/*.h"]),
-    additional_compiler_inputs = [],
     copts = (
         ["-w", "-std=c++23", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/atn", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/dfa", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/internal", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/misc", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/support", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/pattern", "-I", repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src/tree/xpath"]
     ),

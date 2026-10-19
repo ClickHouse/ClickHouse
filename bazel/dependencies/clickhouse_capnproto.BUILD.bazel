@@ -34,8 +34,6 @@ ch_cc_library(
         "c++/src/capnp/dynamic.c++",
         "c++/src/capnp/stringify.c++",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -60,8 +58,6 @@ ch_cc_library(
         "c++/src/capnp/schema-parser.c++",
         "c++/src/capnp/serialize-text.c++",
     ],
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -99,7 +95,6 @@ ch_cc_library(
         "c++/src/kj/parse/char.c++",
     ],
     hdrs = glob(["c++/src/**/*.h"]),
-    additional_compiler_inputs = [],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

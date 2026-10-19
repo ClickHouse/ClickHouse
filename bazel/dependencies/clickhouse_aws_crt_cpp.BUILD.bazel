@@ -20,7 +20,6 @@ ch_cc_library(
         "source/endpoints/BddEngine.cpp",
         "source/endpoints/RuleEngine.cpp",
     ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"])),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse//:contrib/aws-cmake/AwsFeatureTests.cmake", "@clickhouse//:contrib/aws-cmake/AwsGetVersion.cmake", "@clickhouse//:contrib/aws-cmake/AwsSIMD.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadAffinity.cmake", "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake", "@clickhouse//:contrib/aws-cmake/CMakeLists.txt", "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp"],
     copts = ["-w", "-std=c++23", "-g1"],
     implementation_deps = [

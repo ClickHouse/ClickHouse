@@ -182,7 +182,10 @@ ch_cc_library(
             "src/third_party/http-parser/http_parser.h",
         ],
     )) + glob(["src/third_party/curl/**/*.hpp", "src/third_party/hdr_histogram/**/*.hpp", "src/third_party/http-parser/**/*.h"]),
-    hdrs = select({"@platforms//cpu:x86_64": ([":config/x86_64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"])), "@platforms//cpu:aarch64": ([":config/aarch64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"]))}),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [":config/x86_64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"]),
+        "@platforms//cpu:aarch64": [":config/aarch64/contrib/cassandra-cmake/driver_config.hpp", "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob(["include/**/*.h"]),
+    }),
     additional_compiler_inputs = ["@clickhouse//:contrib/minizip-ng-cmake/CMakeLists.txt"],
     copts = ((["-w", "-std=c++17", "-I"] + select({
         "@platforms//cpu:x86_64": [
@@ -301,8 +304,6 @@ ch_cc_library(
     srcs = ([
         "src/third_party/curl/hostcheck.cpp",
     ]) + glob(["src/third_party/curl/**/*.hpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         ["-w", "-std=c++17"]
     ),
@@ -316,8 +317,6 @@ ch_cc_library(
     srcs = ([
         "src/third_party/hdr_histogram/hdr_histogram.cpp",
     ]) + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
-    hdrs = [],
-    additional_compiler_inputs = [],
     copts = (
         ["-w", "-std=c++17"]
     ),
@@ -331,7 +330,6 @@ ch_cc_library(
     srcs = ([
         "src/third_party/http-parser/http_parser.c",
     ]) + glob(["src/third_party/http-parser/**/*.h"]),
-    hdrs = [],
     additional_compiler_inputs = ["@clickhouse_llvm_project//:runtime_source_inputs", "@clickhouse_llvm_project//:runtime_generated_headers"],
     copts = [
         "-w",
@@ -340,8 +338,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-    ],
     deps = (["@clickhouse//:clang_rt_builtins"]),
     alwayslink = True,
 )

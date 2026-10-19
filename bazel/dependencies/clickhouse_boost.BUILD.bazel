@@ -104,7 +104,6 @@ ch_cc_library(
         "libs/coroutine/**/*.h",
         "libs/coroutine/**/*.hpp",
     ]),
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -129,7 +128,6 @@ ch_cc_library(
     name = "_boost_filesystem",
     srcs = glob(["libs/filesystem/src/*.cpp"]),
     hdrs = glob(["libs/filesystem/**/*.hpp"]),
-    additional_compiler_inputs = [],
     copts = ["-w", "-std=c++23"],
     local_defines = [
         "BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1",
@@ -155,7 +153,6 @@ ch_cc_library(
         "libs/graph/**/*.h",
         "libs/graph/**/*.hpp",
     ]),
-    additional_compiler_inputs = [],
     copts = (
         _GENERATED_COPTS_0
     ),
@@ -173,15 +170,18 @@ ch_cc_library(
         "libs/iostreams/src/zlib.cpp",
         "libs/iostreams/src/zstd.cpp",
     ],
-    hdrs = select({"@platforms//cpu:x86_64": (["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob([
-        "libs/iostreams/**/*.h",
-        "libs/iostreams/**/*.hpp",
-        "libs/iostreams/**/*.inc",
-    ])), "@platforms//cpu:aarch64": (["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob([
-        "libs/iostreams/**/*.h",
-        "libs/iostreams/**/*.hpp",
-        "libs/iostreams/**/*.inc",
-    ]))}),
+    hdrs = select({
+        "@platforms//cpu:x86_64": ["@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+            "libs/iostreams/**/*.h",
+            "libs/iostreams/**/*.hpp",
+            "libs/iostreams/**/*.inc",
+        ]),
+        "@platforms//cpu:aarch64": ["@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c"] + glob([
+            "libs/iostreams/**/*.h",
+            "libs/iostreams/**/*.hpp",
+            "libs/iostreams/**/*.inc",
+        ]),
+    }),
     additional_compiler_inputs = ["libs/iostreams/test/bzip2-1.0.8/libbz2.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc10/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc11/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc12/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc14/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc9/zlibvc.def", "libs/iostreams/test/zlib-1.2.11/old/os2/zlib.def", "libs/iostreams/test/zlib-1.2.11/win32/zlib.def", "libs/iostreams/src/file_descriptor.cpp"],
     copts = ["-w", "-std=c++23", "-I", repository_path("contrib/boost"), "-I", repository_path("contrib/zstd") + "/lib"],
     local_defines = select({
