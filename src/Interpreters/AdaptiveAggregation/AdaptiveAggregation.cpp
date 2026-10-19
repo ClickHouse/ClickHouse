@@ -195,15 +195,14 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
 
 bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
 {
-    /// The byte twin of the key-count bound is the table's hash-table buffer: the cells that every probe walks, hits and
-    /// misses alike, so it keeps a table with wide cells cache-resident. The memory of the states is no bound: it grows
-    /// through the keys that the table already holds, which a freeze does not stop, and freezing a few groups with
-    /// growing states would only stage the rest of the stream. It is checked between blocks, so a byte-triggered freeze
-    /// lands on a block boundary; the mid-block freeze crossing checks only the key count. The memory of the whole
-    /// aggregation is no bound either: it sums the allocations of every thread, including the blocks they are
-    /// processing, so the growth of some tables would freeze the others.
+    /// The byte twin of the key-count bound is the table's own tracked memory: its hash-table buffer, its arenas and
+    /// the heap memory that its states own, such as the sets of `uniqExact`, which a few groups can grow while the key
+    /// count stays low. It is checked between blocks, so a byte-triggered freeze lands on a block boundary; the
+    /// mid-block freeze crossing checks only the key count. The memory of the whole aggregation is no bound: it sums
+    /// the allocations of every thread, including the blocks they are processing, so the growth of some tables would
+    /// freeze the others.
     const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+        && result.memoryUsage() >= params.adaptive_aggregator_freeze_threshold_bytes;
     return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
         && result.isConvertibleToTwoLevel();
 }
@@ -322,13 +321,6 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         if (local_variants.isConvertibleToTwoLevel())
             local_variants.convertToTwoLevel();
     }
-    else if (adaptive.baseline_converts_to_two_level && local_variants.isConvertibleToTwoLevel())
-    {
-        /// A table that never froze but outgrew the two-level thresholds through the memory of its states converts
-        /// here, in the producer's own thread, as the baseline's table would have during the aggregation. Otherwise an
-        /// aggregation in which no producer froze would merge its single-level tables in one thread.
-        local_variants.convertToTwoLevel();
-    }
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
@@ -445,6 +437,10 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
+    /// The streams of the partitions grow with every spill, so every spill checks the space for its records plus the
+    /// minimum free space, which the ordinary aggregation checks when it creates a file.
+    shared.spill_scope->checkFreeSpace(partitions.allocatedChunkBytes() + params.min_free_disk_space);
+
     partitions.finishAppending();
 
     /// The buffers spilled together start at different partitions, so they do not queue on the same stream's lock
@@ -460,7 +456,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
         if (!records)
             continue;
 
-        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition, params.min_free_disk_space);
+        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition);
         partitions.releasePartition(partition);
         spilled_records += records;
     }
@@ -474,17 +470,14 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
 }
 
 UInt64 AdaptiveAggregationSession::SpilledPartition::append(
-    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition, size_t min_free_disk_space)
+    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
-    const size_t reserve_size = bytes + min_free_disk_space;
 
     std::lock_guard lock(mutex);
     if (!stream)
-        stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
-    else
-        stream->checkFreeSpace(reserve_size);
+        stream = std::make_unique<TemporaryDataBuffer>(scope);
     writeBinaryLittleEndian(bytes, *stream);
     partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
     record_count += partitions.recordsOf(partition);

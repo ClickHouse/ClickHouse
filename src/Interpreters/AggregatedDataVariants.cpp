@@ -161,26 +161,24 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 
 size_t AggregatedDataVariants::allocatedBytes() const
 {
-    size_t res = hashTableBufferBytes();
+    size_t res = 0;
     for (const auto & pool : aggregates_pools)
         res += pool->allocatedBytes();
-    return res;
-}
 
-size_t AggregatedDataVariants::hashTableBufferBytes() const
-{
     switch (type)
     {
         case Type::EMPTY:
         case Type::without_key:
-            return 0;
+            break;
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            return (NAME)->data.getBufferSizeInBytes();
+            res += (NAME)->data.getBufferSizeInBytes(); \
+            break;
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+    return res;
 }
 
 size_t AggregatedDataVariants::usedArenaBytes() const

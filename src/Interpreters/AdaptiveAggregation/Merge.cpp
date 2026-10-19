@@ -1063,22 +1063,27 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// thread thawed and took the key into its table. A function that needs the rows of each state in order does
         /// not take the adaptive path at all (see `AggregateFunctionProperties::requires_ordered_rows_per_state`). The
         /// cells go first: a key a source holds is adopted with its state, so the records of that key update the
-        /// adopted state instead of creating one. Returns how many records `filter` skipped.
+        /// adopted state instead of creating one. The states of the other sources that hold the key merge into it last,
+        /// as the aggregation without staging merges the states of the threads after adding their rows: a merged state
+        /// can take a costlier form, such as the union of `uniqTheta`, which takes every later row through a sketch of
+        /// its own. The merge keeps the addresses of the adopted states, which the records' insertions into the table
+        /// do not move. Returns how many records `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
             adoptSourceCells<Method>(table, cells, filter, task);
-            if (!task.places.empty())
-                mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
             size_t skipped = 0;
             for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
             {
                 skipped += drainAdaptivePartition<Method, adaptive_key_stages_bytes<AdaptiveRecordKey<Method>>>(
-                    table, arena, ranges, filter, task.places, task.records);
+                    table, arena, ranges, filter, task.record_places, task.records);
             });
             for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)
             {
-                skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(table, arena, ranges, filter, task.places, task.records);
+                skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(
+                    table, arena, ranges, filter, task.record_places, task.records);
             });
+            if (!task.places.empty())
+                mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
             return skipped;
         };
 

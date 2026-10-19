@@ -79,6 +79,25 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
+[[noreturn]] void throwNotEnoughSpaceOnTemporaryDisks(size_t bytes, const Disks & disks)
+{
+    Strings disks_info;
+    for (const auto & d : disks)
+    {
+        auto to_double = [](auto x) { return static_cast<double>(x); };
+        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+            d->getName(),
+            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getKeepingFreeSpace())));
+    }
+
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+        bytes, fmt::join(disks_info, ", "));
+}
+
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -247,30 +266,6 @@ private:
 };
 #endif
 
-namespace
-{
-
-[[noreturn]] void throwNotEnoughSpace(const Disks & disks, size_t reserve_size)
-{
-    Strings disks_info;
-    for (const auto & d : disks)
-    {
-        auto to_double = [](auto x) { return static_cast<double>(x); };
-        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
-            d->getName(),
-            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
-            ReadableSize(d->getKeepingFreeSpace())));
-    }
-
-    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-        reserve_size, fmt::join(disks_info, ", "));
-}
-
-}
-
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
@@ -284,7 +279,7 @@ public:
         {
             auto reservation = volume->reserve(reserve_size);
             if (!reservation)
-                throwNotEnoughSpace(volume->getDisks(), reserve_size);
+                throwNotEnoughSpaceOnTemporaryDisks(reserve_size, volume->getDisks());
             disk = reservation->getDisk();
         }
         else
@@ -297,13 +292,6 @@ public:
     std::unique_ptr<WriteBuffer> write() override
     {
         return disk->writeFile(path_to_file, buffer_size);
-    }
-
-    void checkFreeSpace(size_t bytes) override
-    {
-        /// The reservation is only a check, as on creation: it is released at once.
-        if (bytes > 0 && !disk->reserve(bytes))
-            throwNotEnoughSpace({disk}, bytes);
     }
 
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
@@ -388,6 +376,32 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
+TemporarySpaceCheck createTemporarySpaceCheck(VolumePtr volume)
+{
+    return [volume](size_t bytes)
+    {
+        /// The files go to any disk of the volume (see `IVolume::getDisk`), so every disk must have the space. The
+        /// check reserves the space only for its duration, as the creation of a file does.
+        for (const auto & disk : volume->getDisks())
+        {
+            if (!disk->reserve(bytes))
+                throwNotEnoughSpaceOnTemporaryDisks(bytes, volume->getDisks());
+        }
+    };
+}
+
+TemporarySpaceCheck createTemporarySpaceCheck(FileCache *)
+{
+    return [](size_t) {};
+}
+
+#if ENABLE_DISTRIBUTED_CACHE
+TemporarySpaceCheck createTemporarySpaceCheck(DistributedCacheTag)
+{
+    return [](size_t) {};
+}
+#endif
+
 TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
@@ -437,11 +451,6 @@ void TemporaryDataBuffer::nextImpl()
     out_compressed_buf->next();
     BufferBase::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size(), out_compressed_buf->offset());
     updateAllocAndCheck();
-}
-
-void TemporaryDataBuffer::checkFreeSpace(size_t size)
-{
-    file_holder->checkFreeSpace(size);
 }
 
 String TemporaryDataBuffer::describeFilePath() const

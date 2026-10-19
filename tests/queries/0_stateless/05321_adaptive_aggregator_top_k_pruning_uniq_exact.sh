@@ -17,8 +17,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # few groups with thousands of distinct values and almost every bin is bounded far below them. Every cell compares the
 # top with the one of the feature off: the distinct counts as a multiset, which ties cannot reorder, and every returned
 # row against the row of its key in the full aggregation, which catches a group whose count lost records or source
-# cells. The last two columns say whether the merge skipped units and records; an ascending order must not prune. Each
-# cell runs in its own clickhouse-local process, so the counters in `system.events` belong to it alone.
+# cells. The last two columns say whether the merge skipped units and records; an ascending order must not prune.
+# `optimize_injective_functions_in_group_by = 0` keeps `toString(k)` a string key. Each cell runs in its own
+# clickhouse-local process, so the counters in `system.events` belong to it alone.
 
 function check()
 {
@@ -31,6 +32,7 @@ function check()
     $CLICKHOUSE_LOCAL --query "
     SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 128, count_distinct_implementation = 'uniqExact';
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+    SET optimize_injective_functions_in_group_by = 0;
     SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
     SET $settings;
 

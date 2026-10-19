@@ -128,12 +128,12 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
-/// Version 20 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer
-/// at this version or above. A peer below it thaws as it always did, which changes no result.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
+/// Version 21 registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
+/// version or above. A peer below it thaws as it always did, which changes no result.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -145,8 +145,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.10.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Last bumped for release 26.11.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -183,7 +183,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 20;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;

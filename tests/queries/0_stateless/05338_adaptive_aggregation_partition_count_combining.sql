@@ -4,8 +4,10 @@
 -- The two 16-byte keys share a `CRC32C` hash and exercise exact equality when a hash match alone cannot
 -- identify a group.
 -- Empty keys, embedded zero bytes, and long keys exercise the string record's length and byte comparisons.
+-- `max_threads_min_free_memory_per_thread = 0` keeps the four threads whatever the free memory.
 
 SET max_threads = 4;
+SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 16384;
 SET adaptive_aggregator_freeze_threshold = 128;
 SET adaptive_aggregator_disable_thaw = 1;

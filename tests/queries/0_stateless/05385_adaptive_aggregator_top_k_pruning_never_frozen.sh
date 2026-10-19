@@ -15,8 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # their counts raise the threshold to 1000. The frozen producer's bins hold only a few tail rows in the bins of
 # the top, so without the tables of the streams that never froze the merge would skip the units of the top.
 # Every cell compares the top with the one of the same query with the feature off, and says whether exactly one
-# producer froze and whether the merge skipped units. Each cell runs in its own clickhouse-local process, so
-# the counters in `system.events` belong to it alone.
+# producer froze and whether the merge skipped units. `optimize_injective_functions_in_group_by = 0` keeps
+# `toString(k)` a string key. Each cell runs in its own clickhouse-local process, so the counters in
+# `system.events` belong to it alone.
 
 function check()
 {
@@ -29,6 +30,7 @@ function check()
     SET max_threads = 8, max_threads_min_free_memory_per_thread = 0, max_block_size = 300000;
     SET adaptive_aggregator_freeze_threshold = 1000;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+    SET optimize_injective_functions_in_group_by = 0;
     SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
 
     SELECT '$label',

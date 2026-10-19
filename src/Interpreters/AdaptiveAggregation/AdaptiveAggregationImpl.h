@@ -208,14 +208,8 @@ struct AdaptiveAggregationSession
     {
     public:
         /// Appends the records of partition `partition` of `partitions` to the stream as one block, creating the stream
-        /// in `scope` on the first append, and returns the block's bytes. Producers append concurrently. Like the
-        /// temporary file of an ordinary spill, every append first checks that the disk has room for the block and
-        /// `min_free_disk_space` more, and throws `NOT_ENOUGH_SPACE` otherwise.
-        UInt64 append(
-            const TemporaryDataOnDiskScopePtr & scope,
-            const PartitionedRecordBuffer & partitions,
-            size_t partition,
-            size_t min_free_disk_space);
+        /// in `scope` on the first append, and returns the block's bytes. Producers append concurrently.
+        UInt64 append(const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition);
 
         /// Reads the stream back in the order the producers wrote it and calls `callback(block)` with the records of
         /// each block in a padded buffer like a chunk's. Every block comes in the same buffer, which the next block
@@ -244,8 +238,8 @@ struct AdaptiveAggregationSession
 /// One adaptive merge task, which merges a sequence of buckets one at a time (see
 /// `Aggregator::mergeAndConvertAdaptiveBucket`). It keeps the bucket it merged last, whose table it takes over for the
 /// next one, and its working memory, so the units of its buckets do not allocate it again: the places of a unit's
-/// merge and the source slots whose states merge into them, the record pointers and ranges of a partition, and for a
-/// count-first unit the hashes of its best groups and the counts an ascending selection keeps.
+/// merge and the source slots whose states merge into them, the places, pointers and ranges of a partition's records,
+/// and for a count-first unit the hashes of its best groups and the counts an ascending selection keeps.
 struct AdaptiveMergeTask
 {
     /// The bucket the task merged last, or -1 before its first.
@@ -258,6 +252,7 @@ struct AdaptiveMergeTask
     /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeAdaptiveSourceStates`).
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
+    PaddedPODArray<AggregateDataPtr> record_places;
     RowStorePointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
@@ -505,10 +500,6 @@ struct AdaptiveAggregationProducer
 
     /// The current block's misses.
     AdaptiveMissBatch misses;
-
-    /// Whether the baseline would have converted the local table to two-level by now (see `executeOnBlock`). A
-    /// producer that never froze then converts its table at its finish.
-    bool baseline_converts_to_two_level = false;
 
     /// The producer's count bins when the aggregation prunes by the top-K, allocated by the first freeze and handed
     /// over at the finish.

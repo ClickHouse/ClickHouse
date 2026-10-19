@@ -503,10 +503,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
-    /// Bytes of the active method's hash-table buffer: its cells, which hold the keys (references to
-    /// the bytes of string keys) and the states' pointers, or the states themselves where they are
-    /// stored inline.
-    size_t hashTableBufferBytes() const;
     /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
     /// which grow by whole chunks of doubling size, they follow every allocation.
     size_t usedArenaBytes() const;
