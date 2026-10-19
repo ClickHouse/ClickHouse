@@ -137,4 +137,7 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
+/// The same for a ReadBuffer source.
+void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
+
 }
