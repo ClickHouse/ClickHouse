@@ -299,7 +299,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::DataLakeMetadata};
         if (!estimate->rows)
             return stats;
-        const UInt64 rows = *estimate->rows - estimate->deleted_rows;
+        const UInt64 rows = *estimate->rows;
 
         const auto conditions = getConditionsToEstimate(*reading, filter);
         if (conditions.empty() || rows == 0)
