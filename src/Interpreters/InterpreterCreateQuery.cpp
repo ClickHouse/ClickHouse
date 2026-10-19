@@ -3959,8 +3959,10 @@ BlockIO InterpreterCreateQuery::execute()
                     getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
 
                 /// The initiator can read the source definition only when it holds the source. A
-                /// cross-replication cluster keeps each shard in a database the initiator may not have.
-                if (DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
+                /// cross-replication cluster keeps each shard in a database the initiator may not have. A
+                /// query with its own `ENGINE` inherits no definition, so it skips the lookup, which can reach
+                /// the server behind a `Remote` database before any grant is checked.
+                if (!inherits_engine || DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
                 {
                     /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                     /// what the worker builds, not what our settings give
