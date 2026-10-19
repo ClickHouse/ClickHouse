@@ -7,12 +7,10 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '拡張機能']
 ---
 
-<div id="introduction">
-  ## はじめに
-</div>
+## はじめに {#introduction}
 
 オープンソースの PostgreSQL 拡張機能である[pg&#95;clickhouse]を使うと、SQL を書き換えることなく、
-PostgreSQL から直接 ClickHouse に分析クエリを実行できます。PostgreSQL 13 以降と
+PostgreSQL から直接 ClickHouse に分析クエリを実行できます。PostgreSQL 14 以降と
 ClickHouse v23 以降をサポートしています。
 
 [ClickPipes](/ja/integrations/clickpipes/home) による ClickHouse へのデータ同期が開始されたら、
@@ -21,9 +19,7 @@ pg&#95;clickhouse を使用して [外部テーブルをインポート] し、
 テーブルに対して既存の PostgreSQL クエリを実行すれば、既存のコードベースを維持したまま、
 実行処理を ClickHouse 側にプッシュダウンできます。
 
-<div id="introduction">
-  ## はじめに
-</div>
+## はじめに {#getting-started}
 
 pg&#95;clickhouse を試す最も簡単な方法は [Docker image] を使うことです。これには、
 pg&#95;clickhouse と [re2] 拡張機能を含む標準の PostgreSQL 用 Docker image が含まれています。
@@ -37,9 +33,7 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 ClickHouseテーブルのインポートとクエリのプッシュダウンを始めるには、
 [tutorial]を参照してください。
 
-<div id="test-case-tpc-h">
-  ## テストケース: TPC-H
-</div>
+## テストケース: TPC-H {#test-case-tpc-h}
 
 この表は、通常の PostgreSQL テーブルと ClickHouse に接続した pg&#95;clickhouse について、スケーリング係数 1 でデータをロードした場合の [TPC-H] クエリパフォーマンスを比較したものです。✔︎ は単一の foreign scan として完全にプッシュダウンされることを、✼ は複数の foreign scan として完全にプッシュダウンされることを示します。すべてのテストは、メモリ 36 GB を搭載した MacBook Pro M4 Max で実行しました。
 
@@ -68,13 +62,9 @@ ClickHouseテーブルのインポートとクエリのプッシュダウンを�
 | [クエリ 21] |    1145 ms |           4470 ms |          |
 | [クエリ 22] |     270 ms |             45 ms |     ✼    |
 
-<div id="compile-from-source">
-  ### ソースからコンパイル
-</div>
+### ソースからコンパイル {#compile-from-source}
 
-<div id="general-unix">
-  #### General Unix
-</div>
+#### General Unix {#general-unix}
 
 PostgreSQL と curl の開発パッケージでは、`pg_config` と
 `curl-config` が PATH に含まれるため、`make` (または
@@ -82,9 +72,7 @@ PostgreSQL と curl の開発パッケージでは、`pg_config` と
 データベースで
 `CREATE EXTENSION pg_clickhouse` を実行できるはずです。
 
-<div id="debian--ubuntu--apt">
-  #### Debian / Ubuntu / APT
-</div>
+#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
 
 PostgreSQL Apt リポジトリからの取得方法の詳細は、[PostgreSQL Apt]を参照してください。
 
@@ -99,9 +87,7 @@ sudo apt install \
   g++
 ```
 
-<div id="redhat--centos--yum">
-  #### RedHat / CentOS / Yum
-</div>
+#### RedHat / CentOS / Yum {#redhat--centos--yum}
 
 ```sh
 sudo yum install \
@@ -116,9 +102,7 @@ sudo yum install \
 
 PostgreSQL Yum リポジトリからパッケージを取得する方法の詳細は、[PostgreSQL Yum] を参照してください。
 
-<div id="install-from-pgxn">
-  #### PGXN からインストール
-</div>
+#### PGXN からインストール {#install-from-pgxn}
 
 上記の依存関係を満たしたら、[PGXN client] ([Homebrew]、[Apt]、および `pgxnclient` という名前の Yum パッケージで提供) を使用して、`pg_clickhouse` をダウンロード、コンパイル、インストールします:
 
@@ -126,9 +110,7 @@ PostgreSQL Yum リポジトリからパッケージを取得する方法の詳�
 pgxn install pg_clickhouse
 ```
 
-<div id="compile-and-install">
-  #### コンパイルとインストール
-</div>
+#### コンパイルとインストール {#compile-and-install}
 
 ClickHouseライブラリと`pg_clickhouse`をビルドしてインストールするには、以下を実行します。
 
@@ -201,9 +183,7 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-<div id="testing">
-  #### テスト
-</div>
+#### テスト {#testing}
 
 テストスイートを実行するには、拡張機能のインストール後に次を実行します
 
@@ -224,9 +204,7 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-<div id="loading">
-  ### 読み込み
-</div>
+### 読み込み {#loading}
 
 `pg_clickhouse` をインストールしたら、スーパーユーザーとして接続し、次を実行することで
 データベースに追加できます：
@@ -243,17 +221,13 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-<div id="dependencies">
-  ## 依存関係
-</div>
+## 依存関係 {#dependencies}
 
-`pg_clickhouse` 拡張機能には、[PostgreSQL] 13 以降、[libcurl]、
+`pg_clickhouse` 拡張機能には、[PostgreSQL] 14 以降、[libcurl]、
 [libuuid] が必要です。拡張機能をビルドするには、C および C++ コンパイラ、[libSSL]、[GNU
 make]、[CMake] が必要です。
 
-<div id="road-map">
-  ## ロードマップ
-</div>
+## ロードマップ {#road-map}
 
 現在最も注力しているのは、DML 機能を追加する前に、分析ワークロード向けのプッシュダウン対応を完成させることです。
 ロードマップは次のとおりです。
@@ -272,9 +246,7 @@ make]、[CMake] が必要です。
 * すべてがリモート
   データベースをクエリする場合の UNION クエリのプッシュダウン対応を追加する
 
-<div id="authors">
-  ## 著者
-</div>
+## 著者 {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
@@ -282,9 +254,7 @@ make]、[CMake] が必要です。
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-<div id="copyright">
-  ## 著作権
-</div>
+## 著作権 {#copyright}
 
 * Copyright (c) 2025-2026, ClickHouse
 * 一部 Copyright (c) 2023-2025, Ildus Kurbangaliev
