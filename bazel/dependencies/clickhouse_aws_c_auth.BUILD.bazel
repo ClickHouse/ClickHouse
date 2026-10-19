@@ -620,10 +620,7 @@ ch_cc_library(
                 repository_path("contrib/aws") + "/generated/src/aws-cpp-sdk-s3/include",
                 "contrib/aws-c-auth",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-auth") + "/include",
-                "contrib/aws-c-auth",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-common") + "/include",
                 "contrib/aws-c-auth",
@@ -701,10 +698,7 @@ ch_cc_library(
                 repository_path("contrib/aws") + "/generated/src/aws-cpp-sdk-s3/include",
                 "contrib/aws-c-auth",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-auth") + "/include",
-                "contrib/aws-c-auth",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-common") + "/include",
                 "contrib/aws-c-auth",

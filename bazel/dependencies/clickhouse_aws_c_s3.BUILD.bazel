@@ -594,10 +594,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-compression") + "/include",
                 "contrib/aws-c-s3",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-s3") + "/include",
-                "contrib/aws-c-s3",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws") + "/src/aws-cpp-sdk-core/include",
                 "contrib/aws-c-s3",
@@ -675,10 +672,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-compression") + "/include",
                 "contrib/aws-c-s3",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-s3") + "/include",
-                "contrib/aws-c-s3",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws") + "/src/aws-cpp-sdk-core/include",
                 "contrib/aws-c-s3",

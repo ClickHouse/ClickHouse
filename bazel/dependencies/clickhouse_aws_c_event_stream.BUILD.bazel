@@ -552,10 +552,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-cal") + "/include",
                 "contrib/aws-c-event-stream",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-event-stream") + "/include",
-                "contrib/aws-c-event-stream",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
                 "contrib/aws-c-event-stream",
@@ -633,10 +630,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-cal") + "/include",
                 "contrib/aws-c-event-stream",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-event-stream") + "/include",
-                "contrib/aws-c-event-stream",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
                 "contrib/aws-c-event-stream",

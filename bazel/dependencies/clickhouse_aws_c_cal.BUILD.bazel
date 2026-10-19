@@ -566,10 +566,7 @@ ch_cc_library(
     ]),
     local_includes = select({
         "@platforms//cpu:x86_64": (([
-            repository_local_include(
-                repository_path("contrib/aws-c-cal") + "/include",
-                "contrib/aws-c-cal",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-event-stream") + "/include",
                 "contrib/aws-c-cal",
@@ -647,10 +644,7 @@ ch_cc_library(
             ),
         ]),
         "@platforms//cpu:aarch64": (([
-            repository_local_include(
-                repository_path("contrib/aws-c-cal") + "/include",
-                "contrib/aws-c-cal",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-event-stream") + "/include",
                 "contrib/aws-c-cal",

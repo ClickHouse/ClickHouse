@@ -595,10 +595,7 @@ ch_cc_library(
                 repository_path("contrib/aws-checksums") + "/include",
                 "contrib/aws-c-http",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-http") + "/include",
-                "contrib/aws-c-http",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-compression") + "/include",
                 "contrib/aws-c-http",
@@ -676,10 +673,7 @@ ch_cc_library(
                 repository_path("contrib/aws-checksums") + "/include",
                 "contrib/aws-c-http",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-http") + "/include",
-                "contrib/aws-c-http",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-compression") + "/include",
                 "contrib/aws-c-http",

@@ -321,15 +321,9 @@ ch_cc_library(
                 "$(GENDIR)/" + repository_path("contrib/orc") + "/config/x86_64/contrib/orc/c++/include",
                 "contrib/orc",
             ),
-            repository_local_include(
-                repository_path("contrib/orc") + "/c++/include",
-                "contrib/orc",
-            ),
+            "c++/include",
             repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
-            repository_local_include(
-                repository_path("contrib/orc") + "/c++/src",
-                "contrib/orc",
-            ),
+            "c++/src",
             repository_local_include(
                 repository_path("contrib/arrow") + "/config/x86_64/contrib/arrow-cmake",
                 "contrib/orc",
@@ -373,15 +367,9 @@ ch_cc_library(
                 "$(GENDIR)/" + repository_path("contrib/orc") + "/config/aarch64/contrib/orc/c++/include",
                 "contrib/orc",
             ),
-            repository_local_include(
-                repository_path("contrib/orc") + "/c++/include",
-                "contrib/orc",
-            ),
+            "c++/include",
             repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
-            repository_local_include(
-                repository_path("contrib/orc") + "/c++/src",
-                "contrib/orc",
-            ),
+            "c++/src",
             repository_local_include(
                 repository_path("contrib/arrow") + "/config/aarch64/contrib/arrow-cmake",
                 "contrib/orc",

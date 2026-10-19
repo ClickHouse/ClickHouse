@@ -626,10 +626,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-mqtt") + "/include",
                 "contrib/aws-c-sdkutils",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-sdkutils") + "/include",
-                "contrib/aws-c-sdkutils",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws") + "/generated/src/aws-cpp-sdk-glue/include",
                 "contrib/aws-c-sdkutils",
@@ -707,10 +704,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-mqtt") + "/include",
                 "contrib/aws-c-sdkutils",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-sdkutils") + "/include",
-                "contrib/aws-c-sdkutils",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws") + "/generated/src/aws-cpp-sdk-glue/include",
                 "contrib/aws-c-sdkutils",

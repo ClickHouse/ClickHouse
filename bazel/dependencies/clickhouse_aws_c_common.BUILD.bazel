@@ -838,14 +838,8 @@ ch_cc_library(
                 repository_path("contrib/aws-c-event-stream") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
-                "contrib/aws-c-common",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor",
-                "contrib/aws-c-common",
-            ),
+            "source/external/libcbor/cbor",
+            "source/external/libcbor",
             repository_local_include(
                 repository_path("contrib/aws-checksums") + "/include",
                 "contrib/aws-c-common",
@@ -880,10 +874,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-auth") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/include",
-                "contrib/aws-c-common",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-io") + "/include",
                 "contrib/aws-c-common",
@@ -919,14 +910,8 @@ ch_cc_library(
                 repository_path("contrib/aws-c-event-stream") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
-                "contrib/aws-c-common",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor",
-                "contrib/aws-c-common",
-            ),
+            "source/external/libcbor/cbor",
+            "source/external/libcbor",
             repository_local_include(
                 repository_path("contrib/aws-checksums") + "/include",
                 "contrib/aws-c-common",
@@ -961,10 +946,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-auth") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/include",
-                "contrib/aws-c-common",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-io") + "/include",
                 "contrib/aws-c-common",
@@ -1648,14 +1630,8 @@ ch_cc_library(
                 repository_path("contrib/aws-c-event-stream") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor/cbor",
-                "contrib/aws-c-common",
-            ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/source/external/libcbor",
-                "contrib/aws-c-common",
-            ),
+            "source/external/libcbor/cbor",
+            "source/external/libcbor",
             repository_local_include(
                 repository_path("contrib/aws-checksums") + "/include",
                 "contrib/aws-c-common",
@@ -1690,10 +1666,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-auth") + "/include",
                 "contrib/aws-c-common",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-common") + "/include",
-                "contrib/aws-c-common",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-io") + "/include",
                 "contrib/aws-c-common",

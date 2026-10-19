@@ -725,10 +725,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-io") + "/include",
                 "contrib/aws-crt-cpp",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-crt-cpp") + "/include",
-                "contrib/aws-crt-cpp",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-mqtt") + "/include",
                 "contrib/aws-crt-cpp",
@@ -806,10 +803,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-io") + "/include",
                 "contrib/aws-crt-cpp",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-crt-cpp") + "/include",
-                "contrib/aws-crt-cpp",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-mqtt") + "/include",
                 "contrib/aws-crt-cpp",

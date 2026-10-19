@@ -568,10 +568,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-http") + "/include",
                 "contrib/aws-c-compression",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-compression") + "/include",
-                "contrib/aws-c-compression",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-s3") + "/include",
                 "contrib/aws-c-compression",
@@ -649,10 +646,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-http") + "/include",
                 "contrib/aws-c-compression",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-c-compression") + "/include",
-                "contrib/aws-c-compression",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-s3") + "/include",
                 "contrib/aws-c-compression",

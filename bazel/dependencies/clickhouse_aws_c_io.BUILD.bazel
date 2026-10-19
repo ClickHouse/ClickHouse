@@ -100,10 +100,7 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
             repository_path("contrib/aws-c-common") + "/include",
             "contrib/aws-c-io",
         ),
-        repository_local_include(
-            repository_path("contrib/aws-c-io") + "/include",
-            "contrib/aws-c-io",
-        ),
+        "include",
         repository_local_include(
             repository_path("contrib/aws-crt-cpp") + "/include",
             "contrib/aws-c-io",
@@ -181,10 +178,7 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
             repository_path("contrib/aws-c-common") + "/include",
             "contrib/aws-c-io",
         ),
-        repository_local_include(
-            repository_path("contrib/aws-c-io") + "/include",
-            "contrib/aws-c-io",
-        ),
+        "include",
         repository_local_include(
             repository_path("contrib/aws-crt-cpp") + "/include",
             "contrib/aws-c-io",

@@ -579,10 +579,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-common") + "/source/external/libcbor",
                 "contrib/aws-checksums",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-checksums") + "/include",
-                "contrib/aws-checksums",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-http") + "/include",
                 "contrib/aws-checksums",
@@ -660,10 +657,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-common") + "/source/external/libcbor",
                 "contrib/aws-checksums",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-checksums") + "/include",
-                "contrib/aws-checksums",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-http") + "/include",
                 "contrib/aws-checksums",
@@ -1295,10 +1289,7 @@ ch_cc_library(
                 repository_path("contrib/aws-c-common") + "/source/external/libcbor",
                 "contrib/aws-checksums",
             ),
-            repository_local_include(
-                repository_path("contrib/aws-checksums") + "/include",
-                "contrib/aws-checksums",
-            ),
+            "include",
             repository_local_include(
                 repository_path("contrib/aws-c-http") + "/include",
                 "contrib/aws-checksums",
