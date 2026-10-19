@@ -279,8 +279,14 @@ def check():
         return True
 
     # Docker server/keeper image test: the `Docker server image` job validates it itself, it fails when the test passes on
-    # the `head` images built from master.
+    # the `head` images built from master. It reads the labels the workflow started with.
     if has_docker_server:
+        if not any(lb in Info().pr_labels for lb in _BUGFIX_LABELS):
+            print(
+                "The PR became a bug fix after the workflow started, so the Docker image tests were not run on the "
+                "`head` images built from master; re-run the workflow"
+            )
+            return False
         print(
             "Docker image test changed (no new functional/integration/unit tests) - pass"
         )
