@@ -1,12 +1,4 @@
-v_plain	300
-v_plain distributed	1
-v_set	300
-v_set distributed	0
-v_nested	300
-v_nested distributed	0
-v_union	600
-v_union distributed	1
-v_union_both	600
-v_union_both distributed	0
-gate off, distributed	1
-gate on, distributed	1
+499500
+1
+499500
+0

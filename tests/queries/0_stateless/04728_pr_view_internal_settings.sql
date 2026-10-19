@@ -10,14 +10,6 @@
 -- index_granularity = 1 makes the inflation deterministic: every replica receives marks, so a
 -- broken run returns exactly rows * max_parallel_replicas.
 
--- The `-- what is shipped to replicas` section filters the plan for
--- `ReadFromRemoteParallelReplicas` and reads the relation out of that step, i.e. out of the SQL the
--- initiator ships. Plan-based ships a serialized plan fragment, so no row matches and every array
--- comes back empty. The row counts above that section hold for both implementations;
--- `05407_pr_plan_based_view_shapes` asserts, for the same views, which of them plan-based
--- distributes - the property this section is really about.
-SET parallel_replicas_plan_based = 0;
-
 DROP VIEW IF EXISTS v_plain;
 DROP VIEW IF EXISTS v_set;
 DROP VIEW IF EXISTS v_nested;
@@ -87,6 +79,11 @@ SELECT count() FROM v_plain_over_plain;
 
 -- Which relation is shipped to the replicas. An empty array means the query is not read through
 -- the coordinated remote path at all, which is the expected verdict once a view body opts out.
+-- This section reads the relation out of the shipped SQL, which only the query-based
+-- implementation produces; plan-based ships a plan fragment. The row counts above are what the
+-- test is really guarding, and they run under either implementation.
+SET parallel_replicas_plan_based = 0;
+
 SELECT '-- what is shipped to replicas';
 
 SELECT 'v_plain', arraySort(groupUniqArray(if(explain LIKE '%v_plain%', 'v_plain', if(explain LIKE '%mt_g%', 'mt_g', 'other'))))
