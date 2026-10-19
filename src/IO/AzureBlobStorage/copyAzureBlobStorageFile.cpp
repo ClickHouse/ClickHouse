@@ -26,10 +26,12 @@
 namespace ProfileEvents
 {
     extern const Event AzureCopyObject;
+    extern const Event AzureUploadFromUri;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
 
     extern const Event DiskAzureCopyObject;
+    extern const Event DiskAzureUploadFromUri;
     extern const Event DiskAzureStageBlock;
     extern const Event DiskAzureCommitBlockList;
 }
@@ -47,6 +49,13 @@ namespace ErrorCodes
 
 namespace
 {
+    /// The largest object copied with one `Put Blob From URL`. That request is synchronous: the service copies the
+    /// whole object before it answers, and the thread that sent it waits meanwhile. Azure accepts a source of up to
+    /// 5000 MiB (https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url), and this stays well
+    /// below it so that one object cannot hold a backup thread for minutes. A larger object is copied through the
+    /// server, as before.
+    constexpr size_t MAX_UPLOAD_FROM_URI_SIZE = 500ULL * 1024 * 1024;
+
     class UploadHelper
     {
     public:
@@ -444,43 +453,85 @@ void copyAzureBlobStorageFile(
                 }
                 else
                 {
-                    Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
-                    if (object_to_attributes.has_value())
+                    /// The service reads the source of a server-side copy itself, and the credential of the
+                    /// destination authorizes that read only for a source in the same storage account. `Copy Blob`,
+                    /// the asynchronous request used here, takes a credential for the source only in a shared access
+                    /// signature of its URL, which a copy between the accounts of two services does not have, so the
+                    /// service refuses such a copy with 401. `Put Blob From URL` is a server-side copy too and it is
+                    /// accepted for the same source, so retry the copy with it before giving up on the server-side
+                    /// copy: the fallback at the end of this function reads the whole object through the server and
+                    /// holds `max_inflight_parts_for_one_file` of its parts in memory, which is what exhausts the
+                    /// memory of a server that restores many large objects at once.
+                    try
                     {
-                        for (const auto & [key, value] : *object_to_attributes)
-                            copy_options.Metadata[key] = value;
+                        Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+                        if (object_to_attributes.has_value())
+                        {
+                            for (const auto & [key, value] : *object_to_attributes)
+                                copy_options.Metadata[key] = value;
+                        }
+
+                        Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
+
+                        auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
+                        auto properties_model = copy_response.Value;
+
+                        auto copy_status = properties_model.CopyStatus;
+                        auto copy_status_description = properties_model.CopyStatusDescription;
+
+                        /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
+                        /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
+                        /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
+                        /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
+                        /// obligation to send either header, so nothing below dereferences them unchecked.
+                        if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+                        {
+                            LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
+                        }
+                        else
+                        {
+                            if (copy_status.HasValue())
+                                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                                src_blob, dest_blob, copy_status.Value().ToString(),
+                                                copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                                operation.IsDone());
+                            throw Exception(
+                                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                                "Copy from {} to {} didn't complete with success status (operation is done {})",
+                                src_blob,
+                                dest_blob,
+                                operation.IsDone());
+                        }
                     }
-
-                    Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
-
-                    auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
-                    auto properties_model = copy_response.Value;
-
-                    auto copy_status = properties_model.CopyStatus;
-                    auto copy_status_description = properties_model.CopyStatusDescription;
-
-                    /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
-                    /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
-                    /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
-                    /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
-                    /// obligation to send either header, so nothing below dereferences them unchecked.
-                    if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+                    catch (const Azure::Storage::StorageException & e)
                     {
-                        LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
-                    }
-                    else
-                    {
-                        if (copy_status.HasValue())
-                            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                            src_blob, dest_blob, copy_status.Value().ToString(),
-                                            copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
-                                            operation.IsDone());
-                        throw Exception(
-                            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                            "Copy from {} to {} didn't complete with success status (operation is done {})",
+                        /// Only 401 is retried: it is the answer to a source the service may not read, and the retry
+                        /// differs from the refused request in nothing else. Any other error means the copy itself
+                        /// cannot be done, and `Put Blob From URL` would be refused in the same way. An object that
+                        /// request does not take is left to the fallback below.
+                        if (e.StatusCode != Azure::Core::Http::HttpStatusCode::Unauthorized
+                            || size > MAX_UPLOAD_FROM_URI_SIZE)
+                            throw;
+
+                        LOG_TRACE(
+                            log,
+                            "Copy blob async {} -> {} was refused with 401, the answer to a source in another storage "
+                            "account. Copying it with one Put Blob From URL request instead",
                             src_blob,
-                            dest_blob,
-                            operation.IsDone());
+                            dest_blob);
+
+                        Azure::Storage::Blobs::UploadBlockBlobFromUriOptions upload_options;
+                        if (object_to_attributes.has_value())
+                        {
+                            for (const auto & [key, value] : *object_to_attributes)
+                                upload_options.Metadata[key] = value;
+                        }
+
+                        ProfileEvents::increment(ProfileEvents::AzureUploadFromUri);
+                        if (dest_client->IsClientForDisk())
+                            ProfileEvents::increment(ProfileEvents::DiskAzureUploadFromUri);
+
+                        block_blob_client_dest.UploadFromUri(source_uri, upload_options);
                     }
                 }
             }
