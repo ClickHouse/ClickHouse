@@ -718,7 +718,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    # A low relocation headroom fails the job without dropping the jobs that use its artifacts.
+    # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
     headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
         r.is_ok() for r in results if r.name != relocation_headroom.NAME
     )

@@ -21,9 +21,11 @@ from ci.praktika.settings import Settings
 
 NAME = "Relocation headroom"
 BINARIES = ("programs/clickhouse", "src/unit_tests_dbms")
-# Fails at about two weeks of master growth before the link does; warns when a change takes 10 MiB.
-MIN_HEADROOM_MIB = 64
-WARN_DECREASE_MIB = 10
+# A pull request that takes more than 5 MiB fails unless it has the label; below 64 MiB, about two weeks of master growth
+# before the link fails, every run warns.
+MAX_DECREASE_MIB = 5
+WARN_HEADROOM_MIB = 64
+ALLOW_DECREASE_LABEL = "ci-relocation-headroom-ok"
 MASTER_COMMITS_TO_TRY = 10
 
 REACH = 1 << 31
@@ -65,8 +67,8 @@ def headroom(path):
 
 
 def master_baseline(info):
-    """(sha, headroom) of the nearest commit of this run's master chain whose job reported it, else (None, {})."""
-    for sha in (info.get_kv_data("master_track_commits_sha") or [])[:MASTER_COMMITS_TO_TRY]:
+    """(commit, headroom) of the nearest commit of this run's master chain whose job reported it, else (None, {})."""
+    for i, sha in enumerate((info.get_kv_data("master_track_commits_sha") or [])[:MASTER_COMMITS_TO_TRY]):
         try:
             endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]
             prefix = _Environment.get_s3_prefix_static(pr_number=0, branch="master", sha=sha, workflow_name="MasterCI")
@@ -77,7 +79,8 @@ def master_baseline(info):
                 data = gzip.decompress(data)
             for result in json.loads(data).get("results", []):
                 if result.get("name") == NAME and result.get("ext", {}).get("relocation_headroom"):
-                    return sha, result["ext"]["relocation_headroom"]
+                    behind = f", {i} commits before this run's master parent" if i else ""
+                    return f"{sha[:12]}{behind}", result["ext"]["relocation_headroom"]
         except Exception as e:
             print(f"No relocation headroom of master {sha}: {e}")
     return None, {}
@@ -88,10 +91,10 @@ def check(build_dir, info):
         measured = {binary: headroom(f"{build_dir}/{binary}") for binary in BINARIES}
     except Exception as e:
         return Result(name=NAME, status=Result.Status.ERROR, info=f"Failed to read the section headers: {e}")
-    base_sha, base = master_baseline(info)
+    base_commit, base = master_baseline(info)
     lines = [
         "MiB left of the 2 GiB reach of 32-bit PC-relative references"
-        + (f", change vs master {base_sha[:12]}" if base_sha else ", no master baseline")
+        + (f", change vs master {base_commit}" if base_commit else ", no master baseline")
     ]
     decreases = []
     for binary, spans in measured.items():
@@ -105,16 +108,23 @@ def check(build_dir, info):
             parts.append(part)
         lines.append(f"{binary}: " + ", ".join(parts))
     lowest, binary, name = min((v, b, n) for b, spans in measured.items() for n, v in spans.items())
-    ok = lowest >= MIN_HEADROOM_MIB * MIB
-    lines.append(
-        f"Lowest: {lowest / MIB:.2f} MiB ({binary}, {name}); the check fails below {MIN_HEADROOM_MIB} MiB"
-        + ("" if ok else ". Shrink the code or the data before the link fails, see #126314")
-    )
-    if decreases and max(decreases)[0] >= WARN_DECREASE_MIB * MIB:
-        decrease, binary, name = max(decreases)
+    lines.append(f"Lowest: {lowest / MIB:.2f} MiB ({binary}, {name}); warns below {WARN_HEADROOM_MIB} MiB")
+    if lowest < WARN_HEADROOM_MIB * MIB:
         info.add_workflow_warning(
-            f"The relocation headroom of {binary} ({name}) decreased by {decrease / MIB:.2f} MiB vs master {base_sha[:12]}"
+            f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB:"
+            " shrink the code or the data before the link fails, see #126314"
         )
+    ok = True
+    if decreases and max(decreases)[0] > MAX_DECREASE_MIB * MIB:
+        decrease, binary, name = max(decreases)
+        lines.append(f"{binary} ({name}) decreased by {decrease / MIB:.2f} MiB, more than {MAX_DECREASE_MIB} MiB")
+        if info.pr_number > 0:
+            ok = ALLOW_DECREASE_LABEL in info.pr_labels
+            lines.append(
+                f"Allowed by the `{ALLOW_DECREASE_LABEL}` label"
+                if ok
+                else f"If this is expected, add the `{ALLOW_DECREASE_LABEL}` label and push or re-run all jobs"
+            )
     text = "\n".join(lines)
     print(text)
     return Result(
