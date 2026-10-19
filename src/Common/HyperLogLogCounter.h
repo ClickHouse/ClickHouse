@@ -333,10 +333,9 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        /// Registers are not checked against the rank counts, so a merge into a corrupted state can make the estimate negative.
-        /// For 64-bit hashes the estimate of a valid state can exceed the range of UInt64.
         if (final_estimate < 0)
             throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: the estimate {} is negative", final_estimate);
+        /// For 64-bit hashes the estimate of a valid state can exceed the range of UInt64.
         if (final_estimate + 0.5 >= 0x1p64)
             return std::numeric_limits<UInt64>::max();
         return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
