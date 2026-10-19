@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -1947,6 +1948,8 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
             return false;
         }
 
+        /// Cancellation must not prevent the ownership checks or removal of files from a failed backup.
+        ThreadStatus::QueryCancellationBlocker cleanup;
         LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
 
         Strings files_to_remove;

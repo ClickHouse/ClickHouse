@@ -7,7 +7,7 @@ import pytest
 
 from ast import literal_eval
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_s3_mock
 from helpers.s3_tools import (
@@ -772,10 +772,11 @@ def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
     backup_id = uuid.uuid4().hex
 
     try:
-        # Make every S3 upload hang so the backup is reliably stuck inside an in-flight S3 request
-        # (not between backup entries) when we cancel it. KILL then interrupts the upload, and the
-        # retry loop must surface the cancellation instead of the resulting network error.
-        broken_s3.setup_slow_answers(timeout=30)
+        # Complete the lock upload and one data upload before later uploads repeatedly fail.
+        # Cancellation must remove completed objects as well as report `QUERY_WAS_CANCELLED`.
+        broken_s3.setup_at_object_upload(
+            after=2, count=10000, action="connection_reset_by_peer"
+        )
 
         node.query(
             f"BACKUP TABLE data TO {backup_destination} SETTINGS id='{backup_id}' ASYNC",
@@ -788,8 +789,17 @@ def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
         )
         assert_eq_with_retry(
             node,
-            f"SELECT count() > 0 FROM system.processes WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'",
+            f"SELECT num_entries > 0 FROM system.backups WHERE id='{backup_id}'",
             "1",
+        )
+        backup_prefix = f"data/backups/{backup_name}/"
+        assert len(
+            list(cluster.minio_client.list_objects("root", backup_prefix, recursive=True))
+        ) >= 2
+        wait_condition(
+            broken_s3.get_request_counts,
+            lambda counts: counts["object_upload"] >= 3,
+            max_attempts=100,
         )
 
         node.query(
@@ -807,6 +817,12 @@ def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
         error = node.query(f"SELECT error FROM system.backups WHERE id='{backup_id}'")
         assert "QUERY_WAS_CANCELLED" in error, error
         assert "S3_ERROR" not in error, error
+
+        assert not list(
+            cluster.minio_client.list_objects("root", backup_prefix, recursive=True)
+        )
+        broken_s3.reset()
+        node.query(f"BACKUP TABLE data TO {backup_destination}")
     finally:
         broken_s3.reset()
         node.query("DROP TABLE IF EXISTS data SYNC;")
