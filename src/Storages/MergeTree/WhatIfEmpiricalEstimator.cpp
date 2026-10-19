@@ -12,8 +12,12 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
+
+#include <cmath>
 
 namespace DB
 {
@@ -60,6 +64,42 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
     return windows;
 }
 
+size_t countWindows(const MarkRanges & windows, size_t granularity)
+{
+    size_t count = 0;
+    for (const auto & range : windows)
+        count += (range.end - range.begin + granularity - 1) / granularity;
+    return count;
+}
+
+/// fewer sampled windows can't give an error estimate
+constexpr size_t min_sampled_windows = 30;
+
+/// all windows, or one from every run of `step` at a hashed position, as the projection estimate picks granules
+/// the same `GRANULARITY` gives every candidate the same windows
+MarkRanges windowsToScan(const MarkRanges & windows, size_t granularity, size_t step, const String & part_name)
+{
+    if (step <= 1)
+        return windows;
+
+    std::vector<MarkRange> each;
+    for (const auto & range : windows)
+        for (size_t begin = range.begin; begin < range.end; begin += granularity)
+            each.emplace_back(begin, std::min(begin + granularity, range.end));
+
+    const UInt64 seed = sipHash64(part_name);
+    MarkRanges ranges;
+    for (size_t first = 0; first < each.size(); first += step)
+    {
+        const auto & window = each[first + intHash64(seed ^ first) % std::min(step, each.size() - first)];
+        if (!ranges.empty() && ranges.back().end == window.begin)
+            ranges.back().end = window.end;
+        else
+            ranges.push_back(window);
+    }
+    return ranges;
+}
+
 }
 
 bool tryEstimateEmpirical(
@@ -70,6 +110,7 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     std::vector<UInt8> * surviving_marks,
+    UInt64 index_scan_budget_rows,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -107,11 +148,63 @@ bool tryEstimateEmpirical(
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
 
+    /// the skip-index windows overlapping the baseline, all or a sample past the budget, as the projection estimate plans
+    std::vector<MarkRanges> read_ranges(saved_parts.size());
+    std::vector<size_t> part_windows(saved_parts.size());
+    UInt64 rows_to_scan = 0;
+    size_t windows_to_scan = 0;
+    for (size_t i = 0; i < saved_parts.size(); ++i)
+    {
+        const auto & granularity = *saved_parts[i].data_part->index_granularity;
+        read_ranges[i]
+            = skipIndexWindowsOverlapping(saved_parts[i].ranges, skip_index_granularity, granularity.getMarksCountWithoutFinal());
+        part_windows[i] = countWindows(read_ranges[i], skip_index_granularity);
+        rows_to_scan += granularity.getRowsCountInRanges(read_ranges[i]);
+        windows_to_scan += part_windows[i];
+    }
+    const UInt64 read_limit = limit_settings[Setting::max_rows_to_read];
+    UInt64 budget = index_scan_budget_rows;
+    if (read_limit != 0)
+        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
+    size_t step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
+    /// the largest step that still samples `min_sampled_windows`
+    if (step > 1)
+        step = std::min<size_t>(step, std::max<size_t>(1, (windows_to_scan - 1) / (min_sampled_windows - 1)));
+
+    bool sampled = false;
+    UInt64 rows_planned = 0;
+    for (size_t i = 0; i < saved_parts.size(); ++i)
+    {
+        read_ranges[i] = windowsToScan(read_ranges[i], skip_index_granularity, step, saved_parts[i].data_part->name);
+        sampled |= countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
+        rows_planned += saved_parts[i].data_part->index_granularity->getRowsCountInRanges(read_ranges[i]);
+    }
+    if (read_limit != 0 && rows_planned > read_limit)
+    {
+        result.empirical_unsupported_reason = fmt::format(
+            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~{} index windows and one per part)",
+            rows_planned,
+            read_limit,
+            min_sampled_windows);
+        return false;
+    }
+    /// the windows out of the sample are unknown, so the caller does not combine this candidate
+    if (sampled)
+        surviving_marks = nullptr;
+
+    /// a sampled part scales its count to its baseline marks, and the sampling error widens the span
+    double estimated_survivors = 0;
+    UInt64 sampled_part_marks = 0;
+    size_t sampled_part_windows = 0;
+    UInt64 baseline_marks = 0;
+    std::vector<UInt8> window_survives;
+
     /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
     size_t baseline_mark_pos = 0;
 
-    for (const auto & part_with_ranges : saved_parts)
+    for (size_t part_idx = 0; part_idx < saved_parts.size(); ++part_idx)
     {
+        const auto & part_with_ranges = saved_parts[part_idx];
         auto part = part_with_ranges.data_part;
         const auto & mark_ranges = part_with_ranges.ranges;
 
@@ -126,10 +219,13 @@ bool tryEstimateEmpirical(
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
                 in_baseline[m] = true;
 
-        /// Read only the skip-index windows overlapping the baseline instead of the whole part
-        const MarkRanges read_ranges = skipIndexWindowsOverlapping(mark_ranges, skip_index_granularity, total_marks);
-        if (read_ranges.empty())
+        if (read_ranges[part_idx].empty())
             continue;
+        const bool part_sampled = countWindows(read_ranges[part_idx], skip_index_granularity) < part_windows[part_idx];
+        const UInt64 part_baseline_marks = mark_ranges.getNumberOfMarks();
+        const UInt64 total_before = total_data_granules;
+        const UInt64 skipped_before = skipped_data_granules;
+        const UInt64 rows_before = total_rows_read;
 
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
@@ -142,7 +238,7 @@ bool tryEstimateEmpirical(
 
         /// aggregate each skip-index granule and count how many
         /// baseline granules the candidate would skip. Returns false if a read limit was hit
-        auto scan_range = [&](const MarkRange & read_range) -> bool
+        auto scan_ranges = [&](const MarkRanges & ranges) -> bool
         {
             RangesInDataPart part_for_read(part);
 
@@ -154,7 +250,7 @@ bool tryEstimateEmpirical(
                 alter_conversions,
                 nullptr,
                 index_columns,
-                MarkRanges{read_range},
+                ranges,
                 std::make_shared<std::atomic<size_t>>(0),
                 false,
                 false,
@@ -185,7 +281,8 @@ bool tryEstimateEmpirical(
             PullingPipelineExecutor executor(pipeline);
 
             auto aggregator = index_helper->createIndexAggregator();
-            size_t current_mark = read_range.begin;
+            size_t range_idx = 0;
+            size_t current_mark = ranges.front().begin;
             size_t rows_remaining_in_mark = current_mark < total_marks
                 ? part_index_granularity->getMarkRows(current_mark)
                 : 0;
@@ -199,11 +296,14 @@ bool tryEstimateEmpirical(
                     return;
                 auto granule = aggregator->getGranuleAndReset();
                 total_data_granules += baseline_marks_in_window;
-                if (!condition->mayBeTrueOnGranule(granule, {}))
+                const bool survives = condition->mayBeTrueOnGranule(granule, {});
+                if (!survives)
                     skipped_data_granules += baseline_marks_in_window;
                 else if (surviving_marks)
                     for (size_t pos : window_baseline_marks)
                         (*surviving_marks)[pos] = 1;
+                if (part_sampled)
+                    window_survives.push_back(survives);
             };
 
             auto on_mark_finished = [&]
@@ -226,6 +326,9 @@ bool tryEstimateEmpirical(
                 }
 
                 ++current_mark;
+                /// one source reads all ranges in order, and each range ends at the end of a window
+                if (current_mark == ranges[range_idx].end && range_idx + 1 < ranges.size())
+                    current_mark = ranges[++range_idx].begin;
                 rows_remaining_in_mark = current_mark < total_marks
                     ? part_index_granularity->getMarkRows(current_mark)
                     : 0;
@@ -275,9 +378,28 @@ bool tryEstimateEmpirical(
             return true;
         };
 
-        for (const auto & read_range : read_ranges)
-            if (!scan_range(read_range))
-                return false;
+        if (!scan_ranges(read_ranges[part_idx]))
+            return false;
+
+        /// a `break` time limit or a cancelled query stops the read silently
+        if (total_rows_read - rows_before != part_index_granularity->getRowsCountInRanges(read_ranges[part_idx]))
+        {
+            result.empirical_unsupported_reason = "A time limit in `break` mode or a cancelled query stopped the index scan early";
+            return false;
+        }
+        const UInt64 part_sampled_marks = total_data_granules - total_before;
+        const UInt64 part_survivors = part_sampled_marks - (skipped_data_granules - skipped_before);
+        baseline_marks += part_baseline_marks;
+        if (!part_sampled)
+        {
+            estimated_survivors += static_cast<double>(part_survivors);
+            continue;
+        }
+        /// the scan does not count a trailing window with an empty aggregator, so a sampled part can count no marks
+        estimated_survivors += static_cast<double>(part_survivors) * static_cast<double>(part_baseline_marks)
+            / static_cast<double>(std::max<UInt64>(part_sampled_marks, 1));
+        sampled_part_marks += part_baseline_marks;
+        sampled_part_windows += part_windows[part_idx];
     }
 
     if (total_data_granules == 0)
@@ -286,13 +408,44 @@ bool tryEstimateEmpirical(
         return false;
     }
 
-    result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
-    result.estimated_marks = total_data_granules - skipped_data_granules;
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
     result.sampled_parts = analysis.selected_parts;
     result.sampled_marks = analysis.selected_marks;
     result.elapsed_us = watch.elapsedMicroseconds();
+
+    if (!sampled)
+    {
+        result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
+        result.estimated_marks = total_data_granules - skipped_data_granules;
+        return true;
+    }
+
+    /// one range that the sample missed, with its ends known only to a step, and two standard errors of the surviving
+    /// share (successive differences, which fit a systematic sample)
+    const double window_marks = static_cast<double>(sampled_part_marks) / static_cast<double>(sampled_part_windows);
+    double spread = 2.0 * static_cast<double>(step) * window_marks;
+    if (window_survives.size() > 1)
+    {
+        /// with 0/1 shares the sum of squared differences is the number of changes
+        size_t changes = 0;
+        for (size_t i = 1; i < window_survives.size(); ++i)
+            changes += window_survives[i] != window_survives[i - 1];
+        const double count = static_cast<double>(window_survives.size());
+        /// a sample with no change has no spread, so take the rule of three: the other outcome is under 3 in `count`
+        const double standard_error
+            = changes != 0 ? std::sqrt(static_cast<double>(changes) / (2.0 * count * (count - 1.0))) : 1.5 / count;
+        spread += 2.0 * standard_error * static_cast<double>(sampled_part_marks);
+    }
+
+    const auto estimated = static_cast<UInt64>(std::round(estimated_survivors));
+    const auto by = static_cast<UInt64>(std::ceil(spread));
+    /// the sampled windows are exact, so they bound the span
+    result.estimated_marks = estimated;
+    result.estimated_marks_low = std::max(total_data_granules - skipped_data_granules, estimated > by ? estimated - by : 0);
+    result.estimated_marks_high = std::min(baseline_marks - skipped_data_granules, estimated + by);
+    result.skip_ratio = 1.0 - static_cast<double>(estimated) / static_cast<double>(baseline_marks);
+    result.sampled_marks = total_data_granules;
 
     return true;
 }
