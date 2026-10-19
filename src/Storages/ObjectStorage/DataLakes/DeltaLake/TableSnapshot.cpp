@@ -417,7 +417,7 @@ public:
 
             parseDVHandle(*scan_item, object);
             object->setObjectMetadata(
-                getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
+                DB::getObjectMetadataForRead(*object_storage, DB::RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
 
             if (callback)
             {
