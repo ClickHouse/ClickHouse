@@ -3761,7 +3761,7 @@ ch_cc_library(
         "google/cloud/internal/unified_grpc_credentials.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -3769,11 +3769,8 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -3781,10 +3778,7 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
@@ -4972,7 +4966,7 @@ ch_cc_library(
         "@clickhouse//:contrib/google-cloud-cpp-cmake/poco_rest_client.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -4980,11 +4974,8 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -4992,10 +4983,7 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = (([
         "@clickhouse_sysroot//:linux_compile_files",
@@ -5551,7 +5539,7 @@ ch_cc_library(
         "google/cloud/storage/well_known_parameters.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/x86_64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/x86_64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -5559,11 +5547,8 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/x86_64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse//bazel:config/aarch64/base/base/GitHash.generated.cpp",
             "@clickhouse//bazel:config/aarch64/includes/configs/config_version.cpp",
             "@clickhouse_cctz//:config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -5571,10 +5556,7 @@ ch_cc_library(
             "@clickhouse_mariadb_connector_c//:config/aarch64/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = (([
         "@clickhouse_sysroot//:linux_compile_files",

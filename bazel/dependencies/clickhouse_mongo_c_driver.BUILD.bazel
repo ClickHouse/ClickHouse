@@ -327,8 +327,6 @@ ch_cc_library(
             ":config/x86_64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
-            "src/common/src/**/*.h",
-            "src/libbson/src/**/*.h",
             "src/libmongoc/src/**/*.h",
             "src/utf8proc-2.11.3/**/*.h",
             "src/uthash/**/*.h",
@@ -339,8 +337,6 @@ ch_cc_library(
             ":config/aarch64/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
-            "src/common/src/**/*.h",
-            "src/libbson/src/**/*.h",
             "src/libmongoc/src/**/*.h",
             "src/utf8proc-2.11.3/**/*.h",
             "src/uthash/**/*.h",

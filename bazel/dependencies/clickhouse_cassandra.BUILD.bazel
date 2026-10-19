@@ -187,22 +187,12 @@ ch_cc_library(
             ":config/x86_64/contrib/cassandra-cmake/driver_config.hpp",
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "include/**/*.h",
-            "src/third_party/curl/**/*.hpp",
-            "src/third_party/hdr_histogram/**/*.hpp",
-            "src/third_party/http-parser/**/*.h",
-        ])),
+        ] + glob(["include/**/*.h"])),
         "@platforms//cpu:aarch64": ([
             ":config/aarch64/contrib/cassandra-cmake/driver_config.hpp",
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "include/**/*.h",
-            "src/third_party/curl/**/*.hpp",
-            "src/third_party/hdr_histogram/**/*.hpp",
-            "src/third_party/http-parser/**/*.h",
-        ])),
+        ] + glob(["include/**/*.h"])),
     }),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",

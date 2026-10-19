@@ -37,14 +37,9 @@ ch_cc_library(
         "src/providers/anthropic/anthropic_stream.cpp",
         "src/providers/anthropic/anthropic_factory.cpp",
     ],
-    hdrs = ([
+    hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "include/**/*.h",
-        "src/**/*.h",
-        "third_party/concurrentqueue-header-only/**/*.h",
-        "third_party/httplib-header-only/**/*.h",
-    ])),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -136,14 +131,9 @@ ch_cc_library(
         "src/providers/openai/openai_stream.cpp",
         "src/providers/openai/openai_factory.cpp",
     ],
-    hdrs = ([
+    hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "include/**/*.h",
-        "src/**/*.h",
-        "third_party/concurrentqueue-header-only/**/*.h",
-        "third_party/httplib-header-only/**/*.h",
-    ])),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],

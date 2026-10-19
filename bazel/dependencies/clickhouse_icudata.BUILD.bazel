@@ -1,5 +1,4 @@
 load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,8 +16,6 @@ ch_cc_library(
     ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
     language = "ASM",
     local_defines = [
@@ -31,12 +28,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
-    ],
-    local_includes = [
-        repository_local_include(
-            repository_path("contrib/llvm-project") + "/libcxxabi/include",
-            "contrib/icudata",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

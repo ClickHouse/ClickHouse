@@ -41,7 +41,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["c++/src/**/*.h"]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -81,7 +81,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob(["c++/src/**/*.h"]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],

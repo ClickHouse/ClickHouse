@@ -39,10 +39,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     includes = [
@@ -90,10 +87,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -111,10 +105,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -208,10 +199,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -234,10 +222,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -279,10 +264,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -343,10 +325,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -364,10 +343,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -423,10 +399,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -447,10 +420,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -489,10 +459,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -533,10 +500,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -585,10 +549,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -607,10 +568,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -628,10 +586,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -696,10 +651,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -761,10 +713,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -806,10 +755,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -867,10 +813,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -918,10 +861,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -995,10 +935,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1016,10 +953,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1091,10 +1025,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1132,10 +1063,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1153,10 +1081,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1223,10 +1148,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1297,10 +1219,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1370,10 +1289,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1426,10 +1342,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -1469,10 +1382,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1564,10 +1474,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1606,10 +1513,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1682,10 +1586,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1736,10 +1637,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1792,10 +1690,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1859,10 +1754,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1900,10 +1792,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1921,10 +1810,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1965,10 +1851,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1986,10 +1869,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2043,10 +1923,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2130,10 +2007,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2151,10 +2025,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2212,10 +2083,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2233,10 +2101,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2254,10 +2119,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2286,10 +2148,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2308,10 +2167,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2329,10 +2185,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2407,10 +2260,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2441,10 +2291,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2485,10 +2332,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2506,10 +2350,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2527,10 +2368,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2569,10 +2407,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2610,10 +2445,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -2666,10 +2498,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2697,10 +2526,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2739,10 +2565,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2777,10 +2600,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2839,10 +2659,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2907,10 +2724,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2962,10 +2776,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3002,10 +2813,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3023,10 +2831,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3076,10 +2881,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3125,10 +2927,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3150,10 +2949,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -3222,10 +3018,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,

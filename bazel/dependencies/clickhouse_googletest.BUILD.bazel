@@ -50,10 +50,7 @@ ch_cc_library(
     ),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "googlemock/include/**/*.h",
-        "googletest/include/**/*.h",
-    ]),
+    ] + glob(["googlemock/include/**/*.h"]),
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = [
         "-w",
@@ -88,10 +85,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "googlemock/include/**/*.h",
-        "googletest/include/**/*.h",
-    ]),
+    ],
     additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = [
         "-w",

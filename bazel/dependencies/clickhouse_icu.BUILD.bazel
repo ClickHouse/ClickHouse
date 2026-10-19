@@ -16,10 +16,7 @@ ch_cc_library(
     srcs = glob(["icu4c/source/i18n/*.cpp"]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "icu4c/source/common/**/*.h",
-        "icu4c/source/i18n/**/*.h",
-    ]),
+    ] + glob(["icu4c/source/i18n/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],

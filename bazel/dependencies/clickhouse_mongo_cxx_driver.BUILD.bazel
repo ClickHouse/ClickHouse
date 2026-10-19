@@ -576,8 +576,6 @@ ch_cc_library(
             ":config/x86_64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
-            "src/bsoncxx/include/**/*.hpp",
-            "src/bsoncxx/lib/**/*.hh",
             "src/mongocxx/include/**/*.hpp",
             "src/mongocxx/lib/**/*.hh",
         ])),
@@ -591,8 +589,6 @@ ch_cc_library(
             ":config/aarch64/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob([
-            "src/bsoncxx/include/**/*.hpp",
-            "src/bsoncxx/lib/**/*.hh",
             "src/mongocxx/include/**/*.hpp",
             "src/mongocxx/lib/**/*.hh",
         ])),

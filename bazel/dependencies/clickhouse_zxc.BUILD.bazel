@@ -35,10 +35,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "include/**/*.h",
-        "src/lib/**/*.h",
-    ]),
+    ],
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],

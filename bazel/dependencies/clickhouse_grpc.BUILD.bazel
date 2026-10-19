@@ -1181,22 +1181,14 @@ ch_cc_library(
         "src/cpp/util/time_cc.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = (([
         "@clickhouse_sysroot//:linux_compile_files",
@@ -1355,22 +1347,14 @@ ch_cc_library(
         "src/cpp/util/time_cc.cc",
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "**/*.h",
-            "**/*.hpp",
-            "**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = (([
         "@clickhouse_sysroot//:linux_compile_files",
@@ -2383,11 +2367,7 @@ ch_cc_library(
     ]),
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2439,11 +2419,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2485,11 +2461,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2519,11 +2491,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2595,11 +2563,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2637,11 +2601,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -2669,11 +2629,7 @@ ch_cc_library(
     ],
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",

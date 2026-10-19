@@ -20,18 +20,12 @@ ch_cc_library(
     name = "_silk_fibers",
     srcs = glob(["src/fibers/*.cpp"]),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "include/**/*.h",
-            "src/**/*.h",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "include/**/*.h",
-            "src/**/*.h",
-        ])),
+        ],
     }),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",

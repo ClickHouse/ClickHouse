@@ -283,24 +283,14 @@ ch_cc_library(
         "src/google/protobuf/wire_format.cc",
     ],
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/**/*.h",
-            "src/**/*.inc",
-            "third_party/utf8_range/**/*.h",
-            "third_party/utf8_range/**/*.inc",
-        ])),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + glob([
-            "src/**/*.h",
-            "src/**/*.inc",
-            "third_party/utf8_range/**/*.h",
-            "third_party/utf8_range/**/*.inc",
-        ])),
+        ],
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
@@ -434,14 +424,9 @@ ch_cc_library(
         "src/google/protobuf/unknown_field_set_lite.cc",
         "src/google/protobuf/wire_format_lite.cc",
     ],
-    hdrs = ([
+    hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + glob([
-        "src/**/*.h",
-        "src/**/*.inc",
-        "third_party/utf8_range/**/*.h",
-        "third_party/utf8_range/**/*.inc",
-    ])),
+    ],
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + []),
