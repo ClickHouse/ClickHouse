@@ -2327,7 +2327,10 @@ void InterpreterSystemQuery::waitQueryRunner()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+    {
+        getContext()->onQueryExecutionStarted();
         query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
